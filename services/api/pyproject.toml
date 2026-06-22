@@ -1,0 +1,21 @@
+[project]
+name = "bulls-api"
+version = "0.0.0"
+description = "FastAPI service: auth, feed, posts, cashtags, WebSocket gateway."
+requires-python = ">=3.12"
+dependencies = [
+    "bulls-core",
+    "bulls-market-data",
+    "bulls-ai",
+    "fastapi>=0.115",
+    "granian>=1.6",
+    "redis>=5.0",
+    "arq>=0.26",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]

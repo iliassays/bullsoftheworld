@@ -1,0 +1,12 @@
+# Bulls of Dhaka — Dhaka Stock Exchange (DSE), Bangla-first.
+name = "bullsofdhaka"
+display_name = "Bulls of Dhaka"
+market = "DSE"
+locale = "bn"
+domains = ["bullsofdhaka.com", "www.bullsofdhaka.com", "localhost"]
+
+[theme]
+accent = "#F5B82E"   # Bull Gold
+up = "#16C784"       # DSE: green = up (verify; per-tenant configurable)
+down = "#EA3943"     # red = down
+dark_first = true

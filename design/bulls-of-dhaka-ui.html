@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bulls of Dhaka — UI Direction</title>
+<style>
+  :root{
+    --bg:#0B0E11; --surface:#151A21; --card:#1A2029; --border:#232B36;
+    --text:#E8EDF2; --muted:#8B97A6; --faint:#5C6675;
+    --gold:#F5B82E; --gold-dim:#9c7a23;
+    --up:#16C784; --down:#EA3943;
+    --up-bg:rgba(22,199,132,.12); --down-bg:rgba(234,57,67,.12);
+    --radius:16px;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    --bn:"Hind Siliguri","Noto Sans Bengali",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 800px at 50% -10%,#11161d,#0B0E11 60%);
+    color:var(--text);font-family:var(--sans);
+    min-height:100vh;padding:32px 16px 64px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:36px;align-items:center}
+  h1{font-size:22px;font-weight:700;letter-spacing:-.02em;text-align:center}
+  h1 .em{color:var(--gold)}
+  .sub{color:var(--muted);font-size:14px;text-align:center;max-width:560px;line-height:1.5}
+
+  /* phone */
+  .phone{
+    width:100%;max-width:390px;background:var(--bg);
+    border:1px solid var(--border);border-radius:38px;overflow:hidden;
+    box-shadow:0 30px 80px rgba(0,0,0,.55),inset 0 0 0 8px #05070a;
+    position:relative;
+  }
+  .notch{height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--faint);padding-top:8px}
+  .screen{height:680px;overflow-y:auto;scrollbar-width:none}
+  .screen::-webkit-scrollbar{display:none}
+
+  /* header */
+  .top{position:sticky;top:0;z-index:5;background:rgba(11,14,17,.85);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px}
+  .mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--gold),#c8901a);
+    display:grid;place-items:center;font-size:17px;box-shadow:0 4px 14px rgba(245,184,46,.35)}
+  .brand{font-weight:700;font-size:16px;letter-spacing:-.01em;line-height:1.1}
+  .brand small{display:block;font-family:var(--bn);font-weight:600;font-size:11px;color:var(--gold);letter-spacing:0}
+  .top .delay{margin-left:auto;font-size:10px;color:var(--faint);border:1px solid var(--border);
+    padding:3px 7px;border-radius:20px}
+
+  /* ticker strip */
+  .ticker{display:flex;gap:8px;overflow-x:auto;padding:12px 16px;scrollbar-width:none}
+  .ticker::-webkit-scrollbar{display:none}
+  .chip{flex:0 0 auto;background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:8px 11px;min-width:96px}
+  .chip .sym{font-weight:700;font-size:13px}
+  .chip .px{font-size:12px;color:var(--muted);margin-top:2px}
+  .chip .pct{font-size:12px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+  .up{color:var(--up)} .down{color:var(--down)}
+
+  .section-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:6px 16px}
+
+  /* post card */
+  .feed{padding:4px 12px 12px;display:flex;flex-direction:column;gap:10px}
+  .post{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+  .phead{display:flex;align-items:center;gap:10px}
+  .av{width:36px;height:36px;border-radius:50%;flex:0 0 auto;
+    background:linear-gradient(135deg,#2a3340,#1a2029);display:grid;place-items:center;
+    font-weight:700;font-size:14px;color:var(--gold)}
+  .who{line-height:1.25}
+  .who b{font-size:14px}
+  .who span{display:block;font-size:12px;color:var(--muted)}
+  .tag{margin-left:auto;font-size:11px;font-weight:700;padding:5px 9px;border-radius:20px;display:flex;gap:4px;align-items:center}
+  .tag.bull{color:var(--up);background:var(--up-bg)}
+  .tag.bear{color:var(--down);background:var(--down-bg)}
+  .body{font-size:14px;line-height:1.5;margin:10px 0 12px;color:#dfe6ee}
+  .body .ct{color:var(--gold);font-weight:600}
+  .bn{font-family:var(--bn)}
+  .spark{height:40px;margin:4px 0 12px;border-radius:10px;background:var(--up-bg);position:relative;overflow:hidden}
+  .spark svg{position:absolute;inset:0;width:100%;height:100%}
+  .actions{display:flex;gap:18px;color:var(--muted);font-size:13px;align-items:center}
+  .actions div{display:flex;gap:6px;align-items:center}
+  .actions .grow{margin-left:auto;color:var(--faint);font-size:12px}
+
+  /* bottom nav */
+  .nav{position:sticky;bottom:0;background:rgba(11,14,17,.92);backdrop-filter:blur(8px);
+    border-top:1px solid var(--border);display:flex;justify-content:space-around;align-items:center;
+    padding:9px 8px 14px}
+  .nav a{color:var(--faint);font-size:10px;display:flex;flex-direction:column;align-items:center;gap:3px;text-decoration:none}
+  .nav a.on{color:var(--gold)}
+  .nav .ic{font-size:18px}
+  .fab{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#c8901a);
+    color:#1a1304;display:grid;place-items:center;font-size:24px;font-weight:700;margin-top:-22px;
+    box-shadow:0 8px 20px rgba(245,184,46,.45)}
+
+  /* palette / spec */
+  .spec{width:100%;max-width:760px;background:var(--surface);border:1px solid var(--border);
+    border-radius:20px;padding:22px}
+  .spec h2{font-size:15px;margin-bottom:14px;letter-spacing:-.01em}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px}
+  .sw{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .sw .col{height:54px}
+  .sw .meta{padding:8px 10px;font-size:11px}
+  .sw .meta b{display:block;font-size:12px;margin-bottom:2px}
+  .sw .meta code{color:var(--muted);font-size:11px}
+  .specrow{display:flex;gap:10px;font-size:13px;color:var(--muted);padding:7px 0;border-top:1px solid var(--border);line-height:1.5}
+  .specrow b{color:var(--text);flex:0 0 120px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Bulls of <span class="em">Dhaka</span> — UI direction</h1>
+    <p class="sub" style="margin-top:8px">Dark-first, mobile-first, Bangla-first. Trendy where it's GPU-cheap (chips, spring micro-interactions, skeletons); restrained where it isn't (no heavy blur on low-end Android). System fonts shown here — production uses Hind Siliguri (Bangla) + Inter (Latin/numbers).</p>
+  </div>
+
+  <!-- PHONE -->
+  <div class="phone">
+    <div class="notch">9:41</div>
+    <div class="screen">
+      <div class="top">
+        <div class="mark">🐂</div>
+        <div class="brand">Bulls of Dhaka<small>ঢাকার ষাঁড়</small></div>
+        <div class="delay">⏱ 15-min delayed</div>
+      </div>
+
+      <div class="ticker">
+        <div class="chip"><div class="sym">$GP</div><div class="px">৳ 312.40</div><div class="pct up">▲ 2.14%</div></div>
+        <div class="chip"><div class="sym">$BEXIMCO</div><div class="px">৳ 118.90</div><div class="pct down">▼ 1.32%</div></div>
+        <div class="chip"><div class="sym">$SQURPHARMA</div><div class="px">৳ 214.10</div><div class="pct up">▲ 0.86%</div></div>
+        <div class="chip"><div class="sym">$ROBI</div><div class="px">৳ 28.70</div><div class="pct up">▲ 3.40%</div></div>
+      </div>
+
+      <div class="section-label">Trending now</div>
+      <div class="feed">
+        <div class="post">
+          <div class="phead">
+            <div class="av">RA</div>
+            <div class="who"><b>Rafiq Ahmed</b><span>@rafiq · 12m</span></div>
+            <div class="tag bull">▲ Bull</div>
+          </div>
+          <div class="body"><span class="ct">$GP</span> breaking out of its range on heavy volume — telecom looking strong into earnings. Watching ৳320 as the next level.</div>
+          <div class="spark">
+            <svg viewbox="0 0 300 40" preserveAspectRatio="none"><polyline fill="none" stroke="#16C784" stroke-width="2" points="0,30 40,28 80,31 120,22 160,24 200,16 240,12 300,6"/></svg>
+          </div>
+          <div class="actions">
+            <div>💬 24</div><div>🔁 8</div><div>♡ 142</div><div class="grow">৳312.40 ▲2.14%</div>
+          </div>
+        </div>
+
+        <div class="post">
+          <div class="phead">
+            <div class="av">SN</div>
+            <div class="who"><b>Sadia Noor</b><span>@sadia · 34m</span></div>
+            <div class="tag bear">▼ Bear</div>
+          </div>
+          <div class="body bn"><span class="ct">$BEXIMCO</span> আজকে ভলিউম কমে যাচ্ছে, সাপোর্ট ভাঙলে আরও নামতে পারে। সাবধানে থাকুন। <span style="color:var(--faint)">#DSE</span></div>
+          <div class="actions">
+            <div>💬 51</div><div>🔁 19</div><div>♡ 88</div><div class="grow">৳118.90 ▼1.32%</div>
+          </div>
+        </div>
+
+        <div class="post">
+          <div class="phead">
+            <div class="av">TI</div>
+            <div class="who"><b>Tanvir Islam</b><span>@tanvir · 1h</span></div>
+            <div class="tag bull">▲ Bull</div>
+          </div>
+          <div class="body">Crowd sentiment on <span class="ct">$ROBI</span> flipped bullish today — 68% bull across 40 posts. AI summary: "renewed optimism on subscriber growth."</div>
+          <div class="actions">
+            <div>💬 12</div><div>🔁 5</div><div>♡ 60</div><div class="grow">৳28.70 ▲3.40%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav">
+        <a class="on"><span class="ic">🏠</span>Feed</a>
+        <a><span class="ic">📊</span>Markets</a>
+        <a><div class="fab">+</div></a>
+        <a><span class="ic">⭐</span>Watch</a>
+        <a><span class="ic">👤</span>Me</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPEC -->
+  <div class="spec">
+    <h2>Design tokens</h2>
+    <div class="swatches">
+      <div class="sw"><div class="col" style="background:#0B0E11"></div><div class="meta"><b>Background</b><code>#0B0E11</code></div></div>
+      <div class="sw"><div class="col" style="background:#151A21"></div><div class="meta"><b>Surface</b><code>#151A21</code></div></div>
+      <div class="sw"><div class="col" style="background:#1A2029"></div><div class="meta"><b>Card</b><code>#1A2029</code></div></div>
+      <div class="sw"><div class="col" style="background:#F5B82E"></div><div class="meta"><b>Bull Gold (brand)</b><code>#F5B82E</code></div></div>
+      <div class="sw"><div class="col" style="background:#16C784"></div><div class="meta"><b>Up</b><code>#16C784</code></div></div>
+      <div class="sw"><div class="col" style="background:#EA3943"></div><div class="meta"><b>Down</b><code>#EA3943</code></div></div>
+      <div class="sw"><div class="col" style="background:#E8EDF2"></div><div class="meta"><b>Text</b><code>#E8EDF2</code></div></div>
+      <div class="sw"><div class="col" style="background:#8B97A6"></div><div class="meta"><b>Muted</b><code>#8B97A6</code></div></div>
+    </div>
+    <h2>Choices</h2>
+    <div class="specrow"><b>Theme</b><span>Dark-first (OLED battery + premium trader feel); light theme as a toggle, not the default.</span></div>
+    <div class="specrow"><b>Accent</b><span>Bull Gold — wealth/premium, ties to the brand, and avoids colliding with the green/red up/down semantics.</span></div>
+    <div class="specrow"><b>Up / Down</b><span>Green up / red down — <em>per-tenant configurable</em> (other markets may flip).</span></div>
+    <div class="specrow"><b>Type</b><span>Hind Siliguri (Bangla) + Inter (Latin). Tabular figures for all prices so digits align.</span></div>
+    <div class="specrow"><b>Motion</b><span>Spring micro-interactions on like/sentiment; prices flash up/down on tick. Transforms &amp; opacity only.</span></div>
+    <div class="specrow"><b>Loading</b><span>Skeleton placeholders, never spinners. Optimistic UI on post/like.</span></div>
+    <div class="specrow"><b>Skip</b><span>Heavy glassmorphism / backdrop-blur everywhere — it tanks low-end Android GPUs.</span></div>
+  </div>
+</div>
+</body>
+</html>

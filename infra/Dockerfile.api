@@ -1,0 +1,15 @@
+# Production image for the api service. Build from repo root:
+#   docker build -f infra/Dockerfile.api -t bulls-api .
+FROM python:3.12-slim AS base
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+WORKDIR /app
+
+# Install the whole workspace (cached layer when only source changes).
+COPY pyproject.toml uv.lock ./
+COPY packages ./packages
+COPY services ./services
+RUN uv sync --frozen --no-dev
+
+EXPOSE 8000
+CMD ["uv", "run", "granian", "--interface", "asgi", "api.main:app", \
+     "--host", "0.0.0.0", "--port", "8000"]
