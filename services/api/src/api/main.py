@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from api.routers import health, market, posts
+from api.routers import auth, health, market, posts, watchlist
 from bulls.core.config import get_settings
 from bulls.core.db import dispose_engine
 from bulls.core.tenancy import TenantRegistry
@@ -41,5 +41,7 @@ async def resolve_tenant(request: Request, call_next):
 
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(market.router)
 app.include_router(posts.router)
+app.include_router(watchlist.router)
