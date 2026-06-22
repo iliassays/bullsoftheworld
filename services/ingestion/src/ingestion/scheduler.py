@@ -1,21 +1,68 @@
-"""Ingestion scheduler (build step 2).
+"""Ingestion: poll a market's provider, persist to Postgres, publish ticks to Redis.
 
-Polls each registered MarketDataProvider on its cadence, writes snapshots to Postgres, and
-publishes ticks to Redis. Providers WITHOUT subscribe() (the scraper) are polled here; a future
-licensed provider with subscribe() pushes instead. The rest of the system can't tell the
-difference — it just reads quotes / listens on Redis.
+Providers WITHOUT subscribe() (the DSE scraper) are polled here. A future licensed provider with
+subscribe() would push instead — the rest of the system reads quote_snapshots / listens on Redis
+and can't tell the difference.
 
-STATUS: STUB.
+Persistence is upsert (ON CONFLICT) so each poll overwrites the latest snapshot. Every published
+tick goes to channel `sym:<market>:<code>` for the WebSocket gateway to fan out.
 """
 
 from __future__ import annotations
 
-from bulls.market_data import get_provider
+import redis.asyncio as aioredis
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from bulls.core.config import get_settings
+from bulls.core.db import get_sessionmaker
+from bulls.core.models import QuoteSnapshot, Symbol
+from bulls.market_data import Quote, get_provider
+from bulls.market_data import Symbol as ProviderSymbol
 
 
-async def poll_market(market: str) -> None:
+async def _upsert_symbols(session, symbols: list[ProviderSymbol]) -> None:
+    if not symbols:
+        return
+    stmt = pg_insert(Symbol).values([s.model_dump() for s in symbols])
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["market", "code"],
+        set_={"name_en": stmt.excluded.name_en, "is_active": True},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_quotes(session, quotes: list[Quote]) -> None:
+    if not quotes:
+        return
+    rows = [q.model_dump() for q in quotes]
+    stmt = pg_insert(QuoteSnapshot).values(rows)
+    update_cols = {c: getattr(stmt.excluded, c) for c in rows[0] if c not in ("market", "code")}
+    stmt = stmt.on_conflict_do_update(index_elements=["market", "code"], set_=update_cols)
+    await session.execute(stmt)
+
+
+async def _publish_ticks(redis: aioredis.Redis, quotes: list[Quote]) -> None:
+    pipe = redis.pipeline()
+    for q in quotes:
+        pipe.publish(f"sym:{q.market}:{q.code}", q.model_dump_json())
+    await pipe.execute()
+
+
+async def poll_market(market: str) -> dict[str, int]:
+    """One ingestion cycle for a market. Returns counts for logging/monitoring."""
     provider = get_provider(market)
-    # step 2: codes = active symbols; quotes = await provider.get_quotes(codes)
-    #         persist quotes; publish each to Redis channel sym:<market>:<code>
-    _ = provider
-    raise NotImplementedError("step 2: poll provider, persist, publish")
+    symbols = await provider.list_symbols()
+    quotes = await provider.get_quotes([])  # empty = all instruments
+
+    async with get_sessionmaker()() as session:
+        await _upsert_symbols(session, symbols)
+        await _upsert_quotes(session, quotes)
+        await session.commit()
+
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        await _publish_ticks(redis, quotes)
+    finally:
+        await redis.aclose()
+
+    return {"symbols": len(symbols), "quotes": len(quotes)}

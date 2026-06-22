@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     env: str = "local"
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+asyncpg://bulls:bulls@localhost:5432/bulls"
+    database_url: str = "postgresql+asyncpg://bulls:bulls@localhost:5433/bulls"
     redis_url: str = "redis://localhost:6379/0"
 
     anthropic_api_key: str = ""

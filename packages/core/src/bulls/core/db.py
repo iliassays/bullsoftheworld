@@ -26,7 +26,8 @@ _engine = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
-def _get_sessionmaker() -> async_sessionmaker[AsyncSession]:
+def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    """Process-wide async sessionmaker. Use in workers; the api uses get_session()."""
     global _engine, _sessionmaker
     if _sessionmaker is None:
         _engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
@@ -36,7 +37,7 @@ def _get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 async def get_session() -> AsyncIterator[AsyncSession]:
     """FastAPI dependency: yields a session, commits on success, rolls back on error."""
-    async with _get_sessionmaker()() as session:
+    async with get_sessionmaker()() as session:
         try:
             yield session
             await session.commit()
