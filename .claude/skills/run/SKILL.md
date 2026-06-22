@@ -1,14 +1,19 @@
 ---
 name: run
-description: Launch the Bulls of the World stack locally (Postgres + Redis + API) to see changes working.
+description: Launch the Bulls of the World stack locally (Postgres + Redis + API + web) to see changes working.
 ---
 
 # /run — launch the stack
 
+Ports note: this dev machine already runs a Postgres on 5432 and a server on 8000, so this project
+uses **Postgres host port 5433** and **API port 8090** to avoid clashing.
+
 1. Ensure `.env` exists (`cp .env.example .env` if not).
 2. Bring up infra: `docker compose -f infra/docker-compose.yml up -d` (wait for healthchecks).
 3. `uv sync` if dependencies changed.
-4. Run the API: `uv run granian --interface asgi api.main:app --port 8000`
-5. Verify: open http://localhost:8000/docs, hit `/health` and `/whoami` (should return tenant `bullsofdhaka`).
-
-For the web client: `cd apps/web && npm install && npm run dev`.
+4. Apply migrations (first run): `cd services/api && uv run alembic upgrade head`
+5. Seed data: `uv run python -m ingestion.main DSE` (pulls live DSE quotes into Postgres).
+6. Run the API: `uv run granian --interface asgi api.main:app --port 8090`
+   Verify: http://localhost:8090/docs, `/whoami` → tenant `bullsofdhaka`.
+7. Run the web: `cd apps/web && npm install && npm run dev` → http://localhost:5173
+   (web calls the API at http://localhost:8090; override with `VITE_API_BASE`).

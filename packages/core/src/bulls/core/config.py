@@ -25,6 +25,13 @@ class Settings(BaseSettings):
 
     default_tenant: str = "bullsofdhaka"
 
+    # CORS origins for the web client (comma-separated in env).
+    cors_origins: str = "http://localhost:5173"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

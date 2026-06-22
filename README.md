@@ -28,10 +28,17 @@ real-time feed is a one-line registry change. See [CLAUDE.md](CLAUDE.md) for pri
 ```bash
 cp .env.example .env
 uv sync
-docker compose -f infra/docker-compose.yml up -d   # postgres + redis
-uv run granian --interface asgi api.main:app --port 8000
-# api docs at http://localhost:8000/docs
+docker compose -f infra/docker-compose.yml up -d        # postgres (5433) + redis
+cd services/api && uv run alembic upgrade head && cd ../..
+uv run python -m ingestion.main DSE                     # seed live DSE data
+uv run granian --interface asgi api.main:app --port 8090
+# api docs at http://localhost:8090/docs
+
+cd apps/web && npm install && npm run dev               # web at http://localhost:5173
 ```
+
+> Ports: this project uses Postgres **5433** and API **8090** (a local Postgres
+> already owns 5432 and another service owns 8000).
 
 ## Design
 

@@ -1,12 +1,21 @@
+import { Route, Routes } from "react-router-dom";
+import { Shell } from "./components/Shell";
+import { Feed } from "./pages/Feed";
+import { Markets } from "./pages/Markets";
+import { Profile } from "./pages/Profile";
+import { SymbolPage } from "./pages/Symbol";
+import { Watchlist } from "./pages/Watchlist";
+
 export function App() {
   return (
-    <main style={{ padding: 24, maxWidth: 420, margin: "0 auto" }}>
-      <h1 style={{ color: "var(--accent)" }}>
-        Bulls of Dhaka <span lang="bn">ঢাকার ষাঁড়</span> 🐂
-      </h1>
-      <p style={{ color: "var(--muted)" }}>
-        Scaffold ready. Feed, cashtags, and symbol pages land in build step 3.
-      </p>
-    </main>
+    <Routes>
+      <Route element={<Shell />}>
+        <Route index element={<Feed />} />
+        <Route path="markets" element={<Markets />} />
+        <Route path="watchlist" element={<Watchlist />} />
+        <Route path="s/:code" element={<SymbolPage />} />
+        <Route path="me" element={<Profile />} />
+      </Route>
+    </Routes>
   );
 }
