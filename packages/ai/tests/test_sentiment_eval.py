@@ -55,7 +55,8 @@ def test_score_length_mismatch_raises():
 
 
 @pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="set ANTHROPIC_API_KEY for live eval"
+    not os.getenv("RUN_LIVE_EVAL"),
+    reason="set RUN_LIVE_EVAL=1 (with Ollama running or a Claude key) for the live eval",
 )
 @pytest.mark.asyncio
 async def test_live_sentiment_accuracy():

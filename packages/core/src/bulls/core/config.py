@@ -16,10 +16,16 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://bulls:bulls@localhost:5433/bulls"
     redis_url: str = "redis://localhost:6379/0"
 
+    # AI provider: "ollama" (free, local) or "claude" (Anthropic API). Same code path either way.
+    ai_provider: str = "ollama"
+
     anthropic_api_key: str = ""
-    # Default to the most capable model. For high-volume sentiment tagging you may
-    # switch this to a cheaper tier (e.g. claude-haiku-4-5) — that's a cost call you own.
+    # Used when ai_provider="claude". Cheaper tier (claude-haiku-4-5) is a cost call you own.
     anthropic_model: str = "claude-opus-4-8"
+
+    # Used when ai_provider="ollama". qwen2.5 / aya are the better multilingual (Bangla) picks.
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5"
 
     jwt_secret: str = "change-me-in-prod"
     jwt_algorithm: str = "HS256"

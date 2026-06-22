@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import asyncio
 
-from bulls.ai.client import default_model
 from bulls.ai.evals.sentiment import LABELS, run_eval
+from bulls.core.config import get_settings
 
 
 async def _main() -> None:
+    s = get_settings()
+    model = s.ollama_model if s.ai_provider == "ollama" else s.anthropic_model
     report = await run_eval()
-    print(f"\nmodel: {default_model()}")
+    print(f"\nprovider: {s.ai_provider}  model: {model}")
     print(f"accuracy: {report.correct}/{report.total} = {report.accuracy:.1%}")
     print("per-label:", {k: f"{v:.0%}" for k, v in report.per_label_accuracy.items()})
 

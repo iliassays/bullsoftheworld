@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from bulls.ai.client import default_model, get_client
+from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.sentiment import SENTIMENT_SYSTEM_V1
 
 Label = Literal["bull", "bear", "neutral"]
@@ -21,14 +21,6 @@ class SentimentResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-async def classify_sentiment(text: str, *, model: str | None = None) -> SentimentResult:
-    """Classify one post. Raises if ANTHROPIC_API_KEY is unset or the call fails."""
-    client = get_client()
-    resp = await client.messages.parse(
-        model=model or default_model(),
-        max_tokens=256,
-        system=SENTIMENT_SYSTEM_V1,
-        messages=[{"role": "user", "content": text}],
-        output_format=SentimentResult,
-    )
-    return resp.parsed_output
+async def classify_sentiment(text: str) -> SentimentResult:
+    """Classify one post via the configured provider (local Ollama or Claude)."""
+    return await structured_complete(SENTIMENT_SYSTEM_V1, text, SentimentResult)

@@ -68,13 +68,13 @@ def score(examples: list[Example], predicted: list[str]) -> EvalReport:
     )
 
 
-async def run_eval(*, model: str | None = None, concurrency: int = 5) -> EvalReport:
-    """Run the live classifier over the eval set and score it. Needs ANTHROPIC_API_KEY."""
+async def run_eval(*, concurrency: int = 5) -> EvalReport:
+    """Run the live classifier (configured provider) over the eval set and score it."""
     sem = asyncio.Semaphore(concurrency)
 
     async def predict(ex: Example) -> str:
         async with sem:
-            result = await classify_sentiment(ex.text, model=model)
+            result = await classify_sentiment(ex.text)
             return result.label
 
     predictions = await asyncio.gather(*(predict(ex) for ex in SENTIMENT_EVAL_SET))
