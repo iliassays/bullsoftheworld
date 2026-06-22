@@ -1,5 +1,7 @@
 // Minimal typed API client. Token is injected from localStorage.
-const BASE = (import.meta.env.VITE_API_BASE as string) || "http://localhost:8090";
+// Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
+// which the API doesn't bind. Override with VITE_API_BASE if needed.
+const BASE = (import.meta.env.VITE_API_BASE as string) || "http://127.0.0.1:8090";
 const TOKEN_KEY = "bulls.token";
 
 export const tokenStore = {

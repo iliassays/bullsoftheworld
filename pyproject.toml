@@ -20,6 +20,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "httpx>=0.27",
+    "watchfiles>=0.24",  # enables granian --reload (backend hot reload)
 ]
 
 [tool.pytest.ini_options]
