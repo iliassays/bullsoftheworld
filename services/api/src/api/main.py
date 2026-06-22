@@ -13,8 +13,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 
-from api.routers import health, posts
+from api.routers import health, market, posts
 from bulls.core.config import get_settings
+from bulls.core.db import dispose_engine
 from bulls.core.tenancy import TenantRegistry
 
 # tenants/ lives at the repo root: services/api/src/api/main.py -> up 5 -> repo root
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.tenants = TenantRegistry.from_dir(_TENANTS_DIR, default=settings.default_tenant)
     yield
+    await dispose_engine()
 
 
 app = FastAPI(title="Bulls of the World API", lifespan=lifespan)
@@ -39,4 +41,5 @@ async def resolve_tenant(request: Request, call_next):
 
 
 app.include_router(health.router)
+app.include_router(market.router)
 app.include_router(posts.router)
