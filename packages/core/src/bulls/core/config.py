@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"
+    # Default to the most capable model. For high-volume sentiment tagging you may
+    # switch this to a cheaper tier (e.g. claude-haiku-4-5) — that's a cost call you own.
+    anthropic_model: str = "claude-opus-4-8"
 
     jwt_secret: str = "change-me-in-prod"
     jwt_algorithm: str = "HS256"

@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.queue import close_pool
 from api.routers import auth, health, market, posts, watchlist
 from bulls.core.config import get_settings
 from bulls.core.db import dispose_engine
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.tenants = TenantRegistry.from_dir(_TENANTS_DIR, default=settings.default_tenant)
     yield
+    await close_pool()
     await dispose_engine()
 
 

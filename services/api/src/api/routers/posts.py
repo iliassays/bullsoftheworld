@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, CurrentUser, DbSession
+from api.queue import enqueue_sentiment
 from bulls.core.models import Cashtag, Post, Symbol, User
 from bulls.core.schemas.social import AuthorOut, PostCreate, PostOut
 
@@ -46,6 +47,11 @@ async def create_post(
         session.add(Cashtag(post_id=post.id, market=tenant.market, code=code))
 
     await session.refresh(post)  # populate server-side created_at
+    # commit before enqueuing so the worker can read the post; AI runs async, never blocks.
+    if body.sentiment is None:
+        await session.commit()
+        await enqueue_sentiment(post.id)
+
     return PostOut(
         id=post.id,
         author=AuthorOut(handle=user.handle, name=user.name),

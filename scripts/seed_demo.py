@@ -32,10 +32,22 @@ DEMO_USERS = [
 
 # (author_handle, body, sentiment) — newest last; we stagger timestamps.
 DEMO_POSTS = [
-    ("rafiq", "$GP breaking out on heavy volume — telecom looking strong into earnings. Watching the next level up. 🚀", "bull"),
+    (
+        "rafiq",
+        "$GP breaking out on heavy volume — telecom looking strong into earnings. Watching the next level up. 🚀",
+        "bull",
+    ),
     ("sadia", "$BEXIMCO আজ ভলিউম কমে যাচ্ছে, সাপোর্ট ভাঙলে আরও নামতে পারে। সাবধানে থাকুন। #DSE", "bear"),
-    ("tanvir", "Crowd's turning bullish on $ROBI — the subscriber growth story is still intact.", "bull"),
-    ("nabila", "$SQURPHARMA রিটেইল ইনভেস্টরদের পছন্দের শেয়ার, ডিভিডেন্ড রেকর্ড ভালো। লং টার্মে রাখার মতো।", "bull"),
+    (
+        "tanvir",
+        "Crowd's turning bullish on $ROBI — the subscriber growth story is still intact.",
+        "bull",
+    ),
+    (
+        "nabila",
+        "$SQURPHARMA রিটেইল ইনভেস্টরদের পছন্দের শেয়ার, ডিভিডেন্ড রেকর্ড ভালো। লং টার্মে রাখার মতো।",
+        "bull",
+    ),
     ("rafiq", "Took some profit on $WALTONHIL — momentum fading on the daily chart.", "bear"),
     ("tanvir", "Thin tape today. Watching $GP and $BRACBANK for direction before adding.", None),
     ("sadia", "$BATBC এখন আকর্ষণীয় দামে, ফান্ডামেন্টাল মজবুত। ধীরে ধীরে জমাচ্ছি।", "bull"),
