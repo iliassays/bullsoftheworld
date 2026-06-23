@@ -22,8 +22,8 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from bulls.core.config import get_settings
+from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
-from ingestion.market_calendar import is_trading_day, is_trading_hours, to_dhaka
 from ingestion.scheduler import poll_market
 
 log = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ async def poll_quotes(ctx) -> str:
 
 async def pull_eod_bars(ctx) -> str:
     """Pull the day's end-of-day bars after the close - only on trading days."""
-    today = to_dhaka(dt.datetime.now(dt.UTC)).date()
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
     stats = await collect(MARKET, days=DAILY_LOOKBACK_DAYS)

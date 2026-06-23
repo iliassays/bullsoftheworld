@@ -7,6 +7,7 @@ writes a grounded blurb naming them — cached daily (one model call for the who
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Query
@@ -18,16 +19,24 @@ from api.i18n import language_for
 from bulls.ai.tasks.watch import Breadth, WatchItem, todays_watch
 from bulls.core.config import get_settings
 from bulls.core.models import Cashtag, Post, QuoteSnapshot
+from bulls.market_data.calendar import Session, session_phase
 
 router = APIRouter(tags=["trending"])
 
 WATCH_TTL = 21600  # 6h — Today's Watch is a slow-changing daily view
 
 
-class WatchResponse(BaseModel):
+class WatchContent(BaseModel):
+    """The daily-cached part of the brief (one model call per day per market/locale)."""
+
     summary: str
     items: list[WatchItem]
     breadth: Breadth | None = None
+
+
+class WatchResponse(WatchContent):
+    # session is time-of-day (tenant timezone), attached fresh on every request, not cached
+    session: Session
 
 
 async def _breadth(session, market: str) -> Breadth:
@@ -102,18 +111,22 @@ async def _watch_items(session, market: str) -> list[WatchItem]:
 
 @router.get("/todays-watch")
 async def todays_watch_endpoint(tenant: CurrentTenant, session: DbSession) -> WatchResponse:
-    today = dt.datetime.now(dt.UTC).date()
-    cache_key = f"watch:{tenant.market}:{tenant.locale}:{today}"
+    now = dt.datetime.now(dt.UTC)
+    phase = session_phase(now, ZoneInfo(tenant.timezone))
+    cache_key = f"watch:{tenant.market}:{tenant.locale}:{now.date()}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
         if cached:
-            return WatchResponse.model_validate_json(cached)
-        items = await _watch_items(session, tenant.market)
-        breadth = await _breadth(session, tenant.market)
-        summary = await todays_watch(items, breadth=breadth, language=language_for(tenant.locale))
-        resp = WatchResponse(summary=summary, items=items, breadth=breadth)
-        await redis.set(cache_key, resp.model_dump_json(), ex=WATCH_TTL)
-        return resp
+            content = WatchContent.model_validate_json(cached)
+        else:
+            items = await _watch_items(session, tenant.market)
+            breadth = await _breadth(session, tenant.market)
+            summary = await todays_watch(
+                items, breadth=breadth, language=language_for(tenant.locale)
+            )
+            content = WatchContent(summary=summary, items=items, breadth=breadth)
+            await redis.set(cache_key, content.model_dump_json(), ex=WATCH_TTL)
+        return WatchResponse(**content.model_dump(), session=phase)
     finally:
         await redis.aclose()

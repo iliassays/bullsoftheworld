@@ -11,12 +11,12 @@ import datetime as dt
 
 import pytest
 
-from ingestion.market_calendar import (
+from bulls.market_data.calendar import (
     Session,
     is_trading_day,
     is_trading_hours,
     session_phase,
-    to_dhaka,
+    to_market_tz,
 )
 
 
@@ -47,8 +47,8 @@ def test_session_phase():
     assert session_phase(_utc(2026, 6, 26, 5, 0)) is Session.WEEKEND  # Friday
 
 
-def test_to_dhaka_requires_aware():
+def test_to_market_tz_requires_aware():
     with pytest.raises(ValueError, match="aware"):
-        to_dhaka(dt.datetime(2026, 6, 21, 4, 0))  # naive
-    # +6 offset applied
-    assert to_dhaka(_utc(2026, 6, 21, 4, 0)).hour == 10
+        to_market_tz(dt.datetime(2026, 6, 21, 4, 0))  # naive
+    # +6 offset applied (default Dhaka)
+    assert to_market_tz(_utc(2026, 6, 21, 4, 0)).hour == 10

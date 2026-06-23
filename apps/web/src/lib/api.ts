@@ -123,10 +123,12 @@ export interface Breadth {
   unchanged: number;
   total: number;
 }
+export type MarketSession = "pre_open" | "open" | "post_close" | "weekend";
 export interface TodaysWatch {
   summary: string;
   items: WatchItem[];
   breadth: Breadth | null;
+  session: MarketSession;
 }
 export interface Post {
   id: number;

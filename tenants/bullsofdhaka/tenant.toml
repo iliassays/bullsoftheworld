@@ -3,6 +3,7 @@ name = "bullsofdhaka"
 display_name = "Bulls of Dhaka"
 market = "DSE"
 locale = "bn"
+timezone = "Asia/Dhaka"
 domains = ["bullsofdhaka.com", "www.bullsofdhaka.com", "localhost"]
 
 [theme]

@@ -1,26 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type Breadth, type TodaysWatch as TodaysWatchT } from "../lib/api";
+import { api, type Breadth, type MarketSession, type TodaysWatch as TodaysWatchT } from "../lib/api";
 
-// The DSE day, in Dhaka time, picks the heading — Morning / Midday / Evening / Weekend.
-function dhakaSession(): { label: string; icon: string } {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Dhaka",
-      weekday: "short",
-      hour: "2-digit",
-      hour12: false,
-    })
-      .formatToParts(new Date())
-      .map((p) => [p.type, p.value]),
-  );
-  const weekday = parts.weekday;
-  const hour = parseInt(parts.hour, 10);
-  if (weekday === "Fri" || weekday === "Sat") return { label: "Weekend Review", icon: "📅" };
-  if (hour < 10) return { label: "Morning Brief", icon: "🌅" };
-  if (hour < 15) return { label: "Midday Pulse", icon: "☀️" };
-  return { label: "Evening Wrap", icon: "🌙" };
-}
+// Heading comes from the server-computed market session (tenant timezone) — not hardcoded here.
+const SESSION: Record<MarketSession, { label: string; icon: string }> = {
+  pre_open: { label: "Morning Brief", icon: "🌅" },
+  open: { label: "Midday Pulse", icon: "☀️" },
+  post_close: { label: "Evening Wrap", icon: "🌙" },
+  weekend: { label: "Weekend Review", icon: "📅" },
+};
 
 function BreadthBar({ b }: { b: Breadth }) {
   const traded = b.advancers + b.decliners + b.unchanged || 1;
@@ -45,39 +33,61 @@ function BreadthBar({ b }: { b: Breadth }) {
 // AI daily brief — session-aware heading + market breadth + clickable movers/chatter chips.
 export function TodaysWatch() {
   const [data, setData] = useState<TodaysWatchT | null>(null);
-  const session = dhakaSession();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.todaysWatch().then(setData).catch(() => {});
+    let alive = true;
+    setLoading(true);
+    api
+      .todaysWatch()
+      .then((d) => alive && setData(d))
+      .catch(() => {})
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  if (!data || (!data.summary && data.items.length === 0)) return null;
+  // Loading skeleton so the panel is always visible while the (slow) first AI call runs.
+  if (loading && !data) {
+    return (
+      <div className="bg-surface border border-border rounded-2xl p-4">
+        <div className="text-accent font-semibold text-sm">📋 Today's Watch</div>
+        <p className="text-muted text-sm mt-2">Reading the tape and the crowd…</p>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+  const heading = SESSION[data.session] ?? { label: "Today's Watch", icon: "📋" };
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="text-accent font-semibold text-sm">
-        {session.icon} {session.label}
+        {heading.icon} {heading.label}
       </div>
       {data.breadth && data.breadth.total > 0 && <BreadthBar b={data.breadth} />}
       {data.summary && (
         <p className="text-[15px] leading-relaxed mt-3 text-text/90">{data.summary}</p>
       )}
-      <div className="flex gap-1.5 flex-wrap mt-3">
-        {data.items.slice(0, 8).map((it) => (
-          <Link
-            key={it.code}
-            to={`/s/${it.code}`}
-            className="text-xs bg-card border border-border rounded-full px-2.5 py-1"
-          >
-            ${it.code}{" "}
-            <span className={`tnum ${it.change_pct >= 0 ? "text-up" : "text-down"}`}>
-              {it.change_pct >= 0 ? "+" : ""}
-              {it.change_pct.toFixed(1)}%
-            </span>
-            {it.posts > 0 && <span className="text-muted"> · {it.posts}💬</span>}
-          </Link>
-        ))}
-      </div>
+      {data.items.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap mt-3">
+          {data.items.slice(0, 8).map((it) => (
+            <Link
+              key={it.code}
+              to={`/s/${it.code}`}
+              className="text-xs bg-card border border-border rounded-full px-2.5 py-1"
+            >
+              ${it.code}{" "}
+              <span className={`tnum ${it.change_pct >= 0 ? "text-up" : "text-down"}`}>
+                {it.change_pct >= 0 ? "+" : ""}
+                {it.change_pct.toFixed(1)}%
+              </span>
+              {it.posts > 0 && <span className="text-muted"> · {it.posts}💬</span>}
+            </Link>
+          ))}
+        </div>
+      )}
       <p className="text-[10px] text-muted mt-2">
         AI-generated from today's moves + chatter. Not financial advice.
       </p>

@@ -26,6 +26,7 @@ class Tenant(BaseModel):
     display_name: str  # e.g. "Bulls of Dhaka"
     market: str  # MarketId, e.g. "DSE"
     locale: str  # e.g. "bn"
+    timezone: str = "Asia/Dhaka"  # IANA tz for the market's clock (sessions, daily rhythm)
     domains: list[str] = []
     theme: Theme = Theme()
 
