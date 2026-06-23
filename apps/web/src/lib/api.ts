@@ -64,6 +64,14 @@ export interface SymbolDetail {
   symbol: SymbolOut;
   quote: Quote | null;
 }
+export interface Bar {
+  date: string; // YYYY-MM-DD
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 export interface Post {
   id: number;
   author: { handle: string; name: string };
@@ -97,6 +105,9 @@ export const api = {
   quotes: (codes?: string[]) =>
     request<Quote[]>(`/quotes${codes?.length ? `?codes=${codes.join(",")}` : ""}`),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
+
+  bars: (code: string, limit = 180) =>
+    request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
 
   // posts
   feed: (code?: string) => request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),

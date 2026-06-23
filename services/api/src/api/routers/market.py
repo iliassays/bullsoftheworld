@@ -9,8 +9,8 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession
-from bulls.core.models import QuoteSnapshot, Symbol
-from bulls.core.schemas.market import QuoteOut, SymbolDetail, SymbolOut
+from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
+from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 
 router = APIRouter(tags=["market"])
 
@@ -59,3 +59,22 @@ async def get_symbol(code: str, tenant: CurrentTenant, session: DbSession) -> Sy
         symbol=SymbolOut.model_validate(symbol),
         quote=QuoteOut.model_validate(quote) if quote else None,
     )
+
+
+@router.get("/symbols/{code}/bars")
+async def get_bars(
+    code: str,
+    tenant: CurrentTenant,
+    session: DbSession,
+    limit: int = Query(180, ge=1, le=2000, description="Most recent N daily bars"),
+) -> list[BarOut]:
+    """Daily OHLCV history, oldest-first (ready for a candlestick chart)."""
+    stmt = (
+        select(DailyBar)
+        .where(DailyBar.market == tenant.market, DailyBar.code == code.upper())
+        .order_by(DailyBar.date.desc())
+        .limit(limit)
+    )
+    rows = list(await session.scalars(stmt))
+    rows.reverse()  # charts want ascending time
+    return [BarOut.model_validate(r) for r in rows]

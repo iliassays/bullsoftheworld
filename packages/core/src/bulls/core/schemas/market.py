@@ -41,3 +41,14 @@ class QuoteOut(BaseModel):
 class SymbolDetail(BaseModel):
     symbol: SymbolOut
     quote: QuoteOut | None = None
+
+
+class BarOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    date: dt.date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int

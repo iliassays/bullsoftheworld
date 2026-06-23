@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type Post, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
 import { PostCard } from "../components/PostCard";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
@@ -66,6 +67,8 @@ export function SymbolPage() {
         )}
         <div className="text-[10px] text-muted mt-2">⏱ delayed · as of {new Date(q?.as_of ?? "").toLocaleString()}</div>
       </div>
+
+      <CandleChart code={sym} />
 
       {user && <Composer initial={`$${sym} `} onPosted={(p) => setPosts((c) => [p, ...(c ?? [])])} />}
 
