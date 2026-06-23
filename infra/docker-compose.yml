@@ -3,6 +3,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped  # survive Mac reboots so the scheduled daily pull has a DB
     environment:
       POSTGRES_USER: bulls
       POSTGRES_PASSWORD: bulls
@@ -20,6 +21,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
