@@ -63,7 +63,9 @@ export function Technicals({ code }: { code: string }) {
   if (!a) return null;
 
   const trend = trendTag(a);
-  const rsi = a.rsi_14 != null ? rsiTag(a.rsi_14) : null;
+  // Label from the rounded value shown, so "70" never reads as "mid-range".
+  const rsiValue = a.rsi_14 != null ? Math.round(a.rsi_14) : null;
+  const rsi = rsiValue != null ? rsiTag(rsiValue) : null;
 
   // Where today's close sits in the 52-week range (0 = low, 100 = high).
   const lo = a.week52_low;
@@ -89,7 +91,7 @@ export function Technicals({ code }: { code: string }) {
       <div className="grid grid-cols-2 gap-2 mt-3">
         {rsi && (
           <Tile label="Momentum (RSI 14)">
-            {a.rsi_14!.toFixed(0)} <span className={`text-xs font-medium ${rsi.cls}`}>· {rsi.label}</span>
+            {rsiValue} <span className={`text-xs font-medium ${rsi.cls}`}>· {rsi.label}</span>
           </Tile>
         )}
         {a.relative_volume != null && (

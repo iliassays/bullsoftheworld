@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.digest import DIGEST_SYSTEM_V1
+from bulls.ai.prompts.language import language_directive
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def _render(facts: SymbolFacts) -> str:
     lines = [
         f"Stock: ${facts.code} ({facts.name})",
         f"Last price: {facts.last_price} ({facts.change_pct_1d:+.2f}% today)"
-        + ("  [15-min delayed]" if facts.is_delayed else ""),
+        + ("  [delayed data]" if facts.is_delayed else ""),
     ]
     if facts.change_pct_5d is not None:
         lines.append(f"5-day change: {facts.change_pct_5d:+.2f}%")
@@ -119,7 +120,7 @@ async def summarize_symbol(facts: SymbolFacts, *, language: str = "English") -> 
     The output passes the no-advice compliance gate; anything that trips it is replaced with a
     safe deterministic summary rather than shown to a user.
     """
-    system = f"{DIGEST_SYSTEM_V1}\n\nWrite the digest in {language}."
+    system = f"{DIGEST_SYSTEM_V1}\n\n{language_directive(language)}"
     result = await structured_complete(system, _render(facts), DigestOut)
     summary = result.summary.strip()
 

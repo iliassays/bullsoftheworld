@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
+from bulls.ai.prompts.language import language_directive
 from bulls.ai.prompts.watch import WATCH_SYSTEM_V1
 
 log = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ async def todays_watch(
     """
     if not items:
         return ""
-    system = f"{WATCH_SYSTEM_V1}\n\nWrite the note in {language}."
+    system = f"{WATCH_SYSTEM_V1}\n\n{language_directive(language)}"
     result = await structured_complete(system, _render(items, breadth), WatchOut)
     summary = result.summary.strip()
 

@@ -21,7 +21,7 @@ export function Shell() {
           </div>
         </div>
         <div className="ml-auto text-[10px] text-muted border border-border px-2 py-1 rounded-full">
-          ⏱ 15-min delayed
+          ⏱ Delayed
         </div>
       </header>
 

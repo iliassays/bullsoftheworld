@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.explainer import EXPLAINER_SYSTEM_V1
+from bulls.ai.prompts.language import language_directive
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def _safe_fallback(f: TechnicalsFacts) -> str:
 
 async def explain_technicals(facts: TechnicalsFacts, *, language: str = "English") -> str:
     """Return a plain-language, advice-free explanation of the technicals in the given language."""
-    system = f"{EXPLAINER_SYSTEM_V1}\n\nWrite the explanation in {language}."
+    system = f"{EXPLAINER_SYSTEM_V1}\n\n{language_directive(language)}"
     result = await structured_complete(system, _render(facts), ExplainerOut)
     explanation = result.explanation.strip()
 
