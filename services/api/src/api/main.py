@@ -20,6 +20,7 @@ from api.routers import (
     digest,
     explainer,
     health,
+    levels,
     market,
     posts,
     screener,
@@ -66,6 +67,7 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(digest.router)
 app.include_router(explainer.router)
+app.include_router(levels.router)
 app.include_router(market.router)
 app.include_router(posts.router)
 app.include_router(screener.router)

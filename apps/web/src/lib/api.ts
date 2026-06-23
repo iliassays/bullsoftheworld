@@ -184,6 +184,8 @@ export const api = {
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
   analytics: (code: string) => request<Analytics>(`/symbols/${code}/analytics`),
+  levels: (code: string) =>
+    request<{ code: string; as_of: string; lines: string[] }>(`/symbols/${code}/levels`),
   explainer: (code: string) =>
     request<{ code: string; explanation: string; as_of_date: string }>(
       `/symbols/${code}/explainer`,

@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
 import { DigestPanel } from "../components/DigestPanel";
+import { KeyLevels } from "../components/KeyLevels";
 import { PostCard } from "../components/PostCard";
 import { Technicals } from "../components/Technicals";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
@@ -75,6 +76,8 @@ export function SymbolPage() {
       <CandleChart code={sym} />
 
       <Technicals code={sym} />
+
+      <KeyLevels code={sym} />
 
       {user && <Composer initial={`$${sym} `} onPosted={(p) => setPosts((c) => [p, ...(c ?? [])])} />}
 
