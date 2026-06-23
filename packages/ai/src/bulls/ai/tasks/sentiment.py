@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from bulls.ai.llm import structured_complete
-from bulls.ai.prompts.sentiment import SENTIMENT_SYSTEM_V1
+from bulls.ai.prompts.sentiment import SENTIMENT_SYSTEM_V2
 
 Label = Literal["bull", "bear", "neutral"]
 
@@ -23,4 +23,4 @@ class SentimentResult(BaseModel):
 
 async def classify_sentiment(text: str) -> SentimentResult:
     """Classify one post via the configured provider (local Ollama or Claude)."""
-    return await structured_complete(SENTIMENT_SYSTEM_V1, text, SentimentResult)
+    return await structured_complete(SENTIMENT_SYSTEM_V2, text, SentimentResult)
