@@ -76,7 +76,8 @@ def _render(facts: SymbolFacts) -> str:
     return "\n".join(lines)
 
 
-async def summarize_symbol(facts: SymbolFacts) -> str:
-    """Return a grounded one/two-sentence digest string."""
-    result = await structured_complete(DIGEST_SYSTEM_V1, _render(facts), DigestOut)
+async def summarize_symbol(facts: SymbolFacts, *, language: str = "English") -> str:
+    """Return a grounded one/two-sentence digest string in the requested language."""
+    system = f"{DIGEST_SYSTEM_V1}\n\nWrite the digest in {language}."
+    result = await structured_complete(system, _render(facts), DigestOut)
     return result.summary.strip()

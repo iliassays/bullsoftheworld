@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession
+from api.i18n import language_for
 from bulls.ai.tasks.digest import SymbolFacts, crowd_mood, summarize_symbol
 from bulls.core.config import get_settings
 from bulls.core.models import Cashtag, DailyBar, Post, QuoteSnapshot, Symbol
@@ -93,7 +94,7 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
 @router.get("/symbols/{code}/digest")
 async def get_digest(code: str, tenant: CurrentTenant, session: DbSession) -> DigestResponse:
     code = code.upper()
-    cache_key = f"digest:{tenant.market}:{code}"
+    cache_key = f"digest:{tenant.market}:{code}:{tenant.locale}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
@@ -104,7 +105,7 @@ async def get_digest(code: str, tenant: CurrentTenant, session: DbSession) -> Di
         if facts is None:
             raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
-        summary = await summarize_symbol(facts)
+        summary = await summarize_symbol(facts, language=language_for(tenant.locale))
         resp = DigestResponse(
             code=code,
             summary=summary,

@@ -79,6 +79,17 @@ export interface Digest {
   posts: number;
   change_pct_1d: number;
 }
+export interface WatchItem {
+  code: string;
+  change_pct: number;
+  posts: number;
+  bull: number;
+  bear: number;
+}
+export interface TodaysWatch {
+  summary: string;
+  items: WatchItem[];
+}
 export interface Post {
   id: number;
   author: { handle: string; name: string };
@@ -116,6 +127,9 @@ export const api = {
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
+  trending: (days = 2, limit = 10) =>
+    request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
+  todaysWatch: () => request<TodaysWatch>("/todays-watch"),
 
   // posts
   feed: (code?: string) => request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),
