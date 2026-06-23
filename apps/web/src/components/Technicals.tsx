@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { api, type Analytics } from "../lib/api";
+import { api, ApiError, type Analytics } from "../lib/api";
 import { taka } from "./ui";
 
 // RSI is described, never acted on: 70+ "elevated", 30- "depressed", else "mid-range".
@@ -31,15 +31,33 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
 export function Technicals({ code }: { code: string }) {
   const [a, setA] = useState<Analytics | null>(null);
   const [missing, setMissing] = useState(false);
+  const [explanation, setExplanation] = useState("");
+  const [explaining, setExplaining] = useState(false);
+  const [explainErr, setExplainErr] = useState("");
 
   useEffect(() => {
     setA(null);
     setMissing(false);
+    setExplanation("");
+    setExplainErr("");
     api
       .analytics(code)
       .then(setA)
       .catch(() => setMissing(true));
   }, [code]);
+
+  const explain = async () => {
+    setExplaining(true);
+    setExplainErr("");
+    try {
+      const r = await api.explainer(code);
+      setExplanation(r.explanation);
+    } catch (e) {
+      setExplainErr(e instanceof ApiError ? e.detail : "Couldn't generate an explanation");
+    } finally {
+      setExplaining(false);
+    }
+  };
 
   if (missing) return null; // no history yet — stay quiet rather than show an empty shell
   if (!a) return null;
@@ -111,6 +129,22 @@ export function Technicals({ code }: { code: string }) {
           </div>
         </div>
       )}
+
+      <div className="mt-4 border-t border-border pt-3">
+        {!explanation && !explaining && (
+          <button
+            onClick={explain}
+            className="text-sm text-accent font-semibold"
+          >
+            ✨ Explain these levels in plain language
+          </button>
+        )}
+        {explaining && <p className="text-muted text-sm">Explaining the technicals…</p>}
+        {explanation && (
+          <p className="text-[15px] leading-relaxed text-text/90">{explanation}</p>
+        )}
+        {explainErr && <p className="text-down text-xs mt-1">{explainErr}</p>}
+      </div>
 
       <p className="text-[10px] text-muted mt-3">
         Computed from end-of-day prices · descriptive, not advice.

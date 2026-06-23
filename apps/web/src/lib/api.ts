@@ -158,6 +158,10 @@ export const api = {
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
   analytics: (code: string) => request<Analytics>(`/symbols/${code}/analytics`),
+  explainer: (code: string) =>
+    request<{ code: string; explanation: string; as_of_date: string }>(
+      `/symbols/${code}/explainer`,
+    ),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),

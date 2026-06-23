@@ -7,12 +7,16 @@ deterministically here, not by the model.
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from pydantic import BaseModel
 
+from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.digest import DIGEST_SYSTEM_V1
+
+log = logging.getLogger(__name__)
 
 Mood = Literal["bullish", "bearish", "mixed", "quiet"]
 
@@ -100,8 +104,27 @@ def _render(facts: SymbolFacts) -> str:
     return "\n".join(lines)
 
 
+def _safe_fallback(facts: SymbolFacts) -> str:
+    """Deterministic, advice-free one-liner — used if the model trips the compliance gate."""
+    total = facts.bull_posts + facts.bear_posts + facts.neutral_posts
+    parts = [f"${facts.code} — {facts.last_price} ({facts.change_pct_1d:+.2f}%)"]
+    if total:
+        parts.append(f"{total} posts ({facts.bull_posts}▲/{facts.bear_posts}▼)")
+    return " · ".join(parts)
+
+
 async def summarize_symbol(facts: SymbolFacts, *, language: str = "English") -> str:
-    """Return a grounded one/two-sentence digest string in the requested language."""
+    """Return a grounded one/two-sentence digest string in the requested language.
+
+    The output passes the no-advice compliance gate; anything that trips it is replaced with a
+    safe deterministic summary rather than shown to a user.
+    """
     system = f"{DIGEST_SYSTEM_V1}\n\nWrite the digest in {language}."
     result = await structured_complete(system, _render(facts), DigestOut)
-    return result.summary.strip()
+    summary = result.summary.strip()
+
+    finding = contains_advice(summary)
+    if finding.is_advice:
+        log.warning("digest tripped no-advice gate for $%s: %s", facts.code, finding.matches)
+        return _safe_fallback(facts)
+    return summary

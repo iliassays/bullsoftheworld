@@ -62,3 +62,55 @@ SENTIMENT_EVAL_SET: list[Example] = [
     Example(text="$GP strong আছে, আমি bullish — target 320.", label="bull"),
     Example(text="honestly $BEXIMCO ছেড়ে দেওয়াই ভালো, no hope.", label="bear"),
 ]
+
+
+class AdviceExample(BaseModel):
+    text: str
+    is_advice: bool
+    note: str = ""
+
+
+# Ground truth for the no-advice compliance gate. `is_advice=True` must be caught; `False` is
+# descriptive prose the gate must let through. Grow this whenever the gate mis-fires in the wild.
+ADVICE_EVAL_SET: list[AdviceExample] = [
+    # --- advice (English) — must be flagged ---
+    AdviceExample(text="Buy $GP now, it's a great entry.", is_advice=True),
+    AdviceExample(text="I'd sell here and book profit.", is_advice=True),
+    AdviceExample(text="Time to accumulate, target 320.", is_advice=True),
+    AdviceExample(text="Set a stop-loss at 240 and go long.", is_advice=True),
+    AdviceExample(text="You should hold this for the long term.", is_advice=True),
+    # --- advice (Bangla) — must be flagged ---
+    AdviceExample(text="এখন $GP কিনুন, ভালো সুযোগ।", is_advice=True),
+    AdviceExample(text="টার্গেট ৩২০, লাভ তুলে নিন।", is_advice=True),
+    AdviceExample(text="$BEXIMCO বিক্রি করে দিন, আর আশা নেই।", is_advice=True),
+    # --- descriptive (English) — must pass ---
+    AdviceExample(
+        text="$GP rose 2% today on heavy volume; RSI is elevated at 72.",
+        is_advice=False,
+        note="pure description",
+    ),
+    AdviceExample(
+        text="Support sits near 250 and resistance near 257.",
+        is_advice=False,
+        note="levels, not a call",
+    ),
+    AdviceExample(
+        text="Buyers stepped in after the stock sold off this morning.",
+        is_advice=False,
+        note="'buyers'/'sold off' are descriptive, not imperative",
+    ),
+    AdviceExample(
+        text="The stock is trading below its 200-day average.",
+        is_advice=False,
+    ),
+    # --- descriptive (Bangla) — must pass ---
+    AdviceExample(
+        text="$GP আজ ১% কমেছে, ভলিউম গড়ের চেয়ে বেশি।",
+        is_advice=False,
+        note="price description in Bangla",
+    ),
+    AdviceExample(
+        text="শেয়ারটি তার ২০০ দিনের গড়ের নিচে রয়েছে।",
+        is_advice=False,
+    ),
+]
