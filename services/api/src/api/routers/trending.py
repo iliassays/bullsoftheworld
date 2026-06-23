@@ -15,7 +15,7 @@ from sqlalchemy import case, func, select
 
 from api.deps import CurrentTenant, DbSession
 from api.i18n import language_for
-from bulls.ai.tasks.watch import WatchItem, todays_watch
+from bulls.ai.tasks.watch import Breadth, WatchItem, todays_watch
 from bulls.core.config import get_settings
 from bulls.core.models import Cashtag, Post, QuoteSnapshot
 
@@ -27,6 +27,20 @@ WATCH_TTL = 21600  # 6h — Today's Watch is a slow-changing daily view
 class WatchResponse(BaseModel):
     summary: str
     items: list[WatchItem]
+    breadth: Breadth | None = None
+
+
+async def _breadth(session, market: str) -> Breadth:
+    """Market-wide advancers/decliners from the latest quote snapshots."""
+    adv = func.count(case((QuoteSnapshot.change_pct > 0, 1)))
+    dec = func.count(case((QuoteSnapshot.change_pct < 0, 1)))
+    unch = func.count(case((QuoteSnapshot.change_pct == 0, 1)))
+    row = (
+        await session.execute(
+            select(adv, dec, unch, func.count()).where(QuoteSnapshot.market == market)
+        )
+    ).one()
+    return Breadth(advancers=row[0], decliners=row[1], unchanged=row[2], total=row[3])
 
 
 async def _trending(session, market: str, *, days: int, limit: int) -> list[WatchItem]:
@@ -88,15 +102,17 @@ async def _watch_items(session, market: str) -> list[WatchItem]:
 
 @router.get("/todays-watch")
 async def todays_watch_endpoint(tenant: CurrentTenant, session: DbSession) -> WatchResponse:
-    cache_key = f"watch:{tenant.market}:{tenant.locale}"
+    today = dt.datetime.now(dt.UTC).date()
+    cache_key = f"watch:{tenant.market}:{tenant.locale}:{today}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
         if cached:
             return WatchResponse.model_validate_json(cached)
         items = await _watch_items(session, tenant.market)
-        summary = await todays_watch(items, language=language_for(tenant.locale))
-        resp = WatchResponse(summary=summary, items=items)
+        breadth = await _breadth(session, tenant.market)
+        summary = await todays_watch(items, breadth=breadth, language=language_for(tenant.locale))
+        resp = WatchResponse(summary=summary, items=items, breadth=breadth)
         await redis.set(cache_key, resp.model_dump_json(), ex=WATCH_TTL)
         return resp
     finally:

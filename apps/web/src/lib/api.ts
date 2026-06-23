@@ -117,9 +117,16 @@ export interface WatchItem {
   bull: number;
   bear: number;
 }
+export interface Breadth {
+  advancers: number;
+  decliners: number;
+  unchanged: number;
+  total: number;
+}
 export interface TodaysWatch {
   summary: string;
   items: WatchItem[];
+  breadth: Breadth | null;
 }
 export interface Post {
   id: number;
