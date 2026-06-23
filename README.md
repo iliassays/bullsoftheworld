@@ -40,6 +40,17 @@ cd apps/web && npm install && npm run dev               # web at http://localhos
 > Ports: this project uses Postgres **5433** and API **8090** (a local Postgres
 > already owns 5432 and another service owns 8000).
 
+### Keeping data fresh (scheduler)
+
+A long-lived arq worker refreshes DSE data on the market's clock — intraday quote polls during the
+session and an end-of-day bar pull after the close — so you don't run ingestion by hand:
+
+```bash
+uv run arq ingestion.worker.WorkerSettings   # deploy in UTC; schedules are UTC (Dhaka = UTC+6, no DST)
+```
+
+It replaces the old laptop launchd job. Every job re-checks the DSE trading calendar before acting.
+
 ## Design
 
 UI direction (dark-first, Bull Gold, Bangla typography): [design/bulls-of-dhaka-ui.html](design/bulls-of-dhaka-ui.html)
