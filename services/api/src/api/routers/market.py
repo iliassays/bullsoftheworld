@@ -9,10 +9,14 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession
+from bulls.analytics import AnalyticsResult, compute
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 
 router = APIRouter(tags=["market"])
+
+# Enough history for the longest indicator (200-day SMA) plus headroom.
+_ANALYTICS_LOOKBACK = 260
 
 
 @router.get("/quotes")
@@ -78,3 +82,27 @@ async def get_bars(
     rows = list(await session.scalars(stmt))
     rows.reverse()  # charts want ascending time
     return [BarOut.model_validate(r) for r in rows]
+
+
+@router.get("/symbols/{code}/analytics")
+async def get_analytics(code: str, tenant: CurrentTenant, session: DbSession) -> AnalyticsResult:
+    """Deterministic technical-analysis snapshot for a symbol (descriptive facts only).
+
+    Pure computation over end-of-day bars — trend, momentum, levels, volume. No recommendation.
+    """
+    code = code.upper()
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None:
+        raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
+
+    stmt = (
+        select(DailyBar)
+        .where(DailyBar.market == tenant.market, DailyBar.code == code)
+        .order_by(DailyBar.date.desc())
+        .limit(_ANALYTICS_LOOKBACK)
+    )
+    rows = list(await session.scalars(stmt))
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
+    rows.reverse()  # engine expects oldest-first
+    return compute(rows)

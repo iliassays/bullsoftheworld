@@ -16,6 +16,7 @@ from sqlalchemy import select
 from api.deps import CurrentTenant, DbSession
 from api.i18n import language_for
 from bulls.ai.tasks.digest import SymbolFacts, crowd_mood, summarize_symbol
+from bulls.analytics import compute
 from bulls.core.config import get_settings
 from bulls.core.models import Cashtag, DailyBar, Post, QuoteSnapshot, Symbol
 
@@ -42,10 +43,13 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
             select(DailyBar)
             .where(DailyBar.market == market, DailyBar.code == code)
             .order_by(DailyBar.date.desc())
-            .limit(6)
+            .limit(260)  # enough for the 200-day SMA the analytics engine needs
         )
     )
     quote = await session.get(QuoteSnapshot, (market, code))
+
+    # Deterministic technicals from the analytics engine (descriptive facts the LLM can weave in).
+    ta = compute(list(reversed(bars))) if bars else None
 
     last_price = quote.ltp if quote else (bars[0].close if bars else 0.0)
     change_1d = quote.change_pct if quote else 0.0
@@ -88,6 +92,12 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
         neutral_posts=neutral,
         sample_posts=[p.body[:160] for p in posts[:3]],
         is_delayed=is_delayed,
+        rsi_14=ta.rsi_14 if ta else None,
+        above_sma_50=ta.above_sma_50 if ta else None,
+        above_sma_200=ta.above_sma_200 if ta else None,
+        nearest_support=ta.nearest_support if ta else None,
+        nearest_resistance=ta.nearest_resistance if ta else None,
+        pct_from_52w_high=ta.pct_from_52w_high if ta else None,
     )
 
 

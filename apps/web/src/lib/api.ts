@@ -79,6 +79,37 @@ export interface Digest {
   posts: number;
   change_pct_1d: number;
 }
+export interface Level {
+  value: number;
+  date: string;
+}
+// Deterministic technical-analysis snapshot — descriptive facts only, never a recommendation.
+export interface Analytics {
+  market: string;
+  code: string;
+  as_of_date: string;
+  bars_used: number;
+  last_close: number;
+  sma_20: number | null;
+  sma_50: number | null;
+  sma_200: number | null;
+  ema_20: number | null;
+  above_sma_50: boolean | null;
+  above_sma_200: boolean | null;
+  rsi_14: number | null;
+  atr_14: number | null;
+  recent_swing_high: Level | null;
+  recent_swing_low: Level | null;
+  nearest_support: number | null;
+  nearest_resistance: number | null;
+  week52_high: number | null;
+  week52_low: number | null;
+  pct_from_52w_high: number | null;
+  pct_from_52w_low: number | null;
+  last_volume: number;
+  avg_volume_20: number | null;
+  relative_volume: number | null;
+}
 export interface WatchItem {
   code: string;
   change_pct: number;
@@ -126,6 +157,7 @@ export const api = {
 
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
+  analytics: (code: string) => request<Analytics>(`/symbols/${code}/analytics`),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),

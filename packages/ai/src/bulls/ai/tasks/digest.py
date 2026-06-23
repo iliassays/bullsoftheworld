@@ -31,6 +31,14 @@ class SymbolFacts(BaseModel):
     sample_posts: list[str] = []
     is_delayed: bool = True
 
+    # Computed technicals (from bulls.analytics) — descriptive facts, optional.
+    rsi_14: float | None = None
+    above_sma_50: bool | None = None
+    above_sma_200: bool | None = None
+    nearest_support: float | None = None
+    nearest_resistance: float | None = None
+    pct_from_52w_high: float | None = None
+
 
 class DigestOut(BaseModel):
     summary: str
@@ -73,6 +81,22 @@ def _render(facts: SymbolFacts) -> str:
             lines += [f'  - "{p}"' for p in facts.sample_posts]
     else:
         lines.append("Crowd (last 7 days): no posts.")
+
+    tech: list[str] = []
+    if facts.rsi_14 is not None:
+        tech.append(f"RSI(14) {facts.rsi_14:.0f}")
+    if facts.above_sma_50 is not None:
+        tech.append("above 50-day avg" if facts.above_sma_50 else "below 50-day avg")
+    if facts.above_sma_200 is not None:
+        tech.append("above 200-day avg" if facts.above_sma_200 else "below 200-day avg")
+    if facts.nearest_support is not None:
+        tech.append(f"nearest support ~{facts.nearest_support}")
+    if facts.nearest_resistance is not None:
+        tech.append(f"nearest resistance ~{facts.nearest_resistance}")
+    if facts.pct_from_52w_high is not None and facts.pct_from_52w_high < -0.5:
+        tech.append(f"{abs(facts.pct_from_52w_high):.0f}% below its 52-week high")
+    if tech:
+        lines.append("Technicals (end-of-day): " + "; ".join(tech))
     return "\n".join(lines)
 
 

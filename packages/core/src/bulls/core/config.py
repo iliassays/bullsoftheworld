@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The single repo-root .env, resolved absolutely so it loads no matter which service's directory
+# the process is launched from (e.g. granian runs from services/api). Real environment variables
+# still take precedence over the file.
+_ENV_FILE = Path(__file__).resolve().parents[5] / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
     env: str = "local"
     log_level: str = "INFO"

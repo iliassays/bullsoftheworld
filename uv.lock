@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 members = [
     "bulls-ai",
     "bulls-ai-worker",
+    "bulls-analytics",
     "bulls-api",
     "bulls-core",
     "bulls-ingestion",
@@ -235,12 +236,24 @@ requires-dist = [
 ]
 
 [[package]]
+name = "bulls-analytics"
+version = "0.0.0"
+source = { editable = "packages/analytics" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
+
+[[package]]
 name = "bulls-api"
 version = "0.0.0"
 source = { editable = "services/api" }
 dependencies = [
     { name = "arq" },
     { name = "bulls-ai" },
+    { name = "bulls-analytics" },
     { name = "bulls-core" },
     { name = "bulls-market-data" },
     { name = "fastapi" },
@@ -252,6 +265,7 @@ dependencies = [
 requires-dist = [
     { name = "arq", specifier = ">=0.26" },
     { name = "bulls-ai", editable = "packages/ai" },
+    { name = "bulls-analytics", editable = "packages/analytics" },
     { name = "bulls-core", editable = "packages/core" },
     { name = "bulls-market-data", editable = "packages/market_data" },
     { name = "fastapi", specifier = ">=0.115" },
@@ -331,6 +345,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "bulls-ai" },
     { name = "bulls-ai-worker" },
+    { name = "bulls-analytics" },
     { name = "bulls-api" },
     { name = "bulls-core" },
     { name = "bulls-ingestion" },
@@ -350,6 +365,7 @@ dev = [
 requires-dist = [
     { name = "bulls-ai", editable = "packages/ai" },
     { name = "bulls-ai-worker", editable = "services/ai_worker" },
+    { name = "bulls-analytics", editable = "packages/analytics" },
     { name = "bulls-api", editable = "services/api" },
     { name = "bulls-core", editable = "packages/core" },
     { name = "bulls-ingestion", editable = "services/ingestion" },

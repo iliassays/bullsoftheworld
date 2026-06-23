@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     "bulls-core",
     "bulls-market-data",
+    "bulls-analytics",
     "bulls-ai",
     "bulls-api",
     "bulls-ingestion",
@@ -35,6 +36,7 @@ members = ["packages/*", "services/*"]
 [tool.uv.sources]
 bulls-core = { workspace = true }
 bulls-market-data = { workspace = true }
+bulls-analytics = { workspace = true }
 bulls-ai = { workspace = true }
 bulls-api = { workspace = true }
 bulls-ingestion = { workspace = true }
