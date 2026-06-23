@@ -5,6 +5,9 @@ Everything is scoped to the active tenant's market, so Bulls of Dhaka only ever 
 
 from __future__ import annotations
 
+import datetime as dt
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
@@ -12,11 +15,53 @@ from api.deps import CurrentTenant, DbSession
 from bulls.analytics import AnalyticsResult, compute
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
+from bulls.market_data.calendar import MARKET_CLOSE
 
 router = APIRouter(tags=["market"])
 
 # Enough history for the longest indicator (200-day SMA) plus headroom.
 _ANALYTICS_LOOKBACK = 260
+
+
+async def _freshest_quote(
+    session, market: str, code: str, snapshot: QuoteSnapshot | None, tz: ZoneInfo
+) -> QuoteOut | None:
+    """Prefer the latest EOD bar when it's newer than the intraday snapshot.
+
+    The intraday scrape (QuoteSnapshot) and the EOD bars update on different schedules; after the
+    close the bar is the freshest truth, so the header price/date matches the analytics cards
+    instead of showing a day-stale snapshot.
+    """
+    bars = list(
+        await session.scalars(
+            select(DailyBar)
+            .where(DailyBar.market == market, DailyBar.code == code)
+            .order_by(DailyBar.date.desc())
+            .limit(2)
+        )
+    )
+    if bars and (snapshot is None or bars[0].date > snapshot.as_of.date()):
+        bar = bars[0]
+        prev_close = bars[1].close if len(bars) > 1 else None
+        change = bar.close - prev_close if prev_close is not None else 0.0
+        change_pct = (change / prev_close * 100) if prev_close else 0.0
+        return QuoteOut(
+            market=bar.market,
+            code=bar.code,
+            ltp=bar.close,
+            change=round(change, 2),
+            change_pct=round(change_pct, 2),
+            open=bar.open,
+            high=bar.high,
+            low=bar.low,
+            close=bar.close,
+            prev_close=prev_close,
+            volume=bar.volume,
+            trades=0,
+            as_of=dt.datetime.combine(bar.date, MARKET_CLOSE, tzinfo=tz),
+            is_delayed=True,
+        )
+    return QuoteOut.model_validate(snapshot) if snapshot else None
 
 
 @router.get("/quotes")
@@ -58,11 +103,9 @@ async def get_symbol(code: str, tenant: CurrentTenant, session: DbSession) -> Sy
     symbol = await session.get(Symbol, key)
     if symbol is None:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
-    quote = await session.get(QuoteSnapshot, key)
-    return SymbolDetail(
-        symbol=SymbolOut.model_validate(symbol),
-        quote=QuoteOut.model_validate(quote) if quote else None,
-    )
+    snapshot = await session.get(QuoteSnapshot, key)
+    quote = await _freshest_quote(session, key[0], key[1], snapshot, ZoneInfo(tenant.timezone))
+    return SymbolDetail(symbol=SymbolOut.model_validate(symbol), quote=quote)
 
 
 @router.get("/symbols/{code}/bars")
