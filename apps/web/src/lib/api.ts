@@ -130,6 +130,11 @@ export const api = {
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
+  translatePost: (text: string) =>
+    request<{ text: string; language: string }>("/translate", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 
   // posts
   feed: (code?: string) => request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),

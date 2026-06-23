@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.queue import close_pool
-from api.routers import auth, digest, health, market, posts, trending, watchlist
+from api.routers import auth, digest, health, market, posts, translate, trending, watchlist
 from bulls.core.config import get_settings
 from bulls.core.db import dispose_engine
 from bulls.core.tenancy import TenantRegistry
@@ -56,5 +56,6 @@ app.include_router(auth.router)
 app.include_router(digest.router)
 app.include_router(market.router)
 app.include_router(posts.router)
+app.include_router(translate.router)
 app.include_router(trending.router)
 app.include_router(watchlist.router)

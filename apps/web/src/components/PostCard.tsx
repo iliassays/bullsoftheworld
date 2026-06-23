@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { Post } from "../lib/api";
+import { api, type Post } from "../lib/api";
 import { Avatar, SentimentTag } from "./ui";
+
+const BANGLA = /[ঀ-৿]/; // any Bengali codepoint → already in Bangla
 
 const ago = (iso: string) => {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -29,6 +32,20 @@ function Body({ text }: { text: string }) {
 }
 
 export function PostCard({ post }: { post: Post }) {
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const onTranslate = async () => {
+    setLoading(true);
+    try {
+      setTranslation((await api.translatePost(post.body)).text);
+    } catch {
+      // best-effort; leave the original
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <article className="bg-surface border border-border rounded-2xl p-4">
       <header className="flex items-center gap-2.5">
@@ -44,6 +61,20 @@ export function PostCard({ post }: { post: Post }) {
         </div>
       </header>
       <Body text={post.body} />
+      {!BANGLA.test(post.body) &&
+        (translation ? (
+          <p lang="bn" className="text-[14px] leading-relaxed text-muted my-2 break-words">
+            {translation}
+          </p>
+        ) : (
+          <button
+            onClick={onTranslate}
+            disabled={loading}
+            className="text-xs text-accent mb-2 disabled:opacity-50"
+          >
+            {loading ? "অনুবাদ হচ্ছে…" : "অনুবাদ · Translate to বাংলা"}
+          </button>
+        ))}
       {post.cashtags.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           {post.cashtags.map((c) => (
