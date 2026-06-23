@@ -3,6 +3,7 @@
 from bulls.core.models.post import Cashtag, Post
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
 from bulls.core.models.symbol import Symbol
+from bulls.core.models.ticker_analytics import TickerAnalytics
 from bulls.core.models.user import User
 from bulls.core.models.watchlist import WatchlistItem
 
@@ -12,6 +13,7 @@ __all__ = [
     "Post",
     "QuoteSnapshot",
     "Symbol",
+    "TickerAnalytics",
     "User",
     "WatchlistItem",
 ]

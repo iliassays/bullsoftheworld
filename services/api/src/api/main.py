@@ -22,6 +22,7 @@ from api.routers import (
     health,
     market,
     posts,
+    screener,
     translate,
     trending,
     watchlist,
@@ -67,6 +68,7 @@ app.include_router(digest.router)
 app.include_router(explainer.router)
 app.include_router(market.router)
 app.include_router(posts.router)
+app.include_router(screener.router)
 app.include_router(translate.router)
 app.include_router(trending.router)
 app.include_router(watchlist.router)

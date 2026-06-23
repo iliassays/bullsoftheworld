@@ -306,6 +306,7 @@ version = "0.0.0"
 source = { editable = "services/ingestion" }
 dependencies = [
     { name = "arq" },
+    { name = "bulls-analytics" },
     { name = "bulls-core" },
     { name = "bulls-market-data" },
     { name = "redis" },
@@ -314,6 +315,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "arq", specifier = ">=0.26" },
+    { name = "bulls-analytics", editable = "packages/analytics" },
     { name = "bulls-core", editable = "packages/core" },
     { name = "bulls-market-data", editable = "packages/market_data" },
     { name = "redis", specifier = ">=5.0" },

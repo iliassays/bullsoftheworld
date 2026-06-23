@@ -130,6 +130,22 @@ export interface TodaysWatch {
   breadth: Breadth | null;
   session: MarketSession;
 }
+export interface ScreenItem {
+  code: string;
+  last_close: number;
+  value: number;
+}
+export interface Screen {
+  key: string;
+  title: string;
+  description: string;
+  value_label: string;
+  items: ScreenItem[];
+}
+export interface ScreensResponse {
+  as_of: string | null;
+  screens: Screen[];
+}
 export interface Post {
   id: number;
   author: { handle: string; name: string };
@@ -162,6 +178,7 @@ export const api = {
   // market
   quotes: (codes?: string[]) =>
     request<Quote[]>(`/quotes${codes?.length ? `?codes=${codes.join(",")}` : ""}`),
+  screens: () => request<ScreensResponse>("/screens"),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
 
   bars: (code: string, limit = 180) =>

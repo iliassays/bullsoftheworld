@@ -23,6 +23,7 @@ from arq.connections import RedisSettings
 
 from bulls.core.config import get_settings
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
+from ingestion.analytics import compute_all
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.scheduler import poll_market
 
@@ -49,14 +50,26 @@ async def pull_eod_bars(ctx) -> str:
     return f"bars={stats['bars_upserted']}"
 
 
+async def refresh_analytics(ctx) -> str:
+    """Recompute + persist the analytics snapshot for every symbol — only on trading days."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    counts = await compute_all(MARKET)
+    log.info("analytics refresh: %s/%s symbols", counts["computed"], counts["symbols"])
+    return f"analytics={counts['computed']}"
+
+
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
-    functions: ClassVar = [poll_quotes, pull_eod_bars]
+    functions: ClassVar = [poll_quotes, pull_eod_bars, refresh_analytics]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
         cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 30}, run_at_startup=False),
         # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
+        # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
+        cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

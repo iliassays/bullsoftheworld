@@ -90,6 +90,32 @@ def atr(
     return value
 
 
+def chaikin_money_flow(
+    highs: Sequence[float],
+    lows: Sequence[float],
+    closes: Sequence[float],
+    volumes: Sequence[float],
+    period: int = 20,
+) -> float | None:
+    """Chaikin Money Flow over `period` bars — bounded ~[-1, 1].
+
+    Positive = volume flowing in (accumulation); negative = flowing out (distribution). Bounded
+    and volume-normalized, so it's comparable across stocks (good for ranking a screen).
+    """
+    if period <= 0 or len(closes) < period:
+        return None
+    mfv_sum = 0.0
+    vol_sum = 0.0
+    for i in range(len(closes) - period, len(closes)):
+        rng = highs[i] - lows[i]
+        mfm = 0.0 if rng == 0 else ((closes[i] - lows[i]) - (highs[i] - closes[i])) / rng
+        mfv_sum += mfm * volumes[i]
+        vol_sum += volumes[i]
+    if vol_sum == 0:
+        return None
+    return mfv_sum / vol_sum
+
+
 def swing_high_indices(highs: Sequence[float], k: int = 5) -> list[int]:
     """Indices of confirmed swing highs: a bar whose high is the max of [i-k, i+k].
 

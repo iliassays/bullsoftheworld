@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from bulls.analytics.indicators import (
     atr,
+    chaikin_money_flow,
     ema,
     rsi,
     sma,
@@ -85,6 +86,7 @@ class AnalyticsResult(BaseModel):
     last_volume: int
     avg_volume_20: float | None = None
     relative_volume: float | None = None
+    cmf_20: float | None = None  # Chaikin Money Flow: >0 accumulation, <0 distribution
 
 
 def _r(x: float | None, n: int = 2) -> float | None:
@@ -118,7 +120,8 @@ def compute(
     w_high = max(b.high for b in window)
     w_low = min(b.low for b in window)
 
-    avg_vol_20 = sma([float(b.volume) for b in rows], 20)
+    volumes = [float(b.volume) for b in rows]
+    avg_vol_20 = sma(volumes, 20)
 
     return AnalyticsResult(
         market=last.market,
@@ -149,4 +152,5 @@ def compute(
         last_volume=last.volume,
         avg_volume_20=_r(avg_vol_20),
         relative_volume=_r(last.volume / avg_vol_20) if avg_vol_20 else None,
+        cmf_20=_r(chaikin_money_flow(highs, lows, closes, volumes, 20), 3),
     )
