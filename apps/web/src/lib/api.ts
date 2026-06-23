@@ -72,6 +72,13 @@ export interface Bar {
   close: number;
   volume: number;
 }
+export interface Digest {
+  code: string;
+  summary: string;
+  mood: "bullish" | "bearish" | "mixed" | "quiet";
+  posts: number;
+  change_pct_1d: number;
+}
 export interface Post {
   id: number;
   author: { handle: string; name: string };
@@ -108,6 +115,7 @@ export const api = {
 
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
+  digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
 
   // posts
   feed: (code?: string) => request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),

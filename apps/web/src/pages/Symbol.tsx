@@ -4,6 +4,7 @@ import { api, type Post, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
+import { DigestPanel } from "../components/DigestPanel";
 import { PostCard } from "../components/PostCard";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 
@@ -67,6 +68,8 @@ export function SymbolPage() {
         )}
         <div className="text-[10px] text-muted mt-2">⏱ delayed · as of {new Date(q?.as_of ?? "").toLocaleString()}</div>
       </div>
+
+      <DigestPanel code={sym} />
 
       <CandleChart code={sym} />
 
