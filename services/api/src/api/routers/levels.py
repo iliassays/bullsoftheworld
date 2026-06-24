@@ -7,17 +7,22 @@ and a template can never drift into a forecast or a recommendation.
 
 from __future__ import annotations
 
+import datetime as dt
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession
 from bulls.analytics import LevelsInsight, build_levels, compute
-from bulls.core.models import DailyBar, Symbol
+from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
+from bulls.market_data.calendar import Session, session_phase
 
 router = APIRouter(tags=["levels"])
 
 _LOOKBACK = 260
+_NEAR = 0.01  # within 1% counts as "testing" a level
 
 
 class LevelsResponse(BaseModel):
@@ -25,6 +30,46 @@ class LevelsResponse(BaseModel):
     as_of: str
     insight: LevelsInsight
     lines: list[str]
+    # The live (delayed) price's position vs the as-of-close levels — only while the market is open.
+    live_line: str | None = None
+
+
+def _relation(price: float, support: float | None, resistance: float | None) -> str:
+    if support is not None and price < support:
+        return "below_support"
+    if resistance is not None and price > resistance:
+        return "above_resistance"
+    if support is not None and price <= support * (1 + _NEAR):
+        return "near_support"
+    if resistance is not None and price >= resistance * (1 - _NEAR):
+        return "near_resistance"
+    if support is not None and resistance is not None and support < price < resistance:
+        return "between"
+    return "unknown"
+
+
+def _live_en(price: float, rel: str, s: float | None, r: float | None) -> str:
+    p = f"Live (delayed) ৳{price:g}"
+    return {
+        "below_support": f"{p} — now below the ৳{s:g} support from last close; a daily close below confirms a break.",
+        "near_support": f"{p} — now testing the ৳{s:g} support from last close.",
+        "above_resistance": f"{p} — now above the ৳{r:g} resistance from last close; a daily close above confirms a breakout.",
+        "near_resistance": f"{p} — now testing the ৳{r:g} resistance from last close.",
+        "between": f"{p} — trading between support ৳{s:g} and resistance ৳{r:g} (from last close).",
+        "unknown": f"{p}.",
+    }[rel]
+
+
+def _live_bn(price: float, rel: str, s: float | None, r: float | None) -> str:
+    p = f"লাইভ (বিলম্বিত) ৳{price:g}"
+    return {
+        "below_support": f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্টের নিচে; দিন শেষে নিচে ক্লোজ হলে ব্রেক নিশ্চিত।",
+        "near_support": f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্ট পরীক্ষা করছে।",
+        "above_resistance": f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্সের উপরে; দিন শেষে উপরে ক্লোজ হলে ব্রেকআউট নিশ্চিত।",
+        "near_resistance": f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।",
+        "between": f"{p} — গত ক্লোজের সাপোর্ট ৳{s:g} ও রেজিস্ট্যান্স ৳{r:g} এর মধ্যে লেনদেন হচ্ছে।",
+        "unknown": f"{p}।",
+    }[rel]
 
 
 def _f(n: float | None) -> str:
@@ -122,6 +167,21 @@ async def get_levels(code: str, tenant: CurrentTenant, session: DbSession) -> Le
     insight = build_levels(result, [b.close for b in bars])
 
     render = _render_bn if tenant.locale == "bn" else _render_en
+
+    # Bridge the two clocks: while the market is open, show the live (delayed) price's position
+    # relative to the as-of-close levels. Outside hours the EOD card stands on its own.
+    live_line: str | None = None
+    if session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone)) is Session.OPEN:
+        quote = await session.get(QuoteSnapshot, (tenant.market, code))
+        price = quote.ltp if quote else result.last_close
+        rel = _relation(price, insight.support, insight.resistance)
+        live_fn = _live_bn if tenant.locale == "bn" else _live_en
+        live_line = live_fn(price, rel, insight.support, insight.resistance)
+
     return LevelsResponse(
-        code=code, as_of=str(result.as_of_date), insight=insight, lines=render(code, insight)
+        code=code,
+        as_of=str(result.as_of_date),
+        insight=insight,
+        lines=render(code, insight),
+        live_line=live_line,
     )
