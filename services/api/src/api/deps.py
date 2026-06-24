@@ -4,18 +4,36 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bulls.core.config import get_settings
 from bulls.core.db import get_session
-from bulls.core.models import User
+from bulls.core.models import Symbol, User
 from bulls.core.security import decode_token
 from bulls.core.tenancy import Tenant
 
 
 def current_tenant(request: Request) -> Tenant:
     return request.state.tenant
+
+
+def visible_codes(market: str) -> Select:
+    """Subquery of codes a retail user should see: active and not admin-hidden."""
+    return select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+    )
+
+
+def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None:
+    """Guard admin routes with a shared token (ADMIN_TOKEN). No token configured = locked."""
+    token = get_settings().admin_token
+    if not token or x_admin_token != token:
+        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 CurrentTenant = Annotated[Tenant, Depends(current_tenant)]

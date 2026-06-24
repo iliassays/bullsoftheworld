@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_ttl_min: int = 60
 
+    # Shared token guarding /admin routes (sent as X-Admin-Token). Empty = admin locked.
+    admin_token: str = ""
+
     default_tenant: str = "bullsofdhaka"
 
     # CORS origins for the web client (comma-separated in env).

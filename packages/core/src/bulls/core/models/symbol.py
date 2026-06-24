@@ -20,4 +20,7 @@ class Symbol(Base):
     name_bn: Mapped[str | None] = mapped_column(String(160))
     sector: Mapped[str | None] = mapped_column(String(80))
     category: Mapped[str | None] = mapped_column(String(2))  # DSE: A/B/G/N/Z
+    # is_active: auto-managed by ingestion (seen in scrapes). is_hidden: manual admin override the
+    # scraper never touches (e.g. hide bonds/funds). Visible = is_active AND NOT is_hidden.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

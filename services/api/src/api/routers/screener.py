@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentTenant, DbSession, visible_codes
 from bulls.core.models import QuoteSnapshot, TickerAnalytics
 
 router = APIRouter(tags=["screener"])
@@ -164,7 +164,10 @@ async def _movers(session, market: str, *, gainers: bool) -> ScreenOut:
     rows = (
         await session.execute(
             select(QuoteSnapshot.code, QuoteSnapshot.ltp, QuoteSnapshot.change_pct)
-            .where(QuoteSnapshot.market == market)
+            .where(
+                QuoteSnapshot.market == market,
+                QuoteSnapshot.code.in_(visible_codes(market)),
+            )
             .order_by(order)
             .limit(PER_SCREEN)
         )
@@ -185,7 +188,11 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
         rows = (
             await session.execute(
                 select(T.code, T.last_close, spec.value)
-                .where(T.market == tenant.market, spec.where)
+                .where(
+                    T.market == tenant.market,
+                    spec.where,
+                    T.code.in_(visible_codes(tenant.market)),
+                )
                 .order_by(spec.order)
                 .limit(PER_SCREEN)
             )

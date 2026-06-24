@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.queue import close_pool
 from api.routers import (
+    admin,
     auth,
     digest,
     explainer,
@@ -64,6 +65,7 @@ async def resolve_tenant(request: Request, call_next):
 
 
 app.include_router(health.router)
+app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(digest.router)
 app.include_router(explainer.router)

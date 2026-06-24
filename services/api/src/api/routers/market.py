@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentTenant, DbSession, visible_codes
 from bulls.analytics import AnalyticsResult, compute
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
@@ -70,7 +70,10 @@ async def get_quotes(
     session: DbSession,
     codes: str | None = Query(None, description="Comma-separated codes, e.g. GP,BEXIMCO"),
 ) -> list[QuoteOut]:
-    stmt = select(QuoteSnapshot).where(QuoteSnapshot.market == tenant.market)
+    stmt = select(QuoteSnapshot).where(
+        QuoteSnapshot.market == tenant.market,
+        QuoteSnapshot.code.in_(visible_codes(tenant.market)),
+    )
     if codes:
         wanted = [c.strip().upper() for c in codes.split(",") if c.strip()]
         stmt = stmt.where(QuoteSnapshot.code.in_(wanted))
@@ -89,7 +92,11 @@ async def list_symbols(
 ) -> list[SymbolOut]:
     stmt = (
         select(Symbol)
-        .where(Symbol.market == tenant.market, Symbol.is_active.is_(True))
+        .where(
+            Symbol.market == tenant.market,
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
+        )
         .order_by(Symbol.code)
         .limit(limit)
     )
