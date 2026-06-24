@@ -178,6 +178,7 @@ export const api = {
   // market
   quotes: (codes?: string[]) =>
     request<Quote[]>(`/quotes${codes?.length ? `?codes=${codes.join(",")}` : ""}`),
+  symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
 
