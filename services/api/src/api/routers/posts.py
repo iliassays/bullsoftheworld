@@ -159,6 +159,7 @@ async def feed(
     session: DbSession,
     viewer: OptionalUser,
     code: str | None = Query(None, description="Filter to posts tagging this symbol"),
+    kind: str | None = Query(None, description="Filter by kind: 'note' = agent desk-notes only"),
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[PostOut]:
@@ -169,6 +170,8 @@ async def feed(
             Cashtag.market == tenant.market, Cashtag.code == code.upper()
         )
         stmt = stmt.where(Post.id.in_(tagged))
+    if kind:
+        stmt = stmt.where(Post.kind == kind)
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)
     posts = list(await session.scalars(stmt))
     return await _decorate(session, posts, viewer_id=viewer.id if viewer else None)

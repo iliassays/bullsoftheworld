@@ -17,6 +17,8 @@ export function SymbolPage() {
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
+  const [notes, setNotes] = useState<Post[] | null>(null);
+  const [tab, setTab] = useState<"discussion" | "notes">("discussion");
   const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [watched, setWatched] = useState(false);
 
@@ -24,6 +26,7 @@ export function SymbolPage() {
     setDetail(null);
     setPosts(null);
     setTopPost(null);
+    setNotes(null);
     setBuzz(null);
     api
       .symbol(sym)
@@ -33,6 +36,10 @@ export function SymbolPage() {
       .feed(sym)
       .then(setPosts)
       .catch(() => setPosts([]));
+    api
+      .feed(sym, "note")
+      .then(setNotes)
+      .catch(() => setNotes([]));
     api
       .topPost(sym)
       .then(setTopPost)
@@ -133,35 +140,65 @@ export function SymbolPage() {
 
       <KeyLevels code={sym} />
 
-      {topPost && (
-        <div className="flex flex-col gap-2">
-          <div className="text-accent font-semibold text-sm">
-            🔥 Most discussed
-          </div>
-          <PostCard post={topPost} />
-        </div>
-      )}
+      {/* Discussion vs Bulls Feed (agent notes only) */}
+      <div className="flex gap-2">
+        {(["discussion", "notes"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`text-sm font-semibold px-3 py-1.5 rounded-full border ${
+              tab === t
+                ? "text-accent border-accent bg-accent/10"
+                : "text-muted border-border"
+            }`}
+          >
+            {t === "discussion" ? "💬 Discussion" : "🐂 Bulls Feed"}
+            {t === "notes" && notes?.length ? ` (${notes.length})` : ""}
+          </button>
+        ))}
+      </div>
 
-      {user ? (
-        <Composer
-          initial={`$${sym} `}
-          onPosted={(p) => setPosts((c) => [p, ...(c ?? [])])}
-        />
-      ) : (
-        <Link
-          to="/me"
-          className="block text-center text-sm text-accent bg-surface border border-border rounded-2xl py-3"
-        >
-          Log in to post about ${sym} →
-        </Link>
-      )}
+      {tab === "discussion" ? (
+        <>
+          {topPost && (
+            <div className="flex flex-col gap-2">
+              <div className="text-accent font-semibold text-sm">
+                🔥 Most discussed
+              </div>
+              <PostCard post={topPost} />
+            </div>
+          )}
 
-      {posts === null ? (
+          {user ? (
+            <Composer
+              initial={`$${sym} `}
+              onPosted={(p) => setPosts((c) => [p, ...(c ?? [])])}
+            />
+          ) : (
+            <Link
+              to="/me"
+              className="block text-center text-sm text-accent bg-surface border border-border rounded-2xl py-3"
+            >
+              Log in to post about ${sym} →
+            </Link>
+          )}
+
+          {posts === null ? (
+            <Spinner />
+          ) : posts.length === 0 ? (
+            <Empty>No posts about ${sym} yet.</Empty>
+          ) : (
+            posts.map((p) => <PostCard key={p.id} post={p} />)
+          )}
+        </>
+      ) : notes === null ? (
         <Spinner />
-      ) : posts.length === 0 ? (
-        <Empty>No posts about ${sym} yet.</Empty>
+      ) : notes.length === 0 ? (
+        <Empty>
+          No data notes for ${sym} yet — they appear as the stock moves.
+        </Empty>
       ) : (
-        posts.map((p) => <PostCard key={p.id} post={p} />)
+        notes.map((p) => <PostCard key={p.id} post={p} />)
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 import { Shell } from "./components/Shell";
+import { BullsFeed } from "./pages/BullsFeed";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
 import { Profile } from "./pages/Profile";
@@ -12,6 +13,7 @@ export function App() {
       <Route element={<Shell />}>
         <Route index element={<Feed />} />
         <Route path="markets" element={<Markets />} />
+        <Route path="bulls" element={<BullsFeed />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
         <Route path="me" element={<Profile />} />

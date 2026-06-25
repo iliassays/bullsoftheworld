@@ -4,6 +4,7 @@ import { SearchBar } from "./SearchBar";
 const tabs = [
   { to: "/", icon: "🏠", label: "Feed", end: true },
   { to: "/markets", icon: "📊", label: "Markets" },
+  { to: "/bulls", icon: "🐂", label: "Bulls" },
   { to: "/watchlist", icon: "⭐", label: "Watch" },
   { to: "/me", icon: "👤", label: "Me" },
 ];

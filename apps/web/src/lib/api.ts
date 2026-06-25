@@ -247,8 +247,13 @@ export const api = {
     }),
 
   // posts
-  feed: (code?: string) =>
-    request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),
+  feed: (code?: string, kind?: "note") => {
+    const q = new URLSearchParams();
+    if (code) q.set("code", code);
+    if (kind) q.set("kind", kind);
+    const s = q.toString();
+    return request<Post[]>(`/posts${s ? `?${s}` : ""}`);
+  },
   createPost: (b: {
     body: string;
     sentiment: "bull" | "bear" | null;
