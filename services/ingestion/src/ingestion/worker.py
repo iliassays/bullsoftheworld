@@ -62,7 +62,13 @@ async def refresh_analytics(ctx) -> str:
 
 
 async def snapshot_buzz(ctx) -> str:
-    """Snapshot each symbol's daily social attention — only on trading days."""
+    """Snapshot each symbol's daily social attention — only on trading days.
+
+    Runs through the session and again at EOD; the upsert keeps today's (market, code, date) row
+    current, so watchers_total and the day's counts stay fresh and the history is resilient if the
+    EOD run is missed. The displayed /buzz trend doesn't depend on when this runs — today's row is
+    excluded from the baseline — so this is about freshness/robustness, not changing the signal.
+    """
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
@@ -82,7 +88,8 @@ class WorkerSettings:
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
-        # Snapshot social attention 20 min after the bar pull, building the buzz-trend history.
-        cron(snapshot_buzz, hour=13, minute=20, run_at_startup=False),
+        # Snapshot social attention hourly across the session, then finalize after the bar pull.
+        # Intraday runs keep watchers_total + today's counts fresh; the 13:20 run is the EOD row.
+        cron(snapshot_buzz, hour={4, 5, 6, 7, 8, 13}, minute=20, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
