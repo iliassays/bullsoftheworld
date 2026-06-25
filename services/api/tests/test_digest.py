@@ -7,6 +7,7 @@ ambiguous numbers, and editorial color ("only N posts").
 
 from __future__ import annotations
 
+from api.routers.buzz import BuzzResponse
 from api.routers.digest import _render_digest_bn, _render_digest_en
 from bulls.ai.tasks.digest import SymbolFacts
 
@@ -15,6 +16,12 @@ def _facts(**overrides) -> SymbolFacts:
     base = dict(code="GP", name="Grameenphone", last_price=207.0, change_pct_1d=9.47, last_volume=0)
     base.update(overrides)
     return SymbolFacts(**base)
+
+
+def _buzz(**overrides) -> BuzzResponse:
+    base = dict(code="GP", watchers=0, posts_24h=0, reactions_24h=0, replies_24h=0)
+    base.update(overrides)
+    return BuzzResponse(**base)
 
 
 def test_currency_and_units_are_correct():
@@ -53,3 +60,18 @@ def test_no_posts_states_absence():
     f = _facts(bull_posts=0, bear_posts=0, neutral_posts=0)
     assert "No posts" in _render_digest_en(f)
     assert "কোনো পোস্ট নেই" in _render_digest_bn(f)
+
+
+def test_attention_clause_only_when_rising():
+    f = _facts(bull_posts=5, bear_posts=1)
+    rising = _buzz(attention="rising", chatter_x=3.0, watchers_delta_7d=6)
+    en = _render_digest_en(f, rising)
+    assert "3x heavier than usual" in en
+    assert "watchers are up 6 this week" in en
+    bn = _render_digest_bn(f, rising)
+    assert "গুণ বেশি" in bn
+
+    # Not elevated → no attention clause appended.
+    calm = _buzz(attention="normal", chatter_x=1.1)
+    assert "heavier than usual" not in _render_digest_en(f, calm)
+    assert _render_digest_en(f, None) == _render_digest_en(f)  # buzz optional, no-op when absent

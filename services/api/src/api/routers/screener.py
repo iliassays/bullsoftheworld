@@ -6,19 +6,25 @@ the condition, never by implication. No advice, no AI — pure data the analytic
 
 from __future__ import annotations
 
+import datetime as dt
+from collections import defaultdict
 from dataclasses import dataclass
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy import ColumnElement, and_, select
+from sqlalchemy import ColumnElement, and_, func, select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
-from bulls.core.models import QuoteSnapshot, TickerAnalytics
+from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
+from bulls.core.models import Cashtag, Post, QuoteSnapshot, TickerAnalytics, TickerBuzzDaily
+from bulls.market_data.calendar import to_market_tz
 
 router = APIRouter(tags=["screener"])
 
 T = TickerAnalytics
 PER_SCREEN = 8
+_DISCUSSED_DAYS = 2  # window for "most discussed"
+_BUZZ_HISTORY = 14  # look-back for the attention baseline
 
 # Reused metric expressions
 _PCT_ABOVE_SUPPORT = (T.last_close - T.nearest_support) / T.nearest_support * 100
@@ -181,6 +187,84 @@ async def _movers(session, market: str, *, gainers: bool) -> ScreenOut:
     )
 
 
+async def _last_closes(session, market: str, codes: list[str]) -> dict[str, float]:
+    if not codes:
+        return {}
+    rows = (
+        await session.execute(
+            select(QuoteSnapshot.code, QuoteSnapshot.ltp).where(
+                QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes)
+            )
+        )
+    ).all()
+    return {c: ltp for c, ltp in rows}
+
+
+async def _most_discussed(session, market: str) -> ScreenOut:
+    """Symbols with the most posts in the last couple of days (live, descriptive)."""
+    since = dt.datetime.now(dt.UTC) - dt.timedelta(days=_DISCUSSED_DAYS)
+    posts = func.count(func.distinct(Post.id))
+    rows = (
+        await session.execute(
+            select(Cashtag.code, posts)
+            .join(Post, Cashtag.post_id == Post.id)
+            .where(
+                Cashtag.market == market,
+                Post.created_at >= since,
+                Cashtag.code.in_(visible_codes(market)),
+            )
+            .group_by(Cashtag.code)
+            .order_by(posts.desc())
+            .limit(PER_SCREEN)
+        )
+    ).all()
+    closes = await _last_closes(session, market, [c for c, _ in rows])
+    return ScreenOut(
+        key="most_discussed",
+        title="Most discussed",
+        description="Most posts in the last 2 days",
+        value_label="posts",
+        items=[ScreenItem(code=c, last_close=closes.get(c, 0.0), value=float(n)) for c, n in rows],
+    )
+
+
+async def _attention_rising(session, market: str) -> ScreenOut:
+    """Symbols whose chatter is well above their own usual pace, from the buzz snapshots."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    rows = (
+        await session.execute(
+            select(TickerBuzzDaily.code, TickerBuzzDaily.date, TickerBuzzDaily.posts_24h).where(
+                TickerBuzzDaily.market == market,
+                TickerBuzzDaily.date >= today - dt.timedelta(days=_BUZZ_HISTORY),
+                TickerBuzzDaily.code.in_(visible_codes(market)),
+            )
+        )
+    ).all()
+    series: dict[str, list[tuple[dt.date, int]]] = defaultdict(list)
+    for code, d, posts in rows:
+        series[code].append((d, posts))
+
+    rising: list[tuple[str, float]] = []
+    for code, points in series.items():
+        points.sort()
+        latest_date, latest_posts = points[-1]
+        prior = [p for d, p in points if d < latest_date]
+        baseline = sum(prior) / len(prior) if len(prior) >= _MIN_BASELINE_DAYS else None
+        if baseline and attention_label(latest_posts, baseline) == "rising":
+            rising.append((code, round(latest_posts / baseline, 1)))
+    rising.sort(key=lambda x: -x[1])
+    rising = rising[:PER_SCREEN]
+
+    closes = await _last_closes(session, market, [c for c, _ in rising])
+    return ScreenOut(
+        key="attention_rising",
+        title="Attention rising",
+        description="Discussion well above its usual pace",
+        value_label="x usual",
+        items=[ScreenItem(code=c, last_close=closes.get(c, 0.0), value=x) for c, x in rising],
+    )
+
+
 @router.get("/screens")
 async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out: list[ScreenOut] = []
@@ -213,6 +297,8 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
 
     out.append(await _movers(session, tenant.market, gainers=True))
     out.append(await _movers(session, tenant.market, gainers=False))
+    out.append(await _most_discussed(session, tenant.market))
+    out.append(await _attention_rising(session, tenant.market))
 
     as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
     return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)

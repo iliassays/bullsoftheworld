@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession
+from api.routers.buzz import BuzzResponse, gather_buzz
 from bulls.ai.tasks.digest import SymbolFacts, crowd_mood
 from bulls.analytics import compute
 from bulls.core.models import Cashtag, DailyBar, Post, QuoteSnapshot, Symbol
@@ -111,7 +112,17 @@ def _head(f: SymbolFacts) -> str:
     return f.name if f.name.upper() == f.code.upper() else f"{f.name} ({f.code})"
 
 
-def _render_digest_en(f: SymbolFacts) -> str:
+def _attention_extras_en(buzz: BuzzResponse | None) -> list[str]:
+    # Only when the buzz thresholds are already cleared; descriptive, never causal.
+    extras: list[str] = []
+    if buzz and buzz.attention == "rising" and buzz.chatter_x:
+        extras.append(f"discussion is running about {buzz.chatter_x:g}x heavier than usual")
+    if buzz and buzz.watchers_delta_7d and buzz.watchers_delta_7d > 0:
+        extras.append(f"watchers are up {buzz.watchers_delta_7d} this week")
+    return extras
+
+
+def _render_digest_en(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
     def move(pct: float) -> str:
         if pct > _FLAT:
             return f"rose {pct:.2f}%"
@@ -139,10 +150,23 @@ def _render_digest_en(f: SymbolFacts) -> str:
         parts.append(
             f"Across {total} posts this week the crowd {lean} ({f.bull_posts}▲ / {f.bear_posts}▼)."
         )
+    extras = _attention_extras_en(buzz)
+    if extras:
+        s = " and ".join(extras)
+        parts.append(s[0].upper() + s[1:] + ".")
     return " ".join(parts)
 
 
-def _render_digest_bn(f: SymbolFacts) -> str:
+def _attention_extras_bn(buzz: BuzzResponse | None) -> list[str]:
+    extras: list[str] = []
+    if buzz and buzz.attention == "rising" and buzz.chatter_x:
+        extras.append(f"আলোচনা স্বাভাবিকের চেয়ে প্রায় {buzz.chatter_x:g} গুণ বেশি হচ্ছে")
+    if buzz and buzz.watchers_delta_7d and buzz.watchers_delta_7d > 0:
+        extras.append(f"এই সপ্তাহে {buzz.watchers_delta_7d} জন বেশি ওয়াচ করছেন")
+    return extras
+
+
+def _render_digest_bn(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
     def move(pct: float) -> str:
         if pct > _FLAT:
             return f"{pct:.2f}% বেড়েছে"
@@ -170,6 +194,9 @@ def _render_digest_bn(f: SymbolFacts) -> str:
         parts.append(
             f"গত সপ্তাহে {total}টি পোস্টে আলোচকদের ঝোঁক {lean} ({f.bull_posts}▲ / {f.bear_posts}▼)।"
         )
+    extras = _attention_extras_bn(buzz)
+    if extras:
+        parts.append("; ".join(extras) + "।")
     return " ".join(parts)
 
 
@@ -180,10 +207,11 @@ async def get_digest(code: str, tenant: CurrentTenant, session: DbSession) -> Di
     if facts is None:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
+    buzz = await gather_buzz(session, tenant.market, code)
     render = _render_digest_bn if tenant.locale == "bn" else _render_digest_en
     return DigestResponse(
         code=code,
-        summary=render(facts),
+        summary=render(facts, buzz),
         mood=crowd_mood(facts.bull_posts, facts.bear_posts, facts.neutral_posts),
         posts=facts.bull_posts + facts.bear_posts + facts.neutral_posts,
         change_pct_1d=facts.change_pct_1d,

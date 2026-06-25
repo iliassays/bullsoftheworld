@@ -178,11 +178,15 @@ no new infra.*
   enough snapshot history accrues — verified via synthetic history; never fabricated. Pure
   threshold helpers unit-tested; endpoint flow DB-tested.
 
-**Phase C — Synthesis.**
-- Templated attention clause folded into the digest (bilingual, thresholded); screener filters
-  `most_discussed` / `attention_rising`.
-- *Done when:* digest clause appears only above threshold; screener filters return sensible sets;
-  no advice/causal language (copy review).
+**Phase C — Synthesis. ✅ IMPLEMENTED 2026-06-25.**
+- `gather_buzz` extracted from the /buzz endpoint and reused by the digest. The digest appends a
+  thresholded, bilingual attention clause ("discussion ~Nx heavier than usual", "watchers up N
+  this week") only when buzz is already `rising` / the delta cleared its floor. Screener gains
+  `most_discussed` (live, last 2 days) and `attention_rising` (from the buzz snapshots, reusing
+  `attention_label`). No FE change — screens render generically (empty ones hidden) and the clause
+  flows through `digest.summary`.
+- *Done:* clause appears only above threshold (unit-tested + verified live); screens return
+  sensible sets and stay empty/hidden at cold-start; descriptive, no causal/advice language.
 
 **Phase D — Internal view tracking (optional).**
 - `page_view_events` + aggregation into `unique_viewers_24h`; used only as a deweighted buzz input
