@@ -48,11 +48,14 @@ async def publish_note(
     occurrence_key: str,
     body: str,
     as_of: dt.date | None,
+    add_cashtag: bool = True,
 ) -> None:
     post = Post(tenant_id=tenant_id, author_id=agent_id, body=body, kind="note")
     session.add(post)
     await session.flush()
-    session.add(Cashtag(post_id=post.id, market=market, code=code))
+    if add_cashtag:
+        # a real ticker note lands on that symbol's feed; market-wide notes carry no cashtag
+        session.add(Cashtag(post_id=post.id, market=market, code=code))
     session.add(
         SignalEvent(
             market=market,

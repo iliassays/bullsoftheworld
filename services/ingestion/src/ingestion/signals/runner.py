@@ -9,14 +9,24 @@ Detection re-derives yesterday from the bars, so it's safe to re-run — the sig
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import sys
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from bulls.analytics import compute
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import DailyBar, ShareholdingSnapshot, Symbol
-from ingestion.signals import ownership
+from bulls.core.models import (
+    DailyBar,
+    MarketSummary,
+    QuoteSnapshot,
+    ShareholdingSnapshot,
+    Symbol,
+    TickerAnalytics,
+)
+from bulls.market_data.calendar import to_market_tz
+from ingestion.signals import market as market_wrap
+from ingestion.signals import ownership, volume
 from ingestion.signals.agents import AGENTS, ensure_agents
 from ingestion.signals.levels import BEAT, detect, render
 from ingestion.signals.publish import already_fired, publish_note
@@ -147,10 +157,136 @@ async def run_ownership_agents(
     return {"symbols": len(codes), "published": published}
 
 
+async def run_volume_agent(
+    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+) -> dict[str, int]:
+    """Flag unusual intraday volume vs the expected-by-now pace. Fires once per name per day."""
+    now = dt.datetime.now(dt.UTC)
+    fraction = volume.session_fraction(now)
+    today = to_market_tz(now).date()
+    day = str(today)
+    sm = get_sessionmaker()
+    published = 0
+    async with sm() as session:
+        agent_id = (await ensure_agents(session, tenant_id))[volume.BEAT]
+        handle = AGENTS[volume.BEAT][0]
+        rows = (
+            await session.execute(
+                select(
+                    QuoteSnapshot.code,
+                    QuoteSnapshot.volume,
+                    QuoteSnapshot.as_of,
+                    TickerAnalytics.avg_volume_20,
+                )
+                .join(
+                    TickerAnalytics,
+                    (QuoteSnapshot.market == TickerAnalytics.market)
+                    & (QuoteSnapshot.code == TickerAnalytics.code),
+                )
+                .join(
+                    Symbol,
+                    (QuoteSnapshot.market == Symbol.market) & (QuoteSnapshot.code == Symbol.code),
+                )
+                .where(
+                    QuoteSnapshot.market == market,
+                    Symbol.is_active.is_(True),
+                    Symbol.is_hidden.is_(False),
+                )
+            )
+        ).all()
+        for code, vol, as_of, avg in rows:
+            # only flag on a fresh quote from today's session — a stale quote vs a tiny
+            # expected-by-now would massively over-fire
+            if as_of is None or to_market_tz(as_of).date() != today:
+                continue
+            sig = volume.detect(vol, avg, fraction, day)
+            if sig is None:
+                continue
+            if await already_fired(
+                session,
+                market,
+                code,
+                sig.event_type,
+                sig.occurrence_key,
+                today=today,
+                cooldown_days=1,
+            ):
+                continue
+            await publish_note(
+                session,
+                tenant_id=tenant_id,
+                market=market,
+                code=code,
+                agent_id=agent_id,
+                agent_handle=handle,
+                event_type=sig.event_type,
+                occurrence_key=sig.occurrence_key,
+                body=volume.render(sig, code, locale),
+                as_of=today,
+            )
+            published += 1
+        await session.commit()
+    return {"published": published}
+
+
+async def run_market_update(
+    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+) -> dict[str, int]:
+    """One market-wide close wrap (DSEX + breadth + turnover). No cashtag — global feed only."""
+    sm = get_sessionmaker()
+    async with sm() as session:
+        agent_id = (await ensure_agents(session, tenant_id))[market_wrap.BEAT]
+        summary = await session.scalar(
+            select(MarketSummary)
+            .where(MarketSummary.market == market)
+            .order_by(MarketSummary.date.desc())
+            .limit(1)
+        )
+        if summary is None:
+            return {"published": 0}
+        adv = await session.scalar(
+            select(func.count()).where(QuoteSnapshot.market == market, QuoteSnapshot.change_pct > 0)
+        )
+        dec = await session.scalar(
+            select(func.count()).where(QuoteSnapshot.market == market, QuoteSnapshot.change_pct < 0)
+        )
+        key = str(summary.date)
+        if await already_fired(
+            session,
+            market,
+            market_wrap.MARKET_CODE,
+            "market_wrap",
+            key,
+            today=summary.date,
+            cooldown_days=1,
+        ):
+            return {"published": 0}
+        await publish_note(
+            session,
+            tenant_id=tenant_id,
+            market=market,
+            code=market_wrap.MARKET_CODE,
+            agent_id=agent_id,
+            agent_handle=AGENTS[market_wrap.BEAT][0],
+            event_type="market_wrap",
+            occurrence_key=key,
+            body=market_wrap.render(summary, adv or 0, dec or 0, locale),
+            as_of=summary.date,
+            add_cashtag=False,
+        )
+        await session.commit()
+    return {"published": 1}
+
+
 async def _run(market: str) -> None:
     lv = await run_levels_agent(market)
     ow = await run_ownership_agents(market)
-    print(f"[signals] {market}: levels={lv['published']} ownership={ow['published']}")
+    vo = await run_volume_agent(market)
+    mk = await run_market_update(market)
+    print(
+        f"[signals] {market}: levels={lv['published']} ownership={ow['published']} "
+        f"volume={vo['published']} market={mk['published']}"
+    )
 
 
 def main() -> None:

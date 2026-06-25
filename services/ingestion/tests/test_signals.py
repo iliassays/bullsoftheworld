@@ -5,8 +5,9 @@ from __future__ import annotations
 import datetime as dt
 
 from bulls.analytics.engine import AnalyticsResult
-from bulls.core.models import ShareholdingSnapshot
-from ingestion.signals import ownership
+from bulls.core.models import MarketSummary, ShareholdingSnapshot
+from ingestion.signals import market as market_wrap
+from ingestion.signals import ownership, volume
 from ingestion.signals.levels import detect, render
 
 
@@ -85,3 +86,23 @@ def test_ownership_render_descriptive_bilingual():
     assert "পরামর্শ নয়" in bn
     for txt in (en, bn):
         assert "buy" not in txt.lower() and "sell" not in txt.lower()
+
+
+def test_volume_detect_threshold_and_floor():
+    assert volume.detect(None, 100_000, 1.0, "d") is None  # no volume
+    assert volume.detect(300_000, 40_000, 1.0, "d") is None  # below liquidity floor
+    assert volume.detect(100_000, 100_000, 1.0, "d") is None  # 1x — normal
+    assert volume.detect(300_000, 100_000, 1.0, "d").event_type == "unusual_volume"  # 3x
+    # day-fraction: a half-day's volume is judged against expected-by-now
+    assert volume.detect(130_000, 100_000, 0.5, "d") is not None  # 2.6x of expected
+    assert volume.detect(110_000, 100_000, 0.5, "d") is None  # 2.2x — under
+
+
+def test_market_render():
+    s = MarketSummary(
+        market="DSE", date=dt.date(2026, 6, 25), dsex=5420.0, dsex_change=0.8, total_value_mn=6200.0
+    )
+    en = market_wrap.render(s, 180, 95, "en")
+    bn = market_wrap.render(s, 180, 95, "bn")
+    assert "DSEX 5,420" in en and "+0.80%" in en and "180 advancers" in en and "৳620 Cr" in en
+    assert "not advice" in en and "পরামর্শ নয়" in bn
