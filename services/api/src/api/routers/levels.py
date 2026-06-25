@@ -49,27 +49,39 @@ def _relation(price: float, support: float | None, resistance: float | None) -> 
 
 
 def _live_en(price: float, rel: str, s: float | None, r: float | None) -> str:
+    # Build only the selected branch: _relation guarantees s (resp. r) is set for the support
+    # (resp. resistance) cases, but a dict literal would eagerly format every branch and crash on
+    # a one-sided level where the other side is None.
     p = f"Live (delayed) ৳{price:g}"
-    return {
-        "below_support": f"{p} — now below the ৳{s:g} support from last close; a daily close below confirms a break.",
-        "near_support": f"{p} — now testing the ৳{s:g} support from last close.",
-        "above_resistance": f"{p} — now above the ৳{r:g} resistance from last close; a daily close above confirms a breakout.",
-        "near_resistance": f"{p} — now testing the ৳{r:g} resistance from last close.",
-        "between": f"{p} — trading between support ৳{s:g} and resistance ৳{r:g} (from last close).",
-        "unknown": f"{p}.",
-    }[rel]
+    if rel == "below_support":
+        return f"{p} — now below the ৳{s:g} support from last close; a daily close below confirms a break."
+    if rel == "near_support":
+        return f"{p} — now testing the ৳{s:g} support from last close."
+    if rel == "above_resistance":
+        return f"{p} — now above the ৳{r:g} resistance from last close; a daily close above confirms a breakout."
+    if rel == "near_resistance":
+        return f"{p} — now testing the ৳{r:g} resistance from last close."
+    if rel == "between":
+        return f"{p} — trading between support ৳{s:g} and resistance ৳{r:g} (from last close)."
+    return f"{p}."
 
 
 def _live_bn(price: float, rel: str, s: float | None, r: float | None) -> str:
+    # Build only the selected branch — see _live_en: a dict literal crashes on one-sided levels.
     p = f"লাইভ (বিলম্বিত) ৳{price:g}"
-    return {
-        "below_support": f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্টের নিচে; দিন শেষে নিচে ক্লোজ হলে ব্রেক নিশ্চিত।",
-        "near_support": f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্ট পরীক্ষা করছে।",
-        "above_resistance": f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্সের উপরে; দিন শেষে উপরে ক্লোজ হলে ব্রেকআউট নিশ্চিত।",
-        "near_resistance": f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।",
-        "between": f"{p} — গত ক্লোজের সাপোর্ট ৳{s:g} ও রেজিস্ট্যান্স ৳{r:g} এর মধ্যে লেনদেন হচ্ছে।",
-        "unknown": f"{p}।",
-    }[rel]
+    if rel == "below_support":
+        return f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্টের নিচে; দিন শেষে নিচে ক্লোজ হলে ব্রেক নিশ্চিত।"
+    if rel == "near_support":
+        return f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্ট পরীক্ষা করছে।"
+    if rel == "above_resistance":
+        return (
+            f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্সের উপরে; দিন শেষে উপরে ক্লোজ হলে ব্রেকআউট নিশ্চিত।"
+        )
+    if rel == "near_resistance":
+        return f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।"
+    if rel == "between":
+        return f"{p} — গত ক্লোজের সাপোর্ট ৳{s:g} ও রেজিস্ট্যান্স ৳{r:g} এর মধ্যে লেনদেন হচ্ছে।"
+    return f"{p}।"
 
 
 def _f(n: float | None) -> str:
@@ -104,7 +116,16 @@ def _render_en(code: str, i: LevelsInsight) -> list[str]:
         lines.append(
             f"RSI {i.rsi:.0f} ({i.rsi_zone} zone) — {note}. A concept to watch, not a forecast."
         )
-    lines.append("Levels and concepts to watch — not predictions or advice.")
+    # When no confirmed pivot sits on the right side of the close, we have no trustworthy
+    # support/resistance — say so plainly rather than invent a level. Honest absence beats a
+    # fabricated number for prices people invest on.
+    if i.resistance is None and i.support is None:
+        lines.append(
+            "Not enough confirmed price history to identify support or resistance levels yet."
+        )
+        lines.append("Not predictions or advice.")
+    else:
+        lines.append("Levels and concepts to watch — not predictions or advice.")
     return lines
 
 
@@ -141,7 +162,14 @@ def _render_bn(code: str, i: LevelsInsight) -> list[str]:
             "neutral": "এটি একটি নিরপেক্ষ অবস্থানে আছে",
         }[i.rsi_zone]
         lines.append(f"RSI {i.rsi:.0f} ({zone} জোন) — {note}। দেখার মতো ধারণা, ভবিষ্যদ্বাণী নয়।")
-    lines.append("দেখার মতো লেভেল ও ধারণা — কোনো ভবিষ্যদ্বাণী বা পরামর্শ নয়।")
+    # No trustworthy support/resistance → say so honestly, never fabricate a level.
+    if i.resistance is None and i.support is None:
+        lines.append(
+            "এখনো নির্ভরযোগ্য সাপোর্ট বা রেজিস্ট্যান্স লেভেল চিহ্নিত করার মতো যথেষ্ট নিশ্চিত প্রাইস ডেটা নেই।"
+        )
+        lines.append("কোনো ভবিষ্যদ্বাণী বা পরামর্শ নয়।")
+    else:
+        lines.append("দেখার মতো লেভেল ও ধারণা — কোনো ভবিষ্যদ্বাণী বা পরামর্শ নয়।")
     return lines
 
 
