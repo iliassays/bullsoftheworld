@@ -1,28 +1,27 @@
-"""AI symbol digest — "what's happening with $X".
+"""Symbol digest — "what's happening with $X".
 
-Computes the facts (price stats + sentiment tally) in code, lets the LLM only write the prose,
-and caches the result in Redis (digests are expensive; identical views shouldn't re-run the model).
+Deterministic and templated, like the levels card. The facts (price stats + sentiment tally) are
+computed in code, then rendered into fixed, hand-translated sentences — never written by an LLM.
+A small local model mistranslated finance terms, dropped wrong units (e.g. "points" for a share
+price), and editorialized ("only 7 posts"); a template can't drift, mis-unit, or misadvise.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession
-from api.i18n import language_for
-from bulls.ai.tasks.digest import SymbolFacts, crowd_mood, summarize_symbol
+from bulls.ai.tasks.digest import SymbolFacts, crowd_mood
 from bulls.analytics import compute
-from bulls.core.config import get_settings
 from bulls.core.models import Cashtag, DailyBar, Post, QuoteSnapshot, Symbol
 
 router = APIRouter(tags=["digest"])
 
-CACHE_TTL = 600  # seconds — one digest per symbol per 10 min
+_FLAT = 0.1  # |1-session move| at or below this (%) reads as "little changed", not up/down
 
 
 class DigestResponse(BaseModel):
@@ -101,29 +100,91 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
     )
 
 
+def _rel_volume(f: SymbolFacts) -> float | None:
+    if not f.avg_volume_5d:
+        return None
+    return f.last_volume / f.avg_volume_5d
+
+
+def _head(f: SymbolFacts) -> str:
+    # Avoid "GP (GP)" when the display name is just the ticker code.
+    return f.name if f.name.upper() == f.code.upper() else f"{f.name} ({f.code})"
+
+
+def _render_digest_en(f: SymbolFacts) -> str:
+    def move(pct: float) -> str:
+        if pct > _FLAT:
+            return f"rose {pct:.2f}%"
+        if pct < -_FLAT:
+            return f"fell {abs(pct):.2f}%"
+        return f"was little changed ({pct:+.2f}%)"
+
+    delayed = " (delayed)" if f.is_delayed else ""
+    parts = [f"{_head(f)} {move(f.change_pct_1d)} today to ৳{f.last_price:g}{delayed}."]
+    if f.change_pct_5d is not None:
+        parts.append(f"Over the last 5 sessions it {move(f.change_pct_5d)}.")
+    rel = _rel_volume(f)
+    if rel is not None:
+        parts.append(f"Volume ran {rel:.1f}x its 5-day average.")
+    total = f.bull_posts + f.bear_posts + f.neutral_posts
+    if total == 0:
+        parts.append("No posts about it in the last 7 days.")
+    else:
+        lean = {
+            "bullish": "leans bullish",
+            "bearish": "leans bearish",
+            "mixed": "is split",
+            "quiet": "is quiet",
+        }[crowd_mood(f.bull_posts, f.bear_posts, f.neutral_posts)]
+        parts.append(
+            f"Across {total} posts this week the crowd {lean} ({f.bull_posts}▲ / {f.bear_posts}▼)."
+        )
+    return " ".join(parts)
+
+
+def _render_digest_bn(f: SymbolFacts) -> str:
+    def move(pct: float) -> str:
+        if pct > _FLAT:
+            return f"{pct:.2f}% বেড়েছে"
+        if pct < -_FLAT:
+            return f"{abs(pct):.2f}% কমেছে"
+        return f"প্রায় অপরিবর্তিত ({pct:+.2f}%)"
+
+    delayed = " (বিলম্বিত)" if f.is_delayed else ""
+    parts = [f"{_head(f)} আজ {move(f.change_pct_1d)}, দর ৳{f.last_price:g}{delayed}।"]
+    if f.change_pct_5d is not None:
+        parts.append(f"গত ৫ সেশনে {move(f.change_pct_5d)}।")
+    rel = _rel_volume(f)
+    if rel is not None:
+        parts.append(f"লেনদেনের পরিমাণ ৫-দিনের গড়ের {rel:.1f} গুণ।")
+    total = f.bull_posts + f.bear_posts + f.neutral_posts
+    if total == 0:
+        parts.append("গত সপ্তাহে এ নিয়ে কোনো পোস্ট নেই।")
+    else:
+        lean = {
+            "bullish": "চাঙা",
+            "bearish": "মন্দা",
+            "mixed": "মিশ্র",
+            "quiet": "শান্ত",
+        }[crowd_mood(f.bull_posts, f.bear_posts, f.neutral_posts)]
+        parts.append(
+            f"গত সপ্তাহে {total}টি পোস্টে আলোচকদের ঝোঁক {lean} ({f.bull_posts}▲ / {f.bear_posts}▼)।"
+        )
+    return " ".join(parts)
+
+
 @router.get("/symbols/{code}/digest")
 async def get_digest(code: str, tenant: CurrentTenant, session: DbSession) -> DigestResponse:
     code = code.upper()
-    cache_key = f"digest:{tenant.market}:{code}:{tenant.locale}"
-    redis = aioredis.from_url(get_settings().redis_url)
-    try:
-        cached = await redis.get(cache_key)
-        if cached:
-            return DigestResponse.model_validate_json(cached)
+    facts = await _gather_facts(session, tenant.market, code)
+    if facts is None:
+        raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
-        facts = await _gather_facts(session, tenant.market, code)
-        if facts is None:
-            raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
-
-        summary = await summarize_symbol(facts, language=language_for(tenant.locale))
-        resp = DigestResponse(
-            code=code,
-            summary=summary,
-            mood=crowd_mood(facts.bull_posts, facts.bear_posts, facts.neutral_posts),
-            posts=facts.bull_posts + facts.bear_posts + facts.neutral_posts,
-            change_pct_1d=facts.change_pct_1d,
-        )
-        await redis.set(cache_key, resp.model_dump_json(), ex=CACHE_TTL)
-        return resp
-    finally:
-        await redis.aclose()
+    render = _render_digest_bn if tenant.locale == "bn" else _render_digest_en
+    return DigestResponse(
+        code=code,
+        summary=render(facts),
+        mood=crowd_mood(facts.bull_posts, facts.bear_posts, facts.neutral_posts),
+        posts=facts.bull_posts + facts.bear_posts + facts.neutral_posts,
+        change_pct_1d=facts.change_pct_1d,
+    )
