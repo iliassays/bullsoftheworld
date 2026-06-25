@@ -1,15 +1,72 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, type Buzz, type Post, type SymbolDetail } from "../lib/api";
+import {
+  api,
+  type Buzz,
+  type Company,
+  type Post,
+  type SymbolDetail,
+} from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
+import {
+  EarningsPanel,
+  FundamentalsPanel,
+  OwnershipPanel,
+} from "../components/CompanyPanels";
 import { DigestPanel } from "../components/DigestPanel";
 import { KeyLevels } from "../components/KeyLevels";
 import { PostCard } from "../components/PostCard";
 import { Technicals } from "../components/Technicals";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
+
+type Tab =
+  | "overview"
+  | "feed"
+  | "bulls"
+  | "fundamentals"
+  | "ownership"
+  | "earnings";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "feed", label: "💬 Feed" },
+  { id: "bulls", label: "🐂 Bulls" },
+  { id: "fundamentals", label: "Fundamentals" },
+  { id: "ownership", label: "Ownership" },
+  { id: "earnings", label: "Earnings" },
+];
+
+const crore = (mn: number | null | undefined) =>
+  mn == null
+    ? "—"
+    : `৳${(mn / 10).toLocaleString(undefined, { maximumFractionDigits: 0 })} Cr`;
+
+function QuickStrip({
+  f,
+  volume,
+}: {
+  f: Company["fundamentals"];
+  volume?: number;
+}) {
+  const cell = (label: string, value: string) => (
+    <div className="flex flex-col items-center px-2">
+      <span className="text-[10px] text-muted">{label}</span>
+      <span className="text-xs font-semibold tnum">{value}</span>
+    </div>
+  );
+  return (
+    <div className="flex justify-between mt-3 pt-3 border-t border-border overflow-x-auto">
+      {cell("Mkt Cap", crore(f.market_cap_mn))}
+      {cell("Vol", volume != null ? volume.toLocaleString() : "—")}
+      {cell("52W H", f.week52_high != null ? `৳${f.week52_high}` : "—")}
+      {cell("52W L", f.week52_low != null ? `৳${f.week52_low}` : "—")}
+      {cell("P/E", f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—")}
+      {cell("EPS", f.eps != null ? `৳${f.eps}` : "—")}
+    </div>
+  );
+}
 
 export function SymbolPage() {
   const { code = "" } = useParams();
@@ -17,9 +74,10 @@ export function SymbolPage() {
   const { user } = useAuth();
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
-  const [tab, setTab] = useState<"discussion" | "notes">("discussion");
   const [buzz, setBuzz] = useState<Buzz | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [watched, setWatched] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
   const discussion = useInfiniteFeed(`${sym}:discussion`, (l, o) =>
     api.feed(sym, undefined, l, o),
   );
@@ -31,6 +89,7 @@ export function SymbolPage() {
     setDetail(null);
     setTopPost(null);
     setBuzz(null);
+    setCompany(null);
     api
       .symbol(sym)
       .then(setDetail)
@@ -43,6 +102,10 @@ export function SymbolPage() {
       .buzz(sym)
       .then(setBuzz)
       .catch(() => setBuzz(null));
+    api
+      .company(sym)
+      .then(setCompany)
+      .catch(() => setCompany(null));
     api.recordView(sym).catch(() => {}); // internal analytics; fire-and-forget
     if (user)
       api
@@ -54,7 +117,6 @@ export function SymbolPage() {
     if (watched) await api.watchRemove(sym);
     else await api.watchAdd(sym);
     setWatched(!watched);
-    // reflect the watcher count change immediately
     setBuzz((b) =>
       b ? { ...b, watchers: b.watchers + (watched ? -1 : 1) } : b,
     );
@@ -125,37 +187,39 @@ export function SymbolPage() {
             {buzz.chatter_x ? ` · ${buzz.chatter_x}× usual chatter` : ""}
           </div>
         )}
+        {company && <QuickStrip f={company.fundamentals} volume={q?.volume} />}
       </div>
 
-      <DigestPanel code={sym} />
-
-      <CandleChart code={sym} />
-
-      <Technicals code={sym} />
-
-      <KeyLevels code={sym} />
-
-      {/* Discussion vs Bulls Feed (agent notes only) */}
-      <div className="flex gap-2">
-        {(["discussion", "notes"] as const).map((t) => (
+      {/* tab bar */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {TABS.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`text-sm font-semibold px-3 py-1.5 rounded-full border ${
-              tab === t
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border ${
+              tab === t.id
                 ? "text-accent border-accent bg-accent/10"
                 : "text-muted border-border"
             }`}
           >
-            {t === "discussion" ? "💬 Discussion" : "🐂 Bulls Feed"}
-            {t === "notes" && noteFeed.items.length
+            {t.label}
+            {t.id === "bulls" && noteFeed.items.length
               ? ` (${noteFeed.items.length})`
               : ""}
           </button>
         ))}
       </div>
 
-      {tab === "discussion" ? (
+      {tab === "overview" && (
+        <>
+          <DigestPanel code={sym} />
+          <CandleChart code={sym} />
+          <Technicals code={sym} />
+          <KeyLevels code={sym} />
+        </>
+      )}
+
+      {tab === "feed" && (
         <>
           {topPost && (
             <div className="flex flex-col gap-2">
@@ -165,7 +229,6 @@ export function SymbolPage() {
               <PostCard post={topPost} />
             </div>
           )}
-
           {user ? (
             <Composer
               initial={`$${sym} `}
@@ -179,7 +242,6 @@ export function SymbolPage() {
               Log in to post about ${sym} →
             </Link>
           )}
-
           {discussion.items.map((p) => (
             <PostCard key={p.id} post={p} />
           ))}
@@ -189,7 +251,9 @@ export function SymbolPage() {
           )}
           <div ref={discussion.sentinelRef} />
         </>
-      ) : (
+      )}
+
+      {tab === "bulls" && (
         <>
           {noteFeed.items.map((p) => (
             <PostCard key={p.id} post={p} />
@@ -203,6 +267,24 @@ export function SymbolPage() {
           <div ref={noteFeed.sentinelRef} />
         </>
       )}
+
+      {tab === "fundamentals" &&
+        (company ? (
+          <FundamentalsPanel f={company.fundamentals} />
+        ) : (
+          <Spinner />
+        ))}
+      {tab === "ownership" &&
+        (company ? <OwnershipPanel o={company.ownership} /> : <Spinner />)}
+      {tab === "earnings" &&
+        (company ? (
+          <EarningsPanel
+            earnings={company.earnings}
+            dividends={company.dividends}
+          />
+        ) : (
+          <Spinner />
+        ))}
     </div>
   );
 }

@@ -171,6 +171,47 @@ export interface Buzz {
   reactions_24h: number;
   replies_24h: number;
 }
+export interface Company {
+  code: string;
+  fundamentals: {
+    market_cap_mn: number | null;
+    pe_ratio: number | null;
+    pb_ratio: number | null;
+    dividend_yield: number | null;
+    pe_vs_sector: number | null;
+    eps: number | null;
+    nav_per_share: number | null;
+    eps_growth_yoy: number | null;
+    outstanding_shares: number | null;
+    free_float_cap_mn: number | null;
+    face_value: number | null;
+    sector: string | null;
+    credit_rating: string | null;
+    week52_high: number | null;
+    week52_low: number | null;
+    avg_volume_20: number | null;
+  };
+  ownership: {
+    sponsor_pct: number | null;
+    institute_pct: number | null;
+    foreign_pct: number | null;
+    public_pct: number | null;
+    institute_delta: number | null;
+    foreign_delta: number | null;
+    as_of: string | null;
+  };
+  earnings: {
+    fiscal_year: number;
+    eps: number | null;
+    nav_per_share: number | null;
+    profit_mn: number | null;
+  }[];
+  dividends: {
+    year: number;
+    cash_pct: number | null;
+    bonus_pct: number | null;
+  }[];
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -232,6 +273,7 @@ export const api = {
     ),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
+  company: (code: string) => request<Company>(`/symbols/${code}/company`),
   recordView: (code: string) =>
     request<void>(`/symbols/${code}/view`, {
       method: "POST",
