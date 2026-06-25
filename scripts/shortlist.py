@@ -1,15 +1,17 @@
 """Personal buy/sell shortlist — a ranked, reasoned candidate list for DSE (EOD decision support).
 
 NOT the public portal (which is descriptive-only). This is your own tool: it scores the whole
-universe across four factor families, blends them per horizon, and prints a ranked shortlist with
-the *why* and the key levels behind each name.
+universe across five factor families (contrarian, value, quality, flow, momentum), blends them per
+horizon, and prints a ranked shortlist with the *why* and the key levels behind each name.
 
     uv run python scripts/shortlist.py                 # all horizons, top 15 each
     uv run python scripts/shortlist.py --horizon swing --top 25
     uv run python scripts/shortlist.py --code GP       # explain one name's score
 
 Data is end-of-day/delayed. This ranks candidates and entry context; you place the orders.
-v1 weights are transparent starters — phase 2 calibrates them from the 2-year history.
+Weights are calibrated by scripts/factor_study.py: on the 2024-26 DSE window momentum tested
+negative and contrarian (oversold/mean-reversion) led, so the profiles lead with contrarian+quality.
+Re-run the study as history grows — the regime can change.
 """
 
 from __future__ import annotations
@@ -25,11 +27,28 @@ from bulls.core.models import CompanyProfile, DividendRecord, Symbol, TickerAnal
 MARKET = "DSE"
 MIN_AVG_VOLUME = 5_000  # drop near-untradeable names so the list is actionable
 
-# Horizon = a weighting of the four family scores (each 0-100). Sums to 1.0.
+# Horizon = a weighting of the family scores (each 0-100). Sums to 1.0.
+# Calibrated by scripts/factor_study.py: on the 2024-26 DSE window momentum tested NEGATIVE
+# (mean-reversion regime) and contrarian (oversold/near-low) was the strongest factor, so swing/
+# positional lead with contrarian+quality and zero momentum. flow = ownership overlay (user-valued,
+# not yet calibrated — sparse history). investing leans value/quality on judgment (multi-year horizon
+# can't be validated on 2y data). Re-run the study and revisit as history grows.
 HORIZONS: dict[str, dict[str, float]] = {
-    "swing": {"momentum": 0.45, "flow": 0.30, "value": 0.10, "quality": 0.15},
-    "positional": {"momentum": 0.30, "flow": 0.25, "value": 0.25, "quality": 0.20},
-    "investing": {"value": 0.40, "quality": 0.35, "flow": 0.15, "momentum": 0.10},
+    "swing": {"contrarian": 0.45, "quality": 0.25, "flow": 0.20, "value": 0.10, "momentum": 0.0},
+    "positional": {
+        "contrarian": 0.35,
+        "quality": 0.30,
+        "value": 0.20,
+        "flow": 0.15,
+        "momentum": 0.0,
+    },
+    "investing": {
+        "quality": 0.40,
+        "value": 0.30,
+        "contrarian": 0.20,
+        "flow": 0.10,
+        "momentum": 0.0,
+    },
 }
 
 
@@ -130,6 +149,10 @@ def _score(rows: list[Row]) -> dict[str, dict[str, float | None]]:
     )
     rsi = _pct_rank({r.code: r.a.rsi_14 for r in rows})
 
+    # --- Contrarian / mean-reversion: oversold + near 52w low (the calibrated edge on DSE) ---
+    lowrsi = _pct_rank(g("rsi_14"), reverse=True)  # low RSI -> high score
+    nearlow = _pct_rank(g("pct_from_52w_low"), reverse=True)  # near 52w low -> high score
+
     # --- Ownership flow: smart money adding ---
     inst_d = _pct_rank(g("institute_delta"))
     fgn_d = _pct_rank(g("foreign_delta"))
@@ -145,6 +168,7 @@ def _score(rows: list[Row]) -> dict[str, dict[str, float | None]]:
         out[c] = {
             "value": _mean([pe.get(c), pb.get(c), yld.get(c), pe_sec.get(c)]),
             "momentum": _mean([trend.get(c), cmf.get(c), relvol.get(c), rsi.get(c)]),
+            "contrarian": _mean([lowrsi.get(c), nearlow.get(c)]),
             "flow": _mean([inst_d.get(c), fgn_d.get(c), cmf.get(c)]),
             "quality": _mean([eps_g.get(c), consistency.get(c), low_debt.get(c)]),
         }
@@ -173,6 +197,10 @@ def _reasons(r: Row, sub: dict[str, float | None]) -> str:
         bits.append(f"accumulation (CMF {r.a.cmf_20})")
     if r.a.eps_growth_yoy and r.a.eps_growth_yoy > 15:
         bits.append(f"EPS +{r.a.eps_growth_yoy}% YoY")
+    if r.a.rsi_14 and r.a.rsi_14 < 35:
+        bits.append(f"oversold (RSI {r.a.rsi_14})")  # the calibrated mean-reversion edge
+    if r.a.pct_from_52w_low is not None and r.a.pct_from_52w_low < 15:
+        bits.append(f"near 52w low (+{r.a.pct_from_52w_low}%)")
     if r.a.rsi_14 and r.a.rsi_14 > 72:
         bits.append(f"⚠ overbought (RSI {r.a.rsi_14})")
     if a and a.long_term_loan_mn == 0:
@@ -185,15 +213,16 @@ def _print_horizon(name: str, rows: list[Row], scores: dict, top: int) -> None:
     ranked = sorted(rows, key=lambda r: _composite(scores[r.code], weights), reverse=True)[:top]
     print(f"\n{'=' * 100}\n  {name.upper()}  (weights: {weights})\n{'=' * 100}")
     print(
-        f"  {'#':>2} {'CODE':<12}{'SCORE':>6}  {'V':>4}{'M':>4}{'F':>4}{'Q':>4}  {'CLOSE':>8}  WHY"
+        f"  {'#':>2} {'CODE':<12}{'SCORE':>6}  {'C':>4}{'V':>4}{'Q':>4}{'F':>4}{'M':>4}  {'CLOSE':>8}  WHY"
     )
     for i, r in enumerate(ranked, 1):
         s = scores[r.code]
         comp = _composite(s, weights)
         sv = lambda x: f"{x:>4.0f}" if x is not None else "   ·"  # noqa: E731
         print(
-            f"  {i:>2} {r.code:<12}{comp:>6.1f}  {sv(s['value'])}{sv(s['momentum'])}{sv(s['flow'])}{sv(s['quality'])}"
-            f"  {r.close:>8.2f}  {_reasons(r, s)[:70]}"
+            f"  {i:>2} {r.code:<12}{comp:>6.1f}  "
+            f"{sv(s['contrarian'])}{sv(s['value'])}{sv(s['quality'])}{sv(s['flow'])}{sv(s['momentum'])}"
+            f"  {r.close:>8.2f}  {_reasons(r, s)[:68]}"
         )
 
 
@@ -205,7 +234,8 @@ def _print_one(code: str, rows: list[Row], scores: dict) -> None:
     s = scores[r.code]
     print(f"\n  {r.code} — {r.name}  [{r.sector}]   close {r.close}")
     print(
-        f"  family scores: value={s['value']} momentum={s['momentum']} flow={s['flow']} quality={s['quality']}"
+        f"  family scores: contrarian={s['contrarian']} value={s['value']} quality={s['quality']} "
+        f"flow={s['flow']} momentum={s['momentum']}"
     )
     for h, w in HORIZONS.items():
         print(f"    {h:<11} composite {_composite(s, w):>5}")
@@ -228,7 +258,8 @@ async def _run(args) -> None:
     for h in horizons:
         _print_horizon(h, rows, scores, args.top)
     print(
-        "\nLegend: V=value M=momentum F=flow Q=quality (0-100 percentile). Starter weights — calibrate in phase 2."
+        "\nLegend: C=contrarian V=value Q=quality F=flow M=momentum (0-100 percentile). "
+        "Weights calibrated by scripts/factor_study.py (contrarian/quality led; momentum tested negative)."
     )
 
 
