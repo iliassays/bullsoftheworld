@@ -26,6 +26,7 @@ from api.routers import (
     levels,
     market,
     posts,
+    pulse,
     screener,
     translate,
     trending,
@@ -77,6 +78,7 @@ app.include_router(explainer.router)
 app.include_router(levels.router)
 app.include_router(market.router)
 app.include_router(posts.router)
+app.include_router(pulse.router)
 app.include_router(screener.router)
 app.include_router(translate.router)
 app.include_router(trending.router)

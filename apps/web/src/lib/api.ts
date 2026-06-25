@@ -212,6 +212,16 @@ export interface Company {
     bonus_pct: number | null;
   }[];
 }
+export interface Gauge {
+  score: number;
+  label: string;
+}
+export interface Pulse {
+  code: string;
+  sentiment: Gauge;
+  message_volume: Gauge;
+  participation: Gauge;
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -274,6 +284,7 @@ export const api = {
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
+  pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
   recordView: (code: string) =>
     request<void>(`/symbols/${code}/view`, {
       method: "POST",

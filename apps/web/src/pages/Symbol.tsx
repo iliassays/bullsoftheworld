@@ -18,6 +18,7 @@ import {
 } from "../components/CompanyPanels";
 import { DigestPanel } from "../components/DigestPanel";
 import { KeyLevels } from "../components/KeyLevels";
+import { PulseGauges } from "../components/PulseGauges";
 import { PostCard } from "../components/PostCard";
 import { Technicals } from "../components/Technicals";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
@@ -213,6 +214,7 @@ export function SymbolPage() {
       {tab === "overview" && (
         <>
           <DigestPanel code={sym} />
+          <PulseGauges code={sym} />
           <CandleChart code={sym} />
           <Technicals code={sym} />
           <KeyLevels code={sym} />
