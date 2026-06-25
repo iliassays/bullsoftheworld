@@ -47,6 +47,25 @@ class TickerAnalytics(Base):
     relative_volume: Mapped[float | None] = mapped_column(Float)
     cmf_20: Mapped[float | None] = mapped_column(Float)  # >0 accumulation, <0 distribution
 
+    # Valuation — derived daily from last_close x fundamentals (weekly company scrape)
+    market_cap_mn: Mapped[float | None] = mapped_column(Float)
+    free_float_cap_mn: Mapped[float | None] = mapped_column(Float)
+    pe_ratio: Mapped[float | None] = mapped_column(Float)  # None when EPS <= 0
+    pb_ratio: Mapped[float | None] = mapped_column(Float)
+    dividend_yield: Mapped[float | None] = mapped_column(Float)  # %
+    pe_vs_sector: Mapped[float | None] = mapped_column(
+        Float
+    )  # pe_ratio / sector median (<1 = cheap)
+    eps_growth_yoy: Mapped[float | None] = mapped_column(Float)  # % latest vs prior fiscal year
+
+    # Ownership — latest shareholding % + month-over-month change (surfaced from the snapshot series)
+    sponsor_pct: Mapped[float | None] = mapped_column(Float)
+    institute_pct: Mapped[float | None] = mapped_column(Float)
+    foreign_pct: Mapped[float | None] = mapped_column(Float)
+    public_pct: Mapped[float | None] = mapped_column(Float)
+    institute_delta: Mapped[float | None] = mapped_column(Float)  # vs prior snapshot
+    foreign_delta: Mapped[float | None] = mapped_column(Float)
+
     computed_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

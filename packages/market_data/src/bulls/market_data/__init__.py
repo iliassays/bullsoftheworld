@@ -4,11 +4,31 @@ Swapping the DSE scraper for a licensed real-time feed = one change in `registry
 """
 
 from bulls.market_data.provider import (
+    AnnualFinancial,
     Bar,
+    CompanyInfo,
+    CompanyProfile,
+    DividendRecord,
     MarketDataProvider,
+    MarketSummary,
     Quote,
+    SectorPE,
+    Shareholding,
     Symbol,
 )
 from bulls.market_data.registry import get_provider
 
-__all__ = ["Bar", "MarketDataProvider", "Quote", "Symbol", "get_provider"]
+__all__ = [
+    "AnnualFinancial",
+    "Bar",
+    "CompanyInfo",
+    "CompanyProfile",
+    "DividendRecord",
+    "MarketDataProvider",
+    "MarketSummary",
+    "Quote",
+    "SectorPE",
+    "Shareholding",
+    "Symbol",
+    "get_provider",
+]

@@ -25,7 +25,10 @@ from bulls.core.config import get_settings
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion.analytics import compute_all
 from ingestion.buzz import snapshot_all
+from ingestion.company import collect as collect_company
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
+from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
+from ingestion.market_summary import collect as collect_summary
 from ingestion.scheduler import poll_market
 
 log = logging.getLogger(__name__)
@@ -49,6 +52,23 @@ async def pull_eod_bars(ctx) -> str:
     stats = await collect(MARKET, days=DAILY_LOOKBACK_DAYS)
     log.info("eod pull: %s bars upserted", stats["bars_upserted"])
     return f"bars={stats['bars_upserted']}"
+
+
+async def pull_eod_summary(ctx) -> str:
+    """Pull the day's market-wide summary (index/turnover/cap) after the close — trading days only."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    stats = await collect_summary(MARKET, days=SUMMARY_LOOKBACK_DAYS)
+    log.info("eod summary: %s days upserted", stats["days_upserted"])
+    return f"summary={stats['days_upserted']}"
+
+
+async def refresh_company(ctx) -> str:
+    """Weekly company reference + shareholding refresh. Heavy/slow-moving — runs off the EOD path."""
+    stats = await collect_company(MARKET)
+    log.info("company refresh: %s/%s profiles", stats["profiles"], stats["symbols"])
+    return f"profiles={stats['profiles']} shareholding={stats['shareholding_rows']}"
 
 
 async def refresh_analytics(ctx) -> str:
@@ -80,12 +100,23 @@ async def snapshot_buzz(ctx) -> str:
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
-    functions: ClassVar = [poll_quotes, pull_eod_bars, refresh_analytics, snapshot_buzz]
+    functions: ClassVar = [
+        poll_quotes,
+        pull_eod_bars,
+        pull_eod_summary,
+        refresh_company,
+        refresh_analytics,
+        snapshot_buzz,
+    ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
         cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 30}, run_at_startup=False),
         # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
+        # Market-wide summary (index/turnover) right after the bar pull.
+        cron(pull_eod_summary, hour=13, minute=5, run_at_startup=False),
+        # Weekly company/shareholding sweep — Friday (DSE closed, site quiet), well off the EOD path.
+        cron(refresh_company, weekday="fri", hour=14, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
         # Snapshot social attention hourly across the session, then finalize after the bar pull.

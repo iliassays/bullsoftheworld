@@ -14,16 +14,19 @@ from bulls.analytics.indicators import (
     swing_low_indices,
 )
 from bulls.analytics.scenarios import LevelsInsight, build_levels
+from bulls.analytics.valuation import ValuationResult, compute_valuation
 
 __all__ = [
     "AnalyticsResult",
     "BarLike",
     "Level",
     "LevelsInsight",
+    "ValuationResult",
     "atr",
     "build_levels",
     "chaikin_money_flow",
     "compute",
+    "compute_valuation",
     "ema",
     "rsi",
     "sma",
