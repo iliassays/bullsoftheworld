@@ -168,11 +168,15 @@ no new infra.*
 - *Done:* one reaction per user enforced by composite PK; switching stance upserts; replies
   excluded from the root feed.
 
-**Phase B — Attention snapshot + trend.**
-- `ticker_buzz_daily` + EOD job (next to `TickerAnalytics` compute); `/symbols/{code}/buzz`;
-  watchers count + 7-day delta on header.
-- *Done when:* buzz endpoint returns thresholded fields; trend fields are `null` until ≥N days of
-  snapshots exist (verified); header shows watchers with delta omitted when thin.
+**Phase B — Attention snapshot + trend. ✅ IMPLEMENTED 2026-06-25.**
+- `ticker_buzz_daily` model + migration (`2c377ce5ddbc`); `ingestion/buzz.py` `snapshot_all`
+  wired into the worker (`snapshot_buzz` cron at 13:20 UTC, after analytics). `GET
+  /symbols/{code}/buzz` returns live current counts + baseline-relative trend from the snapshots,
+  thresholded (chatter ≥2× & ≥5 posts → `rising`; watcher delta shown only if ≥5 move & ≥20
+  watchers). Symbol header shows `👁 N watching (+M this week)` + a "🔊 Attention rising" chip.
+- *Done:* trend fields (`posts_baseline`, `chatter_x`, `watchers_delta_7d`) stay `null` until
+  enough snapshot history accrues — verified via synthetic history; never fabricated. Pure
+  threshold helpers unit-tested; endpoint flow DB-tested.
 
 **Phase C — Synthesis.**
 - Templated attention clause folded into the digest (bilingual, thresholded); screener filters

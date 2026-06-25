@@ -147,6 +147,17 @@ export interface ScreensResponse {
   as_of: string | null;
   screens: Screen[];
 }
+export interface Buzz {
+  code: string;
+  watchers: number;
+  watchers_delta_7d: number | null;
+  posts_24h: number;
+  posts_baseline: number | null;
+  chatter_x: number | null;
+  attention: "rising" | "normal" | "quiet" | null;
+  reactions_24h: number;
+  replies_24h: number;
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -206,6 +217,7 @@ export const api = {
       `/symbols/${code}/explainer`,
     ),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
+  buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),

@@ -24,6 +24,7 @@ from arq.connections import RedisSettings
 from bulls.core.config import get_settings
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion.analytics import compute_all
+from ingestion.buzz import snapshot_all
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.scheduler import poll_market
 
@@ -60,10 +61,20 @@ async def refresh_analytics(ctx) -> str:
     return f"analytics={counts['computed']}"
 
 
+async def snapshot_buzz(ctx) -> str:
+    """Snapshot each symbol's daily social attention — only on trading days."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    counts = await snapshot_all(MARKET)
+    log.info("buzz snapshot: %s symbols", counts["symbols"])
+    return f"buzz={counts['symbols']}"
+
+
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
-    functions: ClassVar = [poll_quotes, pull_eod_bars, refresh_analytics]
+    functions: ClassVar = [poll_quotes, pull_eod_bars, refresh_analytics, snapshot_buzz]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
         cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 30}, run_at_startup=False),
@@ -71,5 +82,7 @@ class WorkerSettings:
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
+        # Snapshot social attention 20 min after the bar pull, building the buzz-trend history.
+        cron(snapshot_buzz, hour=13, minute=20, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

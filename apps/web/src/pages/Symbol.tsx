@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, type Post, type SymbolDetail } from "../lib/api";
+import { api, type Buzz, type Post, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
@@ -17,12 +17,14 @@ export function SymbolPage() {
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
+  const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [watched, setWatched] = useState(false);
 
   useEffect(() => {
     setDetail(null);
     setPosts(null);
     setTopPost(null);
+    setBuzz(null);
     api
       .symbol(sym)
       .then(setDetail)
@@ -35,6 +37,10 @@ export function SymbolPage() {
       .topPost(sym)
       .then(setTopPost)
       .catch(() => setTopPost(null));
+    api
+      .buzz(sym)
+      .then(setBuzz)
+      .catch(() => setBuzz(null));
     if (user)
       api
         .watchlist()
@@ -45,6 +51,10 @@ export function SymbolPage() {
     if (watched) await api.watchRemove(sym);
     else await api.watchAdd(sym);
     setWatched(!watched);
+    // reflect the watcher count change immediately
+    setBuzz((b) =>
+      b ? { ...b, watchers: b.watchers + (watched ? -1 : 1) } : b,
+    );
   };
 
   if (detail === null) return <Spinner />;
@@ -57,6 +67,22 @@ export function SymbolPage() {
           <div>
             <div className="text-xl font-bold text-accent">${sym}</div>
             <div className="text-xs text-muted">{detail.symbol.name_en}</div>
+            {buzz && (
+              <div className="text-xs text-muted mt-0.5">
+                👁 {buzz.watchers.toLocaleString()} watching
+                {buzz.watchers_delta_7d != null && (
+                  <span
+                    className={
+                      buzz.watchers_delta_7d >= 0 ? "text-up" : "text-down"
+                    }
+                  >
+                    {" "}
+                    ({buzz.watchers_delta_7d >= 0 ? "+" : ""}
+                    {buzz.watchers_delta_7d} this week)
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           {user && (
             <button
@@ -90,6 +116,12 @@ export function SymbolPage() {
         <div className="text-[10px] text-muted mt-2">
           ⏱ delayed · as of {new Date(q?.as_of ?? "").toLocaleString()}
         </div>
+        {buzz?.attention === "rising" && (
+          <div className="mt-2 inline-flex items-center gap-1 text-xs text-accent bg-accent/10 rounded-full px-2 py-0.5 w-fit">
+            🔊 Attention rising
+            {buzz.chatter_x ? ` · ${buzz.chatter_x}× usual chatter` : ""}
+          </div>
+        )}
       </div>
 
       <DigestPanel code={sym} />
