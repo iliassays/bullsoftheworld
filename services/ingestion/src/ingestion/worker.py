@@ -30,7 +30,7 @@ from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
 from ingestion.market_summary import collect as collect_summary
 from ingestion.scheduler import poll_market
-from ingestion.signals.runner import run_levels_agent
+from ingestion.signals.runner import run_levels_agent, run_ownership_agents
 
 log = logging.getLogger(__name__)
 MARKET = "DSE"
@@ -108,6 +108,13 @@ async def run_signals(ctx) -> str:
     return f"signals={counts['published']}"
 
 
+async def run_ownership_signals(ctx) -> str:
+    """Publish ownership desk-notes after the weekly company/shareholding refresh."""
+    counts = await run_ownership_agents(MARKET)
+    log.info("ownership signals: %s notes published", counts["published"])
+    return f"ownership={counts['published']}"
+
+
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
@@ -119,6 +126,7 @@ class WorkerSettings:
         refresh_analytics,
         snapshot_buzz,
         run_signals,
+        run_ownership_signals,
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
@@ -136,5 +144,7 @@ class WorkerSettings:
         cron(snapshot_buzz, hour={4, 5, 6, 7, 8, 13}, minute=20, run_at_startup=False),
         # Agent desk-notes from the day's confirmed levels, after analytics is fresh.
         cron(run_signals, hour=13, minute=25, run_at_startup=False),
+        # Ownership desk-notes after the weekly company/shareholding refresh (Fri 14:00).
+        cron(run_ownership_signals, weekday="fri", hour=14, minute=10, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime as dt
 
 from bulls.analytics.engine import AnalyticsResult
+from bulls.core.models import ShareholdingSnapshot
+from ingestion.signals import ownership
 from ingestion.signals.levels import detect, render
 
 
@@ -55,5 +57,31 @@ def test_render_is_descriptive_bilingual_no_advice():
     assert "GP" in en and "৳105" in en
     assert "52-week" in en and "not a recommendation" in en
     assert "৫২-সপ্তাহ" in bn and "পরামর্শ নয়" in bn
+    for txt in (en, bn):
+        assert "buy" not in txt.lower() and "sell" not in txt.lower()
+
+
+def _snap(d: dt.date, **kw) -> ShareholdingSnapshot:
+    return ShareholdingSnapshot(market="DSE", code="GP", as_of_date=d, **kw)
+
+
+def test_ownership_detect_thresholds():
+    prev = _snap(dt.date(2026, 4, 30), foreign_pct=5.0, institute=10.0, sponsor_director=30.0)
+    latest = _snap(dt.date(2026, 5, 31), foreign_pct=6.5, institute=10.5, sponsor_director=30.0)
+    ev = {s.event_type for s in ownership.detect(prev, latest)}
+    assert "foreign_change" in ev  # +1.5pp ≥ 1.0
+    assert "institution_change" not in ev  # +0.5pp < 2.0
+    assert "sponsor_change" not in ev  # no change
+
+
+def test_ownership_render_descriptive_bilingual():
+    sig = ownership.detect(
+        _snap(dt.date(2026, 4, 30), foreign_pct=5.0),
+        _snap(dt.date(2026, 5, 31), foreign_pct=6.5),
+    )[0]
+    en = ownership.render(sig, "GP", "en")
+    bn = ownership.render(sig, "GP", "bn")
+    assert "6.5%" in en and "5.0%" in en and "raised" in en and "not advice" in en
+    assert "পরামর্শ নয়" in bn
     for txt in (en, bn):
         assert "buy" not in txt.lower() and "sell" not in txt.lower()
