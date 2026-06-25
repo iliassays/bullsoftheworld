@@ -41,6 +41,7 @@ export function SymbolPage() {
       .buzz(sym)
       .then(setBuzz)
       .catch(() => setBuzz(null));
+    api.recordView(sym).catch(() => {}); // internal analytics; fire-and-forget
     if (user)
       api
         .watchlist()

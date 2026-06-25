@@ -188,9 +188,14 @@ no new infra.*
 - *Done:* clause appears only above threshold (unit-tested + verified live); screens return
   sensible sets and stay empty/hidden at cold-start; descriptive, no causal/advice language.
 
-**Phase D — Internal view tracking (optional).**
-- `page_view_events` + aggregation into `unique_viewers_24h`; used only as a deweighted buzz input
-  and internal analytics. *Never* a standalone user-facing "views" metric.
+**Phase D — Internal view tracking. ✅ IMPLEMENTED 2026-06-25.**
+- `page_view_events` model + migration (`981c6f2c6b0e`); `POST /symbols/{code}/view` (anonymous-OK
+  via `OptionalUser`, client-supplied `session_id` for anon de-dupe), fired fire-and-forget from
+  the symbol page. The buzz snapshot rolls events up into `ticker_buzz_daily.unique_viewers_24h`
+  (distinct logged-in user or anon session).
+- *Internal only:* views are NOT in the `/buzz` payload or any UI, and do NOT (yet) feed the
+  attention signal — too noisy/gameable to surface. Verified: distinct-viewer de-dupe works and
+  no `view*` key leaks into `/buzz` (unit-asserted).
 
 ## 9. Open questions / decisions needed
 

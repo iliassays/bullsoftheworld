@@ -14,11 +14,18 @@ import asyncio
 import datetime as dt
 import sys
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import Cashtag, Post, PostReaction, TickerBuzzDaily, WatchlistItem
+from bulls.core.models import (
+    Cashtag,
+    PageViewEvent,
+    Post,
+    PostReaction,
+    TickerBuzzDaily,
+    WatchlistItem,
+)
 from bulls.market_data.calendar import to_market_tz
 
 WINDOW = dt.timedelta(hours=24)
@@ -76,8 +83,19 @@ async def snapshot_all(market: str) -> dict[str, int]:
                 )
             ).all()
         )
+        # unique viewers in the window — distinct logged-in user or anon session (internal only)
+        viewer_key = func.coalesce(cast(PageViewEvent.user_id, String), PageViewEvent.session_hash)
+        viewers = dict(
+            (
+                await session.execute(
+                    select(PageViewEvent.code, func.count(func.distinct(viewer_key)))
+                    .where(PageViewEvent.market == market, PageViewEvent.created_at >= since)
+                    .group_by(PageViewEvent.code)
+                )
+            ).all()
+        )
 
-        codes = set(posts) | set(reactions) | set(replies) | set(watchers)
+        codes = set(posts) | set(reactions) | set(replies) | set(watchers) | set(viewers)
         for code in codes:
             row = {
                 "market": market,
@@ -87,6 +105,7 @@ async def snapshot_all(market: str) -> dict[str, int]:
                 "reactions_24h": reactions.get(code, 0),
                 "replies_24h": replies.get(code, 0),
                 "watchers_total": watchers.get(code, 0),
+                "unique_viewers_24h": viewers.get(code, 0),
             }
             stmt = pg_insert(TickerBuzzDaily).values(row)
             update_cols = {

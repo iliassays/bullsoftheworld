@@ -11,6 +11,19 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+// Stable anonymous client id so page views can be de-duped without a login.
+const CID_KEY = "bulls.cid";
+function clientId(): string {
+  let id = localStorage.getItem(CID_KEY);
+  if (!id) {
+    id =
+      crypto?.randomUUID?.() ??
+      `c_${Math.random().toString(36).slice(2)}${Date.now()}`;
+    localStorage.setItem(CID_KEY, id);
+  }
+  return id;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -218,6 +231,11 @@ export const api = {
     ),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
+  recordView: (code: string) =>
+    request<void>(`/symbols/${code}/view`, {
+      method: "POST",
+      body: JSON.stringify({ session_id: clientId() }),
+    }),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),

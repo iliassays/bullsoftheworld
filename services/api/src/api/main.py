@@ -28,6 +28,7 @@ from api.routers import (
     screener,
     translate,
     trending,
+    views,
     watchlist,
 )
 from bulls.core.config import get_settings
@@ -77,4 +78,5 @@ app.include_router(posts.router)
 app.include_router(screener.router)
 app.include_router(translate.router)
 app.include_router(trending.router)
+app.include_router(views.router)
 app.include_router(watchlist.router)

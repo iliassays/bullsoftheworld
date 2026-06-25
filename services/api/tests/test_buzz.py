@@ -52,3 +52,13 @@ def test_buzz_endpoint_cold_start():
         assert b["chatter_x"] is None
 
         assert c.get("/symbols/NOTREAL/buzz").status_code == 404
+
+
+@pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres + ingestion")
+def test_record_view_is_internal():
+    with TestClient(app) as c:
+        # anonymous view is accepted (no auth required)
+        assert c.post("/symbols/GP/view", json={"session_id": "anon-x"}).status_code == 204
+        assert c.post("/symbols/NOPE/view", json={"session_id": "anon-x"}).status_code == 404
+        # views must NOT leak into the user-facing buzz payload
+        assert not any("view" in k for k in c.get("/symbols/GP/buzz").json())
