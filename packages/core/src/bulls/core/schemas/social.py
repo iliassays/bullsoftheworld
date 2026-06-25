@@ -38,9 +38,17 @@ class UserOut(BaseModel):
 
 
 # --- posts ---
+ReactionKind = Literal["agree", "disagree"]
+
+
 class PostCreate(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
     sentiment: Sentiment | None = None
+    parent_id: int | None = None  # set to reply to another post
+
+
+class ReactionIn(BaseModel):
+    kind: ReactionKind
 
 
 class AuthorOut(BaseModel):
@@ -55,6 +63,12 @@ class PostOut(BaseModel):
     sentiment: Sentiment | None = None
     cashtags: list[str] = []
     created_at: dt.datetime
+    parent_id: int | None = None
+    # conviction layer — tallies are non-negative; my_reaction is the caller's stance (if any)
+    reply_count: int = 0
+    agree: int = 0
+    disagree: int = 0
+    my_reaction: ReactionKind | None = None
 
 
 # --- watchlist ---

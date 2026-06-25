@@ -56,3 +56,27 @@ async def current_user(
 
 
 CurrentUser = Annotated[User, Depends(current_user)]
+
+_bearer_optional = HTTPBearer(auto_error=False)
+
+
+async def optional_user(
+    tenant: CurrentTenant,
+    session: DbSession,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_optional)],
+) -> User | None:
+    """Like current_user, but returns None for anonymous callers instead of 401.
+
+    Used by public reads (e.g. the feed) that personalize when a token is present — such as marking
+    which posts the caller has reacted to — without requiring login.
+    """
+    if creds is None:
+        return None
+    subject = decode_token(creds.credentials)
+    user = await session.get(User, int(subject)) if subject and subject.isdigit() else None
+    if user is None or user.tenant_id != tenant.name:
+        return None
+    return user
+
+
+OptionalUser = Annotated[User | None, Depends(optional_user)]

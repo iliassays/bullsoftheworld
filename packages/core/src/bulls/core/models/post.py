@@ -35,3 +35,19 @@ class Cashtag(Base):
     post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), index=True)
     market: Mapped[str] = mapped_column(String(8), index=True)
     code: Mapped[str] = mapped_column(String(16), index=True)
+
+
+class PostReaction(Base):
+    """One reaction per user per post — conviction on the post's take, not a vanity 'like'.
+
+    Composite PK (post_id, user_id) enforces uniqueness; switching stance is an upsert of `kind`.
+    """
+
+    __tablename__ = "post_reactions"
+
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8))  # 'agree' | 'disagree'
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

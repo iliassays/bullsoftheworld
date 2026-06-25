@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Avatar } from "../components/ui";
 
 export function Profile() {
   const { user, login, register, logout } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [handle, setHandle] = useState("");
   const [name, setName] = useState("");
@@ -44,16 +46,27 @@ export function Profile() {
     }
   };
 
-  const field = "bg-surface border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent";
+  const field =
+    "bg-surface border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-accent";
 
   return (
     <div className="flex flex-col gap-3 max-w-sm mx-auto pt-6">
       <h1 className="text-xl font-bold">
         {mode === "login" ? "Welcome back" : "Join Bulls of Dhaka"} 🐂
       </h1>
-      <input className={field} placeholder="handle" value={handle} onChange={(e) => setHandle(e.target.value)} />
+      <input
+        className={field}
+        placeholder="handle"
+        value={handle}
+        onChange={(e) => setHandle(e.target.value)}
+      />
       {mode === "register" && (
-        <input className={field} placeholder="full name" value={name} onChange={(e) => setName(e.target.value)} />
+        <input
+          className={field}
+          placeholder="full name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       )}
       <input
         className={field}
@@ -77,7 +90,15 @@ export function Profile() {
         }}
         className="text-muted text-sm"
       >
-        {mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}
+        {mode === "login"
+          ? "New here? Create an account"
+          : "Already have an account? Log in"}
+      </button>
+      <button
+        onClick={() => navigate(-1)}
+        className="text-muted text-sm border border-border rounded-xl py-2.5"
+      >
+        Cancel
       </button>
     </div>
   );

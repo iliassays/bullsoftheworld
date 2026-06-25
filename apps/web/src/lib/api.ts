@@ -1,7 +1,8 @@
 // Minimal typed API client. Token is injected from localStorage.
 // Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
 // which the API doesn't bind. Override with VITE_API_BASE if needed.
-const BASE = (import.meta.env.VITE_API_BASE as string) || "http://127.0.0.1:8090";
+const BASE =
+  (import.meta.env.VITE_API_BASE as string) || "http://127.0.0.1:8090";
 const TOKEN_KEY = "bulls.token";
 
 export const tokenStore = {
@@ -146,6 +147,7 @@ export interface ScreensResponse {
   as_of: string | null;
   screens: Screen[];
 }
+export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
   author: { handle: string; name: string };
@@ -153,6 +155,11 @@ export interface Post {
   sentiment: "bull" | "bear" | null;
   cashtags: string[];
   created_at: string;
+  parent_id: number | null;
+  reply_count: number;
+  agree: number;
+  disagree: number;
+  my_reaction: ReactionKind | null;
 }
 export interface User {
   id: number;
@@ -177,7 +184,9 @@ export const api = {
 
   // market
   quotes: (codes?: string[]) =>
-    request<Quote[]>(`/quotes${codes?.length ? `?codes=${codes.join(",")}` : ""}`),
+    request<Quote[]>(
+      `/quotes${codes?.length ? `?codes=${codes.join(",")}` : ""}`,
+    ),
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
@@ -186,9 +195,12 @@ export const api = {
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
   analytics: (code: string) => request<Analytics>(`/symbols/${code}/analytics`),
   levels: (code: string) =>
-    request<{ code: string; as_of: string; lines: string[]; live_line: string | null }>(
-      `/symbols/${code}/levels`,
-    ),
+    request<{
+      code: string;
+      as_of: string;
+      lines: string[];
+      live_line: string | null;
+    }>(`/symbols/${code}/levels`),
   explainer: (code: string) =>
     request<{ code: string; explanation: string; as_of_date: string }>(
       `/symbols/${code}/explainer`,
@@ -204,9 +216,22 @@ export const api = {
     }),
 
   // posts
-  feed: (code?: string) => request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),
-  createPost: (b: { body: string; sentiment: "bull" | "bear" | null }) =>
-    request<Post>("/posts", { method: "POST", body: JSON.stringify(b) }),
+  feed: (code?: string) =>
+    request<Post[]>(`/posts${code ? `?code=${code}` : ""}`),
+  createPost: (b: {
+    body: string;
+    sentiment: "bull" | "bear" | null;
+    parent_id?: number;
+  }) => request<Post>("/posts", { method: "POST", body: JSON.stringify(b) }),
+  topPost: (code: string) => request<Post | null>(`/posts/top?code=${code}`),
+  replies: (id: number) => request<Post[]>(`/posts/${id}/replies`),
+  react: (id: number, kind: ReactionKind) =>
+    request<{ status: string; kind: string }>(`/posts/${id}/react`, {
+      method: "POST",
+      body: JSON.stringify({ kind }),
+    }),
+  unreact: (id: number) =>
+    request<void>(`/posts/${id}/react`, { method: "DELETE" }),
 
   // watchlist
   watchlist: () => request<SymbolDetail[]>("/watchlist"),
@@ -215,5 +240,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
-  watchRemove: (code: string) => request<void>(`/watchlist/${code}`, { method: "DELETE" }),
+  watchRemove: (code: string) =>
+    request<void>(`/watchlist/${code}`, { method: "DELETE" }),
 };
