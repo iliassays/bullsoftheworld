@@ -102,6 +102,7 @@ async def _decorate(session, posts: list[Post], *, viewer_id: int | None) -> lis
                 sentiment=p.sentiment,
                 cashtags=tags.get(p.id, []),
                 created_at=p.created_at,
+                kind=p.kind,
                 parent_id=p.parent_id,
                 reply_count=reply_counts.get(p.id, 0),
                 agree=agree.get(p.id, 0),

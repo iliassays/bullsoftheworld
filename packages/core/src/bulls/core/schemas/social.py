@@ -63,6 +63,7 @@ class PostOut(BaseModel):
     sentiment: Sentiment | None = None
     cashtags: list[str] = []
     created_at: dt.datetime
+    kind: str = "user"  # 'user' | 'note' (automated agent desk-note)
     parent_id: int | None = None
     # conviction layer — tallies are non-negative; my_reaction is the caller's stance (if any)
     reply_count: int = 0

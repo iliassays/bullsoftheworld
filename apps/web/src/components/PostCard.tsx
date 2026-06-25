@@ -110,6 +110,8 @@ export function PostCard({
     setReplyCount((c) => c + 1);
   };
 
+  const isNote = post.kind === "note";
+
   const pill = (active: boolean) =>
     `text-xs font-semibold px-2.5 py-1 rounded-full border transition ${
       active
@@ -122,14 +124,21 @@ export function PostCard({
 
   return (
     <article
-      className={`bg-surface border border-border rounded-2xl ${isReply ? "p-3" : "p-4"}`}
+      className={`rounded-2xl border ${isReply ? "p-3" : "p-4"} ${
+        isNote ? "bg-accent/5 border-accent/30" : "bg-surface border-border"
+      }`}
     >
       <header className="flex items-center gap-2.5">
         <Avatar name={post.author.name} />
         <div className="leading-tight">
           <b className="text-sm">{post.author.name}</b>
           <span className="block text-xs text-muted">
-            @{post.author.handle} · {ago(post.created_at)}
+            {isNote ? (
+              <span className="text-accent">🤖 auto · data note</span>
+            ) : (
+              `@${post.author.handle}`
+            )}{" "}
+            · {ago(post.created_at)}
           </span>
         </div>
         <div className="ml-auto">

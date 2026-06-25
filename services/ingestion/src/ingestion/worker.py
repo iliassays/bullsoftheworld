@@ -30,6 +30,7 @@ from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
 from ingestion.market_summary import collect as collect_summary
 from ingestion.scheduler import poll_market
+from ingestion.signals.runner import run_levels_agent
 
 log = logging.getLogger(__name__)
 MARKET = "DSE"
@@ -97,6 +98,16 @@ async def snapshot_buzz(ctx) -> str:
     return f"buzz={counts['symbols']}"
 
 
+async def run_signals(ctx) -> str:
+    """Publish agent desk-notes from the day's confirmed levels — only on trading days."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    counts = await run_levels_agent(MARKET)
+    log.info("signals: %s notes published", counts["published"])
+    return f"signals={counts['published']}"
+
+
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
@@ -107,6 +118,7 @@ class WorkerSettings:
         refresh_company,
         refresh_analytics,
         snapshot_buzz,
+        run_signals,
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
@@ -122,5 +134,7 @@ class WorkerSettings:
         # Snapshot social attention hourly across the session, then finalize after the bar pull.
         # Intraday runs keep watchers_total + today's counts fresh; the 13:20 run is the EOD row.
         cron(snapshot_buzz, hour={4, 5, 6, 7, 8, 13}, minute=20, run_at_startup=False),
+        # Agent desk-notes from the day's confirmed levels, after analytics is fresh.
+        cron(run_signals, hour=13, minute=25, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

@@ -179,6 +179,7 @@ export interface Post {
   sentiment: "bull" | "bear" | null;
   cashtags: string[];
   created_at: string;
+  kind: "user" | "note";
   parent_id: number | null;
   reply_count: number;
   agree: number;

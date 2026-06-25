@@ -23,6 +23,7 @@ class Post(Base):
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), index=True)
     body: Mapped[str] = mapped_column(Text)
     sentiment: Mapped[str | None] = mapped_column(String(8))  # 'bull' | 'bear' | None
+    kind: Mapped[str] = mapped_column(String(8), server_default="user")  # 'user' | 'note' (agent)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
