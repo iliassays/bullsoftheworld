@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type Post } from "../lib/api";
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { Composer } from "../components/Composer";
 import { PostCard } from "../components/PostCard";
 import { TickerStrip } from "../components/TickerStrip";
@@ -10,18 +10,17 @@ import { Empty, Spinner } from "../components/ui";
 
 export function Feed() {
   const { user } = useAuth();
-  const [posts, setPosts] = useState<Post[] | null>(null);
-
-  useEffect(() => {
-    api.feed().then(setPosts).catch(() => setPosts([]));
-  }, []);
+  const { items, setItems, loading, sentinelRef } = useInfiniteFeed(
+    "home",
+    (l, o) => api.feed(undefined, undefined, l, o),
+  );
 
   return (
     <div className="flex flex-col gap-3">
       <TickerStrip />
       <TodaysWatch />
       {user ? (
-        <Composer onPosted={(p) => setPosts((cur) => [p, ...(cur ?? [])])} />
+        <Composer onPosted={(p) => setItems((cur) => [p, ...cur])} />
       ) : (
         <Link
           to="/me"
@@ -31,13 +30,14 @@ export function Feed() {
         </Link>
       )}
 
-      {posts === null ? (
-        <Spinner />
-      ) : posts.length === 0 ? (
+      {items.map((p) => (
+        <PostCard key={p.id} post={p} />
+      ))}
+      {loading && <Spinner />}
+      {!loading && items.length === 0 && (
         <Empty>No posts yet. Be the first to call $GP.</Empty>
-      ) : (
-        posts.map((p) => <PostCard key={p.id} post={p} />)
       )}
+      <div ref={sentinelRef} />
     </div>
   );
 }

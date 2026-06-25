@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Buzz, type Post, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
 import { DigestPanel } from "../components/DigestPanel";
@@ -15,31 +16,25 @@ export function SymbolPage() {
   const sym = code.toUpperCase();
   const { user } = useAuth();
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
-  const [posts, setPosts] = useState<Post[] | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
-  const [notes, setNotes] = useState<Post[] | null>(null);
   const [tab, setTab] = useState<"discussion" | "notes">("discussion");
   const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [watched, setWatched] = useState(false);
+  const discussion = useInfiniteFeed(`${sym}:discussion`, (l, o) =>
+    api.feed(sym, undefined, l, o),
+  );
+  const noteFeed = useInfiniteFeed(`${sym}:notes`, (l, o) =>
+    api.feed(sym, "note", l, o),
+  );
 
   useEffect(() => {
     setDetail(null);
-    setPosts(null);
     setTopPost(null);
-    setNotes(null);
     setBuzz(null);
     api
       .symbol(sym)
       .then(setDetail)
       .catch(() => setDetail(null));
-    api
-      .feed(sym)
-      .then(setPosts)
-      .catch(() => setPosts([]));
-    api
-      .feed(sym, "note")
-      .then(setNotes)
-      .catch(() => setNotes([]));
     api
       .topPost(sym)
       .then(setTopPost)
@@ -153,7 +148,9 @@ export function SymbolPage() {
             }`}
           >
             {t === "discussion" ? "💬 Discussion" : "🐂 Bulls Feed"}
-            {t === "notes" && notes?.length ? ` (${notes.length})` : ""}
+            {t === "notes" && noteFeed.items.length
+              ? ` (${noteFeed.items.length})`
+              : ""}
           </button>
         ))}
       </div>
@@ -172,7 +169,7 @@ export function SymbolPage() {
           {user ? (
             <Composer
               initial={`$${sym} `}
-              onPosted={(p) => setPosts((c) => [p, ...(c ?? [])])}
+              onPosted={(p) => discussion.setItems((c) => [p, ...c])}
             />
           ) : (
             <Link
@@ -183,22 +180,28 @@ export function SymbolPage() {
             </Link>
           )}
 
-          {posts === null ? (
-            <Spinner />
-          ) : posts.length === 0 ? (
+          {discussion.items.map((p) => (
+            <PostCard key={p.id} post={p} />
+          ))}
+          {discussion.loading && <Spinner />}
+          {!discussion.loading && discussion.items.length === 0 && (
             <Empty>No posts about ${sym} yet.</Empty>
-          ) : (
-            posts.map((p) => <PostCard key={p.id} post={p} />)
           )}
+          <div ref={discussion.sentinelRef} />
         </>
-      ) : notes === null ? (
-        <Spinner />
-      ) : notes.length === 0 ? (
-        <Empty>
-          No data notes for ${sym} yet — they appear as the stock moves.
-        </Empty>
       ) : (
-        notes.map((p) => <PostCard key={p.id} post={p} />)
+        <>
+          {noteFeed.items.map((p) => (
+            <PostCard key={p.id} post={p} />
+          ))}
+          {noteFeed.loading && <Spinner />}
+          {!noteFeed.loading && noteFeed.items.length === 0 && (
+            <Empty>
+              No data notes for ${sym} yet — they appear as the stock moves.
+            </Empty>
+          )}
+          <div ref={noteFeed.sentinelRef} />
+        </>
       )}
     </div>
   );

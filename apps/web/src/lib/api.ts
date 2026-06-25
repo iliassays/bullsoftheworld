@@ -247,10 +247,12 @@ export const api = {
     }),
 
   // posts
-  feed: (code?: string, kind?: "note") => {
+  feed: (code?: string, kind?: "note", limit?: number, offset?: number) => {
     const q = new URLSearchParams();
     if (code) q.set("code", code);
     if (kind) q.set("kind", kind);
+    if (limit != null) q.set("limit", String(limit));
+    if (offset != null) q.set("offset", String(offset));
     const s = q.toString();
     return request<Post[]>(`/posts${s ? `?${s}` : ""}`);
   },

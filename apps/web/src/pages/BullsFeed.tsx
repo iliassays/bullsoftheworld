@@ -1,18 +1,13 @@
-import { useEffect, useState } from "react";
-import { api, type Post } from "../lib/api";
+import { api } from "../lib/api";
+import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { PostCard } from "../components/PostCard";
 import { Empty, Spinner } from "../components/ui";
 
 // Bulls Feed — only the automated agent desk-notes, so they're never lost under chatter.
 export function BullsFeed() {
-  const [notes, setNotes] = useState<Post[] | null>(null);
-
-  useEffect(() => {
-    api
-      .feed(undefined, "note")
-      .then(setNotes)
-      .catch(() => setNotes([]));
-  }, []);
+  const { items, loading, sentinelRef } = useInfiniteFeed("bulls", (l, o) =>
+    api.feed(undefined, "note", l, o),
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -24,13 +19,14 @@ export function BullsFeed() {
         </p>
       </div>
 
-      {notes === null ? (
-        <Spinner />
-      ) : notes.length === 0 ? (
+      {items.map((p) => (
+        <PostCard key={p.id} post={p} />
+      ))}
+      {loading && <Spinner />}
+      {!loading && items.length === 0 && (
         <Empty>No notes yet — they appear as the market moves.</Empty>
-      ) : (
-        notes.map((p) => <PostCard key={p.id} post={p} />)
       )}
+      <div ref={sentinelRef} />
     </div>
   );
 }
