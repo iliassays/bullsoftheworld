@@ -143,6 +143,7 @@ def _families_for_date(d_idx, axis, by_code, fin_by_code, div_by_code):
             continue
         res = compute(bars[max(0, i - LOOKBACK + 1) : i + 1])
         price = res.last_close
+        ret_20 = (price / bars[i - 20].close - 1) * 100 if bars[i - 20].close else None
         pe, pb, yld, eps_g, consistency = _value_quality(
             code, price, d.year, fin_by_code, div_by_code
         )
@@ -152,6 +153,8 @@ def _families_for_date(d_idx, axis, by_code, fin_by_code, div_by_code):
             "cmf": res.cmf_20,
             "relvol": min(res.relative_volume, 5) if res.relative_volume else None,
             "rsi": res.rsi_14,
+            "from_low": res.pct_from_52w_low,  # small = near 52w low (contrarian buy zone)
+            "ret_20": ret_20,  # recent trailing return; negative = beaten down
             "pe": pe,
             "pb": pb,
             "yld": yld,
@@ -169,6 +172,10 @@ def _families_for_date(d_idx, axis, by_code, fin_by_code, div_by_code):
     pe_r, pb_r, yld_r = rank("pe", reverse=True), rank("pb", reverse=True), rank("yld")
     cmf_r, relvol_r, rsi_r = rank("cmf"), rank("relvol"), rank("rsi")
     epsg_r, cons_r = rank("eps_g"), rank("consistency")
+    # Contrarian / mean-reversion: low RSI, near 52w low, recent losers (all reverse-ranked)
+    lowrsi_r = rank("rsi", reverse=True)
+    nearlow_r = rank("from_low", reverse=True)
+    loser_r = rank("ret_20", reverse=True)
 
     out = {}
     for c, v in raw.items():
@@ -176,6 +183,10 @@ def _families_for_date(d_idx, axis, by_code, fin_by_code, div_by_code):
             "value": _mean([pe_r.get(c), pb_r.get(c), yld_r.get(c)]),
             "momentum": _mean([v["trend"], cmf_r.get(c), relvol_r.get(c), rsi_r.get(c)]),
             "quality": _mean([epsg_r.get(c), cons_r.get(c)]),
+            "contrarian": _mean([lowrsi_r.get(c), nearlow_r.get(c), loser_r.get(c)]),
+            "c:lowRSI": lowrsi_r.get(c),
+            "c:near52wLow": nearlow_r.get(c),
+            "c:recentLoser": loser_r.get(c),
             "price": v["price"],
         }
     return out
@@ -208,10 +219,9 @@ async def _run():
         f"({axis[rebal[0]]} → {axis[rebal[-1]]})"
     )
 
-    # ic[family][fwd] = list of per-date ICs
-    ic: dict[str, dict[int, list[float]]] = {
-        f: {h: [] for h in FORWARDS} for f in ("value", "momentum", "quality")
-    }
+    families = ("value", "momentum", "quality", "contrarian")
+    diagnostics = ("c:lowRSI", "c:near52wLow", "c:recentLoser")
+    ic: dict[str, dict[int, list[float]]] = {f: {h: [] for h in FORWARDS} for f in (*families, *diagnostics)}
     for d_idx in rebal:
         fam = _families_for_date(d_idx, axis, by_code, fin_by_code, div_by_code)
         if not fam:
@@ -220,44 +230,41 @@ async def _run():
         for fwd in FORWARDS:
             rets = _fwd_returns(d_idx, fwd, axis, by_code, codes)
             shared = [c for c in codes if c in rets]
-            for family in ic:
-                xs = [fam[c][family] for c in shared if fam[c][family] is not None]
-                ys = [rets[c] for c in shared if fam[c][family] is not None]
+            for factor in ic:
+                xs = [fam[c][factor] for c in shared if fam[c][factor] is not None]
+                ys = [rets[c] for c in shared if fam[c][factor] is not None]
                 r = _spearman(xs, ys)
                 if r is not None:
-                    ic[family][fwd].append(r)
+                    ic[factor][fwd].append(r)
 
-    print(
-        f"\n{'FACTOR':<10}", *[f"{'IC@' + str(h) + 'd':>9}{'IR':>7}{'hit%':>6}" for h in FORWARDS]
-    )
-    print("-" * 60)
-    suggest: dict[int, dict[str, float]] = {h: {} for h in FORWARDS}
-    for family, per in ic.items():
+    def summarize(factor: str) -> str:
         cells = []
         for h in FORWARDS:
-            arr = per[h]
+            arr = ic[factor][h]
             if arr:
                 mean = sum(arr) / len(arr)
                 std = (sum((x - mean) ** 2 for x in arr) / len(arr)) ** 0.5
-                ir = mean / std if std else 0.0
                 hit = sum(1 for x in arr if x > 0) / len(arr) * 100
-                cells.append(f"{mean:>+9.3f}{ir:>7.2f}{hit:>5.0f}%")
-                suggest[h][family] = max(0.0, mean)
+                cells.append(f"{mean:>+9.3f}{(mean / std if std else 0):>7.2f}{hit:>5.0f}%")
             else:
                 cells.append(f"{'·':>9}{'·':>7}{'·':>6}")
-        print(f"{family:<10}", *cells)
+        return " ".join(cells)
 
-    print(
-        "\nData-suggested family weights (∝ positive mean IC, renormalized; flow added as overlay):"
-    )
+    hdr = "".join(f"{'IC@' + str(h) + 'd':>9}{'IR':>7}{'hit%':>6}" for h in FORWARDS)
+    print(f"\n{'FACTOR':<14}{hdr}\n{'-' * 64}")
+    for f in families:
+        print(f"{f:<14}{summarize(f)}")
+    print("  contrarian breakdown:")
+    for f in diagnostics:
+        print(f"  {f:<12}{summarize(f)}")
+
+    print("\nData-suggested family weights (∝ positive mean IC, renormalized; flow = manual overlay):")
     for h, label in ((20, "swing/short"), (60, "positional/investing")):
-        tot = sum(suggest[h].values())
+        pos = {f: max(0.0, sum(ic[f][h]) / len(ic[f][h])) for f in families if ic[f][h]}
+        tot = sum(pos.values())
         if tot:
-            w = {f: round(v / tot, 2) for f, v in suggest[h].items()}
-            print(f"  {label:<22} {w}")
-    print(
-        "\nNote: flow not calibrated here (insufficient ownership history) — keep it a modest manual overlay."
-    )
+            print(f"  {label:<22} {dict(sorted(((f, round(v / tot, 2)) for f, v in pos.items()), key=lambda x: -x[1]))}")
+    print("\nNote: momentum & contrarian are near-mirrors — use ONE. Flow not calibrated (sparse ownership history).")
 
 
 if __name__ == "__main__":
