@@ -154,6 +154,7 @@ export interface Screen {
   title: string;
   description: string;
   value_label: string;
+  group: string;
   items: ScreenItem[];
 }
 export interface ScreensResponse {

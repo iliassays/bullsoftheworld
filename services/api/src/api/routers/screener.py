@@ -98,8 +98,8 @@ _SCREENS: list[ScreenSpec] = [
     ),
     ScreenSpec(
         "accumulation",
-        "Accumulation",
-        "Volume flowing in (positive money flow)",
+        "Money flowing in",
+        "Buying pressure — positive money flow",
         "CMF",
         T.cmf_20 > 0,
         T.cmf_20.desc(),
@@ -150,7 +150,50 @@ _SCREENS: list[ScreenSpec] = [
         T.pct_from_52w_low.asc(),
         T.pct_from_52w_low,
     ),
+    ScreenSpec(
+        "dividend_yield",
+        "Top dividend yield",
+        "Highest cash dividend yield at today's price",
+        "yield",
+        T.dividend_yield > 0,
+        T.dividend_yield.desc(),
+        T.dividend_yield,
+    ),
+    ScreenSpec(
+        "value_vs_sector",
+        "Cheap vs sector",
+        "P/E below the sector median",
+        "x sector",
+        and_(T.pe_vs_sector.isnot(None), T.pe_vs_sector < 0.8, T.pe_ratio > 0),
+        T.pe_vs_sector.asc(),
+        T.pe_vs_sector,
+    ),
+    ScreenSpec(
+        "eps_growth",
+        "Earnings growth",
+        "EPS up year-on-year",
+        "% YoY",
+        T.eps_growth_yoy >= 15,
+        T.eps_growth_yoy.desc(),
+        T.eps_growth_yoy,
+    ),
 ]
+
+# Screen → display group. Anything unlisted defaults to 'technical' (collapsed in the UI).
+_GROUP: dict[str, str] = {
+    "top_gainers": "movers",
+    "top_losers": "movers",
+    "near_52w_high": "movers",
+    "near_52w_low": "movers",
+    "unusual_volume": "movers",
+    "most_watched": "community",
+    "most_discussed": "community",
+    "attention_rising": "community",
+    "dividend_yield": "value",
+    "value_vs_sector": "value",
+    "eps_growth": "value",
+    "accumulation": "value",
+}
 
 
 class ScreenItem(BaseModel):
@@ -164,6 +207,7 @@ class ScreenOut(BaseModel):
     title: str
     description: str
     value_label: str
+    group: str = "technical"  # movers | community | value | technical
     items: list[ScreenItem]
 
 
@@ -190,6 +234,7 @@ async def _movers(session, market: str, *, gainers: bool) -> ScreenOut:
         title="Top gainers" if gainers else "Top losers",
         description="Biggest moves up today" if gainers else "Biggest moves down today",
         value_label="% today",
+        group="movers",
         items=[ScreenItem(code=c, last_close=p, value=round(chg, 2)) for c, p, chg in rows],
     )
 
@@ -231,6 +276,7 @@ async def _most_discussed(session, market: str) -> ScreenOut:
         title="Most discussed",
         description="Most posts in the last 2 days",
         value_label="posts",
+        group="community",
         items=[ScreenItem(code=c, last_close=closes.get(c, 0.0), value=float(n)) for c, n in rows],
     )
 
@@ -253,6 +299,7 @@ async def _most_watched(session, market: str) -> ScreenOut:
         title="Most watched",
         description="Most-followed by the community",
         value_label="watchers",
+        group="community",
         items=[ScreenItem(code=c, last_close=closes.get(c, 0.0), value=float(n)) for c, n in rows],
     )
 
@@ -290,6 +337,7 @@ async def _attention_rising(session, market: str) -> ScreenOut:
         title="Attention rising",
         description="Discussion well above its usual pace",
         value_label="x usual",
+        group="community",
         items=[ScreenItem(code=c, last_close=closes.get(c, 0.0), value=x) for c, x in rising],
     )
 
@@ -316,6 +364,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
                 title=spec.title,
                 description=spec.description,
                 value_label=spec.value_label,
+                group=_GROUP.get(spec.key, "technical"),
                 items=[
                     ScreenItem(code=c, last_close=lc, value=round(v, 2))
                     for c, lc, v in rows
