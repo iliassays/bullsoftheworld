@@ -10,7 +10,7 @@ import datetime as dt
 from collections import defaultdict
 from dataclasses import dataclass
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, func, select
 
@@ -216,7 +216,7 @@ class ScreensResponse(BaseModel):
     screens: list[ScreenOut]
 
 
-async def _movers(session, market: str, *, gainers: bool) -> ScreenOut:
+async def _movers(session, market: str, *, gainers: bool, limit: int = PER_SCREEN) -> ScreenOut:
     order = QuoteSnapshot.change_pct.desc() if gainers else QuoteSnapshot.change_pct.asc()
     rows = (
         await session.execute(
@@ -226,7 +226,7 @@ async def _movers(session, market: str, *, gainers: bool) -> ScreenOut:
                 QuoteSnapshot.code.in_(visible_codes(market)),
             )
             .order_by(order)
-            .limit(PER_SCREEN)
+            .limit(limit)
         )
     ).all()
     return ScreenOut(
@@ -252,7 +252,7 @@ async def _last_closes(session, market: str, codes: list[str]) -> dict[str, floa
     return {c: ltp for c, ltp in rows}
 
 
-async def _most_discussed(session, market: str) -> ScreenOut:
+async def _most_discussed(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
     """Symbols with the most posts in the last couple of days (live, descriptive)."""
     since = dt.datetime.now(dt.UTC) - dt.timedelta(days=_DISCUSSED_DAYS)
     posts = func.count(func.distinct(Post.id))
@@ -267,7 +267,7 @@ async def _most_discussed(session, market: str) -> ScreenOut:
             )
             .group_by(Cashtag.code)
             .order_by(posts.desc())
-            .limit(PER_SCREEN)
+            .limit(limit)
         )
     ).all()
     closes = await _last_closes(session, market, [c for c, _ in rows])
@@ -281,7 +281,7 @@ async def _most_discussed(session, market: str) -> ScreenOut:
     )
 
 
-async def _most_watched(session, market: str) -> ScreenOut:
+async def _most_watched(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
     """Most-followed names — the community's 'Watchers' leaderboard."""
     cnt = func.count()
     rows = (
@@ -290,7 +290,7 @@ async def _most_watched(session, market: str) -> ScreenOut:
             .where(WatchlistItem.market == market, WatchlistItem.code.in_(visible_codes(market)))
             .group_by(WatchlistItem.code)
             .order_by(cnt.desc())
-            .limit(PER_SCREEN)
+            .limit(limit)
         )
     ).all()
     closes = await _last_closes(session, market, [c for c, _ in rows])
@@ -304,7 +304,7 @@ async def _most_watched(session, market: str) -> ScreenOut:
     )
 
 
-async def _attention_rising(session, market: str) -> ScreenOut:
+async def _attention_rising(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
     """Symbols whose chatter is well above their own usual pace, from the buzz snapshots."""
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     rows = (
@@ -329,7 +329,7 @@ async def _attention_rising(session, market: str) -> ScreenOut:
         if baseline and attention_label(latest_posts, baseline) == "rising":
             rising.append((code, round(latest_posts / baseline, 1)))
     rising.sort(key=lambda x: -x[1])
-    rising = rising[:PER_SCREEN]
+    rising = rising[:limit]
 
     closes = await _last_closes(session, market, [c for c, _ in rising])
     return ScreenOut(
@@ -342,37 +342,51 @@ async def _attention_rising(session, market: str) -> ScreenOut:
     )
 
 
+async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> ScreenOut:
+    rows = (
+        await session.execute(
+            select(T.code, T.last_close, spec.value)
+            .where(T.market == market, spec.where, T.code.in_(visible_codes(market)))
+            .order_by(spec.order)
+            .limit(limit)
+        )
+    ).all()
+    return ScreenOut(
+        key=spec.key,
+        title=spec.title,
+        description=spec.description,
+        value_label=spec.value_label,
+        group=_GROUP.get(spec.key, "technical"),
+        items=[
+            ScreenItem(code=c, last_close=lc, value=round(v, 2))
+            for c, lc, v in rows
+            if v is not None
+        ],
+    )
+
+
+_SPEC_BY_KEY = {s.key: s for s in _SCREENS}
+
+
+async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut | None:
+    """Build a single screen by key (used by the detail/explore page)."""
+    if key in ("top_gainers", "top_losers"):
+        return await _movers(session, market, gainers=key == "top_gainers", limit=limit)
+    if key == "most_watched":
+        return await _most_watched(session, market, limit=limit)
+    if key == "most_discussed":
+        return await _most_discussed(session, market, limit=limit)
+    if key == "attention_rising":
+        return await _attention_rising(session, market, limit=limit)
+    spec = _SPEC_BY_KEY.get(key)
+    return await _build_spec(session, market, spec, limit) if spec else None
+
+
 @router.get("/screens")
 async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
-    out: list[ScreenOut] = []
-    for spec in _SCREENS:
-        rows = (
-            await session.execute(
-                select(T.code, T.last_close, spec.value)
-                .where(
-                    T.market == tenant.market,
-                    spec.where,
-                    T.code.in_(visible_codes(tenant.market)),
-                )
-                .order_by(spec.order)
-                .limit(PER_SCREEN)
-            )
-        ).all()
-        out.append(
-            ScreenOut(
-                key=spec.key,
-                title=spec.title,
-                description=spec.description,
-                value_label=spec.value_label,
-                group=_GROUP.get(spec.key, "technical"),
-                items=[
-                    ScreenItem(code=c, last_close=lc, value=round(v, 2))
-                    for c, lc, v in rows
-                    if v is not None
-                ],
-            )
-        )
-
+    out: list[ScreenOut] = [
+        await _build_spec(session, tenant.market, spec, PER_SCREEN) for spec in _SCREENS
+    ]
     out.append(await _movers(session, tenant.market, gainers=True))
     out.append(await _movers(session, tenant.market, gainers=False))
     out.append(await _most_watched(session, tenant.market))
@@ -381,3 +395,14 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
 
     as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
     return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)
+
+
+@router.get("/screens/{key}")
+async def screen_detail(
+    key: str, tenant: CurrentTenant, session: DbSession, limit: int = Query(50, le=200)
+) -> ScreenOut:
+    """One screen's full list — for the explore page's tab view."""
+    screen = await build_screen(session, tenant.market, key, limit)
+    if screen is None:
+        raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")
+    return screen

@@ -4,7 +4,7 @@ import { api, type Screen, type ScreensResponse } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
 
 // Format a screen's metric for display, based on its value_label.
-function fmtValue(label: string, v: number): string {
+export function fmtValue(label: string, v: number): string {
   if (label === "RSI") return v.toFixed(0);
   if (label === "CMF") return v.toFixed(2);
   if (label === "yield") return `${v.toFixed(1)}%`;
@@ -59,6 +59,14 @@ function ScreenCard({ s }: { s: Screen }) {
           </Link>
         ))}
       </div>
+      {s.items.length >= 6 && (
+        <Link
+          to={`/markets/${s.key}`}
+          className="block text-center text-[11px] text-accent mt-2 pt-2 border-t border-border/60"
+        >
+          View more →
+        </Link>
+      )}
     </div>
   );
 }

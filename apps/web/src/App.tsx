@@ -4,6 +4,7 @@ import { BullsFeed } from "./pages/BullsFeed";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
 import { Profile } from "./pages/Profile";
+import { ScreenExplore } from "./pages/ScreenExplore";
 import { SymbolPage } from "./pages/Symbol";
 import { Watchlist } from "./pages/Watchlist";
 
@@ -13,6 +14,7 @@ export function App() {
       <Route element={<Shell />}>
         <Route index element={<Feed />} />
         <Route path="markets" element={<Markets />} />
+        <Route path="markets/:key" element={<ScreenExplore />} />
         <Route path="bulls" element={<BullsFeed />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
