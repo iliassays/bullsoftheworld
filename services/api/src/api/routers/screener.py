@@ -39,6 +39,8 @@ _BUZZ_HISTORY = 14  # look-back for the attention baseline
 _PCT_ABOVE_SUPPORT = (T.last_close - T.nearest_support) / T.nearest_support * 100
 _PCT_BELOW_RESISTANCE = (T.nearest_resistance - T.last_close) / T.last_close * 100
 _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
+# Combined rise in institutional + foreign holding (pp) since the last monthly disclosure.
+_SMART_MONEY = func.coalesce(T.institute_delta, 0) + func.coalesce(T.foreign_delta, 0)
 
 
 @dataclass
@@ -179,6 +181,15 @@ _SCREENS: list[ScreenSpec] = [
         T.eps_growth_yoy.desc(),
         T.eps_growth_yoy,
     ),
+    ScreenSpec(
+        "smart_money_buying",
+        "Institutions & foreign buying",
+        "Institutions or foreign investors raised their stake at the latest disclosure",
+        "pp",
+        _SMART_MONEY > 0,
+        _SMART_MONEY.desc(),
+        _SMART_MONEY,
+    ),
 ]
 
 # Screen → display group. Anything unlisted defaults to 'technical' (collapsed in the UI).
@@ -195,6 +206,7 @@ _GROUP: dict[str, str] = {
     "value_vs_sector": "value",
     "eps_growth": "value",
     "accumulation": "value",
+    "smart_money_buying": "value",
 }
 
 

@@ -37,6 +37,8 @@ export const SCREEN_HELP: Record<string, string> = {
   most_discussed: "The names with the most community posts over the last 2 days.",
   attention_rising:
     "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
+  smart_money_buying:
+    "Institutions and foreign investors raised their combined stake at the latest monthly disclosure. e.g. +5 pp means 'big money' ownership went up 5 percentage points. They have more to analyse with — but it's history, not a forecast.",
 };
 
 // Format a screen's metric for display, based on its value_label.
@@ -48,6 +50,7 @@ export function fmtValue(label: string, v: number): string {
   if (label.includes("avg vol") || label.includes("usual"))
     return `${v.toFixed(1)}x`;
   if (label === "watchers" || label === "posts") return v.toFixed(0);
+  if (label === "pp") return `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`;
   if (label.includes("%")) return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   return v.toFixed(2);
 }
@@ -81,6 +84,7 @@ export function metricChip(label: string, v: number): Chip | null {
   if (label === "yield") return { word: v >= 8 ? "High yield" : "Pays dividend", tone: "neutral" };
   if (label.includes("sector")) return { word: "Cheaper than peers", tone: "neutral" };
   if (label === "% YoY") return { word: v >= 50 ? "Fast growth" : "Growing", tone: "up" };
+  if (label === "pp") return { word: v >= 3 ? "Accumulating" : "Buying", tone: "up" };
   return null;
 }
 
@@ -94,6 +98,7 @@ export function metricHeader(label: string): string {
   if (label === "% YoY") return "EPS growth";
   if (label === "watchers") return "Watchers";
   if (label === "posts") return "Posts";
+  if (label === "pp") return "Big money";
   if (label.includes("%")) return "Change";
   return label;
 }
