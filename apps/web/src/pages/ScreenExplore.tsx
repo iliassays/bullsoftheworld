@@ -52,7 +52,7 @@ export function ScreenExplore() {
         ← Markets
       </Link>
       {group && (
-        <div className="text-[11px] uppercase tracking-wide text-accent px-1">
+        <div className="text-[11px] uppercase tracking-wide text-muted px-1">
           {GROUP_LABEL[group] ?? group}
         </div>
       )}
