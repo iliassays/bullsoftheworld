@@ -146,8 +146,10 @@ export interface TodaysWatch {
 }
 export interface ScreenItem {
   code: string;
+  name: string;
   last_close: number;
   value: number;
+  change_1d: number | null; // today's % move; null for movers (their value is already a change)
 }
 export interface Screen {
   key: string;

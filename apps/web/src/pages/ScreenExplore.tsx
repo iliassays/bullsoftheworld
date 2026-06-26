@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Screen } from "../lib/api";
-import { Spinner, taka } from "../components/ui";
-import { fmtValue } from "./Markets";
+import { Spinner } from "../components/ui";
+import { ScreenRow, metricHeader } from "./Markets";
 
 const GROUP_LABEL: Record<string, string> = {
   movers: "Movers",
@@ -93,28 +93,16 @@ export function ScreenExplore() {
         <div className="bg-surface border border-border rounded-2xl p-4">
           <div className="font-semibold text-sm">{screen.title}</div>
           <div className="text-[11px] text-muted">{screen.description}</div>
-          <div className="mt-2 flex flex-col">
+          <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
+            <span className="pl-7">Symbol</span>
+            <span className="flex gap-3">
+              <span>Price</span>
+              <span className="w-20 text-right">{metricHeader(screen.value_label)}</span>
+            </span>
+          </div>
+          <div className="flex flex-col">
             {screen.items.map((it, i) => (
-              <Link
-                key={it.code}
-                to={`/s/${it.code}`}
-                className="flex items-center justify-between py-2 border-t border-border/60 first:border-t-0"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted tnum w-5">{i + 1}</span>
-                  <span className="font-bold text-[13px]">${it.code}</span>
-                </span>
-                <span className="flex items-baseline gap-2">
-                  <span className="text-xs text-muted tnum">{taka(it.last_close)}</span>
-                  <span
-                    className={`text-xs font-semibold tnum ${
-                      isMover ? (it.value >= 0 ? "text-up" : "text-down") : "text-accent"
-                    }`}
-                  >
-                    {fmtValue(screen.value_label, it.value)}
-                  </span>
-                </span>
-              </Link>
+              <ScreenRow key={it.code} item={it} screen={screen} rank={i + 1} />
             ))}
             {screen.items.length === 0 && (
               <div className="text-muted text-sm py-2">Nothing here right now.</div>

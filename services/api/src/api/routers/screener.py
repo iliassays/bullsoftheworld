@@ -21,6 +21,7 @@ from bulls.core.models import (
     DailyBar,
     Post,
     QuoteSnapshot,
+    Symbol,
     TickerAnalytics,
     TickerBuzzDaily,
     WatchlistItem,
@@ -199,8 +200,10 @@ _GROUP: dict[str, str] = {
 
 class ScreenItem(BaseModel):
     code: str
+    name: str = ""  # company short name, for readability
     last_close: float
     value: float
+    change_1d: float | None = None  # today's % move, the universal anchor (None for movers)
 
 
 class ScreenOut(BaseModel):
@@ -366,6 +369,61 @@ async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> Scr
     )
 
 
+async def _names(session, market: str, codes: list[str]) -> dict[str, str]:
+    if not codes:
+        return {}
+    rows = (
+        await session.execute(
+            select(Symbol.code, Symbol.name_en).where(
+                Symbol.market == market, Symbol.code.in_(codes)
+            )
+        )
+    ).all()
+    return {c: (n or "") for c, n in rows}
+
+
+async def _change_1d(session, market: str, codes: list[str]) -> dict[str, float]:
+    """Today's % move (last two daily closes) for a set of codes — EOD-consistent."""
+    if not codes:
+        return {}
+    rn = (
+        func.row_number()
+        .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+        .label("rn")
+    )
+    ranked = (
+        select(DailyBar.code, DailyBar.close, rn)
+        .where(DailyBar.market == market, DailyBar.code.in_(codes))
+        .subquery()
+    )
+    cur = select(ranked.c.code, ranked.c.close.label("cur")).where(ranked.c.rn == 1).subquery()
+    prev = select(ranked.c.code, ranked.c.close.label("prev")).where(ranked.c.rn == 2).subquery()
+    chg = (cur.c.cur - prev.c.prev) / prev.c.prev * 100
+    rows = (
+        await session.execute(
+            select(cur.c.code, chg).join(prev, cur.c.code == prev.c.code).where(prev.c.prev > 0)
+        )
+    ).all()
+    return {c: round(v, 2) for c, v in rows}
+
+
+# Top gainers/losers already carry the price change in their value, so the separate 1d column would
+# be redundant. Every other screen (incl. unusual_volume, near 52w high/low) shows it.
+_NO_1D = {"top_gainers", "top_losers"}
+
+
+async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
+    """Fill name + 1d change on every item, batched across all screens."""
+    codes = sorted({it.code for s in screens_list for it in s.items})
+    names = await _names(session, market, codes)
+    skip = {it.code for s in screens_list if s.key in _NO_1D for it in s.items}
+    changes = await _change_1d(session, market, sorted(set(codes) - skip))
+    for s in screens_list:
+        for it in s.items:
+            it.name = names.get(it.code, "")
+            it.change_1d = None if s.key in _NO_1D else changes.get(it.code)
+
+
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
 
 
@@ -394,6 +452,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
 
+    await _enrich(session, tenant.market, out)
     as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
     return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)
 
@@ -449,14 +508,16 @@ async def screen_detail(
 ) -> ScreenOut:
     """One screen's full list — for the explore page's tab view."""
     if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
-        return await _movers_period(
+        screen = await _movers_period(
             session,
             tenant.market,
             gainers=key == "top_gainers",
             days=_PERIOD_DAYS[period],
             limit=limit,
         )
-    screen = await build_screen(session, tenant.market, key, limit)
+    else:
+        screen = await build_screen(session, tenant.market, key, limit)
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")
+    await _enrich(session, tenant.market, [screen])
     return screen

@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, type Screen, type ScreensResponse } from "../lib/api";
+import { api, type Screen, type ScreenItem, type ScreensResponse } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
 
 // Format a screen's metric for display, based on its value_label.
@@ -16,6 +16,119 @@ export function fmtValue(label: string, v: number): string {
   return v.toFixed(2);
 }
 
+// A short, plain-language reading of the screen's jargon metric — descriptive facts only, never a
+// cue to act. Returns null for metrics that are already self-explanatory (raw % / counts).
+interface Chip {
+  word: string;
+  tone: "up" | "down" | "neutral";
+}
+export function metricChip(label: string, v: number): Chip | null {
+  if (label === "CMF") {
+    if (v >= 0.25) return { word: "Strong inflow", tone: "up" };
+    if (v >= 0.05) return { word: "Inflow", tone: "up" };
+    if (v <= -0.25) return { word: "Strong outflow", tone: "down" };
+    if (v <= -0.05) return { word: "Outflow", tone: "down" };
+    return { word: "Flat flow", tone: "neutral" };
+  }
+  if (label === "RSI") {
+    if (v >= 70) return { word: "Overbought zone", tone: "neutral" };
+    if (v <= 30) return { word: "Oversold zone", tone: "neutral" };
+    if (v >= 55) return { word: "Strong momentum", tone: "neutral" };
+    if (v <= 45) return { word: "Weak momentum", tone: "neutral" };
+    return { word: "Neutral", tone: "neutral" };
+  }
+  if (label.includes("avg vol") || label.includes("usual")) {
+    if (v >= 3) return { word: "Very heavy", tone: "neutral" };
+    if (v >= 2) return { word: "Heavy volume", tone: "neutral" };
+    return { word: "Active", tone: "neutral" };
+  }
+  if (label === "yield") return { word: v >= 8 ? "High yield" : "Pays dividend", tone: "neutral" };
+  if (label.includes("sector")) return { word: "Cheaper than peers", tone: "neutral" };
+  if (label === "% YoY") return { word: v >= 50 ? "Fast growth" : "Growing", tone: "up" };
+  return null;
+}
+
+// Plain header for the rightmost (metric) column.
+export function metricHeader(label: string): string {
+  if (label === "CMF") return "Money flow";
+  if (label === "RSI") return "Momentum";
+  if (label.includes("avg vol") || label.includes("usual")) return "Volume";
+  if (label === "yield") return "Yield";
+  if (label.includes("sector")) return "vs sector";
+  if (label === "% YoY") return "EPS growth";
+  if (label === "watchers") return "Watchers";
+  if (label === "posts") return "Posts";
+  if (label.includes("%")) return "Change";
+  return label;
+}
+
+const toneCls = (t: Chip["tone"]) =>
+  t === "up" ? "text-up" : t === "down" ? "text-down" : "text-fg";
+
+// One row, shared by the Markets cards and the explore page so they read identically.
+export function ScreenRow({
+  item,
+  screen,
+  rank,
+}: {
+  item: ScreenItem;
+  screen: Screen;
+  rank?: number;
+}) {
+  const isMover = screen.key === "top_gainers" || screen.key === "top_losers";
+  const chip = isMover ? null : metricChip(screen.value_label, item.value);
+  const showName = item.name && item.name !== item.code;
+  return (
+    <Link
+      to={`/s/${item.code}`}
+      className="flex items-center justify-between gap-2 py-2 border-t border-border/60 first:border-t-0"
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        {rank != null && (
+          <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
+        )}
+        <span className="flex flex-col min-w-0">
+          <span className="font-bold text-[13px]">${item.code}</span>
+          {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
+        </span>
+      </span>
+      <span className="flex items-stretch gap-3 shrink-0 text-right">
+        <span className="flex flex-col items-end justify-center">
+          <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
+          {item.change_1d != null && (
+            <span
+              className={`text-[11px] tnum ${item.change_1d >= 0 ? "text-up" : "text-down"}`}
+            >
+              {item.change_1d >= 0 ? "+" : ""}
+              {item.change_1d.toFixed(1)}%
+            </span>
+          )}
+        </span>
+        <span className="flex flex-col items-end justify-center w-20">
+          {isMover ? (
+            <span
+              className={`text-xs font-semibold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
+            >
+              {fmtValue(screen.value_label, item.value)}
+            </span>
+          ) : chip ? (
+            <>
+              <span className={`text-xs font-semibold ${toneCls(chip.tone)}`}>{chip.word}</span>
+              <span className="text-[10px] text-muted tnum">
+                {fmtValue(screen.value_label, item.value)}
+              </span>
+            </>
+          ) : (
+            <span className="text-xs font-semibold text-accent tnum">
+              {fmtValue(screen.value_label, item.value)}
+            </span>
+          )}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
 // Display order + labels. "technical" is collapsed by default (advanced).
 const GROUPS: { id: string; label: string; advanced?: boolean }[] = [
   { id: "movers", label: "Movers" },
@@ -25,38 +138,20 @@ const GROUPS: { id: string; label: string; advanced?: boolean }[] = [
 ];
 
 function ScreenCard({ s }: { s: Screen }) {
-  // Only movers (today's price change) are colour-coded by sign; everything else stays neutral
-  // so nothing reads as a "buy/sell" cue.
-  const isMover = s.key === "top_gainers" || s.key === "top_losers";
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="font-semibold text-sm">{s.title}</div>
       <div className="text-[11px] text-muted">{s.description}</div>
-      <div className="mt-2 flex flex-col">
+      <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
+        <span>Symbol</span>
+        <span className="flex gap-3">
+          <span>Price</span>
+          <span className="w-20 text-right">{metricHeader(s.value_label)}</span>
+        </span>
+      </div>
+      <div className="flex flex-col">
         {s.items.slice(0, 6).map((it) => (
-          <Link
-            key={it.code}
-            to={`/s/${it.code}`}
-            className="flex items-center justify-between py-1.5 border-t border-border/60 first:border-t-0"
-          >
-            <span className="font-bold text-[13px]">${it.code}</span>
-            <span className="flex items-baseline gap-2">
-              <span className="text-xs text-muted tnum">
-                {taka(it.last_close)}
-              </span>
-              <span
-                className={`text-xs font-semibold tnum ${
-                  isMover
-                    ? it.value >= 0
-                      ? "text-up"
-                      : "text-down"
-                    : "text-accent"
-                }`}
-              >
-                {fmtValue(s.value_label, it.value)}
-              </span>
-            </span>
-          </Link>
+          <ScreenRow key={it.code} item={it} screen={s} />
         ))}
       </div>
       {s.items.length >= 6 && (
