@@ -21,6 +21,7 @@ from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
     DailyBar,
+    DividendRecord,
     SectorPE,
     ShareholdingSnapshot,
     Symbol,
@@ -66,8 +67,14 @@ _OWNERSHIP_FIELDS = (
 _EXTRA_FIELDS = ("pe_vs_sector", "eps_growth_yoy", *_OWNERSHIP_FIELDS)
 
 
-def _valuation_row(last_close: float, profile: CompanyProfile | None) -> dict[str, float | None]:
-    """Derive the valuation fields from today's close + a symbol's fundamentals (None → all-None)."""
+def _valuation_row(
+    last_close: float, profile: CompanyProfile | None, cash_dividend_pct: float | None
+) -> dict[str, float | None]:
+    """Derive the valuation fields from today's close + a symbol's fundamentals (None → all-None).
+
+    `cash_dividend_pct` comes from the dividend-history table (latest declared year's cash), NOT
+    profile.cash_dividend_pct — the latter is parsed from a label that can pick up a bonus issue.
+    """
     if profile is None:
         return dict.fromkeys(_VALUATION_FIELDS)
     v = compute_valuation(
@@ -77,10 +84,36 @@ def _valuation_row(last_close: float, profile: CompanyProfile | None) -> dict[st
         free_float_mcap_mn_ref=profile.free_float_mcap_mn,
         eps=profile.eps,
         nav_per_share=profile.nav_per_share,
-        cash_dividend_pct=profile.cash_dividend_pct,
+        cash_dividend_pct=cash_dividend_pct,
         face_value=profile.face_value,
     )
     return {f: getattr(v, f) for f in _VALUATION_FIELDS}
+
+
+async def _load_latest_cash_dividend(session, market: str) -> dict[str, float]:
+    """Most recent declared year's cash dividend (% of face value), per code.
+
+    Only the cash paid in a company's latest dividend year counts: if that latest year was
+    bonus-only (a stock dividend), the company isn't currently a cash payer, so it's omitted rather
+    than shown a years-old yield. This is the authoritative, correctly-typed source — unlike the
+    'Latest Dividend Status' label, which can report a bonus figure as if it were cash.
+    """
+    rows = list(
+        await session.scalars(
+            select(DividendRecord)
+            .where(DividendRecord.market == market)
+            .order_by(DividendRecord.code, DividendRecord.year.desc())
+        )
+    )
+    out: dict[str, float] = {}
+    seen: set[str] = set()
+    for r in rows:
+        if r.code in seen:  # first row per code is its latest year
+            continue
+        seen.add(r.code)
+        if r.cash_pct and r.cash_pct > 0:
+            out[r.code] = r.cash_pct
+    return out
 
 
 async def _load_ownership(session, market: str) -> dict[str, dict[str, float | None]]:
@@ -172,6 +205,7 @@ async def compute_all(market: str) -> dict[str, int]:
         )
         ownership = await _load_ownership(session, market)
         eps_growth = await _load_eps_growth(session, market)
+        cash_dividends = await _load_latest_cash_dividend(session, market)
 
     computed = 0
     async with sm() as session:
@@ -190,7 +224,7 @@ async def compute_all(market: str) -> dict[str, int]:
             profile = profiles.get(code)
             row = {"market": market, "code": code, "as_of_date": result.as_of_date}
             row.update({f: getattr(result, f) for f in _FIELDS})
-            row.update(_valuation_row(result.last_close, profile))
+            row.update(_valuation_row(result.last_close, profile, cash_dividends.get(code)))
             row.update(
                 _extra_row(
                     code,

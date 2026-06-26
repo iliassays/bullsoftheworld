@@ -43,3 +43,16 @@ def test_missing_fundamentals_degrade_gracefully():
 def test_nonpositive_close_returns_empty():
     v = compute_valuation(0.0, outstanding_shares=1_000_000, eps=5.0)
     assert v.market_cap_mn is None and v.pe_ratio is None
+
+
+def test_yield_trap_is_omitted():
+    # UNIONBANK-like: 5% cash on face 10 = 0.5 taka, but price collapsed to 1.5 -> 33% trailing yield.
+    # That's a price-collapse trap, not income — omit rather than mislead.
+    v = compute_valuation(1.5, cash_dividend_pct=5.0, face_value=10.0)
+    assert v.dividend_yield is None
+
+
+def test_high_but_sane_yield_kept():
+    # ~9% cash yield (face 10, 9% cash, price ~10) is plausible income — keep it.
+    v = compute_valuation(10.0, cash_dividend_pct=9.0, face_value=10.0)
+    assert v.dividend_yield == round(0.9 / 10.0 * 100, 2)  # 9.0

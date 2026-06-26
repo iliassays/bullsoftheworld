@@ -19,6 +19,11 @@ class ValuationResult(BaseModel):
     dividend_yield: float | None = None  # % — cash dividend (taka) / close
 
 
+# Above this, a trailing cash yield reflects a collapsed price, not income (a "yield trap"). On an
+# income screen it misleads more than it helps, so we omit it rather than show a fantastical number.
+_MAX_SANE_YIELD = 20.0
+
+
 def _r(x: float | None, n: int = 2) -> float | None:
     return None if x is None else round(x, n)
 
@@ -51,7 +56,8 @@ def compute_valuation(
     dividend_yield = None
     if cash_dividend_pct is not None and face_value:
         cash_taka = cash_dividend_pct / 100 * face_value  # dividend % is of face value, not price
-        dividend_yield = cash_taka / last_close * 100
+        y = cash_taka / last_close * 100
+        dividend_yield = y if y <= _MAX_SANE_YIELD else None
 
     return ValuationResult(
         market_cap_mn=_r(market_cap_mn),
