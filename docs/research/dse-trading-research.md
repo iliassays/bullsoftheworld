@@ -167,6 +167,10 @@ trigger signal is confirmed** — not before.
 | `scripts/shortlist.py` | ranked daily buy/sell shortlist; calibrated weights (contrarian+quality led) |
 | `scripts/factor_study.py` | factor IC calibration (§2) |
 | `scripts/precursor_study.py` | pre-launch base signature (§3) |
+| `scripts/signal_backtest.py` | trigger walk-forward validation (§4b) |
+| `scripts/portfolio_backtest.py` | "if I invested 1,000" equity curve (§4c); exposes `simulate()` |
+| `scripts/robustness.py` | parameter sensitivity sweep (§4d) |
+| `scripts/daily_signals.py` | **live feed** — today's fired signals + watchlist, with entry/stop/target |
 
 ## 7. Open threads / next steps
 
