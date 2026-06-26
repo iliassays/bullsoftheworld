@@ -110,6 +110,28 @@ winners). Median dip ~−10% → a stop is mandatory. **Entry/target/stop:** ent
 sustained downtrend it catches falling knives and likely flips negative. A sellable product MUST add
 a **market-regime filter** (e.g. only fire when DSEX > its 200-day) and say this plainly.
 
+## 4c. Portfolio backtest — "if I invested 1,000" (`scripts/portfolio_backtest.py`)
+
+Event-driven walk-forward: enter washed-out names that trigger (break 5d high) at the close, exit on
+stop −10% / target +25% / time 63d, 0.4%/side cost, max 10 concurrent positions, equal-weight.
+
+| | Final (from 1,000) | Total | CAGR | Max DD | Trades | Win% | Avg win / loss |
+|---|---|---|---|---|---|---|---|
+| **Strategy (no filter)** | **1,337** | **+33.7%** | +15.6% | −20.9% | 138 | 41% | +21.7% / −9.5% |
+| Strategy (regime filter) | 1,320 | +32.0% | +14.9% | −21.5% | 74 | 47% | +21.8% / −9.7% |
+| Buy & hold DSEX | 1,078 | +7.8% | ~3.8% | −23.3% | — | — | — |
+
+**Reads (honest):**
+- Beat the index ~4x on total return (+33.7% vs +7.8%) with slightly *lower* drawdown than the index.
+- **Win-rate is only 41%** — most trades lose or stop out. The edge is *asymmetry*: avg win +21.7% vs
+  avg loss −9.5% (~2.3:1). Frame for users as "wrong more than half the time, but winners pay for it" —
+  psychologically hard; needs discipline to hold the rule.
+- **−21% max drawdown** is real — a 1,000 account would have shown ~790 at the worst point.
+- **Regime filter (DSEX>50d) didn't help here**: fewer trades (74), better win-rate (47%), but ~same
+  return and *slightly worse* drawdown. The 50-day gate trades activity for quality without improving
+  the bottom line in this regime. A 200-day gate is untestable (insufficient index history).
+- Right-skewed, single-regime, EOD fills, slippage on thin names not modelled → promising, not proof.
+
 ## 5. Why no deep ML (yet)
 
 PatchTST / deep time-series transformers need thousands of clean examples; we have ~100 movers over a
