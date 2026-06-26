@@ -16,7 +16,14 @@ from sqlalchemy import ColumnElement, and_, func, select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
-from bulls.core.models import Cashtag, Post, QuoteSnapshot, TickerAnalytics, TickerBuzzDaily
+from bulls.core.models import (
+    Cashtag,
+    Post,
+    QuoteSnapshot,
+    TickerAnalytics,
+    TickerBuzzDaily,
+    WatchlistItem,
+)
 from bulls.market_data.calendar import to_market_tz
 
 router = APIRouter(tags=["screener"])
@@ -228,6 +235,28 @@ async def _most_discussed(session, market: str) -> ScreenOut:
     )
 
 
+async def _most_watched(session, market: str) -> ScreenOut:
+    """Most-followed names — the community's 'Watchers' leaderboard."""
+    cnt = func.count()
+    rows = (
+        await session.execute(
+            select(WatchlistItem.code, cnt)
+            .where(WatchlistItem.market == market, WatchlistItem.code.in_(visible_codes(market)))
+            .group_by(WatchlistItem.code)
+            .order_by(cnt.desc())
+            .limit(PER_SCREEN)
+        )
+    ).all()
+    closes = await _last_closes(session, market, [c for c, _ in rows])
+    return ScreenOut(
+        key="most_watched",
+        title="Most watched",
+        description="Most-followed by the community",
+        value_label="watchers",
+        items=[ScreenItem(code=c, last_close=closes.get(c, 0.0), value=float(n)) for c, n in rows],
+    )
+
+
 async def _attention_rising(session, market: str) -> ScreenOut:
     """Symbols whose chatter is well above their own usual pace, from the buzz snapshots."""
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
@@ -297,6 +326,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
 
     out.append(await _movers(session, tenant.market, gainers=True))
     out.append(await _movers(session, tenant.market, gainers=False))
+    out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
 

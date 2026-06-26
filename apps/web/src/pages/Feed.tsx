@@ -6,6 +6,7 @@ import { Composer } from "../components/Composer";
 import { PostCard } from "../components/PostCard";
 import { TickerStrip } from "../components/TickerStrip";
 import { TodaysWatch } from "../components/TodaysWatch";
+import { WatchlistHome } from "../components/WatchlistHome";
 import { Empty, Spinner } from "../components/ui";
 
 export function Feed() {
@@ -18,6 +19,7 @@ export function Feed() {
   return (
     <div className="flex flex-col gap-3">
       <TickerStrip />
+      <WatchlistHome />
       <TodaysWatch />
       {user ? (
         <Composer onPosted={(p) => setItems((cur) => [p, ...cur])} />
