@@ -49,6 +49,21 @@ def _roll(vals, n, fn):
     return [fn(vals[max(0, i - n + 1) : i + 1]) for i in range(len(vals))]
 
 
+def _roll_extreme(vals, n, want_max):
+    """O(n) trailing-window max/min via a monotonic deque (the rolling 52w high/low, fast)."""
+    from collections import deque
+
+    dq, out = deque(), [None] * len(vals)
+    for i, v in enumerate(vals):
+        while dq and ((vals[dq[-1]] <= v) if want_max else (vals[dq[-1]] >= v)):
+            dq.pop()
+        dq.append(i)
+        if dq[0] <= i - n:
+            dq.popleft()
+        out[i] = vals[dq[0]]
+    return out
+
+
 async def _load():
     sm = get_sessionmaker()
     async with sm() as session:
@@ -69,19 +84,19 @@ async def _load():
     return by_code, dsex
 
 
-def _signals_by_code(bars):
+def _signals_by_code(bars, deep, near_low):
     """Dates where this name is in the launch zone AND breaks its 5-day high (the turn trigger)."""
     closes = [b.close for b in bars]
     highs = [b.high for b in bars]
-    hi252 = _roll(highs, 252, max)
-    lo252 = _roll([b.low for b in bars], 252, min)
+    hi252 = _roll_extreme(highs, 252, True)
+    lo252 = _roll_extreme([b.low for b in bars], 252, False)
     out = set()
     for i in range(WARMUP, len(bars)):
         if not closes[i] or not hi252[i] or hi252[i] <= lo252[i]:
             continue
         below = (closes[i] / hi252[i] - 1) * 100
         pos = (closes[i] - lo252[i]) / (hi252[i] - lo252[i]) * 100
-        if below < DEEP and pos < NEAR_LOW and closes[i] > max(highs[i - 5 : i]):
+        if below < deep and pos < near_low and closes[i] > max(highs[i - 5 : i]):
             out.add(bars[i].date)
     return out
 
@@ -94,24 +109,30 @@ def _max_drawdown(curve):
     return mdd * 100
 
 
-async def _run(regime: bool):
-    by_code, dsex = await _load()
+def simulate(
+    by_code,
+    dsex,
+    *,
+    stop=STOP,
+    target=TARGET,
+    hold=MAX_HOLD,
+    deep=DEEP,
+    near_low=NEAR_LOW,
+    max_pos=MAX_POS,
+    regime=False,
+):
+    """Run the event-driven sim with the given params. Returns a metrics dict (+ equity curve)."""
     bar_map, sig = {}, {}
     for code, bars in by_code.items():
         if len(bars) < WARMUP + 5 or sum(b.volume for b in bars[-20:]) / 20 < MIN_AVG_VOL:
             continue
         bar_map[code] = {b.date: b for b in bars}
-        sig[code] = _signals_by_code(bars)
+        sig[code] = _signals_by_code(bars, deep, near_low)
     axis = sorted({d for m in bar_map.values() for d in m})
     dts = sorted(dsex)
     dsex_sma = dict(zip(dts, _sma([dsex[d] for d in dts], 50), strict=True))
 
-    cash, positions, curve, trades = (
-        START,
-        {},
-        [],
-        [],
-    )  # positions: code -> {shares, entry, peak_idx, held}
+    cash, positions, curve, trades = START, {}, [], []
     last_px = {}
     for d in axis:
         for code in list(positions):
@@ -120,13 +141,13 @@ async def _run(regime: bool):
             if bar:
                 last_px[code] = bar.close
                 p["held"] += 1
-                stop_px, tgt_px = p["entry"] * (1 + STOP), p["entry"] * (1 + TARGET)
+                stop_px, tgt_px = p["entry"] * (1 + stop), p["entry"] * (1 + target)
                 exit_px = None
                 if bar.low <= stop_px:
                     exit_px = stop_px  # assume stop hit first (conservative)
                 elif bar.high >= tgt_px:
                     exit_px = tgt_px
-                elif p["held"] >= MAX_HOLD:
+                elif p["held"] >= hold:
                     exit_px = bar.close
                 if exit_px is not None:
                     cash += p["shares"] * exit_px * (1 - COST)
@@ -137,16 +158,15 @@ async def _run(regime: bool):
             d in dsex and dsex_sma.get(d) is not None and dsex[d] > dsex_sma[d]
         )
         if regime_ok:
-            todays = sorted(c for c in sig if d in sig[c] and c not in positions)
-            for code in todays:
-                if len(positions) >= MAX_POS:
+            for code in sorted(c for c in sig if d in sig[c] and c not in positions):
+                if len(positions) >= max_pos:
                     break
                 bar = bar_map[code].get(d)
                 if not bar or not bar.close:
                     continue
                 equity = cash + sum(positions[c]["shares"] * last_px.get(c, 0) for c in positions)
-                alloc = min(equity / MAX_POS, cash / (1 + COST))
-                if alloc < equity / MAX_POS * 0.5:  # not enough free cash for a full-size slot
+                alloc = min(equity / max_pos, cash / (1 + COST))
+                if alloc < equity / max_pos * 0.5:
                     continue
                 positions[code] = {"shares": alloc / bar.close, "entry": bar.close, "held": 0}
                 cash -= alloc * (1 + COST)
@@ -157,30 +177,39 @@ async def _run(regime: bool):
 
     final = curve[-1][1]
     years = (axis[-1] - axis[0]).days / 365
-    cagr = ((final / START) ** (1 / years) - 1) * 100 if years else 0
     wins = [t for t in trades if t > 0]
-    idx0, idx1 = dsex[dts[0]], dsex[dts[-1]]
-    idx_ret = (idx1 / idx0 - 1) * 100
+    losses = [t for t in trades if t <= 0]
+    return {
+        "final": final,
+        "total": (final / START - 1) * 100,
+        "cagr": ((final / START) ** (1 / years) - 1) * 100 if years else 0,
+        "maxdd": _max_drawdown(curve),
+        "n_trades": len(trades),
+        "winrate": len(wins) / len(trades) * 100 if trades else 0,
+        "avg_win": sum(wins) / len(wins) * 100 if wins else 0,
+        "avg_loss": sum(losses) / len(losses) * 100 if losses else 0,
+        "curve": curve,
+    }
+
+
+async def _run(regime: bool):
+    by_code, dsex = await _load()
+    m = simulate(by_code, dsex, regime=regime)
+    curve, trades_n = m["curve"], m["n_trades"]
+    dts = sorted(dsex)
+    idx0 = dsex[dts[0]]
+    idx_ret = (dsex[dts[-1]] / idx0 - 1) * 100
     idx_curve = [(d, START * dsex[d] / idx0) for d in dts]
+    final, cagr = m["final"], m["cagr"]
 
     tag = "WITH regime filter (DSEX > 50d)" if regime else "NO regime filter"
     print(f"\n===== Deep-Value Reversal — {tag} =====")
-    print(f"  Period            {axis[0]} → {axis[-1]}  ({years:.1f} yrs)")
+    print(f"  Period            {curve[0][0]} → {curve[-1][0]}")
     print(f"  Start             {START:,.0f}")
-    print(
-        f"  Final value       {final:,.0f}   ({(final / START - 1) * 100:+.1f}%)   CAGR {cagr:+.1f}%"
-    )
-    print(f"  Max drawdown      {_max_drawdown(curve):.1f}%")
-    print(
-        f"  Trades            {len(trades)}   win-rate {len(wins) / len(trades) * 100:.0f}%"
-        if trades
-        else "  Trades 0"
-    )
-    if trades:
-        print(
-            f"  Avg win / loss    {sum(wins) / len(wins) * 100:+.1f}% / "
-            f"{sum(t for t in trades if t <= 0) / max(1, len(trades) - len(wins)) * 100:+.1f}%"
-        )
+    print(f"  Final value       {final:,.0f}   ({m['total']:+.1f}%)   CAGR {cagr:+.1f}%")
+    print(f"  Max drawdown      {m['maxdd']:.1f}%")
+    print(f"  Trades            {trades_n}   win-rate {m['winrate']:.0f}%")
+    print(f"  Avg win / loss    {m['avg_win']:+.1f}% / {m['avg_loss']:+.1f}%")
     print("  ---- buy & hold DSEX ----")
     print(
         f"  Final value       {START * (1 + idx_ret / 100):,.0f}   ({idx_ret:+.1f}%)   "

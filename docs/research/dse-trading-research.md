@@ -132,6 +132,26 @@ stop −10% / target +25% / time 63d, 0.4%/side cost, max 10 concurrent position
   the bottom line in this regime. A 200-day gate is untestable (insufficient index history).
 - Right-skewed, single-regime, EOD fills, slippage on thin names not modelled → promising, not proof.
 
+## 4d. Robustness sweep — is it curve-fit? (`scripts/robustness.py`)
+
+Vary one knob at a time around the base; the edge must beat the index (+7.8%) across a *range*, not
+just at one point. Result: **it does.** Every knob beats the index across essentially its whole range,
+and the surface is smooth + directional (the signature of a real effect, not an overfit spike):
+
+- **stop** −6%→−12%: all beat index (+21 to +56 vs index). Only −15% fails (−3). Tighter stops did
+  *better* here (sharp-drop regime). Base −10% is conservative.
+- **target** +15%→+40%: all beat index (+26 to +58). Lower target best (choppy market → take profit).
+- **hold** 40→120d: flat ~+33–44% — not timing-sensitive (good).
+- **deep** −30%→−50%: monotonic — deeper washout = better (−50% → +63%). Confirms the core thesis.
+- **near_low** 10→25%: all beat index; closest-to-low best (+80% at 10%).
+- **max_pos** 5→20: all positive; more positions = higher return + lower drawdown. Concentration (5)
+  spikes drawdown to −32% — the strategy needs diversification.
+
+**Verdict:** structural, not curve-fit. The base config is actually *conservative*; deeper-washout /
+closer-to-low / more-diversified settings did better. **But** robustness to *parameters* is not
+robustness to *regimes* — the whole surface still rests on one recovering-market window. "Deeper =
+better" is exactly what would invert in a sustained bear (deepest = falling knife).
+
 ## 5. Why no deep ML (yet)
 
 PatchTST / deep time-series transformers need thousands of clean examples; we have ~100 movers over a
