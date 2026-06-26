@@ -132,8 +132,11 @@ export function Markets() {
         }
         return (
           <div key={g.id} className="flex flex-col gap-3">
-            <div className="text-[11px] uppercase tracking-wide text-accent px-1">
-              {g.label}
+            <div className="flex items-center justify-between px-1">
+              <div className="text-[11px] uppercase tracking-wide text-accent">{g.label}</div>
+              <Link to={`/markets/${items[0].key}`} className="text-[11px] text-accent">
+                View more →
+              </Link>
             </div>
             {items.map((s) => (
               <ScreenCard key={s.key} s={s} />

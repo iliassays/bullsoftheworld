@@ -18,6 +18,7 @@ from api.deps import CurrentTenant, DbSession, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.core.models import (
     Cashtag,
+    DailyBar,
     Post,
     QuoteSnapshot,
     TickerAnalytics,
@@ -397,11 +398,64 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)
 
 
+_PERIOD_DAYS = {"1d": 1, "5d": 5, "1m": 22}  # trading-days back for movers over a period
+
+
+async def _movers_period(
+    session, market: str, *, gainers: bool, days: int, limit: int
+) -> ScreenOut:
+    """Top gainers/losers over a trailing window, from the daily bars (EOD-consistent)."""
+    rn = (
+        func.row_number()
+        .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+        .label("rn")
+    )
+    ranked = (
+        select(DailyBar.code, DailyBar.close, rn)
+        .where(DailyBar.market == market, DailyBar.code.in_(visible_codes(market)))
+        .subquery()
+    )
+    cur = select(ranked.c.code, ranked.c.close.label("cur")).where(ranked.c.rn == 1).subquery()
+    old = (
+        select(ranked.c.code, ranked.c.close.label("old")).where(ranked.c.rn == days + 1).subquery()
+    )
+    chg = (cur.c.cur - old.c.old) / old.c.old * 100
+    rows = (
+        await session.execute(
+            select(cur.c.code, cur.c.cur, chg.label("chg"))
+            .join(old, cur.c.code == old.c.code)
+            .where(old.c.old > 0)
+            .order_by(chg.desc() if gainers else chg.asc())
+            .limit(limit)
+        )
+    ).all()
+    return ScreenOut(
+        key="top_gainers" if gainers else "top_losers",
+        title="Top gainers" if gainers else "Top losers",
+        description=f"Biggest {'gains' if gainers else 'falls'} over {days} trading day(s)",
+        value_label="% period",
+        group="movers",
+        items=[ScreenItem(code=c, last_close=p, value=round(chg, 2)) for c, p, chg in rows],
+    )
+
+
 @router.get("/screens/{key}")
 async def screen_detail(
-    key: str, tenant: CurrentTenant, session: DbSession, limit: int = Query(50, le=200)
+    key: str,
+    tenant: CurrentTenant,
+    session: DbSession,
+    limit: int = Query(50, le=200),
+    period: str | None = Query(None, description="movers only: 1d | 5d | 1m"),
 ) -> ScreenOut:
     """One screen's full list — for the explore page's tab view."""
+    if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
+        return await _movers_period(
+            session,
+            tenant.market,
+            gainers=key == "top_gainers",
+            days=_PERIOD_DAYS[period],
+            limit=limit,
+        )
     screen = await build_screen(session, tenant.market, key, limit)
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")

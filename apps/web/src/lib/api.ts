@@ -272,7 +272,8 @@ export const api = {
     ),
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
-  screen: (key: string, limit = 50) => request<Screen>(`/screens/${key}?limit=${limit}`),
+  screen: (key: string, limit = 50, period?: string) =>
+    request<Screen>(`/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}`),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
 
   bars: (code: string, limit = 180) =>
