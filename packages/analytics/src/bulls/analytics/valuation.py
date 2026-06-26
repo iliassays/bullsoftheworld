@@ -19,9 +19,11 @@ class ValuationResult(BaseModel):
     dividend_yield: float | None = None  # % — cash dividend (taka) / close
 
 
-# Above this, a trailing cash yield reflects a collapsed price, not income (a "yield trap"). On an
-# income screen it misleads more than it helps, so we omit it rather than show a fantastical number.
-_MAX_SANE_YIELD = 20.0
+# Above this, a trailing cash yield reflects a collapsed price, not income (a "yield trap"): the
+# cluster of names yielding >15% on DSE are all trading below their ৳10 face value, so the high yield
+# is a price-depression artifact, not a sustainable payout. Genuine top payers (e.g. MARICO ~14%)
+# sit below this line. On an income screen a trap misleads more than it helps, so we omit it.
+_MAX_SANE_YIELD = 15.0
 
 
 def _r(x: float | None, n: int = 2) -> float | None:
