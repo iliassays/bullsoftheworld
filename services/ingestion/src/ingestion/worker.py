@@ -23,6 +23,7 @@ from arq.connections import RedisSettings
 
 from bulls.core.config import get_settings
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
+from ingestion import news
 from ingestion.analytics import compute_all
 from ingestion.buzz import snapshot_all
 from ingestion.company import collect as collect_company
@@ -129,6 +130,13 @@ async def run_volume_signals(ctx) -> str:
     return f"volume={counts['published']}"
 
 
+async def pull_news(ctx) -> str:
+    """Onboard DSE news (classify + score, drop noise) — pre-open and after the close."""
+    counts = await news.collect(MARKET, days=news.DAILY_LOOKBACK_DAYS)
+    log.info("news: kept %s / %s fetched", counts["kept"], counts["fetched"])
+    return f"news_kept={counts['kept']}"
+
+
 async def run_market_signals(ctx) -> str:
     """Post the daily market-wide close wrap — only on trading days."""
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
@@ -153,6 +161,7 @@ class WorkerSettings:
         run_ownership_signals,
         run_volume_signals,
         run_market_signals,
+        pull_news,
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
@@ -176,5 +185,8 @@ class WorkerSettings:
         cron(run_volume_signals, hour={5, 6, 7, 8}, minute=45, run_at_startup=False),
         # Market-wide close wrap, after the EOD summary lands.
         cron(run_market_signals, hour=13, minute=30, run_at_startup=False),
+        # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
+        # and after the close (13:35 UTC) to catch intraday postings.
+        cron(pull_news, hour={3, 13}, minute=35, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

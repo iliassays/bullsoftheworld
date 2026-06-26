@@ -1,5 +1,6 @@
 """ORM models. Import all here so Alembic autogenerate sees them."""
 
+from bulls.core.models.announcement import Announcement
 from bulls.core.models.company import (
     AnnualFinancial,
     CompanyProfile,
@@ -19,6 +20,7 @@ from bulls.core.models.user import User
 from bulls.core.models.watchlist import WatchlistItem
 
 __all__ = [
+    "Announcement",
     "AnnualFinancial",
     "Cashtag",
     "CompanyProfile",

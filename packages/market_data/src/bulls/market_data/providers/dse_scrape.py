@@ -28,6 +28,7 @@ from bulls.market_data.provider import (
     CompanyProfile,
     DividendRecord,
     MarketSummary,
+    NewsItem,
     Quote,
     SectorPE,
     Shareholding,
@@ -40,6 +41,9 @@ _ARCHIVE_URL = f"{_BASE}/day_end_archive.php"
 _SUMMARY_URL = f"{_BASE}/market_summary.php"
 _COMPANY_URL = f"{_BASE}/displayCompany.php"
 _SECTOR_PE_URL = f"{_BASE}/sectoral_PE.php"
+# News lives on the corporate site (dse.com.bd), not dsebd.org. URL/params/columns below are the
+# expected shape — confirm against a real news_archive.php capture and a saved fixture.
+_NEWS_URL = "https://www.dse.com.bd/news_archive.php"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 
@@ -197,6 +201,56 @@ def parse_market_summary(html: str) -> list[MarketSummary]:
             fields[attr] = int(num) if (is_int and num is not None) else num
         summaries.append(MarketSummary(market="DSE", date=date, **fields))
     return summaries
+
+
+_NEWS_DATE_KEYS = {"NEWS DATE", "DATE", "PUBLISH DATE", "PUBLISHED ON"}
+_NEWS_CODE_KEYS = {"TRADING CODE", "CODE", "COMPANY", "TRADING CODE/COMPANY"}
+_NEWS_TITLE_KEYS = {"NEWS TITLE", "NEWS", "TITLE", "HEADLINE"}
+
+
+def _news_date(value: str) -> dt.date | None:
+    value = value.strip()
+    for fmt in ("%Y-%m-%d", "%b %d, %Y", "%d %b %Y", "%d-%m-%Y"):
+        try:
+            return dt.datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _col(header: list[str], keys: set[str]) -> int | None:
+    for i, h in enumerate(header):
+        if h in keys:
+            return i
+    return None
+
+
+def parse_news(html: str) -> list[NewsItem]:
+    """Parse the news archive table into raw NewsItems (date, code, headline).
+
+    Header-keyed (survives column reorder). EXPECTED shape — verify against a real news_archive.php
+    capture; the date/code/title header names may differ.
+    """
+    tree = HTMLParser(html)
+    out: list[NewsItem] = []
+    for table in tree.css("table"):
+        rows = table.css("tr")
+        if not rows:
+            continue
+        header = [_norm(c.text(strip=True)) for c in rows[0].css("th, td")]
+        di, ci, ti = (_col(header, k) for k in (_NEWS_DATE_KEYS, _NEWS_CODE_KEYS, _NEWS_TITLE_KEYS))
+        if di is None or ci is None or ti is None:
+            continue
+        for row in rows[1:]:
+            cells = [c.text(strip=True) for c in row.css("td")]
+            if len(cells) <= max(di, ci, ti):
+                continue
+            date = _news_date(cells[di])
+            code = cells[ci].upper().strip()
+            headline = cells[ti].strip()
+            if date and code and headline:
+                out.append(NewsItem(code=code, published_at=date, headline=headline))
+    return out
 
 
 def _int(value: str | None) -> int | None:
@@ -473,3 +527,11 @@ class DseScrapeProvider:
             resp = await client.get(_SECTOR_PE_URL)
             resp.raise_for_status()
         return parse_sector_pe(resp.text)
+
+    async def get_news(self, start: dt.date, end: dt.date) -> list[NewsItem]:
+        # Param names are the expected shape — confirm against the live page.
+        params = {"startDate": str(start), "endDate": str(end), "inst": "All Instrument"}
+        async with self._client() as client:
+            resp = await client.get(_NEWS_URL, params=params)
+            resp.raise_for_status()
+        return parse_news(resp.text)

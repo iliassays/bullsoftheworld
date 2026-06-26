@@ -159,6 +159,14 @@ class CompanyInfo(BaseModel):
     dividends: list[DividendRecord] = []
 
 
+class NewsItem(BaseModel):
+    """One raw news/announcement row from the exchange — classified downstream at onboarding."""
+
+    code: str
+    published_at: dt.date
+    headline: str
+
+
 @runtime_checkable
 class MarketDataProvider(Protocol):
     """Implemented per market. `subscribe` is optional (Protocol members can be absent)."""
@@ -176,6 +184,8 @@ class MarketDataProvider(Protocol):
     async def get_company(self, code: str) -> CompanyInfo | None: ...
 
     async def get_sector_pe(self) -> list[SectorPE]: ...
+
+    async def get_news(self, start: dt.date, end: dt.date) -> list[NewsItem]: ...
 
     # Optional live push. Providers without it (e.g. the scraper) are polled instead.
     # def subscribe(self, codes: list[str], on_tick: Callable[[Quote], None]) -> Unsubscribe: ...
