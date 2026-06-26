@@ -1,5 +1,21 @@
 import type { Company, NewsItem } from "../lib/api";
 import { Empty } from "./ui";
+import { InfoTip } from "./InfoTip";
+
+// Plain-language help for the jargon fundamentals, each with a worked example — descriptive only.
+const F_HELP: Record<string, string> = {
+  market_cap:
+    "Total value of all shares: price × shares outstanding. Shown in crore (1 Cr = ৳10 million).",
+  pe: "Price-to-Earnings: share price ÷ annual EPS. e.g. price ৳100, EPS ৳5 → P/E 20. Compare within a sector.",
+  pe_sector:
+    "This stock's P/E ÷ its sector's median P/E. Below 1.0× = cheaper than typical peers; above = pricier.",
+  pb: "Price-to-Book: share price ÷ net asset value per share. Below 1.0 = trading under book value. e.g. price ৳100, NAV ৳80 → 1.25.",
+  yield:
+    "Last year's cash dividend as a % of today's price. e.g. ৳1 cash on a ৳20 price = 5%. Bonus shares aren't counted.",
+  eps: "Earnings per share: yearly profit ÷ shares outstanding. e.g. ৳1.72 earned per share over the year.",
+  eps_growth: "Change in EPS vs the prior year. e.g. -17.3% means earnings per share fell 17.3%.",
+  nav: "Net Asset Value per share — the company's book value behind each share. e.g. ৳57 of net assets per share.",
+};
 
 const CAT_LABEL: Record<string, string> = {
   dividend: "Dividend",
@@ -59,14 +75,19 @@ function Row({
   label,
   value,
   hint,
+  help,
 }: {
   label: string;
   value: string;
   hint?: string;
+  help?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between py-2 border-b border-border/60 last:border-0">
-      <span className="text-xs text-muted">{label}</span>
+      <span className="flex items-center gap-1.5 text-xs text-muted">
+        {label}
+        {help && <InfoTip text={help} />}
+      </span>
       <span className="text-sm font-semibold tnum">
         {value}
         {hint && <span className="text-muted font-normal"> {hint}</span>}
@@ -97,17 +118,18 @@ export function FundamentalsPanel({ f }: { f: Company["fundamentals"] }) {
       : `${f.eps_growth_yoy > 0 ? "+" : ""}${f.eps_growth_yoy.toFixed(1)}%`;
   return (
     <Card title="Fundamentals">
-      <Row label="Market cap" value={crore(f.market_cap_mn)} />
-      <Row label="P/E" value={ratio(f.pe_ratio)} />
+      <Row label="Market cap" value={crore(f.market_cap_mn)} help={F_HELP.market_cap} />
+      <Row label="P/E" value={ratio(f.pe_ratio)} help={F_HELP.pe} />
       <Row
         label="P/E vs sector"
         value={f.pe_vs_sector == null ? dash : `${f.pe_vs_sector.toFixed(2)}×`}
+        help={F_HELP.pe_sector}
       />
-      <Row label="P/B" value={ratio(f.pb_ratio)} />
-      <Row label="Dividend yield" value={pct(f.dividend_yield)} />
-      <Row label="EPS (annual)" value={taka(f.eps)} />
-      <Row label="EPS growth (YoY)" value={yoy} />
-      <Row label="NAV / share" value={taka(f.nav_per_share)} />
+      <Row label="P/B" value={ratio(f.pb_ratio)} help={F_HELP.pb} />
+      <Row label="Dividend yield" value={pct(f.dividend_yield)} help={F_HELP.yield} />
+      <Row label="EPS (annual)" value={taka(f.eps)} help={F_HELP.eps} />
+      <Row label="EPS growth (YoY)" value={yoy} help={F_HELP.eps_growth} />
+      <Row label="NAV / share" value={taka(f.nav_per_share)} help={F_HELP.nav} />
       <Row
         label="52-week range"
         value={`${taka(f.week52_low)} – ${taka(f.week52_high)}`}

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Screen } from "../lib/api";
 import { Spinner } from "../components/ui";
-import { ScreenRow, metricHeader } from "./Markets";
+import { InfoTip } from "../components/InfoTip";
+import { ScreenRow, SCREEN_HELP, metricHeader } from "./Markets";
 
 const GROUP_LABEL: Record<string, string> = {
   movers: "Movers",
@@ -91,7 +92,10 @@ export function ScreenExplore() {
         <Spinner />
       ) : (
         <div className="bg-surface border border-border rounded-2xl p-4">
-          <div className="font-semibold text-sm">{screen.title}</div>
+          <div className="flex items-center gap-1.5">
+            <div className="font-semibold text-sm text-accent">{screen.title}</div>
+            <InfoTip text={SCREEN_HELP[screen.key] ?? screen.description} />
+          </div>
           <div className="text-[11px] text-muted">{screen.description}</div>
           <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
             <span className="pl-7">Symbol</span>

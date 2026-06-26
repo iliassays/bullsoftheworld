@@ -2,6 +2,42 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type Screen, type ScreenItem, type ScreensResponse } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
+import { InfoTip } from "../components/InfoTip";
+
+// Plain-language explanation per screen, with a worked example — descriptive, never advice.
+export const SCREEN_HELP: Record<string, string> = {
+  top_gainers:
+    "Biggest price moves up over the chosen period. e.g. +7.2% means the price is 7.2% higher than where it started.",
+  top_losers:
+    "Biggest price moves down over the chosen period. e.g. -7.2% means the price is 7.2% lower than where it started.",
+  near_support:
+    "Price sitting just above a support level — a floor buyers have defended before. 'Near' = within 3% above it. e.g. $GP 2% above ৳280 support.",
+  near_resistance:
+    "Price approaching a resistance level — a ceiling sellers have defended before. 'Near' = within 3% below it.",
+  oversold:
+    "RSI rates recent momentum from 0–100. Below 30 is historically an 'oversold' zone. e.g. RSI 25. A fact about momentum, not a buy signal.",
+  overbought:
+    "RSI rates recent momentum from 0–100. Above 70 is historically an 'overbought' zone. e.g. RSI 78. A fact about momentum, not a sell signal.",
+  accumulation:
+    "Chaikin Money Flow (CMF) gauges buying vs selling pressure over 20 days, on a -1 to +1 scale. Positive = money flowing in. e.g. +0.30 = strong inflow.",
+  distribution:
+    "Chaikin Money Flow (CMF) below 0 means money is flowing out — net selling pressure over 20 days. e.g. -0.30 = strong outflow.",
+  unusual_volume:
+    "Today's traded volume vs its own 20-day average. 'Very heavy' = 3x+ normal. e.g. $WMSHIPYARD at 4.6x traded 4.6 times its usual daily volume.",
+  uptrend:
+    "Trading above its 200-day average price — a common longer-term uptrend marker. The % shows how far above the average it is.",
+  near_52w_high: "Within 5% of its highest price over the past 52 weeks (one year).",
+  near_52w_low: "Within 5% of its lowest price over the past 52 weeks (one year).",
+  dividend_yield:
+    "Last year's cash dividend as a % of today's price. e.g. ৳1 cash on a ৳20 price = 5%. Bonus (stock) dividends aren't counted, and price-collapse 'traps' above 15% are hidden.",
+  value_vs_sector:
+    "P/E compared with the sector's median. Below 1.0× = cheaper than typical peers. e.g. 0.7× means a 30% lower P/E than the sector median.",
+  eps_growth: "Earnings per share vs the prior year. e.g. +20% YoY = earnings grew 20%.",
+  most_watched: "The names most people have added to their watchlist.",
+  most_discussed: "The names with the most community posts over the last 2 days.",
+  attention_rising:
+    "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
+};
 
 // Format a screen's metric for display, based on its value_label.
 export function fmtValue(label: string, v: number): string {
@@ -140,7 +176,10 @@ const GROUPS: { id: string; label: string; advanced?: boolean }[] = [
 function ScreenCard({ s }: { s: Screen }) {
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="font-semibold text-sm">{s.title}</div>
+      <div className="flex items-center gap-1.5">
+        <div className="font-semibold text-sm text-accent">{s.title}</div>
+        <InfoTip text={SCREEN_HELP[s.key] ?? s.description} />
+      </div>
       <div className="text-[11px] text-muted">{s.description}</div>
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
         <span>Symbol</span>
