@@ -31,6 +31,7 @@ from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
 from ingestion.market_summary import collect as collect_summary
 from ingestion.scheduler import poll_market
+from ingestion.signals.news_agents import run_news_agents
 from ingestion.signals.runner import (
     run_levels_agent,
     run_market_update,
@@ -131,10 +132,11 @@ async def run_volume_signals(ctx) -> str:
 
 
 async def pull_news(ctx) -> str:
-    """Onboard DSE news (classify + score, drop noise) — pre-open and after the close."""
+    """Onboard DSE news (classify + score, drop noise), then fire the news agents on new items."""
     counts = await news.collect(MARKET, days=news.DAILY_LOOKBACK_DAYS)
-    log.info("news: kept %s / %s fetched", counts["kept"], counts["fetched"])
-    return f"news_kept={counts['kept']}"
+    sig = await run_news_agents(MARKET)
+    log.info("news: kept %s / %s fetched, %s notes", counts["kept"], counts["fetched"], sig["published"])
+    return f"news_kept={counts['kept']} notes={sig['published']}"
 
 
 async def run_market_signals(ctx) -> str:

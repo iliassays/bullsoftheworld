@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from bulls.market_data.providers.dse_scrape import parse_news
 from ingestion.news import classify, strength
+from ingestion.signals.news_agents import render as render_news
 
 
 def test_classify_taxonomy():
@@ -41,3 +42,13 @@ def test_parse_news_expected_shape():
     assert len(items) == 2
     assert items[0].code == "GP" and items[0].headline.startswith("Cash Dividend")
     assert items[1].published_at.day == 24
+
+
+def test_news_agent_render_quotes_headline_no_advice():
+    hl = "Cash Dividend Declared 25%"
+    en = render_news("dividend", hl, "GP", "en")
+    bn = render_news("dividend", hl, "GP", "bn")
+    assert "GP" in en and hl in en and "Not advice" in en
+    assert hl in bn and "পরামর্শ নয়" in bn
+    for txt in (en, bn):
+        assert "buy" not in txt.lower() and "sell" not in txt.lower()

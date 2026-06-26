@@ -212,6 +212,12 @@ export interface Company {
     bonus_pct: number | null;
   }[];
 }
+export interface NewsItem {
+  published_at: string;
+  category: string;
+  strength: number;
+  headline: string;
+}
 export interface Gauge {
   score: number;
   label: string;
@@ -285,6 +291,7 @@ export const api = {
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
+  news: (code: string) => request<NewsItem[]>(`/symbols/${code}/news`),
   recordView: (code: string) =>
     request<void>(`/symbols/${code}/view`, {
       method: "POST",

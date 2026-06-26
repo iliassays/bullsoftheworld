@@ -1,5 +1,48 @@
-import type { Company } from "../lib/api";
+import type { Company, NewsItem } from "../lib/api";
 import { Empty } from "./ui";
+
+const CAT_LABEL: Record<string, string> = {
+  dividend: "Dividend",
+  earnings: "Earnings",
+  rating: "Rating",
+  board_meeting: "Board meeting",
+  corporate_action: "Corporate action",
+  halt: "Halt",
+  psi: "Price-sensitive",
+  other: "Other",
+};
+
+export function NewsPanel({ items }: { items: NewsItem[] }) {
+  if (!items.length) return <Empty>No news yet for this stock.</Empty>;
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((n, i) => (
+        <div
+          key={i}
+          className="bg-surface border border-border rounded-2xl p-3"
+        >
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-accent font-semibold bg-accent/10 rounded-full px-2 py-0.5">
+              {CAT_LABEL[n.category] ?? n.category}
+            </span>
+            <span className="text-muted">{n.published_at}</span>
+            <span className="ml-auto text-muted">strength {n.strength}</span>
+          </div>
+          <div className="mt-1 h-1 rounded-full bg-border overflow-hidden">
+            <div
+              className="h-full bg-accent"
+              style={{ width: `${n.strength}%` }}
+            />
+          </div>
+          <p className="text-sm text-text/90 mt-2">{n.headline}</p>
+        </div>
+      ))}
+      <p className="text-[10px] text-muted">
+        Exchange disclosures. Descriptive, not advice.
+      </p>
+    </div>
+  );
+}
 
 const dash = "—";
 const pct = (n: number | null) => (n == null ? dash : `${n.toFixed(2)}%`);

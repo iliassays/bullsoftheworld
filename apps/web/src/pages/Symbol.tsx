@@ -4,6 +4,7 @@ import {
   api,
   type Buzz,
   type Company,
+  type NewsItem,
   type Post,
   type SymbolDetail,
 } from "../lib/api";
@@ -14,6 +15,7 @@ import { Composer } from "../components/Composer";
 import {
   EarningsPanel,
   FundamentalsPanel,
+  NewsPanel,
   OwnershipPanel,
 } from "../components/CompanyPanels";
 import { DigestPanel } from "../components/DigestPanel";
@@ -27,6 +29,7 @@ type Tab =
   | "overview"
   | "feed"
   | "bulls"
+  | "news"
   | "fundamentals"
   | "ownership"
   | "earnings";
@@ -34,6 +37,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "feed", label: "💬 Feed" },
   { id: "bulls", label: "🐂 Bulls" },
+  { id: "news", label: "📰 News" },
   { id: "fundamentals", label: "Fundamentals" },
   { id: "ownership", label: "Ownership" },
   { id: "earnings", label: "Earnings" },
@@ -77,6 +81,7 @@ export function SymbolPage() {
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
+  const [news, setNews] = useState<NewsItem[] | null>(null);
   const [watched, setWatched] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const discussion = useInfiniteFeed(`${sym}:discussion`, (l, o) =>
@@ -91,10 +96,15 @@ export function SymbolPage() {
     setTopPost(null);
     setBuzz(null);
     setCompany(null);
+    setNews(null);
     api
       .symbol(sym)
       .then(setDetail)
       .catch(() => setDetail(null));
+    api
+      .news(sym)
+      .then(setNews)
+      .catch(() => setNews([]));
     api
       .topPost(sym)
       .then(setTopPost)
@@ -270,6 +280,8 @@ export function SymbolPage() {
         </>
       )}
 
+      {tab === "news" &&
+        (news === null ? <Spinner /> : <NewsPanel items={news} />)}
       {tab === "fundamentals" &&
         (company ? (
           <FundamentalsPanel f={company.fundamentals} />
