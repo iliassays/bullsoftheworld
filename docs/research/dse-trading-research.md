@@ -85,6 +85,31 @@ Signature applied today (deep washout + near 52w low, liquid): **9 names**.
 Institutional Δ is uniformly negative — no accumulation confirmation, matching §3. These are
 **watch-for-a-turn candidates, not buys** (no trigger yet).
 
+## 4b. Signal backtest — does the turn-trigger pay, out of sample? (`scripts/signal_backtest.py`)
+
+Walks the full history day by day (no lookahead). At each date, for each liquid name: in the launch
+zone (>40% below 1yr high AND within 15% of 52w low) AND a turn-trigger fires → measure forward
+**3-month** (63d) return, run-to-peak, worst-dip. Baselines: any liquid name +3.5% (48% win); DSEX
+−0.4% (flat-down market).
+
+| Trigger | n | win% | mean | median | peak | dip | vs base |
+|---|---|---|---|---|---|---|---|
+| zone only | 1631 | 58% | +11.5% | +5.1% | +23% | −11% | +7.9 |
+| **break 5d high** | 370 | **59%** | +16.3% | +5.3% | +26% | **−9.9%** | +12.8 |
+| RSI x-up 35 | 627 | 57% | +16.3% | +4.7% | +23% | −11% | +12.7 |
+| two up days | 768 | 58% | +15.0% | +5.8% | +25% | −10% | +11.4 |
+| cross SMA10 | 790 | 55% | +10.7% | +3.2% | +22% | −12% | +7.1 |
+
+**Stability:** every trigger positive in BOTH the early and late half of signals (out-of-sample sanity
+holds). **Reads:** the zone carries most of the edge; the trigger adds win-rate + tighter downside
+(`break 5d high` best risk-adjusted). Mean ≫ median = right-skewed (typical ~+5%/3mo, a few big
+winners). Median dip ~−10% → a stop is mandatory. **Entry/target/stop:** enter on trigger, target
+~+20–25% (median peak), stop ~−10%.
+
+**The regime risk:** single, *recovering*-market window. "Buy washouts" + recovery = great; in a
+sustained downtrend it catches falling knives and likely flips negative. A sellable product MUST add
+a **market-regime filter** (e.g. only fire when DSEX > its 200-day) and say this plainly.
+
 ## 5. Why no deep ML (yet)
 
 PatchTST / deep time-series transformers need thousands of clean examples; we have ~100 movers over a
