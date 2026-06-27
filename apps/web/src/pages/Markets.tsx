@@ -63,10 +63,11 @@ export const SCREEN_HELP: Record<string, string> = {
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// "2026-04-30" → "Apr '26" (parse the parts directly to avoid timezone shifts).
+// "2026-04-30" → "Apr 2026" (full year — "'26" reads like a day-of-month). Parse parts directly
+// to avoid timezone shifts.
 function monthLabel(iso: string): string {
   const [y, m] = iso.split("-");
-  return `${MONTHS[Number(m) - 1] ?? "?"} '${y.slice(2)}`;
+  return `${MONTHS[Number(m) - 1] ?? "?"} ${y}`;
 }
 
 // Format a screen's metric for display, based on its value_label.
