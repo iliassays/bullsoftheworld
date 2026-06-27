@@ -209,6 +209,25 @@ evidence it's structural, not a single lucky stretch. The "best of many" asteris
 Unchanged limit: both halves are the same recovering regime — stability across TIME is shown, across a
 CRASH is not. That gap closes only with more history or a live forward record. **Scheme-3 = flagship.**
 
+### Scheme hunt v3 — new edges explored (`scripts/scheme_hunt.py`)
+
+Cross-sectional engine seeing fundamentals + price features (volatility, 52w position, 3m momentum).
+None beat the flagship:
+
+| New scheme | total | maxDD | win% | vs index |
+|---|---|---|---|---|
+| multi-factor composite (value+quality+reversal) | +29.3% | −19% | 41% | +21.5 |
+| value-reversal cross-sectional | +27.7% | −15% | 46% | +19.9 |
+| quality momentum | +19.5% | −16% | 43% | +11.7 |
+| low-vol quality (low-vol anomaly) | +5.2% | −18% | 39% | −2.6 |
+| **Scheme-3 (flagship, for reference)** | **+73.6%** | −12% | 58% | +65.8 |
+
+**Takeaway:** the monthly *rank-and-hold* factor schemes plateau at +20–30% — good, but far below Scheme-3.
+The flagship's extra ~45pp comes from its **daily entry timing** (washout + breakout trigger on quality
+names), which monthly rebalancing can't capture. The low-vol anomaly does NOT show on DSE. We've now
+tested ~14 schemes; further hunting risks overfitting for diminishing gains. **Conclusion: Scheme-3 is
+the edge; the productive path is now combine + forward-track, not keep mining.**
+
 ### Scheme catalog
 - **Scheme-1 — Deep-Value Reversal** ✅ validated. Entry: >40% below 1yr high AND within 15% of 52w
   low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. Mean-reversion
