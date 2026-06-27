@@ -43,12 +43,13 @@ _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
 _SMART_MONEY = func.coalesce(T.institute_delta, 0) + func.coalesce(T.foreign_delta, 0)
 
 # --- Liquidity floor ---------------------------------------------------------
-# Institutions never rank a raw universe: they first drop names too illiquid or small to trade,
-# where a signal is just noise and an exit is hard. We require a minimum average daily turnover
-# (avg 20-day volume x price) and market cap. ~92% of DSE names clear this; the illiquid tail and
-# penny-stock pump targets fall out of every computed screen. Community screens (most watched /
-# discussed) are intentionally NOT filtered — they reflect what the community actually follows.
-_MIN_ADTV_MN = 1.0  # average daily turnover over 20 sessions, ৳ millions
+# Drop only names that are effectively UNTRADEABLE — near-zero turnover / suspended — where a signal
+# is meaningless and you can't actually get in or out. This is a turnover floor, NOT a price floor:
+# cheap penny stocks that retail actively trades have plenty of turnover and stay in. DSE retail
+# loves low-priced names, so the bar is deliberately gentle (~97% of names clear it); it exists to
+# weed out the dead/frozen tickers, not the cheap ones. Community screens (most watched / discussed)
+# are NOT filtered at all — they reflect what the community actually follows.
+_MIN_ADTV_MN = 0.5  # average daily turnover over 20 sessions, ৳ millions
 _MIN_MCAP_MN = 100.0  # market capitalisation, ৳ millions
 
 _LIQUID = and_(
