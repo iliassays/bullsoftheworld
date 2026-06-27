@@ -30,7 +30,12 @@ def test_social_flow_end_to_end():
 
         reg = c.post(
             "/auth/register",
-            json={"handle": handle, "name": "Test User", "password": "password123"},
+            json={
+                "handle": handle,
+                "name": "Test User",
+                "email": f"{handle}@example.com",
+                "password": "password123",
+            },
         )
         assert reg.status_code == 201, reg.text
         auth_hdr = {"Authorization": f"Bearer {reg.json()['access_token']}"}
@@ -68,7 +73,12 @@ def test_reactions_and_replies_flow():
         handle = "t" + uuid.uuid4().hex[:12]
         reg = c.post(
             "/auth/register",
-            json={"handle": handle, "name": "Reactor", "password": "password123"},
+            json={
+                "handle": handle,
+                "name": "Reactor",
+                "email": f"{handle}@example.com",
+                "password": "password123",
+            },
         )
         auth = {"Authorization": f"Bearer {reg.json()['access_token']}"}
 

@@ -9,11 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Sentiment = Literal["bull", "bear"]
 
+# Lightweight email check (avoids the email-validator dep); the verification email is the real proof.
+_EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
 
 # --- auth ---
 class RegisterIn(BaseModel):
     handle: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
     name: str = Field(min_length=1, max_length=120)
+    email: str = Field(max_length=255, pattern=_EMAIL)
     password: str = Field(min_length=8, max_length=128)
     locale: str = "bn"
 
@@ -21,6 +25,19 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     handle: str
     password: str
+
+
+class ForgotIn(BaseModel):
+    email: str = Field(max_length=255, pattern=_EMAIL)
+
+
+class ResetIn(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+
+
+class VerifyIn(BaseModel):
+    token: str
 
 
 class TokenOut(BaseModel):
@@ -35,6 +52,8 @@ class UserOut(BaseModel):
     handle: str
     name: str
     locale: str
+    email: str | None = None
+    email_verified: bool = False
 
 
 # --- posts ---

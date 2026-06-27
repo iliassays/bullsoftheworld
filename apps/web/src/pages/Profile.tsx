@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
@@ -12,6 +12,7 @@ export function Profile() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [handle, setHandle] = useState("");
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,7 +41,7 @@ export function Profile() {
     setErr("");
     try {
       if (mode === "login") await login(handle, password);
-      else await register(handle, name, password);
+      else await register(handle, name, email, password);
     } catch (e) {
       setErr(e instanceof ApiError ? e.detail : t("profile.error"));
     } finally {
@@ -63,12 +64,21 @@ export function Profile() {
         onChange={(e) => setHandle(e.target.value)}
       />
       {mode === "register" && (
-        <input
-          className={field}
-          placeholder={t("profile.name")}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <>
+          <input
+            className={field}
+            placeholder={t("profile.name")}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className={field}
+            type="email"
+            placeholder={t("profile.email")}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </>
       )}
       <input
         className={field}
@@ -94,6 +104,11 @@ export function Profile() {
       >
         {mode === "login" ? t("profile.toRegister") : t("profile.toLogin")}
       </button>
+      {mode === "login" && (
+        <Link to="/forgot" className="text-muted text-xs text-center">
+          {t("profile.forgot")}
+        </Link>
+      )}
       <button
         onClick={() => navigate(-1)}
         className="text-muted text-sm border border-border rounded-xl py-2.5"

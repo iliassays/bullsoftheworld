@@ -295,7 +295,7 @@ export interface User {
 
 export const api = {
   // auth
-  register: (b: { handle: string; name: string; password: string }) =>
+  register: (b: { handle: string; name: string; email: string; password: string }) =>
     request<{ access_token: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(b),
@@ -304,6 +304,21 @@ export const api = {
     request<{ access_token: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(b),
+    }),
+  forgotPassword: (email: string) =>
+    request<{ status: string }>("/auth/forgot", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, password: string) =>
+    request<{ access_token: string }>("/auth/reset", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    }),
+  verifyEmail: (token: string) =>
+    request<{ status: string }>("/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({ token }),
     }),
   me: () => request<User>("/auth/me"),
 

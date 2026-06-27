@@ -45,6 +45,22 @@ class Settings(BaseSettings):
     # CORS origins for the web client (comma-separated in env).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # --- Email (transactional) ---------------------------------------------
+    # Public base URL of the web app, for links in emails (reset/verify).
+    app_base_url: str = "http://localhost:5173"
+    # Branded sender, e.g. "Bulls of Dhaka <no-reply@bullstreetai.com>".
+    email_from: str = "Bulls of Dhaka <no-reply@bullstreetai.com>"
+    # Preferred: a transactional provider (set RESEND_API_KEY). Falls back to SMTP if set, else logs.
+    resend_api_key: str = ""
+    smtp_server: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.resend_api_key or (self.smtp_server and self.smtp_username))
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

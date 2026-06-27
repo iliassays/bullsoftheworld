@@ -42,4 +42,32 @@ def decode_token(token: str) -> str | None:
         payload = jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
     except jwt.PyJWTError:
         return None
+    # Login tokens carry no `purpose`; reject purpose-scoped tokens (reset/verify) here.
+    if payload.get("purpose"):
+        return None
+    return payload.get("sub")
+
+
+def create_purpose_token(subject: str, purpose: str, ttl_min: int) -> str:
+    """Short-lived, single-purpose token (e.g. 'reset', 'verify') — separate from login tokens."""
+    s = get_settings()
+    now = dt.datetime.now(dt.UTC)
+    payload = {
+        "sub": subject,
+        "purpose": purpose,
+        "iat": now,
+        "exp": now + dt.timedelta(minutes=ttl_min),
+    }
+    return jwt.encode(payload, s.jwt_secret, algorithm=s.jwt_algorithm)
+
+
+def decode_purpose_token(token: str, purpose: str) -> str | None:
+    """Return the subject if the token is valid AND was minted for `purpose`, else None."""
+    s = get_settings()
+    try:
+        payload = jwt.decode(token, s.jwt_secret, algorithms=[s.jwt_algorithm])
+    except jwt.PyJWTError:
+        return None
+    if payload.get("purpose") != purpose:
+        return None
     return payload.get("sub")
