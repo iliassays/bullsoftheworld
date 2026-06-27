@@ -260,6 +260,7 @@ class ScreenItem(BaseModel):
     horizons: MomHorizons | None = None  # momentum screen only: 3M/6M/12M returns for the cue
     flow: list[float] = []  # ownership screens: stake % over last disclosures (oldest→newest)
     flow_dates: list[str] = []  # ISO date of each flow point, aligned with `flow`
+    period_spark: list[float] = []  # ownership: price over the disclosure window (oldest→newest)
 
 
 class ScreenOut(BaseModel):
@@ -701,6 +702,39 @@ async def _ownership_flow(session, market: str, codes: list[str], attr: str) -> 
     return out
 
 
+def _downsample(xs: list[float], n: int) -> list[float]:
+    """Evenly thin a series to ~n points so a long price window fits a tiny sparkline."""
+    if len(xs) <= n:
+        return xs
+    step = (len(xs) - 1) / (n - 1)
+    return [xs[round(i * step)] for i in range(n)]
+
+
+async def _period_sparks(
+    session, market: str, code_from: dict[str, dt.date]
+) -> dict[str, list[float]]:
+    """Closing prices from each code's earliest disclosure date to now — the accumulation window."""
+    if not code_from:
+        return {}
+    earliest = min(code_from.values())
+    rows = (
+        await session.execute(
+            select(DailyBar.code, DailyBar.date, DailyBar.close)
+            .where(
+                DailyBar.market == market,
+                DailyBar.code.in_(list(code_from)),
+                DailyBar.date >= earliest,
+            )
+            .order_by(DailyBar.code, DailyBar.date)
+        )
+    ).all()
+    by_code: dict[str, list[float]] = defaultdict(list)
+    for code, date, close in rows:
+        if date >= code_from[code]:
+            by_code[code].append(round(close, 2))
+    return {code: _downsample(closes, 30) for code, closes in by_code.items()}
+
+
 async def _ownership_buying(
     session, market: str, *, kind: str, limit: int = PER_SCREEN
 ) -> ScreenOut:
@@ -719,6 +753,13 @@ async def _ownership_buying(
         )
     ).all()
     flows = await _ownership_flow(session, market, [c for c, _, _ in rows], attr)
+    # Price over each name's accumulation window (from its earliest shown disclosure).
+    code_from = {
+        c: dt.date.fromisoformat(flows[c].dates[0])
+        for c, _, _ in rows
+        if c in flows and flows[c].dates
+    }
+    psparks = await _period_sparks(session, market, code_from)
     who = "Foreign investors" if kind == "foreign" else "Local institutions"
     empty = _Flow(series=[], dates=[], prev_delta=None)
     items = []
@@ -732,6 +773,7 @@ async def _ownership_buying(
                 note=_flow_tag(f.prev_delta),
                 flow=f.series,
                 flow_dates=f.dates,
+                period_spark=psparks.get(c, []),
             )
         )
     return ScreenOut(

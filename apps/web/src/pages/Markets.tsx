@@ -204,13 +204,12 @@ function OwnershipDots({ flow, dates }: { flow: number[]; dates: string[] }) {
     <span
       title={title}
       aria-label={`Stake trend: ${title}`}
-      className="shrink-0 inline-flex items-center justify-center gap-1.5"
-      style={{ width: 56, height: 18 }}
+      className="inline-flex items-center gap-1 mt-1"
     >
       {flow.map((v, i) => (
         <span
           key={i}
-          className="w-2 h-2 rounded-full"
+          className="w-1.5 h-1.5 rounded-full"
           style={{ backgroundColor: ownDotColor(v, i > 0 ? flow[i - 1] : undefined) }}
         />
       ))}
@@ -252,11 +251,10 @@ export function ScreenRow({
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
         </span>
       </span>
-      {isOwnership ? (
-        <OwnershipDots flow={item.flow ?? []} dates={fdates} />
-      ) : (
-        <Sparkline data={item.spark} />
-      )}
+      {/* Always a price line. For ownership it spans the disclosure window (the accumulation period). */}
+      <Sparkline
+        data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
+      />
       <span className="flex items-stretch gap-3 shrink-0 text-right">
         <span className="flex flex-col items-end justify-center">
           <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
@@ -285,6 +283,7 @@ export function ScreenRow({
               {sinceMonth && (
                 <span className="text-[10px] text-muted">since {sinceMonth}</span>
               )}
+              {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} />}
               {item.horizons && <MomentumDots h={item.horizons} />}
             </>
           ) : (
