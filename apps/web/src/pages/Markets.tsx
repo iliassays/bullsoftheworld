@@ -1,6 +1,12 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, type Screen, type ScreenItem, type ScreensResponse } from "../lib/api";
+import {
+  api,
+  type MomHorizons,
+  type Screen,
+  type ScreenItem,
+  type ScreensResponse,
+} from "../lib/api";
 import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
 import { Sparkline } from "../components/Sparkline";
@@ -141,6 +147,38 @@ const toneCls = (t: Chip["tone"]) =>
   t === "up" ? "text-up" : t === "down" ? "text-down" : "text-fg";
 
 // One row, shared by the Markets cards and the explore page so they read identically.
+// Trend-consistency cue: one dot per lookback (3M·6M·12M). Green = solidly climbing that window,
+// muted = flat, red = down. All three green → the uptrend is broad/durable; only the long window
+// green → an older move that's cooling. Exact numbers are on the 3M/6M/12M toggle.
+const MOM_STRONG = 15; // % return over a window to count as "solidly climbing"
+function momColor(m: number | null): string {
+  if (m == null) return "var(--color-muted)";
+  if (m >= MOM_STRONG) return "var(--color-up)";
+  if (m >= 0) return "var(--color-muted)";
+  return "var(--color-down)";
+}
+function MomentumDots({ h }: { h: MomHorizons }) {
+  const dots: [string, number | null][] = [
+    ["3M", h.m3],
+    ["6M", h.m6],
+    ["12M", h.m12],
+  ];
+  const title = dots
+    .map(([lbl, m]) => `${lbl} ${m == null ? "—" : `${m >= 0 ? "+" : ""}${m}%`}`)
+    .join(" · ");
+  return (
+    <span className="flex items-center gap-1 mt-1" title={title} aria-label={`Trend by window: ${title}`}>
+      {dots.map(([lbl, m]) => (
+        <span
+          key={lbl}
+          className="w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: momColor(m), opacity: m == null ? 0.4 : 1 }}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function ScreenRow({
   item,
   screen,
@@ -197,6 +235,7 @@ export function ScreenRow({
               <span className="text-[10px] text-muted tnum">
                 {fmtValue(screen.value_label, item.value)}
               </span>
+              {item.horizons && <MomentumDots h={item.horizons} />}
             </>
           ) : (
             <span className="text-xs font-semibold text-accent tnum">

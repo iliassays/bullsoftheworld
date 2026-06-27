@@ -140,6 +140,12 @@ export function ScreenExplore() {
               1-month moves often reverse. For a lasting trend, see “Strongest trend”.
             </p>
           )}
+          {isMomentum && (
+            <p className="text-[10px] text-muted mt-1">
+              Dots = climbing over 3M·6M·12M (green = strong). All three green means the uptrend is
+              broad, not just recent.
+            </p>
+          )}
 
           <div className="mt-3 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
             <span className="pl-7">Symbol</span>

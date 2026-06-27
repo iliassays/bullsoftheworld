@@ -249,6 +249,15 @@ _GROUP: dict[str, str] = {
 }
 
 
+class MomHorizons(BaseModel):
+    """3-/6-/12-month returns for the momentum screen, so a row can show trend consistency
+    across lookbacks (climbing in all three = broad/durable; only recent = newer move)."""
+
+    m3: float | None = None
+    m6: float | None = None
+    m12: float | None = None
+
+
 class ScreenItem(BaseModel):
     code: str
     name: str = ""  # company short name, for readability
@@ -257,6 +266,7 @@ class ScreenItem(BaseModel):
     change_1d: float | None = None  # today's % move, the universal anchor (None for movers)
     note: str | None = None  # optional per-row qualifier (e.g. momentum: steady vs pump-risk)
     spark: list[float] = []  # recent closes (oldest→newest) for an inline sparkline
+    horizons: MomHorizons | None = None  # momentum screen only: 3M/6M/12M returns for the cue
 
 
 class ScreenOut(BaseModel):
@@ -500,7 +510,16 @@ async def _momentum(
     )
     rows = (
         await session.execute(
-            select(T.code, T.last_close, mom, T.volatility, T.market_cap_mn)
+            select(
+                T.code,
+                T.last_close,
+                mom,
+                T.volatility,
+                T.market_cap_mn,
+                T.mom_3_1,
+                T.mom_6_1,
+                T.mom_12_1,
+            )
             .where(
                 T.market == market,
                 mom > 0,
@@ -522,8 +541,18 @@ async def _momentum(
         value_label="momentum",
         group="movers",
         items=[
-            ScreenItem(code=c, last_close=lc, value=round(m, 2), note=_mom_note(m, vol, mc))
-            for c, lc, m, vol, mc in rows
+            ScreenItem(
+                code=c,
+                last_close=lc,
+                value=round(m, 2),
+                note=_mom_note(m, vol, mc),
+                horizons=MomHorizons(
+                    m3=None if m3 is None else round(m3, 1),
+                    m6=None if m6 is None else round(m6, 1),
+                    m12=None if m12 is None else round(m12, 1),
+                ),
+            )
+            for c, lc, m, vol, mc, m3, m6, m12 in rows
         ],
     )
 

@@ -144,6 +144,11 @@ export interface TodaysWatch {
   breadth: Breadth | null;
   session: MarketSession;
 }
+export interface MomHorizons {
+  m3: number | null;
+  m6: number | null;
+  m12: number | null;
+}
 export interface ScreenItem {
   code: string;
   name: string;
@@ -152,6 +157,7 @@ export interface ScreenItem {
   change_1d: number | null; // today's % move; null for movers (their value is already a change)
   note: string | null; // optional per-row qualifier (momentum: steady / volatile / possible pump)
   spark: number[]; // recent closes (oldest→newest) for an inline sparkline
+  horizons?: MomHorizons | null; // momentum screen only: 3M/6M/12M returns for the consistency cue
 }
 export interface Screen {
   key: string;
