@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.language import language_directive
-from bulls.ai.prompts.watch import WATCH_SYSTEM_V1
+from bulls.ai.prompts.watch import WATCH_SYSTEM_V2
 
 log = logging.getLogger(__name__)
 
@@ -39,13 +39,15 @@ class WatchOut(BaseModel):
     summary: str
 
 
-def _render(items: list[WatchItem], breadth: Breadth | None) -> str:
+def _render(items: list[WatchItem], breadth: Breadth | None, extras: list[str] | None) -> str:
     lines: list[str] = []
     if breadth and breadth.total:
         lines.append(
             f"Market breadth: {breadth.advancers} up, {breadth.decliners} down, "
             f"{breadth.unchanged} unchanged (of {breadth.total} traded)."
         )
+    # Extra computed facts (turnover, sector leaders, factor standouts) — already grounded.
+    lines.extend(extras or [])
     lines.append("Active / moving stocks:")
     for it in items:
         lines.append(
@@ -62,17 +64,22 @@ def _fallback(items: list[WatchItem]) -> str:
 
 
 async def todays_watch(
-    items: list[WatchItem], *, breadth: Breadth | None = None, language: str = "English"
+    items: list[WatchItem],
+    *,
+    breadth: Breadth | None = None,
+    extras: list[str] | None = None,
+    language: str = "English",
 ) -> str:
     """Grounded 2-3 sentence watch note in the requested language.
 
-    Output passes the no-advice compliance gate; anything advisory is replaced with a safe
-    deterministic movers list.
+    `extras` are extra pre-computed fact lines (turnover, sector leaders, factor standouts) the
+    caller assembles in code; the model only weaves them into prose. Output passes the no-advice
+    compliance gate; anything advisory is replaced with a safe deterministic movers list.
     """
     if not items:
         return ""
-    system = f"{WATCH_SYSTEM_V1}\n\n{language_directive(language)}"
-    result = await structured_complete(system, _render(items, breadth), WatchOut)
+    system = f"{WATCH_SYSTEM_V2}\n\n{language_directive(language)}"
+    result = await structured_complete(system, _render(items, breadth, extras), WatchOut)
     summary = result.summary.strip()
 
     if contains_advice(summary).is_advice:
