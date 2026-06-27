@@ -14,7 +14,10 @@ APP=/home/ubuntu/bullsofdhaka
 API_URL=https://bullsofdhaka-api.bullstreetai.com
 
 echo "→ pushing code to origin/main"
-git push origin HEAD:main
+# Port 22 to github.com is often blocked on this network; fall back to the 443 SSH endpoint.
+git push origin HEAD:main 2>/dev/null || git \
+  -c core.sshCommand="ssh -i ~/.ssh/github_iliassays -p 443 -o HostName=ssh.github.com -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+  push origin HEAD:main
 
 echo "→ building frontend (VITE_API_BASE=$API_URL)"
 ( cd apps/web && VITE_API_BASE="$API_URL" npm run build )
