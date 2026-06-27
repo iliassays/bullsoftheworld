@@ -676,6 +676,54 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)
 
 
+class SectorRow(BaseModel):
+    sector: str
+    avg_change: float
+    advancers: int
+    decliners: int
+    count: int
+
+
+@router.get("/sectors")
+async def sectors(tenant: CurrentTenant, session: DbSession) -> list[SectorRow]:
+    """Today's move aggregated by sector — DSE retail thinks in sectors (bank, pharma, textile…).
+    Average change + advancers/decliners breadth across the visible universe, hottest first."""
+    market = tenant.market
+    avg_chg = func.avg(QuoteSnapshot.change_pct)
+    adv = func.count().filter(QuoteSnapshot.change_pct > 0)
+    dec = func.count().filter(QuoteSnapshot.change_pct < 0)
+    rows = (
+        await session.execute(
+            select(Symbol.sector, avg_chg, adv, dec, func.count())
+            .join(
+                QuoteSnapshot,
+                and_(
+                    QuoteSnapshot.market == Symbol.market,
+                    QuoteSnapshot.code == Symbol.code,
+                ),
+            )
+            .where(
+                Symbol.market == market,
+                Symbol.code.in_(visible_codes(market)),
+                Symbol.sector.isnot(None),
+            )
+            .group_by(Symbol.sector)
+            .having(func.count() >= 3)  # ignore tiny one-off "sectors"
+            .order_by(avg_chg.desc())
+        )
+    ).all()
+    return [
+        SectorRow(
+            sector=s,
+            avg_change=round(float(a), 2),
+            advancers=int(up),
+            decliners=int(down),
+            count=int(n),
+        )
+        for s, a, up, down, n in rows
+    ]
+
+
 _PERIOD_DAYS = {"1d": 1, "5d": 5, "7d": 7, "15d": 15, "1m": 22}  # trading-days back for movers
 
 

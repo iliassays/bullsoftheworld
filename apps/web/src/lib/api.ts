@@ -165,6 +165,13 @@ export interface ScreensResponse {
   as_of: string | null;
   screens: Screen[];
 }
+export interface Sector {
+  sector: string;
+  avg_change: number;
+  advancers: number;
+  decliners: number;
+  count: number;
+}
 export interface Buzz {
   code: string;
   watchers: number;
@@ -288,6 +295,7 @@ export const api = {
     ),
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
+  sectors: () => request<Sector[]>("/sectors"),
   screen: (key: string, limit = 50, period?: string, window?: string) =>
     request<Screen>(
       `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}`,

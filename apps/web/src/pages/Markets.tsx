@@ -4,6 +4,7 @@ import { api, type Screen, type ScreenItem, type ScreensResponse } from "../lib/
 import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
 import { Sparkline } from "../components/Sparkline";
+import { SectorHeat } from "../components/SectorHeat";
 import { SCREEN_LESSON } from "../lib/lessons";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
@@ -333,6 +334,8 @@ export function Markets() {
           <div className="text-[10px] text-muted shrink-0 ml-2">as of {data.as_of} close</div>
         )}
       </div>
+
+      {!activeLens && <SectorHeat />}
 
       {activeLens
         ? activeLens.keys
