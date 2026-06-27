@@ -3,14 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import { api, type Screen } from "../lib/api";
 import { Spinner } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
+import { useLang } from "../lib/i18n";
 import { SCREEN_LESSON } from "../lib/lessons";
-import { ScreenRow, SCREEN_HELP, metricHeader } from "./Markets";
+import { ScreenRow, SCREEN_HELP, metricHeader, screenDesc, screenTitle } from "./Markets";
 
-const GROUP_LABEL: Record<string, string> = {
-  movers: "Movers",
-  community: "Community",
-  value: "Value & income",
-  technical: "Technical",
+const GROUP_KEY: Record<string, string> = {
+  movers: "group.movers",
+  community: "group.community",
+  value: "group.value",
+  technical: "group.technical",
 };
 const PERIODS = [
   { id: "1d", label: "1D" },
@@ -40,6 +41,7 @@ const DIRECTIONS = [
 // its full list, with its own timeframe filter attached to the card. "How to read this" lives
 // behind the (i) icon, so the data stays front-and-centre.
 export function ScreenExplore() {
+  const { t, lang } = useLang();
   const { key = "" } = useParams();
   const [all, setAll] = useState<Screen[]>([]);
   const [active, setActive] = useState(key);
@@ -97,27 +99,27 @@ export function ScreenExplore() {
   return (
     <div className="flex flex-col gap-3">
       <Link to="/markets" className="text-xs text-accent px-1">
-        ← Markets
+        {t("backToMarkets")}
       </Link>
       {group && (
         <div className="text-[11px] uppercase tracking-wide text-muted px-1">
-          {GROUP_LABEL[group] ?? group}
+          {GROUP_KEY[group] ? t(GROUP_KEY[group]) : group}
         </div>
       )}
 
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {tabs.map((t) => (
+        {tabs.map((tb) => (
           <button
-            key={t.key}
-            ref={active === t.key ? activeTabRef : null}
-            onClick={() => setActive(t.key)}
+            key={tb.key}
+            ref={active === tb.key ? activeTabRef : null}
+            onClick={() => setActive(tb.key)}
             className={`whitespace-nowrap text-xs font-semibold px-3 py-1.5 rounded-full border ${
-              active === t.key
+              active === tb.key
                 ? "text-accent border-accent bg-accent/10"
                 : "text-muted border-border"
             }`}
           >
-            {t.title}
+            {screenTitle(tb, lang)}
           </button>
         ))}
       </div>
@@ -127,13 +129,13 @@ export function ScreenExplore() {
       ) : (
         <div className="bg-surface border border-border rounded-2xl p-4">
           <div className="flex items-center gap-1.5">
-            <div className="font-semibold text-sm text-accent">{screen.title}</div>
+            <div className="font-semibold text-sm text-accent">{screenTitle(screen, lang)}</div>
             <InfoTip
               text={SCREEN_HELP[screen.key] ?? screen.description}
               lessonId={lessonId}
             />
           </div>
-          <div className="text-[11px] text-muted">{screen.description}</div>
+          <div className="text-[11px] text-muted">{screenDesc(screen, lang)}</div>
 
           {tf && (
             <div className="flex gap-2 mt-2">
@@ -151,22 +153,17 @@ export function ScreenExplore() {
             </div>
           )}
           {isMover && period === "1m" && (
-            <p className="text-[10px] text-muted mt-1">
-              1-month moves often reverse. For a lasting trend, see “Strongest trend”.
-            </p>
+            <p className="text-[10px] text-muted mt-1">{t("explore.moverReversal")}</p>
           )}
           {isMomentum && (
-            <p className="text-[10px] text-muted mt-1">
-              Dots = climbing over 3M·6M·12M (green = strong). All three green means the uptrend is
-              broad, not just recent.
-            </p>
+            <p className="text-[10px] text-muted mt-1">{t("explore.dotsNote")}</p>
           )}
 
           <div className="mt-3 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
-            <span className="pl-7">Symbol</span>
+            <span className="pl-7">{t("col.symbol")}</span>
             <span className="flex gap-3">
-              <span>Price</span>
-              <span className="w-20 text-right">{metricHeader(screen.value_label)}</span>
+              <span>{t("col.price")}</span>
+              <span className="w-20 text-right">{metricHeader(screen.value_label, t)}</span>
             </span>
           </div>
           <div className="flex flex-col">
@@ -174,10 +171,10 @@ export function ScreenExplore() {
               <ScreenRow key={it.code} item={it} screen={screen} rank={i + 1} />
             ))}
             {screen.items.length === 0 && (
-              <div className="text-muted text-sm py-2">Nothing here right now.</div>
+              <div className="text-muted text-sm py-2">{t("nothingHere")}</div>
             )}
           </div>
-          <p className="text-[10px] text-muted mt-2">Descriptive screen — not a recommendation.</p>
+          <p className="text-[10px] text-muted mt-2">{t("screen.descNote")}</p>
         </div>
       )}
     </div>

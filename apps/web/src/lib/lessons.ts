@@ -93,3 +93,35 @@ export const SCREEN_LESSON: Record<string, string> = {
   foreign_buying: "smartmoney",
   institutional_buying: "smartmoney",
 };
+
+// Bangla screen titles + descriptions (the backend serves English). Keyed by screen key; a missing
+// entry falls back to the backend strings. Used by Markets + the explore page.
+export const SCREEN_BN: Record<string, { t: string; d: string }> = {
+  top_gainers: { t: "টপ গেইনার", d: "আজ সবচেয়ে বেশি বেড়েছে" },
+  top_losers: { t: "টপ লুজার", d: "আজ সবচেয়ে বেশি কমেছে" },
+  most_active: { t: "সবচেয়ে সক্রিয়", d: "আজ মূল্যে সবচেয়ে বেশি লেনদেন" },
+  momentum_12_1: {
+    t: "সবচেয়ে শক্তিশালী প্রবণতা",
+    d: "সবচেয়ে স্থির, শক্তিশালী ঊর্ধ্বমুখী প্রবণতায় থাকা শেয়ার",
+  },
+  unusual_volume: { t: "অস্বাভাবিক ভলিউম", d: "গড়ের তুলনায় অনেক বেশি লেনদেন" },
+  beating_market: { t: "বাজারকে ছাড়িয়ে", d: "পুরো বাজারের (DSEX) চেয়ে বেশি বেড়েছে" },
+  near_52w_high: { t: "৫২-সপ্তাহের সর্বোচ্চের কাছে", d: "বার্ষিক সর্বোচ্চের ৫% মধ্যে" },
+  near_52w_low: { t: "৫২-সপ্তাহের সর্বনিম্নের কাছে", d: "বার্ষিক সর্বনিম্নের ৫% মধ্যে" },
+  near_support: { t: "সাপোর্টের কাছে", d: "সাপোর্ট লেভেলের ঠিক উপরে লেনদেন" },
+  near_resistance: { t: "রেজিস্ট্যান্সের কাছে", d: "রেজিস্ট্যান্স লেভেলের কাছে" },
+  accumulation: { t: "অর্থ ঢুকছে", d: "ক্রয়চাপ — ইতিবাচক মানি ফ্লো" },
+  distribution: { t: "বিক্রয়চাপ", d: "অর্থ বেরোচ্ছে (নেতিবাচক মানি ফ্লো)" },
+  quiet_accumulation: { t: "নীরব সঞ্চয়", d: "দাম স্থির থাকতেই অর্থ ঢুকছে — মুভের আগের সঞ্চয়" },
+  uptrend: { t: "ঊর্ধ্বমুখী প্রবণতা", d: "৫০ ও ২০০-দিনের গড়ের উপরে" },
+  eps_growth: { t: "ইপিএস বৃদ্ধি", d: "আয় বছরওয়ারি বাড়ছে" },
+  value_vs_sector: { t: "খাতের চেয়ে সস্তা", d: "খাতের গড় P/E-র নিচে লেনদেন" },
+  quality_roe: { t: "উচ্চ রিটার্ন অন ইকুইটি", d: "শক্তিশালী মুনাফা (ROE)" },
+  low_volatility: { t: "স্থির (কম অস্থিরতা)", d: "কম দৈনিক ওঠানামা" },
+  dividend_yield: { t: "সর্বোচ্চ লভ্যাংশ ইল্ড", d: "আজকের দামে সর্বোচ্চ নগদ লভ্যাংশ ইল্ড" },
+  foreign_buying: { t: "বিদেশি", d: "বিদেশি বিনিয়োগকারীরা শেষ প্রকাশে অংশ পরিবর্তন করেছে" },
+  institutional_buying: { t: "প্রতিষ্ঠান", d: "প্রতিষ্ঠান শেষ প্রকাশে অংশ পরিবর্তন করেছে" },
+  most_watched: { t: "সর্বাধিক ওয়াচড", d: "যাদের সবচেয়ে বেশি ওয়াচ করা হচ্ছে" },
+  most_discussed: { t: "সর্বাধিক আলোচিত", d: "যাদের নিয়ে সবচেয়ে বেশি আলোচনা" },
+  attention_rising: { t: "আলোচনা বাড়ছে", d: "স্বাভাবিকের চেয়ে অনেক বেশি আলোচনা" },
+};

@@ -11,7 +11,8 @@ import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
 import { Sparkline } from "../components/Sparkline";
 import { SectorHeat } from "../components/SectorHeat";
-import { SCREEN_LESSON } from "../lib/lessons";
+import { type Lang, useLang } from "../lib/i18n";
+import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
 export const SCREEN_HELP: Record<string, string> = {
@@ -103,58 +104,79 @@ interface Chip {
   word: string;
   tone: "up" | "down" | "neutral";
 }
-export function metricChip(label: string, v: number): Chip | null {
+type Tr = (key: string) => string;
+
+export function metricChip(label: string, v: number, t: Tr): Chip | null {
+  const w = (key: string, tone: Chip["tone"]) => ({ word: t(key), tone });
   if (label === "CMF") {
-    if (v >= 0.25) return { word: "Strong inflow", tone: "up" };
-    if (v >= 0.05) return { word: "Inflow", tone: "up" };
-    if (v <= -0.25) return { word: "Strong outflow", tone: "down" };
-    if (v <= -0.05) return { word: "Outflow", tone: "down" };
-    return { word: "Flat flow", tone: "neutral" };
+    if (v >= 0.25) return w("mc.strongInflow", "up");
+    if (v >= 0.05) return w("mc.inflow", "up");
+    if (v <= -0.25) return w("mc.strongOutflow", "down");
+    if (v <= -0.05) return w("mc.outflow", "down");
+    return w("mc.flatFlow", "neutral");
   }
   if (label === "RSI") {
-    if (v >= 70) return { word: "Overbought zone", tone: "neutral" };
-    if (v <= 30) return { word: "Oversold zone", tone: "neutral" };
-    if (v >= 55) return { word: "Strong momentum", tone: "neutral" };
-    if (v <= 45) return { word: "Weak momentum", tone: "neutral" };
-    return { word: "Neutral", tone: "neutral" };
+    if (v >= 70) return w("mc.overbought", "neutral");
+    if (v <= 30) return w("mc.oversold", "neutral");
+    if (v >= 55) return w("mc.strongMomentum", "neutral");
+    if (v <= 45) return w("mc.weakMomentum", "neutral");
+    return w("mc.neutral", "neutral");
   }
   if (label.includes("avg vol") || label.includes("usual")) {
-    if (v >= 3) return { word: "Very heavy", tone: "neutral" };
-    if (v >= 2) return { word: "Heavy volume", tone: "neutral" };
-    return { word: "Active", tone: "neutral" };
+    if (v >= 3) return w("mc.veryHeavy", "neutral");
+    if (v >= 2) return w("mc.heavyVolume", "neutral");
+    return w("mc.active", "neutral");
   }
-  if (label === "yield") return { word: v >= 8 ? "High yield" : "Pays dividend", tone: "neutral" };
-  if (label.includes("sector")) return { word: "Cheaper than peers", tone: "neutral" };
-  if (label === "% YoY") return { word: v >= 50 ? "Fast growth" : "Growing", tone: "up" };
-  if (label === "pp") return { word: v >= 3 ? "Accumulating" : "Buying", tone: "up" };
-  if (label === "ROE") return { word: v >= 20 ? "Highly profitable" : "Profitable", tone: "neutral" };
-  if (label === "volatility") return { word: v < 25 ? "Very steady" : "Steady", tone: "neutral" };
-  if (label === "vs market") return { word: "Outperforming", tone: "up" };
+  if (label === "yield") return w(v >= 8 ? "mc.highYield" : "mc.paysDividend", "neutral");
+  if (label.includes("sector")) return w("mc.cheaperPeers", "neutral");
+  if (label === "% YoY") return w(v >= 50 ? "mc.fastGrowth" : "mc.growing", "up");
+  if (label === "pp") return w(v >= 3 ? "mc.accumulating" : "mc.buying", "up");
+  if (label === "ROE") return w(v >= 20 ? "mc.highlyProfitable" : "mc.profitable", "neutral");
+  if (label === "volatility") return w(v < 25 ? "mc.verySteady" : "mc.steady", "neutral");
+  if (label === "vs market") return w("mc.outperforming", "up");
   return null;
 }
 
 // Plain header for the rightmost (metric) column.
-export function metricHeader(label: string): string {
-  if (label === "CMF") return "Money flow";
-  if (label === "RSI") return "Momentum";
-  if (label.includes("avg vol") || label.includes("usual")) return "Volume";
-  if (label === "yield") return "Yield";
-  if (label.includes("sector")) return "vs sector";
-  if (label === "% YoY") return "EPS growth";
-  if (label === "watchers") return "Watchers";
-  if (label === "posts") return "Posts";
-  if (label === "turnover") return "Turnover";
-  if (label === "pp") return "Big money";
-  if (label === "momentum") return "Trend";
-  if (label === "vs market") return "vs DSEX";
-  if (label === "ROE") return "ROE";
-  if (label === "volatility") return "Volatility";
-  if (label.includes("%")) return "Change";
+export function metricHeader(label: string, t: Tr): string {
+  if (label === "CMF") return t("mh.moneyFlow");
+  if (label === "RSI") return t("mh.momentum");
+  if (label.includes("avg vol") || label.includes("usual")) return t("mh.volume");
+  if (label === "yield") return t("mh.yield");
+  if (label.includes("sector")) return t("mh.vsSector");
+  if (label === "% YoY") return t("mh.epsGrowth");
+  if (label === "watchers") return t("mh.watchers");
+  if (label === "posts") return t("mh.posts");
+  if (label === "turnover") return t("mh.turnover");
+  if (label === "pp") return t("mh.bigMoney");
+  if (label === "momentum") return t("mh.trend");
+  if (label === "vs market") return t("mh.vsDsex");
+  if (label === "ROE") return t("mh.roe") === "mh.roe" ? "ROE" : t("mh.roe");
+  if (label === "volatility") return t("mh.volatility");
+  if (label.includes("%")) return t("mh.change");
   return label;
 }
 
 const toneCls = (t: Chip["tone"]) =>
   t === "up" ? "text-up" : t === "down" ? "text-down" : "text-fg";
+
+// Backend row-note words (momentum / volume / ownership tags) → Bangla. Unknown notes pass through.
+const NOTE_BN: Record<string, string> = {
+  "Steady climb": "স্থির ঊর্ধ্বগতি",
+  Climbing: "উঠছে",
+  "Volatile climb": "অস্থির ঊর্ধ্বগতি",
+  "Possible pump": "সম্ভাব্য পাম্প",
+  "Heavy buying": "ভারী ক্রয়",
+  "Heavy selling": "ভারী বিক্রয়",
+  "Heavy volume": "ভারী ভলিউম",
+  "Buying more": "আরও কিনছে",
+  "Started buying": "কেনা শুরু",
+  "Selling more": "আরও বিক্রি",
+  "Started selling": "বিক্রি শুরু",
+  Buying: "কিনছে",
+  Selling: "বিক্রি করছে",
+};
+const noteWord = (note: string, lang: Lang) => (lang === "bn" ? (NOTE_BN[note] ?? note) : note);
 
 // One row, shared by the Markets cards and the explore page so they read identically.
 // Trend-consistency cue: one dot per lookback (3M·6M·12M). Green = solidly climbing that window,
@@ -225,12 +247,13 @@ export function ScreenRow({
   screen: Screen;
   rank?: number;
 }) {
+  const { t, lang } = useLang();
   const isMover = screen.key === "top_gainers" || screen.key === "top_losers";
   const chip = item.note
-    ? { word: item.note, tone: noteTone(item.note) }
+    ? { word: noteWord(item.note, lang), tone: noteTone(item.note) }
     : isMover
       ? null
-      : metricChip(screen.value_label, item.value);
+      : metricChip(screen.value_label, item.value, t);
   const showName = item.name && item.name !== item.code;
   // Ownership screens: show the stake trend as dots + the comparison month (no year — short label).
   const fdates = item.flow_dates ?? [];
@@ -306,20 +329,21 @@ export function ScreenRow({
 }
 
 // Display order + labels. "technical" is collapsed by default (advanced).
-const GROUPS: { id: string; label: string; advanced?: boolean }[] = [
-  { id: "movers", label: "Movers" },
-  { id: "community", label: "Community" },
-  { id: "value", label: "Value & income" },
-  { id: "technical", label: "Technical", advanced: true },
+const GROUPS: { id: string; labelKey: string; advanced?: boolean }[] = [
+  { id: "movers", labelKey: "group.movers" },
+  { id: "community", labelKey: "group.community" },
+  { id: "value", labelKey: "group.value" },
+  { id: "technical", labelKey: "group.technical", advanced: true },
 ];
 
 // "What are you looking for?" — curate the screens down to a goal, so a beginner sees 3-4 relevant
 // boards instead of twenty. Orientation, not deletion ("All" still shows everything, grouped).
-const LENSES: { id: string; label: string; blurb: string; keys: string[] }[] = [
+const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; keys: string[] }[] = [
   {
     id: "momentum",
-    label: "📈 Momentum",
-    blurb: "Stocks moving and trending — for traders who want strength.",
+    icon: "📈",
+    labelKey: "lens.momentum",
+    blurbKey: "lens.momentum.blurb",
     keys: [
       "momentum_12_1",
       "beating_market",
@@ -331,37 +355,48 @@ const LENSES: { id: string; label: string; blurb: string; keys: string[] }[] = [
   },
   {
     id: "value",
-    label: "🏷️ Value",
-    blurb: "Cheap, profitable, growing — for bargain hunters.",
+    icon: "🏷️",
+    labelKey: "lens.value",
+    blurbKey: "lens.value.blurb",
     keys: ["value_vs_sector", "quality_roe", "eps_growth", "near_52w_low"],
   },
   {
     id: "dividend",
-    label: "💵 Dividend",
-    blurb: "Cash payers — for income seekers.",
+    icon: "💵",
+    labelKey: "lens.dividend",
+    blurbKey: "lens.dividend.blurb",
     keys: ["dividend_yield", "quality_roe", "low_volatility"],
   },
   {
     id: "steady",
-    label: "🌊 Steady",
-    blurb: "Low-swing, quality names — for a calmer ride.",
+    icon: "🌊",
+    labelKey: "lens.steady",
+    blurbKey: "lens.steady.blurb",
     keys: ["low_volatility", "quality_roe", "uptrend", "dividend_yield"],
   },
 ];
 
+export function screenTitle(s: Screen, lang: Lang): string {
+  return lang === "bn" ? (SCREEN_BN[s.key]?.t ?? s.title) : s.title;
+}
+export function screenDesc(s: Screen, lang: Lang): string {
+  return lang === "bn" ? (SCREEN_BN[s.key]?.d ?? s.description) : s.description;
+}
+
 function ScreenCard({ s }: { s: Screen }) {
+  const { t, lang } = useLang();
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-1.5">
-        <div className="font-semibold text-sm text-accent">{s.title}</div>
+        <div className="font-semibold text-sm text-accent">{screenTitle(s, lang)}</div>
         <InfoTip text={SCREEN_HELP[s.key] ?? s.description} lessonId={SCREEN_LESSON[s.key]} />
       </div>
-      <div className="text-[11px] text-muted">{s.description}</div>
+      <div className="text-[11px] text-muted">{screenDesc(s, lang)}</div>
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
-        <span>Symbol</span>
+        <span>{t("col.symbol")}</span>
         <span className="flex gap-3">
-          <span>Price</span>
-          <span className="w-20 text-right">{metricHeader(s.value_label)}</span>
+          <span>{t("col.price")}</span>
+          <span className="w-20 text-right">{metricHeader(s.value_label, t)}</span>
         </span>
       </div>
       <div className="flex flex-col">
@@ -374,7 +409,7 @@ function ScreenCard({ s }: { s: Screen }) {
           to={`/markets/${s.key}`}
           className="block text-center text-[11px] text-accent mt-2 pt-2 border-t border-border/60"
         >
-          View more →
+          {t("viewMore")}
         </Link>
       )}
     </div>
@@ -382,6 +417,7 @@ function ScreenCard({ s }: { s: Screen }) {
 }
 
 export function Markets() {
+  const { t } = useLang();
   const [data, setData] = useState<ScreensResponse | null>(null);
   const [q, setQ] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -412,16 +448,16 @@ export function Markets() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search a code, e.g. GP → Enter"
+          placeholder={t("markets.searchPlaceholder")}
           className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-accent"
         />
       </form>
 
       <div className="text-[11px] uppercase tracking-wide text-muted px-1">
-        What are you looking for?
+        {t("markets.lookingFor")}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {[{ id: "all", label: "All" }, ...LENSES].map((l) => (
+        {[{ id: "all", icon: "", labelKey: "lens.all" }, ...LENSES].map((l) => (
           <button
             key={l.id}
             onClick={() => setLens(l.id)}
@@ -429,17 +465,20 @@ export function Markets() {
               lens === l.id ? "text-accent border-accent bg-accent/10" : "text-muted border-border"
             }`}
           >
-            {l.label}
+            {l.icon ? `${l.icon} ` : ""}
+            {t(l.labelKey)}
           </button>
         ))}
       </div>
 
       <div className="flex items-center justify-between px-1">
         <div className="text-[11px] text-muted">
-          {activeLens ? activeLens.blurb : "Browse every board, grouped."}
+          {activeLens ? t(activeLens.blurbKey) : t("markets.browseAll")}
         </div>
         {data.as_of && (
-          <div className="text-[10px] text-muted shrink-0 ml-2">as of {data.as_of} close</div>
+          <div className="text-[10px] text-muted shrink-0 ml-2">
+            {t("asOf")} {data.as_of} {t("close")}
+          </div>
         )}
       </div>
 
@@ -460,7 +499,7 @@ export function Markets() {
                 onClick={() => setShowAdvanced((v) => !v)}
                 className="text-[11px] uppercase tracking-wide text-muted text-left px-1"
               >
-                {showAdvanced ? "▾" : "▸"} {g.label}
+                {showAdvanced ? "▾" : "▸"} {t(g.labelKey)}
               </button>
               {showAdvanced &&
                 items.map((s) => <ScreenCard key={s.key} s={s} />)}
@@ -470,9 +509,9 @@ export function Markets() {
         return (
           <div key={g.id} className="flex flex-col gap-3">
             <div className="flex items-center justify-between px-1">
-              <div className="text-[11px] uppercase tracking-wide text-muted">{g.label}</div>
+              <div className="text-[11px] uppercase tracking-wide text-muted">{t(g.labelKey)}</div>
               <Link to={`/markets/${items[0].key}`} className="text-[11px] text-accent">
-                View more →
+                {t("viewMore")}
               </Link>
             </div>
             {items.map((s) => (
@@ -482,10 +521,7 @@ export function Markets() {
         );
       })}
 
-      <p className="text-[10px] text-muted px-1 pb-2">
-        Computed from end-of-day prices · descriptive screens, not
-        recommendations.
-      </p>
+      <p className="text-[10px] text-muted px-1 pb-2">{t("markets.footer")}</p>
     </div>
   );
 }
