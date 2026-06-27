@@ -132,7 +132,7 @@ def simulate(
     dts = sorted(dsex)
     dsex_sma = dict(zip(dts, _sma([dsex[d] for d in dts], 50), strict=True))
 
-    cash, positions, curve, trades = START, {}, [], []
+    cash, positions, curve, trades, trade_log = START, {}, [], [], []
     last_px = {}
     for d in axis:
         for code in list(positions):
@@ -142,16 +142,22 @@ def simulate(
                 last_px[code] = bar.close
                 p["held"] += 1
                 stop_px, tgt_px = p["entry"] * (1 + stop), p["entry"] * (1 + target)
-                exit_px = None
+                exit_px, reason = None, ""
                 if bar.low <= stop_px:
-                    exit_px = stop_px  # assume stop hit first (conservative)
+                    exit_px, reason = stop_px, "stop"  # assume stop hit first (conservative)
                 elif bar.high >= tgt_px:
-                    exit_px = tgt_px
+                    exit_px, reason = tgt_px, "target"
                 elif p["held"] >= hold:
-                    exit_px = bar.close
+                    exit_px, reason = bar.close, "time"
                 if exit_px is not None:
                     cash += p["shares"] * exit_px * (1 - COST)
-                    trades.append(exit_px / p["entry"] - 1)
+                    ret = exit_px / p["entry"] - 1
+                    trades.append(ret)
+                    trade_log.append({
+                        "code": code, "in_date": p["entry_date"], "in_px": p["entry"],
+                        "out_date": d, "out_px": round(exit_px, 2), "ret": ret * 100,
+                        "held": p["held"], "reason": reason,
+                    })
                     del positions[code]
 
         regime_ok = (not regime) or (
@@ -168,7 +174,9 @@ def simulate(
                 alloc = min(equity / max_pos, cash / (1 + COST))
                 if alloc < equity / max_pos * 0.5:
                     continue
-                positions[code] = {"shares": alloc / bar.close, "entry": bar.close, "held": 0}
+                positions[code] = {
+                    "shares": alloc / bar.close, "entry": bar.close, "held": 0, "entry_date": d
+                }
                 cash -= alloc * (1 + COST)
                 last_px[code] = bar.close
 
@@ -189,6 +197,7 @@ def simulate(
         "avg_win": sum(wins) / len(wins) * 100 if wins else 0,
         "avg_loss": sum(losses) / len(losses) * 100 if losses else 0,
         "curve": curve,
+        "trade_log": trade_log,
     }
 
 
