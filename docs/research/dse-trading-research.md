@@ -297,3 +297,28 @@ trigger signal is confirmed** — not before.
 4. **Flow calibration (later)** — ownership history is too sparse now (~3 snapshots/stock); the weekly
    scrape is accumulating it for a future test.
 5. **Outlier guard** — winsorize EPS-growth (e.g. KBPPWBIL "+2600%" base effect) before scoring.
+
+## 8. Slot ordering — does "fund the strongest first" beat the tested order?
+
+Scheme-3 holds at most 10 names; when more fire than there are free slots, the +74% backtest filled
+them **alphabetically** (an arbitrary tie-break). The live daily list now ranks by a conviction score
+(washout + cheapness + ROE). `scripts/validate_ranking.py` reconstructs that score point-in-time and
+compares orderings on the same engine (`simulate(rank_fn=...)`).
+
+| order | max 10 (real) | max 5 (stressed) | OOS test (max 5) |
+|---|---|---|---|
+| conviction-first (new) | +67.7% | **+66.5%, DD -14.6** | **+21.9%, win 44%** |
+| alphabetical (tested) | +74.2% | +63.8%, DD -16.9 | +10.2%, win 38% |
+| WORST-first (sanity) | +71.0% | +52.0%, DD -16.9 | +18.2% |
+
+**Verdict — conviction ranking is safe to ship, but the effect is small by design.**
+- At the **real cap of 10**, ordering is essentially noise: the three are within ~6pts and WORST-first
+  lands *between* the others, so the variation isn't a real signal. The edge lives in the entry +
+  exits, not in which name you grab first.
+- When **slots get scarce (max 5)**, conviction-first is the best of the three (+66.5 vs +63.8) with a
+  shallower drawdown, and WORST-first is clearly the worst — so the rank points the right way.
+- **Out-of-sample**, conviction-first beat the tested alphabetical order (+21.9 vs +10.2, higher win).
+
+So the priority is no worse than what was tested in any distinguishable way, helps when it matters, and
+gives a defensible reason to pick one name over another. `simulate()` defaults to `rank_fn=None`
+(alphabetical), so every earlier result in this doc is unchanged.

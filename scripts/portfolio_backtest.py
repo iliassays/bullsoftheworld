@@ -122,12 +122,15 @@ def simulate(
     regime=False,
     signal_fn=None,
     trail=None,
+    rank_fn=None,
 ):
     """Run the event-driven sim with the given params. Returns a metrics dict (+ equity curve).
 
     signal_fn(bars) -> set[date] plugs in any entry rule (a "scheme"); default = Deep-Value Reversal.
     trail: if set (e.g. 0.15), use a trailing stop that far below the running peak (let winners run)
     instead of the fixed target — the initial `stop` still acts as the floor until profit builds.
+    rank_fn(code, date) -> float: when more signals fire than there are free slots, fund the highest
+    rank first. Default (None) keeps the alphabetical order, so existing results are unchanged.
     """
     bar_map, sig = {}, {}
     for code, bars in by_code.items():
@@ -187,7 +190,12 @@ def simulate(
             d in dsex and dsex_sma.get(d) is not None and dsex[d] > dsex_sma[d]
         )
         if regime_ok:
-            for code in sorted(c for c in sig if d in sig[c] and c not in positions):
+            candidates = [c for c in sig if d in sig[c] and c not in positions]
+            if rank_fn:  # fund the strongest first when slots are scarce; else alphabetical
+                candidates.sort(key=lambda c: rank_fn(c, d), reverse=True)
+            else:
+                candidates.sort()
+            for code in candidates:
                 if len(positions) >= max_pos:
                     break
                 bar = bar_map[code].get(d)
