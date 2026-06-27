@@ -34,6 +34,38 @@ const STRINGS: Record<string, Entry> = {
     en: "Search ticker… e.g. GP, Grameenphone",
     bn: "টিকার খুঁজুন… যেমন GP, গ্রামীণফোন",
   },
+  // Symbol page — tabs
+  "tab.overview": { en: "Overview", bn: "সারসংক্ষেপ" },
+  "tab.feed": { en: "Feed", bn: "ফিড" },
+  "tab.bulls": { en: "Bulls", bn: "বুলস" },
+  "tab.news": { en: "News", bn: "খবর" },
+  "tab.fundamentals": { en: "Fundamentals", bn: "ফান্ডামেন্টাল" },
+  "tab.ownership": { en: "Ownership", bn: "মালিকানা" },
+  "tab.earnings": { en: "Earnings", bn: "আয়" },
+  // Symbol page — quick stats + tags
+  "stat.mktCap": { en: "Mkt Cap", bn: "বাজার মূলধন" },
+  "stat.vol": { en: "Vol", bn: "ভলিউম" },
+  "stat.pe": { en: "P/E", bn: "পি/ই" },
+  "stat.eps": { en: "EPS", bn: "ইপিএস" },
+  "stat.freeFloat": { en: "Free float", bn: "ফ্রি ফ্লোট" },
+  "tag.cheaperSector": { en: "cheaper than sector", bn: "খাতের চেয়ে সস্তা" },
+  "tag.pricierSector": { en: "pricier than sector", bn: "খাতের চেয়ে দামি" },
+  "tag.inlineSector": { en: "in line", bn: "খাতের সমান" },
+  normal: { en: "normal", bn: "স্বাভাবিক" },
+  // Symbol page — header
+  watching: { en: "watching", bn: "জন দেখছে" },
+  thisWeek: { en: "this week", bn: "এই সপ্তাহে" },
+  "btn.watch": { en: "☆ Watch", bn: "☆ ওয়াচ" },
+  "btn.watching": { en: "★ Watching", bn: "★ ওয়াচড" },
+  noQuote: { en: "No quote yet.", bn: "এখনো কোনো দর নেই।" },
+  delayedAsOf: { en: "delayed · as of", bn: "বিলম্বিত · সর্বশেষ" },
+  attentionRising: { en: "Attention rising", bn: "আলোচনা বাড়ছে" },
+  usualChatter: { en: "usual chatter", bn: "স্বাভাবিক আলোচনা" },
+  // Range bar
+  "range.52w": { en: "52-week range", bn: "৫২-সপ্তাহের পরিসর" },
+  "range.nearHigh": { en: "near high", bn: "চূড়ার কাছে" },
+  "range.nearLow": { en: "near low", bn: "তলানির কাছে" },
+  "range.mid": { en: "mid-range", bn: "মাঝামাঝি" },
 };
 
 interface I18n {

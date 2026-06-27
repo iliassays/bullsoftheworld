@@ -10,6 +10,7 @@ import {
   type SymbolDetail,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
@@ -39,14 +40,14 @@ type Tab =
   | "fundamentals"
   | "ownership"
   | "earnings";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "feed", label: "💬 Feed" },
-  { id: "bulls", label: "🐂 Bulls" },
-  { id: "news", label: "📰 News" },
-  { id: "fundamentals", label: "Fundamentals" },
-  { id: "ownership", label: "Ownership" },
-  { id: "earnings", label: "Earnings" },
+const TABS: { id: Tab; icon?: string; key: string }[] = [
+  { id: "overview", key: "tab.overview" },
+  { id: "feed", icon: "💬", key: "tab.feed" },
+  { id: "bulls", icon: "🐂", key: "tab.bulls" },
+  { id: "news", icon: "📰", key: "tab.news" },
+  { id: "fundamentals", key: "tab.fundamentals" },
+  { id: "ownership", key: "tab.ownership" },
+  { id: "earnings", key: "tab.earnings" },
 ];
 
 const crore = (mn: number | null | undefined) =>
@@ -63,6 +64,7 @@ function QuickStrip({
   volume?: number;
   price?: number;
 }) {
+  const { t } = useLang();
   // A stat with an optional tiny meaning-tag underneath, so the number is interpretable.
   const cell = (label: string, value: string, tag?: string) => (
     <div className="flex flex-col items-center px-2 shrink-0">
@@ -76,13 +78,13 @@ function QuickStrip({
     f.pe_vs_sector == null
       ? undefined
       : f.pe_vs_sector < 0.9
-        ? "cheaper than sector"
+        ? t("tag.cheaperSector")
         : f.pe_vs_sector > 1.1
-          ? "pricier than sector"
-          : "in line";
+          ? t("tag.pricierSector")
+          : t("tag.inlineSector");
   const volTag =
     volume != null && f.avg_volume_20
-      ? `${(volume / f.avg_volume_20).toFixed(1)}× normal`
+      ? `${(volume / f.avg_volume_20).toFixed(1)}× ${t("normal")}`
       : undefined;
   const freeFloat =
     f.free_float_cap_mn != null && f.market_cap_mn
@@ -92,11 +94,11 @@ function QuickStrip({
   return (
     <>
       <div className="flex justify-between mt-3 pt-3 border-t border-border overflow-x-auto">
-        {cell("Mkt Cap", crore(f.market_cap_mn))}
-        {cell("Vol", volume != null ? volume.toLocaleString() : "—", volTag)}
-        {cell("P/E", f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—", peTag)}
-        {cell("EPS", f.eps != null ? `৳${f.eps}` : "—")}
-        {cell("Free float", freeFloat)}
+        {cell(t("stat.mktCap"), crore(f.market_cap_mn))}
+        {cell(t("stat.vol"), volume != null ? volume.toLocaleString() : "—", volTag)}
+        {cell(t("stat.pe"), f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—", peTag)}
+        {cell(t("stat.eps"), f.eps != null ? `৳${f.eps}` : "—")}
+        {cell(t("stat.freeFloat"), freeFloat)}
       </div>
       {f.week52_low != null && f.week52_high != null && price != null && (
         <RangeBar low={f.week52_low} high={f.week52_high} value={price} />
@@ -109,6 +111,7 @@ export function SymbolPage() {
   const { code = "" } = useParams();
   const sym = code.toUpperCase();
   const { user } = useAuth();
+  const { t } = useLang();
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [buzz, setBuzz] = useState<Buzz | null>(null);
@@ -185,7 +188,7 @@ export function SymbolPage() {
           <div className="flex flex-col items-end gap-1 shrink-0">
             {buzz && (
               <div className="text-xs text-muted">
-                👁 {buzz.watchers.toLocaleString()} watching
+                👁 {buzz.watchers.toLocaleString()} {t("watching")}
                 {buzz.watchers_delta_7d != null && (
                   <span
                     className={
@@ -194,7 +197,7 @@ export function SymbolPage() {
                   >
                     {" "}
                     ({buzz.watchers_delta_7d >= 0 ? "+" : ""}
-                    {buzz.watchers_delta_7d} this week)
+                    {buzz.watchers_delta_7d} {t("thisWeek")})
                   </span>
                 )}
               </div>
@@ -208,7 +211,7 @@ export function SymbolPage() {
                     : "text-muted border-border"
                 }`}
               >
-                {watched ? "★ Watching" : "☆ Watch"}
+                {watched ? t("btn.watching") : t("btn.watch")}
               </button>
             )}
           </div>
@@ -232,15 +235,15 @@ export function SymbolPage() {
             </div>
           </div>
         ) : (
-          <div className="text-muted text-sm mt-2">No quote yet.</div>
+          <div className="text-muted text-sm mt-2">{t("noQuote")}</div>
         )}
         <div className="text-[10px] text-muted mt-2">
-          ⏱ delayed · as of {new Date(q?.as_of ?? "").toLocaleString()}
+          ⏱ {t("delayedAsOf")} {new Date(q?.as_of ?? "").toLocaleString()}
         </div>
         {buzz?.attention === "rising" && (
           <div className="mt-2 inline-flex items-center gap-1 text-xs text-accent bg-accent/10 rounded-full px-2 py-0.5 w-fit">
-            🔊 Attention rising
-            {buzz.chatter_x ? ` · ${buzz.chatter_x}× usual chatter` : ""}
+            🔊 {t("attentionRising")}
+            {buzz.chatter_x ? ` · ${buzz.chatter_x}× ${t("usualChatter")}` : ""}
           </div>
         )}
         {company && (
@@ -250,18 +253,19 @@ export function SymbolPage() {
 
       {/* tab bar */}
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {TABS.map((t) => (
+        {TABS.map((tb) => (
           <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
+            key={tb.id}
+            onClick={() => setTab(tb.id)}
             className={`whitespace-nowrap text-sm font-semibold px-3 py-1.5 rounded-full border ${
-              tab === t.id
+              tab === tb.id
                 ? "text-accent border-accent bg-accent/10"
                 : "text-muted border-border"
             }`}
           >
-            {t.label}
-            {t.id === "bulls" && noteFeed.items.length
+            {tb.icon ? `${tb.icon} ` : ""}
+            {t(tb.key)}
+            {tb.id === "bulls" && noteFeed.items.length
               ? ` (${noteFeed.items.length})`
               : ""}
           </button>
