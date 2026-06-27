@@ -76,6 +76,13 @@ async def scan(days: int = 5) -> dict:
             continue
         pe, roe = q
         px = c[i]
+        # Conviction (0-100): the strategy's own thesis — deeper washout + cheaper + more profitable.
+        # Used to rank the list so that, on days when more signals fire than you have room for, you
+        # fund the strongest first instead of an arbitrary order.
+        washout = min(abs(below), 80) / 80
+        cheap = max(0.0, (25 - min(pe, 25)) / 25)
+        qual = min(max(roe, 0), 30) / 30
+        score = round((washout + cheap + qual) / 3 * 100)
         fired_on = next(
             (
                 bars[j].date
@@ -92,12 +99,15 @@ async def scan(days: int = 5) -> dict:
             "pe": round(pe, 1),
             "roe": round(roe),
             "below_high": round(below),
+            "score": score,
             "sector": (profs.get(code).sector if profs.get(code) else None) or "?",
             "fired_on": fired_on.isoformat() if fired_on else None,
         }
         (fired if fired_on else watch).append(item)
-    fired.sort(key=lambda r: r["fired_on"], reverse=True)
-    watch.sort(key=lambda r: r["below_high"])
+    # Rank by conviction (strongest first) so the top of the list is what to fund when room is tight;
+    # recency breaks ties. The watchlist stays ordered by how close each is to firing.
+    fired.sort(key=lambda r: (r["score"], r["fired_on"]), reverse=True)
+    watch.sort(key=lambda r: r["score"], reverse=True)
     return {
         "as_of": latest.isoformat(),
         "days": days,

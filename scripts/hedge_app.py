@@ -45,6 +45,7 @@ async def _cached(key, factory):
         _CACHE[key] = (time.monotonic() + _TTL, val)
         return val
 
+
 _CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1115;color:#e6e8eb;
@@ -153,18 +154,27 @@ risk ~1-2% of capital per name, ~10 positions. Single-regime backtest, EOD data 
 the stop is mandatory.</div>"""
 
 
-def render_sizing(d: dict, capital: float, risk: float) -> str:
-    rows, invested, heat = size(capital, risk, d["fired"])
+def render_sizing(d: dict, capital: float, risk: float, held: int) -> str:
+    r = size(capital, risk, d["fired"], held=held)
+    rows, invested, heat, reserved = r["rows"], r["invested"], r["heat"], r["reserved"]
     pct = lambda x: x / capital * 100 if capital else 0  # noqa: E731
     body = (
         "".join(
-            f"<tr><td><b>{r['code']}</b></td><td class='num'>{r['entry']:.1f}</td>"
-            f"<td class='num neg'>{r['stop']:.1f}</td><td class='num pos'>{r['target']:.1f}</td>"
-            f"<td class='num'>{r['shares']:,}</td><td class='num'>{r['invested']:,.0f}</td>"
-            f"<td class='num'>{r['risk']:,.0f}</td><td class='num pos'>{r['reward']:,.0f}</td></tr>"
-            for r in rows
+            f"<tr><td><b>{x['code']}</b></td><td class='num'>{x['score'] or 0}</td>"
+            f"<td class='num'>{x['entry']:.1f}</td>"
+            f"<td class='num neg'>{x['stop']:.1f}</td><td class='num pos'>{x['target']:.1f}</td>"
+            f"<td class='num'>{x['shares']:,}</td><td class='num'>{x['invested']:,.0f}</td>"
+            f"<td class='num'>{x['risk']:,.0f}</td><td class='num pos'>{x['reward']:,.0f}</td></tr>"
+            for x in rows
         )
-        or '<tr><td colspan="8" class="empty">No buy signals today — nothing to size.</td></tr>'
+        or f'<tr><td colspan="9" class="empty">No free slots — you already hold {held} of {MAX_POSITIONS}. Wait for an exit.</td></tr>'
+    )
+    wait = (
+        '<div class="cap"><b>Waitlist</b> (no room today — take when an open position exits): '
+        + ", ".join(f"{s['code']} ({s['score']})" for s in r["waitlist"])
+        + "</div>"
+        if r["waitlist"]
+        else ""
     )
     ref = "".join(
         f"<tr><td class='num'>{rp:.2f}%</td><td class='num'>{rp * 10:.0f}%</td>"
@@ -173,24 +183,28 @@ def render_sizing(d: dict, capital: float, risk: float) -> str:
         for rp in (0.5, 1.0, 1.5, 2.0)
     )
     return f"""
-<div class="sub">Position sizing for the buy list · {len(rows)} of {len(d["fired"])} signals fit · EOD {d["as_of"]}</div>
+<div class="sub">Sizing the buy list · holding {held}, {r["free"]} of {MAX_POSITIONS} slots free · fund {len(rows)}, waitlist {len(r["waitlist"])} · EOD {d["as_of"]}</div>
 <form class="sz" method="get" action="/sizing">
   <div><label>Capital (BDT)</label><input name="capital" type="number" value="{capital:.0f}" step="1000"></div>
   <div><label>Risk per trade %</label><input name="risk" type="number" value="{risk:g}" step="0.25" min="0.25" max="3"></div>
+  <div><label>Positions open</label><input name="held" type="number" value="{held}" step="1" min="0" max="{MAX_POSITIONS}"></div>
   <button type="submit">Recalculate</button>
 </form>
 <div class="tr">
-  <div><div class="k">Invested</div><div class="v">{invested:,.0f}<span style="font-size:12px;color:#8b909a"> ({pct(invested):.0f}%)</span></div></div>
-  <div><div class="k">Cash held</div><div class="v">{capital - invested:,.0f}</div></div>
-  <div><div class="k">At risk (heat)</div><div class="v neg">{heat:,.0f}<span style="font-size:12px;color:#8b909a"> ({pct(heat):.1f}%)</span></div></div>
-  <div><div class="k">Positions</div><div class="v">{len(rows)} / {MAX_POSITIONS}</div></div>
+  <div><div class="k">New cash to deploy</div><div class="v">{invested:,.0f}</div></div>
+  <div><div class="k">Cash left after</div><div class="v">{capital - reserved - invested:,.0f}</div></div>
+  <div><div class="k">Total at risk (heat)</div><div class="v neg">{heat:,.0f}<span style="font-size:12px;color:#8b909a"> ({pct(heat):.1f}%)</span></div></div>
+  <div><div class="k">Positions after</div><div class="v">{held + len(rows)} / {MAX_POSITIONS}</div></div>
 </div>
 <table>
-<tr><th>code</th><th class="num">entry</th><th class="num">stop</th><th class="num">target</th>
+<tr><th>code</th><th class="num">conv</th><th class="num">entry</th><th class="num">stop</th><th class="num">target</th>
 <th class="num">shares</th><th class="num">invest ৳</th><th class="num">risk ৳</th><th class="num">reward ৳</th></tr>
 {body}</table>
-<div class="cap">"At risk" = your total loss if every open trade stops out at once. Each name is sized so a
-stop-out costs ~{risk:g}% of capital; capped at {MAX_POSITION_PCT:.0f}% per name and {MAX_HEAT_PCT:.0f}% total.</div>
+{wait}
+<div class="cap">"At risk" = your total loss if every open trade (held + new) stops out at once. Each name is
+sized so a stop-out costs ~{risk:g}% of capital; capped at {MAX_POSITION_PCT:.0f}% per name and {MAX_HEAT_PCT:.0f}% total.
+You never hold more than {MAX_POSITIONS} — extra signals wait for a slot to free, which is why a fresh
+batch can never demand money you don't have. "conv" = the strategy's conviction rank (fund the top first).</div>
 <h2>How many names? (risk % sets it automatically)</h2>
 <table>
 <tr><th class="num">risk/trade</th><th class="num">position size</th><th class="num">max names</th><th class="num">portfolio max loss</th></tr>
@@ -215,9 +229,10 @@ async def home(days: int = 10):  # ~2 weeks of recent fires for the morning view
 
 
 @app.get("/sizing", response_class=HTMLResponse)
-async def sizing(capital: float = 200_000, risk: float = 1.0, days: int = 10):
+async def sizing(capital: float = 200_000, risk: float = 1.0, held: int = 0, days: int = 10):
     risk = min(max(risk, 0.25), 3.0)  # keep the knob in a sane band
-    return _shell("/sizing", render_sizing(await _scan(days), capital, risk))
+    held = min(max(held, 0), MAX_POSITIONS)
+    return _shell("/sizing", render_sizing(await _scan(days), capital, risk, held))
 
 
 @app.get("/history", response_class=HTMLResponse)

@@ -73,16 +73,32 @@ async def analyze():
     }
 
 
-def size(capital, risk_pct, signals):
+def size(capital, risk_pct, signals, held=0):
+    """Size new buys, given you already hold `held` positions.
+
+    With at most MAX_POSITIONS names ever, only (MAX_POSITIONS - held) slots are open. Each existing
+    position is assumed to occupy a full risk-sized slot, so its cash and its at-risk amount are
+    reserved up front — meaning the funded list never asks for money you don't have. Anything beyond
+    the free slots / heat budget comes back as a waitlist: take it when an open position exits.
+    """
     risk_bdt = risk_pct / 100 * capital
-    rows, invested, heat = [], 0.0, 0.0
+    full_slot = risk_bdt / STOP_PCT  # cash a normal position ties up
+    free = max(0, MAX_POSITIONS - held)
+    reserved = held * full_slot  # capital already deployed in open positions
+    rows, waitlist, invested, heat = [], [], 0.0, held * risk_bdt
     for s in signals:
-        if len(rows) >= MAX_POSITIONS or heat + risk_bdt > MAX_HEAT_PCT / 100 * capital + 1:
-            break
         e, stop, tgt = s["price"], s["stop"], s["target"]
-        pos_value = min(risk_bdt / STOP_PCT, MAX_POSITION_PCT / 100 * capital, capital - invested)
+        if (
+            len(rows) >= free
+            or heat + risk_bdt > MAX_HEAT_PCT / 100 * capital + 1
+            or capital - reserved - invested < e
+        ):
+            waitlist.append(s)
+            continue
+        pos_value = min(full_slot, MAX_POSITION_PCT / 100 * capital, capital - reserved - invested)
         shares = int(pos_value // e)
         if shares <= 0:
+            waitlist.append(s)
             continue
         inv = shares * e
         rsk = shares * (e - stop)
@@ -92,6 +108,7 @@ def size(capital, risk_pct, signals):
                 "entry": e,
                 "stop": stop,
                 "target": tgt,
+                "score": s.get("score"),
                 "shares": shares,
                 "invested": inv,
                 "risk": rsk,
@@ -100,10 +117,18 @@ def size(capital, risk_pct, signals):
         )
         invested += inv
         heat += rsk
-    return rows, invested, heat
+    return {
+        "rows": rows,
+        "waitlist": waitlist,
+        "invested": invested,
+        "reserved": reserved,
+        "heat": heat,
+        "free": free,
+        "held": held,
+    }
 
 
-async def _run(capital, risk_pct):
+async def _run(capital, risk_pct, held):
     a = await analyze()
     print("=== DATA ANALYSIS (why these numbers) ===")
     print(f"  DSE single-day drops worse than -10%: {a['drop_rate']:.2f}% of all days")
@@ -126,24 +151,30 @@ async def _run(capital, risk_pct):
     )
 
     d = await scan(days=10)
-    rows, invested, heat = size(capital, risk_pct, d["fired"])
+    r = size(capital, risk_pct, d["fired"], held=held)
+    rows, invested, heat = r["rows"], r["invested"], r["heat"]
     print(
-        f"=== POSITION SIZING — capital {capital:,.0f} BDT · risk {risk_pct:.2f}%/trade · {len(rows)} signals ==="
+        f"=== POSITION SIZING — capital {capital:,.0f} BDT · risk {risk_pct:.2f}%/trade · "
+        f"holding {held}, {r['free']} slots free · fund {len(rows)}, waitlist {len(r['waitlist'])} ==="
     )
     print(
-        f"  {'CODE':<11}{'entry':>8}{'stop':>8}{'target':>8}{'shares':>8}{'invest':>11}{'risk':>9}{'reward':>9}"
+        f"  {'CODE':<11}{'conv':>5}{'entry':>8}{'stop':>8}{'target':>8}{'shares':>8}{'invest':>11}{'risk':>9}{'reward':>9}"
     )
-    for r in rows:
+    for x in rows:
         print(
-            f"  {r['code']:<11}{r['entry']:>8.1f}{r['stop']:>8.1f}{r['target']:>8.1f}"
-            f"{r['shares']:>8,}{r['invested']:>11,.0f}{r['risk']:>9,.0f}{r['reward']:>9,.0f}"
+            f"  {x['code']:<11}{x['score'] or 0:>5}{x['entry']:>8.1f}{x['stop']:>8.1f}{x['target']:>8.1f}"
+            f"{x['shares']:>8,}{x['invested']:>11,.0f}{x['risk']:>9,.0f}{x['reward']:>9,.0f}"
         )
+    if r["waitlist"]:
+        names = ", ".join(s["code"] for s in r["waitlist"])
+        print(f"\n  Waitlist (take when a slot frees): {names}")
     pct = lambda x: x / capital * 100  # noqa: E731
     print(
-        f"\n  Invested: {invested:,.0f} BDT ({pct(invested):.0f}%)  ·  Cash: {capital - invested:,.0f} BDT"
+        f"\n  New cash deployed: {invested:,.0f} BDT  ·  Held reserve: {r['reserved']:,.0f} BDT  ·  "
+        f"Cash left: {capital - r['reserved'] - invested:,.0f} BDT"
     )
     print(
-        f"  Total at risk (heat): {heat:,.0f} BDT ({pct(heat):.1f}%)  <- max loss if EVERY open trade stops out"
+        f"  Total at risk (heat): {heat:,.0f} BDT ({pct(heat):.1f}%)  <- max loss if all {held + len(rows)} open trades stop out"
     )
 
     print("\n=== HOW MANY NAMES? (risk% sets it automatically — you don't have to guess) ===")
@@ -163,8 +194,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--capital", type=float, default=200_000)
     p.add_argument("--risk", type=float, default=1.0, help="percent of capital risked per trade")
+    p.add_argument("--held", type=int, default=0, help="positions you already hold (slots in use)")
     a = p.parse_args()
-    asyncio.run(_run(a.capital, a.risk))
+    asyncio.run(_run(a.capital, a.risk, a.held))
 
 
 if __name__ == "__main__":
