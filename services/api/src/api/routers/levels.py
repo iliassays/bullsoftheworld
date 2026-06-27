@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession
 from bulls.analytics import LevelsInsight, build_levels, compute
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.market_data.calendar import Session, session_phase
@@ -174,7 +174,9 @@ def _render_bn(code: str, i: LevelsInsight) -> list[str]:
 
 
 @router.get("/symbols/{code}/levels")
-async def get_levels(code: str, tenant: CurrentTenant, session: DbSession) -> LevelsResponse:
+async def get_levels(
+    code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
+) -> LevelsResponse:
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
     if symbol is None:
@@ -194,7 +196,7 @@ async def get_levels(code: str, tenant: CurrentTenant, session: DbSession) -> Le
     result = compute(bars)
     insight = build_levels(result, [b.close for b in bars])
 
-    render = _render_bn if tenant.locale == "bn" else _render_en
+    render = _render_bn if locale == "bn" else _render_en
 
     # Bridge the two clocks: while the market is open, show the live (delayed) price's position
     # relative to the as-of-close levels. Outside hours the EOD card stands on its own.
@@ -203,7 +205,7 @@ async def get_levels(code: str, tenant: CurrentTenant, session: DbSession) -> Le
         quote = await session.get(QuoteSnapshot, (tenant.market, code))
         price = quote.ltp if quote else result.last_close
         rel = _relation(price, insight.support, insight.resistance)
-        live_fn = _live_bn if tenant.locale == "bn" else _live_en
+        live_fn = _live_bn if locale == "bn" else _live_en
         live_line = live_fn(price, rel, insight.support, insight.resistance)
 
     return LevelsResponse(

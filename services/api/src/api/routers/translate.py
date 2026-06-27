@@ -8,7 +8,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from api.deps import CurrentTenant
+from api.deps import CurrentLocale, CurrentTenant
 from api.i18n import language_for
 from bulls.ai.tasks.translate import translate
 from bulls.core.config import get_settings
@@ -28,10 +28,12 @@ class TranslateResp(BaseModel):
 
 
 @router.post("/translate")
-async def translate_post(body: TranslateIn, tenant: CurrentTenant) -> TranslateResp:
-    language = language_for(tenant.locale)
+async def translate_post(
+    body: TranslateIn, tenant: CurrentTenant, locale: CurrentLocale
+) -> TranslateResp:
+    language = language_for(locale)
     digest = hashlib.md5(body.text.encode()).hexdigest()
-    cache_key = f"tr:{tenant.locale}:{digest}"
+    cache_key = f"tr:{locale}:{digest}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)

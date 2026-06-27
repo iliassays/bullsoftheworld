@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession
 from api.i18n import language_for
 from bulls.ai.tasks.explainer import TechnicalsFacts, explain_technicals
 from bulls.analytics import compute
@@ -40,7 +40,9 @@ class ExplainerResponse(BaseModel):
 
 
 @router.get("/symbols/{code}/explainer")
-async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) -> ExplainerResponse:
+async def get_explainer(
+    code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
+) -> ExplainerResponse:
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
     if symbol is None:
@@ -60,7 +62,7 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
     # Precomputed fundamentals/ownership/momentum — lets the AI tell the fuller story (cheap: 1 row).
     row = await session.get(TickerAnalytics, (tenant.market, code))
 
-    cache_key = f"explainer:v3:{tenant.market}:{code}:{tenant.locale}:{ta.as_of_date}"
+    cache_key = f"explainer:v3:{tenant.market}:{code}:{locale}:{ta.as_of_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
@@ -94,7 +96,7 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
                 else None
             ),
         )
-        out = await explain_technicals(facts, language=language_for(tenant.locale))
+        out = await explain_technicals(facts, language=language_for(locale))
         resp = ExplainerResponse(
             code=code,
             as_of_date=str(ta.as_of_date),

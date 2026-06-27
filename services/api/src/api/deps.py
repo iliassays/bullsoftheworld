@@ -20,6 +20,20 @@ def current_tenant(request: Request) -> Tenant:
     return request.state.tenant
 
 
+# Languages the portal renders generated content in. The client picks one (persisted) and sends it
+# as `X-Locale`; we fall back to the tenant default when absent/unsupported.
+SUPPORTED_LOCALES = {"en", "bn"}
+
+
+def current_locale(
+    tenant: Annotated[Tenant, Depends(current_tenant)],
+    x_locale: Annotated[str | None, Header()] = None,
+) -> str:
+    if x_locale and x_locale.lower() in SUPPORTED_LOCALES:
+        return x_locale.lower()
+    return tenant.locale
+
+
 def visible_codes(market: str) -> Select:
     """Subquery of codes a retail user should see: active and not admin-hidden."""
     return select(Symbol.code).where(
@@ -37,6 +51,7 @@ def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None
 
 
 CurrentTenant = Annotated[Tenant, Depends(current_tenant)]
+CurrentLocale = Annotated[str, Depends(current_locale)]
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 _bearer = HTTPBearer(auto_error=True)

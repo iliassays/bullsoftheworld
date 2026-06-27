@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession
 from api.i18n import language_for
 from api.routers.screener import build_screen, sectors
 from bulls.ai.tasks.watch import Breadth, WatchItem, todays_watch
@@ -170,10 +170,12 @@ async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
 
 
 @router.get("/todays-watch")
-async def todays_watch_endpoint(tenant: CurrentTenant, session: DbSession) -> WatchResponse:
+async def todays_watch_endpoint(
+    tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
+) -> WatchResponse:
     now = dt.datetime.now(dt.UTC)
     phase = session_phase(now, ZoneInfo(tenant.timezone))
-    cache_key = f"watch:v2:{tenant.market}:{tenant.locale}:{now.date()}"
+    cache_key = f"watch:v2:{tenant.market}:{locale}:{now.date()}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
@@ -184,7 +186,7 @@ async def todays_watch_endpoint(tenant: CurrentTenant, session: DbSession) -> Wa
             breadth = await _breadth(session, tenant.market)
             extras = await _watch_extras(tenant, session)
             summary = await todays_watch(
-                items, breadth=breadth, extras=extras, language=language_for(tenant.locale)
+                items, breadth=breadth, extras=extras, language=language_for(locale)
             )
             content = WatchContent(summary=summary, items=items, breadth=breadth)
             await redis.set(cache_key, content.model_dump_json(), ex=WATCH_TTL)

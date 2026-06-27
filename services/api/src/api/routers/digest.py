@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession
 from api.routers.buzz import BuzzResponse, gather_buzz
 from bulls.ai.tasks.digest import SymbolFacts, crowd_mood
 from bulls.analytics import compute
@@ -201,14 +201,16 @@ def _render_digest_bn(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
 
 
 @router.get("/symbols/{code}/digest")
-async def get_digest(code: str, tenant: CurrentTenant, session: DbSession) -> DigestResponse:
+async def get_digest(
+    code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
+) -> DigestResponse:
     code = code.upper()
     facts = await _gather_facts(session, tenant.market, code)
     if facts is None:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     buzz = await gather_buzz(session, tenant.market, code)
-    render = _render_digest_bn if tenant.locale == "bn" else _render_digest_en
+    render = _render_digest_bn if locale == "bn" else _render_digest_en
     return DigestResponse(
         code=code,
         summary=render(facts, buzz),

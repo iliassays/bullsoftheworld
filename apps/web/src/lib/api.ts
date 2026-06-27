@@ -1,3 +1,5 @@
+import { currentLang } from "./i18n";
+
 // Minimal typed API client. Token is injected from localStorage.
 // Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
 // which the API doesn't bind. Override with VITE_API_BASE if needed.
@@ -36,6 +38,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Locale": currentLang(),
     ...(opts.headers as Record<string, string>),
   };
   const token = tokenStore.get();

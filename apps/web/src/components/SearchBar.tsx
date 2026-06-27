@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLang } from "../lib/i18n";
 import { useNavigate } from "react-router-dom";
 import { api, type SymbolOut } from "../lib/api";
 
@@ -7,6 +8,7 @@ import { api, type SymbolOut } from "../lib/api";
 let symbolCache: SymbolOut[] | null = null;
 
 export function SearchBar() {
+  const { t } = useLang();
   const [q, setQ] = useState("");
   const [symbols, setSymbols] = useState<SymbolOut[]>(symbolCache ?? []);
   const [open, setOpen] = useState(false);
@@ -67,7 +69,7 @@ export function SearchBar() {
           if (e.key === "Enter" && results[0]) go(results[0].code);
           if (e.key === "Escape") setOpen(false);
         }}
-        placeholder="🔍 Search ticker… e.g. GP, Grameenphone"
+        placeholder={`🔍 ${t("search.placeholder")}`}
         className="w-full bg-card border border-border rounded-xl px-3 py-1.5 text-sm outline-none focus:border-accent"
       />
       {open && results.length > 0 && (
