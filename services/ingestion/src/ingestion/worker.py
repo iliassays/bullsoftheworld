@@ -33,6 +33,7 @@ from ingestion.market_summary import collect as collect_summary
 from ingestion.scheduler import poll_market
 from ingestion.signals.news_agents import run_news_agents
 from ingestion.signals.runner import (
+    run_factor_agents,
     run_levels_agent,
     run_market_update,
     run_ownership_agents,
@@ -149,6 +150,17 @@ async def run_market_signals(ctx) -> str:
     return f"market={counts['published']}"
 
 
+async def run_factor_signals(ctx) -> str:
+    """Descriptive factor notes (momentum / quality / smart-money / relative strength), after the
+    analytics recompute — only on trading days."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    counts = await run_factor_agents(MARKET)
+    log.info("factor signals: %s notes published", counts["published"])
+    return f"factors={counts['published']}"
+
+
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
@@ -163,6 +175,7 @@ class WorkerSettings:
         run_ownership_signals,
         run_volume_signals,
         run_market_signals,
+        run_factor_signals,
         pull_news,
     ]
     cron_jobs: ClassVar = [
@@ -187,6 +200,8 @@ class WorkerSettings:
         cron(run_volume_signals, hour={5, 6, 7, 8}, minute=45, run_at_startup=False),
         # Market-wide close wrap, after the EOD summary lands.
         cron(run_market_signals, hour=13, minute=30, run_at_startup=False),
+        # Factor notes (momentum / quality / smart-money / relative strength), after analytics (13:15).
+        cron(run_factor_signals, hour=13, minute=40, run_at_startup=False),
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
         # and after the close (13:35 UTC) to catch intraday postings.
         cron(pull_news, hour={3, 13}, minute=35, run_at_startup=False),

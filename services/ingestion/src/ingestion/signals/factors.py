@@ -1,0 +1,127 @@
+"""Factor agents — descriptive notes from the institutional-grade analytics (momentum, quality,
+relative strength, broad smart-money accumulation).
+
+Pure detection over a precomputed TickerAnalytics row (+ today's price vs the index for strength).
+Event-gated via occurrence keys + the runner's cooldown so a name posts at most ~once a month per
+factor. Strictly descriptive — facts about a factor, never buy/sell. No LLM.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass
+class FactorSignal:
+    beat: str  # agent beat key (momentum | quality | smartmoney | strength)
+    event_type: str
+    occurrence_key: str
+    cooldown_days: int
+    payload: dict
+
+
+# --- thresholds (calibrated to the DSE factor distributions) ---
+_MOM_MIN = 60.0  # 12-1 month return % to count as a "strong trend"
+_MOM_PUMP = 300.0  # above this (or high + tiny cap) it's a likely pump, flag caution
+_PUMP_MCAP_MN = 1000.0
+_QUALITY_PE_VS = 0.8  # cheaper than 0.8x the sector median
+_QUALITY_ROE = 15.0  # strong return on equity
+_SMART_MIN_PP = 2.0  # combined institutional + foreign stake rise (pp)
+_STRENGTH_UP = 2.0  # stock up at least this % ...
+_STRENGTH_IDX = -0.3  # ... while DSEX fell at least this much
+
+
+def detect_momentum(ta, month_key: str) -> FactorSignal | None:
+    if ta.mom_12_1 is None or not ta.volatility or ta.mom_12_1 < _MOM_MIN:
+        return None
+    pump = ta.mom_12_1 >= _MOM_PUMP or (
+        ta.mom_12_1 >= 150 and (ta.market_cap_mn or 0) < _PUMP_MCAP_MN
+    )
+    return FactorSignal(
+        "momentum",
+        "momentum_strong",
+        f"momentum:{month_key}",
+        20,
+        {"mom": round(ta.mom_12_1), "pump": pump},
+    )
+
+
+def detect_quality(ta, month_key: str) -> FactorSignal | None:
+    if ta.pe_vs_sector is None or ta.roe is None or not ta.pe_ratio or ta.pe_ratio <= 0:
+        return None
+    if ta.pe_vs_sector < _QUALITY_PE_VS and ta.roe >= _QUALITY_ROE:
+        return FactorSignal(
+            "quality",
+            "quality_value",
+            f"quality:{month_key}",
+            20,
+            {"pe_vs": round(ta.pe_vs_sector, 2), "roe": round(ta.roe)},
+        )
+    return None
+
+
+def detect_smartmoney(ta, month_key: str) -> FactorSignal | None:
+    id_, fd = ta.institute_delta, ta.foreign_delta
+    if id_ is None or fd is None or id_ <= 0 or fd <= 0 or (id_ + fd) < _SMART_MIN_PP:
+        return None
+    return FactorSignal(
+        "smartmoney", "smart_money_both", f"smartmoney:{month_key}", 20, {"pp": round(id_ + fd, 1)}
+    )
+
+
+def detect_strength(
+    change_pct: float | None, dsex_change: float | None, day: str
+) -> FactorSignal | None:
+    if change_pct is None or dsex_change is None:
+        return None
+    if change_pct >= _STRENGTH_UP and dsex_change <= _STRENGTH_IDX:
+        return FactorSignal(
+            "strength",
+            "rel_strength",
+            f"strength:{day}",
+            3,
+            {"chg": round(change_pct, 1), "idx": round(dsex_change, 1)},
+        )
+    return None
+
+
+_T = {
+    "momentum": (
+        "{code} is among the market's strongest 12-month trends (about +{mom}% over the year).{pump} "
+        "A fact about momentum — not advice.",
+        "{code} বাজারের সবচেয়ে শক্তিশালী ১২-মাসের প্রবণতাগুলোর একটি (বছরে প্রায় +{mom}%)।{pump} "
+        "এটি গতির একটি তথ্য — পরামর্শ নয়।",
+    ),
+    "quality": (
+        "{code} trades below its sector's P/E ({pe_vs}x) with strong return on equity (~{roe}%) — "
+        "quality at a discount. 'Cheap' can also mean the market sees a problem, so check why. Not advice.",
+        "{code} তার খাতের গড় P/E-র নিচে ({pe_vs}x) লেনদেন হচ্ছে এবং ROE শক্তিশালী (~{roe}%) — "
+        "সস্তায় মান। 'সস্তা' বাজারের কোনো সমস্যাও বোঝাতে পারে, তাই কারণ যাচাই করুন। পরামর্শ নয়।",
+    ),
+    "smartmoney": (
+        "Both institutions and foreign investors raised their stake in {code} (+{pp} pp combined) at "
+        "the latest disclosure — broad 'smart money' accumulation. History, not a forecast.",
+        "সর্বশেষ প্রকাশে প্রতিষ্ঠান ও বিদেশি উভয় বিনিয়োগকারী {code}-এ অংশ বাড়িয়েছে (সম্মিলিত +{pp} pp) — "
+        "বিস্তৃত 'স্মার্ট মানি' সঞ্চয়। ইতিহাস, পূর্বাভাস নয়।",
+    ),
+    "strength": (
+        "{code} rose {chg}% while the market (DSEX) fell {idx_abs}% — relative strength. "
+        "Descriptive, not advice.",
+        "{code} {chg}% বেড়েছে যেখানে বাজার (DSEX) {idx_abs}% পড়েছে — আপেক্ষিক শক্তি। তথ্য, পরামর্শ নয়।",
+    ),
+}
+
+
+def render(sig: FactorSignal, code: str, locale: str) -> str:
+    tmpl = _T[sig.beat][1 if locale == "bn" else 0]
+    p = dict(sig.payload, code=code)
+    if sig.beat == "momentum":
+        caution = (
+            " A move this fast can reverse hard — treat with care."
+            if locale != "bn"
+            else " এত দ্রুত মুভমেন্ট দ্রুত উল্টে যেতে পারে — সতর্ক থাকুন।"
+        )
+        p["pump"] = caution if p.get("pump") else ""
+    if sig.beat == "strength":
+        p["idx_abs"] = abs(p["idx"])
+    return tmpl.format(**p)

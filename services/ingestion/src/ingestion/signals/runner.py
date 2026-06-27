@@ -25,8 +25,8 @@ from bulls.core.models import (
     TickerAnalytics,
 )
 from bulls.market_data.calendar import to_market_tz
+from ingestion.signals import factors, ownership, volume
 from ingestion.signals import market as market_wrap
-from ingestion.signals import ownership, volume
 from ingestion.signals.agents import AGENTS, ensure_agents
 from ingestion.signals.levels import BEAT, detect, render
 from ingestion.signals.publish import already_fired, publish_note
@@ -177,6 +177,7 @@ async def run_volume_agent(
                     QuoteSnapshot.volume,
                     QuoteSnapshot.as_of,
                     TickerAnalytics.avg_volume_20,
+                    QuoteSnapshot.change_pct,
                 )
                 .join(
                     TickerAnalytics,
@@ -194,12 +195,12 @@ async def run_volume_agent(
                 )
             )
         ).all()
-        for code, vol, as_of, avg in rows:
+        for code, vol, as_of, avg, change_pct in rows:
             # only flag on a fresh quote from today's session — a stale quote vs a tiny
             # expected-by-now would massively over-fire
             if as_of is None or to_market_tz(as_of).date() != today:
                 continue
-            sig = volume.detect(vol, avg, fraction, day)
+            sig = volume.detect(vol, avg, fraction, day, change_pct)
             if sig is None:
                 continue
             if await already_fired(
@@ -227,6 +228,83 @@ async def run_volume_agent(
             published += 1
         await session.commit()
     return {"published": published}
+
+
+async def run_factor_agents(
+    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+) -> dict[str, int]:
+    """Descriptive factor notes (momentum / quality-value / smart-money / relative strength) from the
+    precomputed analytics row + today's price vs the index. Once per name per factor per month."""
+    now = dt.datetime.now(dt.UTC)
+    local = to_market_tz(now).date()
+    month_key = local.strftime("%Y-%m")
+    day = str(local)
+    sm = get_sessionmaker()
+    published = 0
+    async with sm() as session:
+        ids = await ensure_agents(session, tenant_id)
+        dsex_change = await session.scalar(
+            select(MarketSummary.dsex_change)
+            .where(MarketSummary.market == market, MarketSummary.dsex_change.isnot(None))
+            .order_by(MarketSummary.date.desc())
+            .limit(1)
+        )
+        rows = (
+            await session.execute(
+                select(TickerAnalytics, QuoteSnapshot.change_pct)
+                .join(
+                    QuoteSnapshot,
+                    (TickerAnalytics.market == QuoteSnapshot.market)
+                    & (TickerAnalytics.code == QuoteSnapshot.code),
+                    isouter=True,
+                )
+                .join(
+                    Symbol,
+                    (TickerAnalytics.market == Symbol.market)
+                    & (TickerAnalytics.code == Symbol.code),
+                )
+                .where(
+                    TickerAnalytics.market == market,
+                    Symbol.is_active.is_(True),
+                    Symbol.is_hidden.is_(False),
+                )
+            )
+        ).all()
+        for ta, change_pct in rows:
+            sigs = [
+                factors.detect_momentum(ta, month_key),
+                factors.detect_quality(ta, month_key),
+                factors.detect_smartmoney(ta, month_key),
+                factors.detect_strength(change_pct, dsex_change, day),
+            ]
+            for sig in sigs:
+                if sig is None:
+                    continue
+                if await already_fired(
+                    session,
+                    market,
+                    ta.code,
+                    sig.event_type,
+                    sig.occurrence_key,
+                    today=ta.as_of_date,
+                    cooldown_days=sig.cooldown_days,
+                ):
+                    continue
+                await publish_note(
+                    session,
+                    tenant_id=tenant_id,
+                    market=market,
+                    code=ta.code,
+                    agent_id=ids[sig.beat],
+                    agent_handle=AGENTS[sig.beat][0],
+                    event_type=sig.event_type,
+                    occurrence_key=sig.occurrence_key,
+                    body=factors.render(sig, ta.code, locale),
+                    as_of=ta.as_of_date,
+                )
+                published += 1
+        await session.commit()
+    return {"symbols": len(rows), "published": published}
 
 
 async def run_market_update(
@@ -282,10 +360,11 @@ async def _run(market: str) -> None:
     lv = await run_levels_agent(market)
     ow = await run_ownership_agents(market)
     vo = await run_volume_agent(market)
+    fa = await run_factor_agents(market)
     mk = await run_market_update(market)
     print(
         f"[signals] {market}: levels={lv['published']} ownership={ow['published']} "
-        f"volume={vo['published']} market={mk['published']}"
+        f"volume={vo['published']} factors={fa['published']} market={mk['published']}"
     )
 
 
