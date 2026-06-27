@@ -221,7 +221,9 @@ async def _run():
 
     families = ("value", "momentum", "quality", "contrarian")
     diagnostics = ("c:lowRSI", "c:near52wLow", "c:recentLoser")
-    ic: dict[str, dict[int, list[float]]] = {f: {h: [] for h in FORWARDS} for f in (*families, *diagnostics)}
+    ic: dict[str, dict[int, list[float]]] = {
+        f: {h: [] for h in FORWARDS} for f in (*families, *diagnostics)
+    }
     for d_idx in rebal:
         fam = _families_for_date(d_idx, axis, by_code, fin_by_code, div_by_code)
         if not fam:
@@ -258,13 +260,19 @@ async def _run():
     for f in diagnostics:
         print(f"  {f:<12}{summarize(f)}")
 
-    print("\nData-suggested family weights (∝ positive mean IC, renormalized; flow = manual overlay):")
+    print(
+        "\nData-suggested family weights (∝ positive mean IC, renormalized; flow = manual overlay):"
+    )
     for h, label in ((20, "swing/short"), (60, "positional/investing")):
         pos = {f: max(0.0, sum(ic[f][h]) / len(ic[f][h])) for f in families if ic[f][h]}
         tot = sum(pos.values())
         if tot:
-            print(f"  {label:<22} {dict(sorted(((f, round(v / tot, 2)) for f, v in pos.items()), key=lambda x: -x[1]))}")
-    print("\nNote: momentum & contrarian are near-mirrors — use ONE. Flow not calibrated (sparse ownership history).")
+            print(
+                f"  {label:<22} {dict(sorted(((f, round(v / tot, 2)) for f, v in pos.items()), key=lambda x: -x[1]))}"
+            )
+    print(
+        "\nNote: momentum & contrarian are near-mirrors — use ONE. Flow not calibrated (sparse ownership history)."
+    )
 
 
 if __name__ == "__main__":

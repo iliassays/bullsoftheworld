@@ -31,15 +31,19 @@ async def _run():
     by_code, dsex = await _load()
     print(f"Base config: {BASE}")
     print(f"Reference — buy & hold DSEX: {INDEX_RET:+.1f}%\n")
-    print(f"{'KNOB = value':<20}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'trades':>8}{'win%':>7}{'vs index':>10}")
+    print(
+        f"{'KNOB = value':<20}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'trades':>8}{'win%':>7}{'vs index':>10}"
+    )
     print("-" * 72)
     for knob, values in SWEEPS.items():
         for v in values:
             params = {**BASE, knob: v}
             m = simulate(by_code, dsex, **params)
             star = " *base" if v == BASE[knob] else ""
-            print(f"{knob + ' = ' + str(v):<20}{m['total']:>+9.1f}{m['cagr']:>+8.1f}{m['maxdd']:>9.1f}"
-                  f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{m['total'] - INDEX_RET:>+10.1f}{star}")
+            print(
+                f"{knob + ' = ' + str(v):<20}{m['total']:>+9.1f}{m['cagr']:>+8.1f}{m['maxdd']:>9.1f}"
+                f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{m['total'] - INDEX_RET:>+10.1f}{star}"
+            )
         print()
 
 

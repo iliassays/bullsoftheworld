@@ -76,12 +76,16 @@ async def _load():
     async with sm() as session:
         bars = list(
             await session.scalars(
-                select(DailyBar).where(DailyBar.market == MARKET).order_by(DailyBar.code, DailyBar.date)
+                select(DailyBar)
+                .where(DailyBar.market == MARKET)
+                .order_by(DailyBar.code, DailyBar.date)
             )
         )
         dsex = dict(
             (r.date, r.dsex)
-            for r in await session.scalars(select(MarketSummary).where(MarketSummary.market == MARKET))
+            for r in await session.scalars(
+                select(MarketSummary).where(MarketSummary.market == MARKET)
+            )
         )
     by_code = defaultdict(list)
     for b in bars:
@@ -95,7 +99,9 @@ def _triggers(closes, highs, rsi, sma10, i):
         "zone_only": True,  # baseline: in the zone, no trigger
         "rsi_x35": rsi[i - 1] is not None and rsi[i] is not None and rsi[i - 1] <= 35 < rsi[i],
         "rsi_x40": rsi[i - 1] is not None and rsi[i] is not None and rsi[i - 1] <= 40 < rsi[i],
-        "cross_sma10": sma10[i] is not None and closes[i] > sma10[i] and closes[i - 1] <= sma10[i - 1],
+        "cross_sma10": sma10[i] is not None
+        and closes[i] > sma10[i]
+        and closes[i - 1] <= sma10[i - 1],
         "two_up_days": closes[i] > closes[i - 1] > closes[i - 2],
         "break_5d_high": closes[i] > max(highs[i - 5 : i]),
     }
@@ -150,9 +156,13 @@ async def _run():
     base_hit = sum(1 for x in universe_fwd if x > 0) / len(universe_fwd) * 100
 
     print(f"Forward horizon {FWD}d (~3mo). Liquid stock-dates evaluated: {len(universe_fwd):,}")
-    print(f"Baselines — any liquid name: mean {base_mean:+.1f}%, hit {base_hit:.0f}%  |  "
-          f"DSEX index: mean {mkt_mean:+.1f}%\n")
-    print(f"{'TRIGGER (in launch zone)':<26}{'n':>5}{'hit%':>6}{'mean':>8}{'median':>8}{'peak':>8}{'dip':>8}{'vs base':>9}")
+    print(
+        f"Baselines — any liquid name: mean {base_mean:+.1f}%, hit {base_hit:.0f}%  |  "
+        f"DSEX index: mean {mkt_mean:+.1f}%\n"
+    )
+    print(
+        f"{'TRIGGER (in launch zone)':<26}{'n':>5}{'hit%':>6}{'mean':>8}{'median':>8}{'peak':>8}{'dip':>8}{'vs base':>9}"
+    )
     print("-" * 80)
     for v in variants:
         rs = records[v]
@@ -161,10 +171,12 @@ async def _run():
             continue
         fwds = [r[1] for r in rs]
         m = st.mean(fwds)
-        print(f"{v:<26}{len(rs):>5}{sum(1 for x in fwds if x > 0) / len(fwds) * 100:>5.0f}%"
-              f"{m:>+8.1f}{st.median(fwds):>+8.1f}"
-              f"{st.median(r[2] for r in rs):>+8.1f}{st.median(r[3] for r in rs):>+8.1f}"
-              f"{m - base_mean:>+9.1f}")
+        print(
+            f"{v:<26}{len(rs):>5}{sum(1 for x in fwds if x > 0) / len(fwds) * 100:>5.0f}%"
+            f"{m:>+8.1f}{st.median(fwds):>+8.1f}"
+            f"{st.median(r[2] for r in rs):>+8.1f}{st.median(r[3] for r in rs):>+8.1f}"
+            f"{m - base_mean:>+9.1f}"
+        )
 
     # out-of-sample sanity: early half vs late half of entry dates
     print("\nStability (mean fwd return, early-half vs late-half of signals):")

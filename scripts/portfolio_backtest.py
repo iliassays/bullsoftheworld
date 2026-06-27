@@ -157,11 +157,18 @@ def simulate(
                     cash += p["shares"] * exit_px * (1 - COST)
                     ret = exit_px / p["entry"] - 1
                     trades.append(ret)
-                    trade_log.append({
-                        "code": code, "in_date": p["entry_date"], "in_px": p["entry"],
-                        "out_date": d, "out_px": round(exit_px, 2), "ret": ret * 100,
-                        "held": p["held"], "reason": reason,
-                    })
+                    trade_log.append(
+                        {
+                            "code": code,
+                            "in_date": p["entry_date"],
+                            "in_px": p["entry"],
+                            "out_date": d,
+                            "out_px": round(exit_px, 2),
+                            "ret": ret * 100,
+                            "held": p["held"],
+                            "reason": reason,
+                        }
+                    )
                     del positions[code]
 
         regime_ok = (not regime) or (
@@ -179,7 +186,10 @@ def simulate(
                 if alloc < equity / max_pos * 0.5:
                     continue
                 positions[code] = {
-                    "shares": alloc / bar.close, "entry": bar.close, "held": 0, "entry_date": d
+                    "shares": alloc / bar.close,
+                    "entry": bar.close,
+                    "held": 0,
+                    "entry_date": d,
                 }
                 cash -= alloc * (1 + COST)
                 last_px[code] = bar.close

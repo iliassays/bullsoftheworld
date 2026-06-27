@@ -82,9 +82,11 @@ async def _run():
         print(f"\nStrategy restricted by universe size (median cap {med:,.0f} mn):")
         print(f"  {'VARIANT':<22}{'total%':>9}{'maxDD%':>9}{'trades':>8}{'win%':>7}")
         print("  " + "-" * 54)
+
         def restricted(keep):
             def fn(b):
                 return sigs.get(b[0].code, set()) if (keep is None or b[0].code in keep) else set()
+
             return fn
 
         for label, keep in (

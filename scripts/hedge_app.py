@@ -119,7 +119,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8100)
     args = ap.parse_args()
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))  # so granian workers can import this module
+    os.chdir(
+        os.path.dirname(os.path.abspath(__file__))
+    )  # so granian workers can import this module
     print(f"Hedge running -> http://127.0.0.1:{args.port}  (Ctrl-C to stop)")
     Granian("hedge_app:app", address="127.0.0.1", port=args.port, interface="asgi").serve()
 

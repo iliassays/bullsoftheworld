@@ -36,7 +36,9 @@ async def _load() -> dict[str, list[DailyBar]]:
     async with sm() as session:
         bars = list(
             await session.scalars(
-                select(DailyBar).where(DailyBar.market == MARKET).order_by(DailyBar.code, DailyBar.date)
+                select(DailyBar)
+                .where(DailyBar.market == MARKET)
+                .order_by(DailyBar.code, DailyBar.date)
             )
         )
     by_code: dict[str, list[DailyBar]] = defaultdict(list)
@@ -67,7 +69,9 @@ def _features(bars: list[DailyBar], t: int) -> dict | None:
         "vol_surge": base_vol / prior_vol,  # volume building into the low (>1 = accumulation)
         "vol_vs_long": base_vol / long_vol,  # recent vs longer baseline
         "up_vol_share": up_vol / tot_vol,  # share of base volume on up-days (>0.5 = accumulation)
-        "compression": st.pstdev(rets) * 100 if len(rets) > 2 else 0.0,  # daily-return stdev %, lower = coiled
+        "compression": st.pstdev(rets) * 100
+        if len(rets) > 2
+        else 0.0,  # daily-return stdev %, lower = coiled
         "drawdown": (closes[t] / hi_252 - 1) * 100,  # how deep below the 1yr high the base sits
         "pos_52w": (closes[t] - lo_252) / (hi_252 - lo_252) * 100 if hi_252 > lo_252 else 50.0,
         "run": run,
@@ -107,8 +111,10 @@ async def _run() -> None:
         elif f["run"] < QUIET_RUN:
             quiet.append(f)
 
-    print(f"Launch troughs studied · BIG runners (>= {BIG_RUN:.0f}% in {FWD}d): {len(big)} "
-          f"· QUIET (< {QUIET_RUN:.0f}%): {len(quiet)}")
+    print(
+        f"Launch troughs studied · BIG runners (>= {BIG_RUN:.0f}% in {FWD}d): {len(big)} "
+        f"· QUIET (< {QUIET_RUN:.0f}%): {len(quiet)}"
+    )
     bm, qm = _summary(big, keys), _summary(quiet, keys)
     labels = {
         "vol_surge": "vol surge (20d/prior40d)",
@@ -123,8 +129,10 @@ async def _run() -> None:
     for k in keys:
         edge = bm[k] - qm[k]
         print(f"{labels[k]:<32}{bm[k]:>13}{qm[k]:>10}{edge:>+9.2f}")
-    print(f"\nMedian forward run — BIG {round(st.median(r['run'] for r in big), 1)}% "
-          f"vs QUIET {round(st.median(r['run'] for r in quiet), 1)}%")
+    print(
+        f"\nMedian forward run — BIG {round(st.median(r['run'] for r in big), 1)}% "
+        f"vs QUIET {round(st.median(r['run'] for r in quiet), 1)}%"
+    )
     print("\nRead the 'edge' column: features where BIG and QUIET differ most are the early tells.")
 
 

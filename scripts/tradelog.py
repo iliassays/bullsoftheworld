@@ -23,18 +23,28 @@ async def _run(last: int | None):
     shown = log[-last:] if last else log
 
     print(f"Deep-Value Reversal — {len(log)} trades over the backtest. Showing {len(shown)}.\n")
-    print(f"  {'BOUGHT':>11} {'CODE':<11}{'in':>8}  {'SOLD':>11}{'out':>8}{'ret%':>8}{'days':>6}  why")
+    print(
+        f"  {'BOUGHT':>11} {'CODE':<11}{'in':>8}  {'SOLD':>11}{'out':>8}{'ret%':>8}{'days':>6}  why"
+    )
     for t in shown:
-        print(f"  {t['in_date']!s:>11} {t['code']:<11}{t['in_px']:>8.2f}  "
-              f"{t['out_date']!s:>11}{t['out_px']:>8.2f}{t['ret']:>+8.1f}{t['held']:>6}  {t['reason']}")
+        print(
+            f"  {t['in_date']!s:>11} {t['code']:<11}{t['in_px']:>8.2f}  "
+            f"{t['out_date']!s:>11}{t['out_px']:>8.2f}{t['ret']:>+8.1f}{t['held']:>6}  {t['reason']}"
+        )
 
     wins = [t for t in log if t["ret"] > 0]
-    print(f"\n  Tally: {len(log)} trades · {len(wins)} winners ({len(wins) / len(log) * 100:.0f}%) · "
-          f"avg winner +{sum(t['ret'] for t in wins) / len(wins):.1f}% · "
-          f"avg loser {sum(t['ret'] for t in log if t['ret'] <= 0) / max(1, len(log) - len(wins)):.1f}%")
-    print(f"  Portfolio: 1,000 -> {m['final']:,.0f} ({m['total']:+.1f}%) over the period, "
-          f"worst dip {m['maxdd']:.0f}% along the way.")
-    print("\n  (Equal-weight, max 10 at once, 0.4%/side cost. EOD/delayed data, single market regime.)")
+    print(
+        f"\n  Tally: {len(log)} trades · {len(wins)} winners ({len(wins) / len(log) * 100:.0f}%) · "
+        f"avg winner +{sum(t['ret'] for t in wins) / len(wins):.1f}% · "
+        f"avg loser {sum(t['ret'] for t in log if t['ret'] <= 0) / max(1, len(log) - len(wins)):.1f}%"
+    )
+    print(
+        f"  Portfolio: 1,000 -> {m['final']:,.0f} ({m['total']:+.1f}%) over the period, "
+        f"worst dip {m['maxdd']:.0f}% along the way."
+    )
+    print(
+        "\n  (Equal-weight, max 10 at once, 0.4%/side cost. EOD/delayed data, single market regime.)"
+    )
 
 
 def main():
