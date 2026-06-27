@@ -172,6 +172,29 @@ knives) and the edge dies; (b) momentum/breakout (Scheme-5) loses, re-confirming
 for a *genuinely different* (and diversifying) scheme is **fundamentals — Quality-Value** — a separate
 data axis, needs the point-in-time fundamental engine (see §2 method), tracked as a build.
 
+### Scheme lab v2 — hybrids that fuse the proven edges (`scripts/scheme_lab.py`)
+
+Tested more schemes, each with style-appropriate exits on the same engine:
+
+| Scheme | total | CAGR | maxDD | trades | win% | vs index |
+|---|---|---|---|---|---|---|
+| **3 quality reversal** (washout-bounce + profitable & P/E≤25) | **+73.6%** | **+31.7%** | **−12.1%** | 76 | 58% | **+65.8** |
+| 1 deep-value reversal | +33.7% | +15.6% | −20.9% | 138 | 41% | +25.9 |
+| 2 quality-value | +30.8% | +14.4% | −13.5% | 30 | 63% | +23.0 |
+| 5 magic formula (earnings-yield + ROE) | +7.6% | +3.7% | −19% | 30 | 47% | −0.2 |
+| 6 deep growth-value | −0.5% | — | −20% | 40 | 38% | −8.3 |
+| 4 cheap + oversold (RSI cross) | −23.6% | — | −33% | 77 | 31% | −31.4 |
+
+**The winner — Scheme-3 "Quality Reversal":** take Scheme-1's washout-bounce **only when the company is
+profitable and cheap (P/E≤25)**. That single filter — removing the junk pennies that were Scheme-1's
+losers — **doubled the return (+74% vs +34%), halved the drawdown (−12% vs −21%), and lifted win-rate
+to 58%.** The two proven edges multiply. Confirmed: price *timing* (deep washout + breakout) is
+essential — pure cross-sectional value (5, 6) is mediocre and oversold-timing (4) still catches knives.
+
+**Caveat (multiple comparison):** Scheme-3 is the best of ~10 schemes tried; testing many and picking
+the winner inflates apparent performance. The improvement is large and *mechanistically* sensible
+(junk removal), not pure noise — but it still needs the same out-of-sample/forward proof as the rest.
+
 ### Scheme catalog
 - **Scheme-1 — Deep-Value Reversal** ✅ validated. Entry: >40% below 1yr high AND within 15% of 52w
   low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. Mean-reversion
