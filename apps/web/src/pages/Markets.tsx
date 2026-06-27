@@ -46,6 +46,8 @@ export const SCREEN_HELP: Record<string, string> = {
   most_discussed: "The names with the most community posts over the last 2 days.",
   attention_rising:
     "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
+  quiet_accumulation:
+    "Money is flowing in (positive Chaikin Money Flow) while the price is still flat — within ~10% of its 50-day average, so it hasn't run up yet. This 'buying into a quiet base' is the classic accumulation setup smart money looks for before a move. The flat price line next to a strong-inflow tag is the tell. A divergence, not a promise — bases can also just stay flat. Not advice.",
   foreign_buying:
     "How foreign investors changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ they went from owning 10% to 15%). The line is the share price over that window; the dots are the stake at each disclosure (hover for figures). The 'since' date is the comparison point — disclosures come a few times a year, not daily. History, not a forecast.",
   institutional_buying:

@@ -86,6 +86,7 @@ export const SCREEN_LESSON: Record<string, string> = {
   oversold: "rsi",
   overbought: "rsi",
   accumulation: "moneyflow",
+  quiet_accumulation: "moneyflow",
   distribution: "moneyflow",
   unusual_volume: "volume",
   most_active: "volume",
