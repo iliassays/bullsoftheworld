@@ -47,8 +47,25 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, body?.detail ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, errorMessage(body?.detail, res.statusText));
   return body as T;
+}
+
+// FastAPI returns `detail` as a string (HTTPException) OR an array of validation objects (422).
+// Always reduce it to a readable string so the UI never tries to render an object (React #31).
+function errorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((d) => {
+      const o = (d ?? {}) as { loc?: unknown[]; msg?: string; type?: string };
+      const field = Array.isArray(o.loc) && o.loc.length ? String(o.loc[o.loc.length - 1]) : "";
+      // Hide the raw regex from users; keep the readable length/required messages.
+      const msg = o.type === "string_pattern_mismatch" ? "invalid format" : (o.msg ?? "");
+      return field && msg ? `${field}: ${msg}` : msg;
+    });
+    return parts.filter(Boolean).join("; ") || fallback;
+  }
+  return fallback;
 }
 
 // --- types (mirror the API schemas) ---
