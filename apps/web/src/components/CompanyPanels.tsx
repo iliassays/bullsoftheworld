@@ -1,7 +1,6 @@
 import type { Company, NewsItem } from "../lib/api";
 import { Empty } from "./ui";
 import { InfoTip } from "./InfoTip";
-import { Sparkline } from "./Sparkline";
 
 const OWN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const discMonth = (iso: string) => {
@@ -172,82 +171,98 @@ function smartMoneyRead(o: Company["ownership"]): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+const OWN_GREEN = "#16c784";
+
 export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
-  const segs = [
-    { key: "sponsor", label: "Sponsor / Director", v: o.sponsor_pct, color: "var(--color-accent)" },
-    { key: "institute", label: "Institutional", v: o.institute_pct, color: "#0ea5e9" },
-    { key: "foreign", label: "Foreign", v: o.foreign_pct, color: "var(--color-up)" },
-    { key: "public", label: "Public", v: o.public_pct, color: "var(--color-muted)" },
+  const cats = [
+    { key: "sponsor", label: "Sponsor / Director", color: "var(--color-accent)", v: o.sponsor_pct },
+    { key: "institute", label: "Institutional", color: "#0ea5e9", v: o.institute_pct },
+    { key: "foreign", label: "Foreign", color: OWN_GREEN, v: o.foreign_pct },
+    { key: "public", label: "Public", color: "var(--color-muted)", v: o.public_pct },
   ] as const;
-  const known = segs.some((s) => s.v != null);
-  if (!known) return <Empty>No ownership disclosure yet.</Empty>;
+  if (!cats.some((c) => c.v != null)) return <Empty>No ownership disclosure yet.</Empty>;
 
   const hist = o.history ?? [];
+  const first = hist[0];
   const freeFloat = (o.institute_pct ?? 0) + (o.foreign_pct ?? 0) + (o.public_pct ?? 0);
-  // DSE re-discloses irregularly; flag when the latest disclosure is well over half a year old so
-  // an old change doesn't read as fresh news.
   const stale =
     o.as_of != null && (Date.now() - new Date(o.as_of).getTime()) / 86_400_000 > 270;
 
-  const deltaEl = (d: number | null) =>
+  // Smart money = institutions + foreign. The positive story to highlight: has it grown over the
+  // disclosed window? (first → latest). Only celebrate a real rise; otherwise stay factual.
+  const smartNow = (o.institute_pct ?? 0) + (o.foreign_pct ?? 0);
+  const smartThen = first ? (first.institute ?? 0) + (first.foreign ?? 0) : null;
+  const smartGrew = !stale && smartThen != null && smartNow - smartThen >= 0.5;
+
+  const stepDelta = (key: (typeof cats)[number]["key"]) => {
+    const s = hist.map((p) => p[key]).filter((x): x is number => x != null);
+    return s.length >= 2 ? s[s.length - 1] - s[s.length - 2] : null;
+  };
+  const chip = (d: number | null) =>
     d == null || Math.abs(d) < 0.01 ? null : (
-      <span className={d > 0 ? "text-up" : "text-down"}>
-        {" "}
-        ({d > 0 ? "+" : ""}
-        {d.toFixed(2)}pp)
+      <span className={`text-[11px] font-semibold tnum ${d > 0 ? "text-up" : "text-down"}`}>
+        {d > 0 ? "▲" : "▼"} {Math.abs(d).toFixed(2)}pp
       </span>
     );
 
   return (
     <Card title="Ownership">
-      <div className="rounded-xl bg-card border border-border p-3 mb-3">
-        {stale ? (
-          <div className="text-[13px] leading-snug text-muted">
-            ⏳ Latest disclosure {o.as_of ? discMonth(o.as_of) : dash} — DSE hasn't filed a newer one
-            for this stock, so the figures below may be out of date.
-          </div>
-        ) : (
-          <div className="text-[13px] leading-snug">🏦 {smartMoneyRead(o)}</div>
-        )}
-        <div className="text-[11px] text-muted mt-1">
-          Free float ~{freeFloat.toFixed(0)}% — the slice held by public, institutions and foreigners
-          that actually trades.
+      {/* Highlight: stale flag, or the positive smart-money story, or a neutral read. */}
+      {stale ? (
+        <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug text-muted">
+          ⏳ Latest disclosure {o.as_of ? discMonth(o.as_of) : dash} — DSE hasn't filed a newer one
+          for this stock, so the figures below may be out of date.
         </div>
-      </div>
+      ) : smartGrew && smartThen != null && first ? (
+        <div
+          className="rounded-xl p-3 mb-3"
+          style={{ backgroundColor: "rgba(22,199,132,0.10)", border: "1px solid rgba(22,199,132,0.35)" }}
+        >
+          <div className="text-[13px] leading-snug font-semibold text-up">
+            🚀 Smart money is building a stake
+          </div>
+          <div className="text-[12px] text-muted mt-0.5">
+            Institutions + foreign investors now hold <b className="text-fg">{smartNow.toFixed(1)}%</b>,
+            up from {smartThen.toFixed(1)}% in {discMonth(first.as_of)}.
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug">
+          🏦 {smartMoneyRead(o)}
+        </div>
+      )}
 
-      <div className="text-[10px] uppercase tracking-wide text-muted/70 mb-1">
-        Latest split{o.as_of ? ` · ${discMonth(o.as_of)}` : ""}
-      </div>
-      <div className="flex h-3 rounded-full overflow-hidden mb-3">
-        {segs.map((s) => (
-          <div key={s.key} style={{ width: `${s.v ?? 0}%`, backgroundColor: s.color }} />
+      {/* Composition over time — one stacked bar per disclosure, oldest → newest. */}
+      <div className="text-[10px] uppercase tracking-wide text-muted/70 mb-1.5">Ownership over time</div>
+      <div className="flex flex-col gap-1.5 mb-3">
+        {hist.map((p) => (
+          <div key={p.as_of} className="flex items-center gap-2">
+            <span className="text-[10px] text-muted tnum w-14 shrink-0">{discMonth(p.as_of)}</span>
+            <span className="flex h-2.5 flex-1 rounded-full overflow-hidden bg-border/40">
+              {cats.map((c) => (
+                <span key={c.key} style={{ width: `${p[c.key] ?? 0}%`, backgroundColor: c.color }} />
+              ))}
+            </span>
+          </div>
         ))}
       </div>
 
-      {segs.map((s) => {
-        const series = hist.map((p) => p[s.key]).filter((x): x is number => x != null);
-        const d =
-          series.length >= 2 ? series[series.length - 1] - series[series.length - 2] : null;
-        return (
-          <div key={s.key} className="flex items-center gap-3 py-2 border-b border-border/60">
-            <span className="flex items-center gap-2 flex-1 min-w-0">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-              <span className="text-xs text-muted truncate">{s.label}</span>
-            </span>
-            {series.length >= 2 && <Sparkline data={series} />}
-            <span className="text-sm font-semibold tnum whitespace-nowrap shrink-0">
-              {pct(s.v)}
-              {deltaEl(d)}
-            </span>
-          </div>
-        );
-      })}
+      {/* Legend + latest % + change vs prior disclosure. */}
+      {cats.map((c) => (
+        <div key={c.key} className="flex items-center gap-3 py-2 border-b border-border/60">
+          <span className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+            <span className="text-xs text-muted truncate">{c.label}</span>
+          </span>
+          {chip(stepDelta(c.key))}
+          <span className="text-sm font-semibold tnum w-16 text-right">{pct(c.v)}</span>
+        </div>
+      ))}
 
       <p className="text-[10px] text-muted mt-2">
-        {hist.length > 1
-          ? `Trend across ${hist.length} disclosures: ${hist.map((p) => discMonth(p.as_of)).join(" · ")}. `
-          : ""}
-        Change (pp) is vs the prior disclosure. Descriptive, not advice.
+        Free float ~{freeFloat.toFixed(0)}%.{" "}
+        {hist.length > 1 ? `${hist.length} disclosures, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}. ` : ""}
+        ▲▼ = change vs the prior disclosure. Descriptive, not advice.
       </p>
     </Card>
   );
