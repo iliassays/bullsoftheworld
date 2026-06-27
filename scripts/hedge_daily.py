@@ -46,7 +46,12 @@ def _qualifies(code, price, year, fin, div):
     return None
 
 
-async def _run(days):
+# Validated backtest stats (scripts/portfolio_backtest.py + validate_scheme3.py) — the trust header.
+TRACK_RECORD = {"total_2y": 73.6, "index_2y": 7.8, "win": 58, "maxdd": -12, "cagr": 31.7}
+
+
+async def scan(days: int = 5) -> dict:
+    """Compute today's Scheme-3 signals. Returns structured data for the CLI and the web app."""
     by_code, _ = await _load()
     fin, div = await _load_fundamentals("DSE")
     profs = await _profiles("DSE")
@@ -70,8 +75,7 @@ async def _run(days):
         if not q:  # not profitable/cheap — Scheme-3 skips it (this is what saves us from junk)
             continue
         pe, roe = q
-        sector = (profs.get(code).sector if profs.get(code) else None) or "?"
-        # did the breakout trigger fire within the look-back window?
+        px = c[i]
         fired_on = next(
             (
                 bars[j].date
@@ -80,30 +84,50 @@ async def _run(days):
             ),
             None,
         )
-        row = (code, c[i], pe, roe, below, pos, sector, fired_on)
-        (fired if fired_on else watch).append(row)
+        item = {
+            "code": code,
+            "price": round(px, 2),
+            "stop": round(px * (1 + STOP), 2),
+            "target": round(px * (1 + TARGET), 2),
+            "pe": round(pe, 1),
+            "roe": round(roe),
+            "below_high": round(below),
+            "sector": (profs.get(code).sector if profs.get(code) else None) or "?",
+            "fired_on": fired_on.isoformat() if fired_on else None,
+        }
+        (fired if fired_on else watch).append(item)
+    fired.sort(key=lambda r: r["fired_on"], reverse=True)
+    watch.sort(key=lambda r: r["below_high"])
+    return {
+        "as_of": latest.isoformat(),
+        "days": days,
+        "fired": fired,
+        "watch": watch,
+        "track_record": TRACK_RECORD,
+    }
 
-    print(f"HEDGE — daily list · as of EOD {latest} · EOD/delayed · stop is mandatory\n")
-    print(f"=== BUY signals (fired in last {days} session(s)): {len(fired)} ===")
-    if fired:
+
+async def _run(days):
+    r = await scan(days)
+    print(f"HEDGE — daily list · as of EOD {r['as_of']} · EOD/delayed · stop is mandatory\n")
+    print(f"=== BUY signals (fired in last {days} session(s)): {len(r['fired'])} ===")
+    if r["fired"]:
         print(
-            f"  {'CODE':<11}{'entry':>8}{'stop':>8}{'target':>8}{'P/E':>6}{'ROE':>6}  {'why / sector'}"
+            f"  {'CODE':<11}{'entry':>8}{'stop':>8}{'target':>8}{'P/E':>6}{'ROE':>6}  why / sector"
         )
-        for code, px, pe, roe, below, _pos, sector, _fon in sorted(
-            fired, key=lambda r: r[-1], reverse=True
-        ):
+        for x in r["fired"]:
             print(
-                f"  {code:<11}{px:>8.1f}{px * (1 + STOP):>8.1f}{px * (1 + TARGET):>8.1f}"
-                f"{pe:>6.1f}{roe:>5.0f}%  washed-out {below:>3.0f}%, cheap+profitable · {sector[:18]}"
+                f"  {x['code']:<11}{x['price']:>8.1f}{x['stop']:>8.1f}{x['target']:>8.1f}"
+                f"{x['pe']:>6.1f}{x['roe']:>5}%  washed-out {x['below_high']:>3}%, cheap · {x['sector'][:18]}"
             )
     else:
         print("  (none today — the flagship is selective; see the watchlist)")
-
-    print(f"\n=== WATCHLIST (zone + quality, waiting for the breakout): {len(watch)} ===")
+    print(f"\n=== WATCHLIST (zone + quality, waiting for the breakout): {len(r['watch'])} ===")
     print(f"  {'CODE':<11}{'price':>8}{'P/E':>6}{'ROE':>6}{'below_hi':>10}  sector")
-    for code, px, pe, roe, below, _pos, sector, _f in sorted(watch, key=lambda r: r[4]):
-        print(f"  {code:<11}{px:>8.1f}{pe:>6.1f}{roe:>5.0f}%{below:>9.0f}%  {sector[:18]}")
-
+    for x in r["watch"]:
+        print(
+            f"  {x['code']:<11}{x['price']:>8.1f}{x['pe']:>6.1f}{x['roe']:>5}%{x['below_high']:>9}%  {x['sector'][:18]}"
+        )
     print(
         "\nHold ~2 weeks to 3 months (exit at +25% target, -10% stop, or 3 months). Risk ~1-2% of "
         "capital per name; ~10 positions. Low-cap names: size down (fills are rough)."
