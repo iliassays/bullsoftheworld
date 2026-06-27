@@ -6,9 +6,11 @@ import { taka } from "./ui";
 
 // The day's biggest cross-factor signals at a glance — one tappable line each, pulled from the
 // screens we already compute. The trader's 5-second morning read. Descriptive, not advice.
-const PICKS: { key: string; icon: string; label: string }[] = [
+// `tag` overrides the value text when the screen's raw metric (e.g. CMF) wouldn't read plainly.
+const PICKS: { key: string; icon: string; label: string; tag?: string }[] = [
   { key: "top_gainers", icon: "🚀", label: "Top mover" },
   { key: "momentum_12_1", icon: "📈", label: "Strongest trend" },
+  { key: "quiet_accumulation", icon: "🧲", label: "Quiet accumulation", tag: "Accumulating" },
   { key: "beating_market", icon: "💪", label: "Beating the market" },
   { key: "foreign_buying", icon: "🌐", label: "Foreign buying" },
   { key: "unusual_volume", icon: "📊", label: "Unusual volume" },
@@ -56,7 +58,7 @@ export function TodayStandouts() {
             <span className="flex items-baseline gap-2 shrink-0">
               <span className="text-xs text-muted tnum">{taka(r.item.last_close)}</span>
               <span className="text-xs font-semibold text-accent tnum">
-                {r.item.note ?? fmtValue(r.screen.value_label, r.item.value)}
+                {r.tag ?? r.item.note ?? fmtValue(r.screen.value_label, r.item.value)}
               </span>
             </span>
           </Link>
