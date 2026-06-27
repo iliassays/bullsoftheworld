@@ -63,13 +63,9 @@ export const SCREEN_HELP: Record<string, string> = {
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const MONTHS_FULL = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 const monthIdx = (iso: string) => Number(iso.split("-")[1]) - 1; // parse directly, no timezone shift
 const shortMonth = (iso: string) => MONTHS[monthIdx(iso)] ?? "?";
-const monthName = (iso: string) => MONTHS_FULL[monthIdx(iso)] ?? "?";
+const monthYy = (iso: string) => `${shortMonth(iso)},${iso.slice(2, 4)}`; // "2026-04-30" → "Apr,26"
 
 // Format a screen's metric for display, based on its value_label.
 export function fmtValue(label: string, v: number): string {
@@ -237,7 +233,7 @@ export function ScreenRow({
   // Ownership screens: show the stake trend as dots + the comparison month (no year — short label).
   const fdates = item.flow_dates ?? [];
   const isOwnership = !!(item.flow && item.flow.length);
-  const sinceMonth = fdates.length >= 2 ? monthName(fdates[fdates.length - 2]) : null;
+  const sinceMonth = fdates.length >= 2 ? monthYy(fdates[fdates.length - 2]) : null;
   // Tooltip explaining the price line on ownership rows: what period + how price moved over it.
   const ps = item.period_spark ?? [];
   let priceTitle: string | undefined;
