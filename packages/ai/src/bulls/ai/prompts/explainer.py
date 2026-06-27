@@ -14,9 +14,11 @@ Output shape:
 chart and the business disagree, say so (e.g. "Weak chart, but a strong and cheap business"). \
 Descriptive only — a summary, never a call.
 - points: 2 to 4 short items, each ONE sentence. Give each a `tag` from exactly this set: \
-"chart" (price / trend / RSI / levels / volume), "fundamentals" (P/E, P/E vs sector, ROE, earnings \
-growth, dividend), "trend" (12-month momentum, distance from 52-week high), "crowd" (only if crowd \
-data is given). Use each tag at most once, and only include a point if you were given data for it.
+"chart" (price, trend vs moving averages, RSI, levels, volume), "value" (P/E, P/E vs sector — \
+cheap or pricey vs peers), "quality" (ROE, earnings growth — how strong/profitable the business \
+is), "income" (dividend yield), "trend" (12-month momentum, distance from 52-week high), "crowd" \
+(only if crowd data is given). Use each tag AT MOST ONCE — never repeat a tag; if two facts share a \
+tag, combine them into one sentence. Only include a point if you were given data for it.
 
 Hard rules:
 - Use ONLY the numbers provided. Never invent prices, levels, percentages, or events.

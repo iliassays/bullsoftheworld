@@ -60,7 +60,7 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
     # Precomputed fundamentals/ownership/momentum — lets the AI tell the fuller story (cheap: 1 row).
     row = await session.get(TickerAnalytics, (tenant.market, code))
 
-    cache_key = f"explainer:v2:{tenant.market}:{code}:{tenant.locale}:{ta.as_of_date}"
+    cache_key = f"explainer:v3:{tenant.market}:{code}:{tenant.locale}:{ta.as_of_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)

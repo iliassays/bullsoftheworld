@@ -7,9 +7,11 @@ import { Spinner } from "./ui";
 // includes the data's as_of_date, so it regenerates automatically when new EOD data lands.
 // Descriptive, educational — not advice.
 const TAG_ICON: Record<string, string> = {
-  chart: "📉",
-  fundamentals: "💪",
-  trend: "⏱️",
+  chart: "📊",
+  value: "🏷️",
+  quality: "⭐",
+  income: "💵",
+  trend: "📈",
   crowd: "🗣️",
 };
 
