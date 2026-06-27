@@ -179,8 +179,8 @@ class WorkerSettings:
         pull_news,
     ]
     cron_jobs: ClassVar = [
-        # Intraday quote refresh: every 30 min across the DSE session (04:00-08:30 UTC).
-        cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 30}, run_at_startup=False),
+        # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
+        cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 15, 30, 45}, run_at_startup=False),
         # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Market-wide summary (index/turnover) right after the bar pull.
