@@ -348,3 +348,23 @@ entry-conviction) to buy a newcomer whose conviction beats it by > margin.
 So the "miss a better stock" fear, while intuitive, costs ~nothing measurable — the situation is rare
 and the swaps are a coin-flip. Hold-to-exit is simpler and statistically just as good. `rotate`
 defaults to None, so the flagship is unchanged.
+
+## 10. 'Unlimited money, take every signal, hold to exit' — does it work?
+
+User's model: drop the 10-name cap, fund every signal with a fixed stake (20k), hold each to its own
+exit. `scripts/explore_all_study.py` measures it.
+
+- **Signals are sparse:** fire on only 13% of days; on a firing day median 1 new name, busiest day
+  ever = 7, only 2 days in 2yr had 5+, never 10+. The "5 every day" picture is ~10x the real pace
+  (the app's "5" is over a 10-day window).
+- **Take-everything, 20k each, hold to exit, unlimited cash:** 98 trades, 70% win, avg 7 open / peak
+  32. Peak capital to reserve = **640,000**; avg actually working = **168,556** (~74% idle vs peak).
+  Total profit **+214,385**. Return on reserved = **+33%**; on avg working = **+127%**.
+- **vs concentrated 200k** (10%/equity, max 10): +74%, profit +148,000.
+
+**Verdict — it's not wrong; it makes MORE total taka (+214k vs +148k) and is more diversified.** The
+catch is capital efficiency: you'd reserve ~640k but use ~170k on average, so most sits idle and the
+blended return on reserved capital is only +33%. The deeper point: Scheme-3's signal flow can only
+productively absorb ~170k on average — to put more money to work you need MORE edges (more schemes),
+not a bigger stake on the same sparse signals. The concentrated 200k is efficient precisely because
+it's roughly matched to how much capital the signals can use.
