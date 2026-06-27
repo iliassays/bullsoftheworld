@@ -174,11 +174,21 @@ data axis, needs the point-in-time fundamental engine (see §2 method), tracked 
 
 ### Scheme catalog
 - **Scheme-1 — Deep-Value Reversal** ✅ validated. Entry: >40% below 1yr high AND within 15% of 52w
-  low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. The mean-
-  reversion bucket.
-- **Scheme-2 — Quality-Value** (next): cheap + profitable fundamentals, longer hold. Not yet backtested
-  (needs fundamental point-in-time engine).
+  low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. Mean-reversion
+  bucket. Result: +34%, 41% win, −21% maxDD, 138 trades.
+- **Scheme-2 — Quality-Value** ✅ validated (`scripts/scheme2_value.py`). Monthly: rank profitable
+  universe by cheap (P/E, P/B) + quality (ROE, EPS-growth, dividend consistency), buy top-15, exit
+  stop −15% / target +50% / hold 180d. Point-in-time fundamentals (fy ≤ year−1). Result: **+31%, 63%
+  win, −13.5% maxDD, 30 trades** — nearly Scheme-1's return with HALF the drawdown and a far higher
+  win-rate, and it's a *different* edge (fundamentals, long hold) → diversifies Scheme-1. Caveat: only
+  30 trades (concentrated hold) → smaller sample than Scheme-1.
 - Rejected on this data: oversold-only, near-low-only, pullback-in-uptrend, volume breakout.
+
+### Why combine them (the multi-playbook "Hedge")
+Scheme-1 (fast bounces, choppy, high turnover) and Scheme-2 (slow quality holds, smooth, low turnover)
+are different edges. Run together: capital stays working (Scheme-2 holds while Scheme-1 waits for
+setups), the blended win-rate and drawdown improve, and the daily list draws from both buckets — the
+actual product. Next build: a combined portfolio backtest + a unified daily list tagged by scheme.
 
 ## 5. Why no deep ML (yet)
 
