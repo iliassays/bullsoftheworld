@@ -221,6 +221,18 @@ export interface NewsItem {
   strength: number;
   headline: string;
 }
+export interface ReadPoint {
+  tag: string;
+  text: string;
+}
+export interface PlainRead {
+  code: string;
+  as_of_date: string;
+  headline: string;
+  points: ReadPoint[];
+  how_to_read: string;
+  disclaimer: string;
+}
 export interface Gauge {
   score: number;
   label: string;
@@ -293,6 +305,7 @@ export const api = {
       `/symbols/${code}/explainer`,
     ),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
+  plainRead: (code: string) => request<PlainRead>(`/symbols/${code}/plain-read`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),

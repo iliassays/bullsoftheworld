@@ -20,6 +20,7 @@ import {
 } from "../components/CompanyPanels";
 import { DigestPanel } from "../components/DigestPanel";
 import { KeyLevels } from "../components/KeyLevels";
+import { PlainReadCard } from "../components/PlainReadCard";
 import { PulseGauges } from "../components/PulseGauges";
 import { PostCard } from "../components/PostCard";
 import { Technicals } from "../components/Technicals";
@@ -223,6 +224,7 @@ export function SymbolPage() {
 
       {tab === "overview" && (
         <>
+          <PlainReadCard code={sym} />
           <DigestPanel code={sym} />
           <PulseGauges code={sym} />
           <CandleChart code={sym} />
