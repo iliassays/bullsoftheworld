@@ -72,7 +72,7 @@ async def _run():
     for name, b in buckets:
         if b:
             lo, hi = b[0]["mcap"], b[-1]["mcap"]
-            print(f"  {name:<10} [{lo:>8,.0f} – {hi:>9,.0f} mn]   {_stats(b)}")
+            print(f"  {name:<10} [{lo:>8,.0f} to {hi:>9,.0f} mn]   {_stats(b)}")
 
     # 2) restrict the strategy to small vs large half of the universe (by latest market cap)
     if cap:
