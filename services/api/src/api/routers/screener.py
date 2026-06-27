@@ -651,6 +651,9 @@ _OWN = {
     "foreign": (T.foreign_delta, "foreign_pct", "Foreign buying"),
     "institute": (T.institute_delta, "institute", "Institutional buying"),
 }
+# Only show rises big enough to read as real buying — below this they'd display as "+0.0 pp"
+# (foreign stakes on DSE are tiny, so this keeps the screen honest rather than full of noise).
+_MIN_STAKE_DELTA = 0.05
 
 
 def _flow_tag(prev_delta: float | None) -> str:
@@ -697,7 +700,7 @@ async def _ownership_buying(
             select(T.code, T.last_close, delta_col)
             .where(
                 T.market == market,
-                delta_col > 0,
+                delta_col >= _MIN_STAKE_DELTA,
                 T.code.in_(visible_codes(market)),
                 _LIQUID,
             )
