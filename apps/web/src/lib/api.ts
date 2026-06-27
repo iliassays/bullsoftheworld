@@ -151,6 +151,7 @@ export interface ScreenItem {
   value: number;
   change_1d: number | null; // today's % move; null for movers (their value is already a change)
   note: string | null; // optional per-row qualifier (momentum: steady / volatile / possible pump)
+  spark: number[]; // recent closes (oldest→newest) for an inline sparkline
 }
 export interface Screen {
   key: string;

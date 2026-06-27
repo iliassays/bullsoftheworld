@@ -254,6 +254,7 @@ class ScreenItem(BaseModel):
     value: float
     change_1d: float | None = None  # today's % move, the universal anchor (None for movers)
     note: str | None = None  # optional per-row qualifier (e.g. momentum: steady vs pump-risk)
+    spark: list[float] = []  # recent closes (oldest→newest) for an inline sparkline
 
 
 class ScreenOut(BaseModel):
@@ -589,18 +590,48 @@ async def _change_1d(session, market: str, codes: list[str]) -> dict[str, float]
 # Top gainers/losers already carry the price change in their value, so the separate 1d column would
 # be redundant. Every other screen (incl. unusual_volume, near 52w high/low) shows it.
 _NO_1D = {"top_gainers", "top_losers"}
+_SPARK_DAYS = 30  # closes per inline sparkline
+
+
+async def _sparks(session, market: str, codes: list[str]) -> dict[str, list[float]]:
+    """Last ~30 daily closes per code (oldest→newest) for an inline trend sparkline, batched."""
+    if not codes:
+        return {}
+    rn = (
+        func.row_number()
+        .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+        .label("rn")
+    )
+    ranked = (
+        select(DailyBar.code, DailyBar.close, DailyBar.date, rn)
+        .where(DailyBar.market == market, DailyBar.code.in_(codes))
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(ranked.c.code, ranked.c.close)
+            .where(ranked.c.rn <= _SPARK_DAYS)
+            .order_by(ranked.c.code, ranked.c.date)
+        )
+    ).all()
+    out: dict[str, list[float]] = defaultdict(list)
+    for code, close in rows:
+        out[code].append(round(close, 2))
+    return out
 
 
 async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
-    """Fill name + 1d change on every item, batched across all screens."""
+    """Fill name + 1d change + sparkline on every item, batched across all screens."""
     codes = sorted({it.code for s in screens_list for it in s.items})
     names = await _names(session, market, codes)
     skip = {it.code for s in screens_list if s.key in _NO_1D for it in s.items}
     changes = await _change_1d(session, market, sorted(set(codes) - skip))
+    sparks = await _sparks(session, market, codes)
     for s in screens_list:
         for it in s.items:
             it.name = names.get(it.code, "")
             it.change_1d = None if s.key in _NO_1D else changes.get(it.code)
+            it.spark = sparks.get(it.code, [])
 
 
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, type Screen, type ScreenItem, type ScreensResponse } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
+import { Sparkline } from "../components/Sparkline";
 import { SCREEN_LESSON } from "../lib/lessons";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
@@ -153,9 +154,9 @@ export function ScreenRow({
   return (
     <Link
       to={`/s/${item.code}`}
-      className="flex items-center justify-between gap-2 py-2 border-t border-border/60 first:border-t-0"
+      className="flex items-center gap-3 py-2 border-t border-border/60 first:border-t-0"
     >
-      <span className="flex items-center gap-2 min-w-0">
+      <span className="flex items-center gap-2 min-w-0 flex-1">
         {rank != null && (
           <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
         )}
@@ -164,6 +165,7 @@ export function ScreenRow({
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
         </span>
       </span>
+      <Sparkline data={item.spark} />
       <span className="flex items-stretch gap-3 shrink-0 text-right">
         <span className="flex flex-col items-end justify-center">
           <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
