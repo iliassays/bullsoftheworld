@@ -176,12 +176,14 @@ export function SymbolPage() {
   return (
     <div className="flex flex-col gap-3">
       <div className="bg-surface border border-border rounded-2xl p-4">
-        <div className="flex items-start">
+        <div className="flex items-start justify-between gap-2">
           <div>
             <div className="text-xl font-bold text-accent">${sym}</div>
             <div className="text-xs text-muted">{detail.symbol.name_en}</div>
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
             {buzz && (
-              <div className="text-xs text-muted mt-0.5">
+              <div className="text-xs text-muted">
                 👁 {buzz.watchers.toLocaleString()} watching
                 {buzz.watchers_delta_7d != null && (
                   <span
@@ -196,19 +198,19 @@ export function SymbolPage() {
                 )}
               </div>
             )}
+            {user && (
+              <button
+                onClick={toggleWatch}
+                className={`text-sm px-3 py-1.5 rounded-full border ${
+                  watched
+                    ? "text-accent border-accent bg-accent/10"
+                    : "text-muted border-border"
+                }`}
+              >
+                {watched ? "★ Watching" : "☆ Watch"}
+              </button>
+            )}
           </div>
-          {user && (
-            <button
-              onClick={toggleWatch}
-              className={`ml-auto text-sm px-3 py-1.5 rounded-full border ${
-                watched
-                  ? "text-accent border-accent bg-accent/10"
-                  : "text-muted border-border"
-              }`}
-            >
-              {watched ? "★ Watching" : "☆ Watch"}
-            </button>
-          )}
         </div>
         {q ? (
           <div className="mt-3 flex items-end gap-3">
