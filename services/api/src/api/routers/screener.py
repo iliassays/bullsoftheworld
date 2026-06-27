@@ -148,10 +148,12 @@ _SCREENS: list[ScreenSpec] = [
         "Money flowing in while the price is still flat — accumulation before a move",
         "CMF",
         and_(
-            T.cmf_20 >= 0.10,
-            T.mom_3_1.isnot(None),
-            T.mom_3_1 <= 15,
-            T.mom_3_1 >= -10,
+            T.cmf_20 >= 0.10,  # clear money inflow
+            T.sma_50.isnot(None),
+            T.sma_50 > 0,
+            # Still in its base — price within ±10% of its 50-day average (not yet run up / not crashing).
+            T.last_close <= T.sma_50 * 1.10,
+            T.last_close >= T.sma_50 * 0.90,
         ),
         T.cmf_20.desc(),
         T.cmf_20,
