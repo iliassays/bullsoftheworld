@@ -139,6 +139,23 @@ _SCREENS: list[ScreenSpec] = [
         T.cmf_20.asc(),
         T.cmf_20,
     ),
+    # Quiet accumulation: strong money inflow while the price is still FLAT (hasn't run up) — the
+    # Wyckoff / Chaikin A-D divergence setup hedge funds watch for: smart money loading a base
+    # before the move. Differs from plain "Money flowing in" (CMF>0) by the not-yet-moved filter.
+    ScreenSpec(
+        "quiet_accumulation",
+        "Quiet accumulation",
+        "Money flowing in while the price is still flat — accumulation before a move",
+        "CMF",
+        and_(
+            T.cmf_20 >= 0.10,
+            T.mom_3_1.isnot(None),
+            T.mom_3_1 <= 15,
+            T.mom_3_1 >= -10,
+        ),
+        T.cmf_20.desc(),
+        T.cmf_20,
+    ),
     ScreenSpec(
         "uptrend",
         "Above 200-day average",
@@ -232,6 +249,7 @@ _GROUP: dict[str, str] = {
     "value_vs_sector": "value",
     "eps_growth": "value",
     "accumulation": "value",
+    "quiet_accumulation": "value",
     "foreign_buying": "value",
     "institutional_buying": "value",
     "momentum_12_1": "movers",
