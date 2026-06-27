@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Company, NewsItem } from "../lib/api";
+import { type Lang, useLang } from "../lib/i18n";
 import { Empty } from "./ui";
 import { InfoTip } from "./InfoTip";
 
@@ -24,19 +25,26 @@ const F_HELP: Record<string, string> = {
   nav: "Net Asset Value per share — the company's book value behind each share. e.g. ৳57 of net assets per share.",
 };
 
-const CAT_LABEL: Record<string, string> = {
-  dividend: "Dividend",
-  earnings: "Earnings",
-  rating: "Rating",
-  board_meeting: "Board meeting",
-  corporate_action: "Corporate action",
-  halt: "Halt",
-  psi: "Price-sensitive",
-  other: "Other",
+const F_HELP_BN: Record<string, string> = {
+  market_cap: "সব শেয়ারের মোট মূল্য: দাম × মোট শেয়ার। কোটিতে দেখানো (১ কোটি = ১ কোটি টাকা)।",
+  pe: "মূল্য-আয় অনুপাত: শেয়ারের দাম ÷ বার্ষিক EPS। যেমন দাম ৳১০০, EPS ৳৫ → P/E ২০। একই খাতে তুলনা করুন।",
+  pe_sector: "এই শেয়ারের P/E ÷ খাতের মধ্যমা P/E। ১.০×-এর নিচে = সাধারণ সমকক্ষদের চেয়ে সস্তা; উপরে = দামি।",
+  pb: "মূল্য-বইমূল্য অনুপাত: দাম ÷ শেয়ারপ্রতি নিট সম্পদমূল্য। ১.০-এর নিচে = বইমূল্যের নিচে লেনদেন। যেমন দাম ৳১০০, NAV ৳৮০ → ১.২৫।",
+  yield: "আজকের দামের শতাংশ হিসেবে গত বছরের নগদ লভ্যাংশ। যেমন ৳২০ দামে ৳১ নগদ = ৫%। বোনাস শেয়ার গণনা হয় না।",
+  eps: "শেয়ারপ্রতি আয়: বার্ষিক মুনাফা ÷ মোট শেয়ার। যেমন বছরে শেয়ারপ্রতি ৳১.৭২ আয়।",
+  eps_growth: "আগের বছরের তুলনায় EPS পরিবর্তন। যেমন -১৭.৩% মানে শেয়ারপ্রতি আয় ১৭.৩% কমেছে।",
+  nav: "শেয়ারপ্রতি নিট সম্পদমূল্য — প্রতি শেয়ারের পেছনে কোম্পানির বইমূল্য। যেমন শেয়ারপ্রতি ৳৫৭ নিট সম্পদ।",
 };
+const fhelp = (key: string, lang: Lang) =>
+  (lang === "bn" ? F_HELP_BN[key] : undefined) ?? F_HELP[key];
 
 export function NewsPanel({ items }: { items: NewsItem[] }) {
-  if (!items.length) return <Empty>No news yet for this stock.</Empty>;
+  const { t } = useLang();
+  if (!items.length) return <Empty>{t("news.empty")}</Empty>;
+  const catLabel = (c: string) => {
+    const tr = t(`cat.${c}`);
+    return tr.startsWith("cat.") ? c : tr;
+  };
   return (
     <div className="flex flex-col gap-2">
       {items.map((n, i) => (
@@ -46,10 +54,10 @@ export function NewsPanel({ items }: { items: NewsItem[] }) {
         >
           <div className="flex items-center gap-2 text-[11px]">
             <span className="text-accent font-semibold bg-accent/10 rounded-full px-2 py-0.5">
-              {CAT_LABEL[n.category] ?? n.category}
+              {catLabel(n.category)}
             </span>
             <span className="text-muted">{n.published_at}</span>
-            <span className="ml-auto text-muted">strength {n.strength}</span>
+            <span className="ml-auto text-muted">{t("news.strength")} {n.strength}</span>
           </div>
           <div className="mt-1 h-1 rounded-full bg-border overflow-hidden">
             <div
@@ -60,9 +68,7 @@ export function NewsPanel({ items }: { items: NewsItem[] }) {
           <p className="text-sm text-text/90 mt-2">{n.headline}</p>
         </div>
       ))}
-      <p className="text-[10px] text-muted">
-        Exchange disclosures. Descriptive, not advice.
-      </p>
+      <p className="text-[10px] text-muted">{t("news.footer")}</p>
     </div>
   );
 }
@@ -119,40 +125,41 @@ function Card({
 }
 
 export function FundamentalsPanel({ f }: { f: Company["fundamentals"] }) {
+  const { t, lang } = useLang();
   const yoy =
     f.eps_growth_yoy == null
       ? dash
       : `${f.eps_growth_yoy > 0 ? "+" : ""}${f.eps_growth_yoy.toFixed(1)}%`;
   return (
-    <Card title="Fundamentals">
-      <Row label="Market cap" value={crore(f.market_cap_mn)} help={F_HELP.market_cap} />
-      <Row label="P/E" value={ratio(f.pe_ratio)} help={F_HELP.pe} />
+    <Card title={t("tab.fundamentals")}>
+      <Row label={t("f.marketCap")} value={crore(f.market_cap_mn)} help={fhelp("market_cap", lang)} />
+      <Row label={t("f.pe")} value={ratio(f.pe_ratio)} help={fhelp("pe", lang)} />
       <Row
-        label="P/E vs sector"
+        label={t("f.peSector")}
         value={f.pe_vs_sector == null ? dash : `${f.pe_vs_sector.toFixed(2)}×`}
-        help={F_HELP.pe_sector}
+        help={fhelp("pe_sector", lang)}
       />
-      <Row label="P/B" value={ratio(f.pb_ratio)} help={F_HELP.pb} />
-      <Row label="Dividend yield" value={pct(f.dividend_yield)} help={F_HELP.yield} />
-      <Row label="EPS (annual)" value={taka(f.eps)} help={F_HELP.eps} />
-      <Row label="EPS growth (YoY)" value={yoy} help={F_HELP.eps_growth} />
-      <Row label="NAV / share" value={taka(f.nav_per_share)} help={F_HELP.nav} />
+      <Row label={t("f.pb")} value={ratio(f.pb_ratio)} help={fhelp("pb", lang)} />
+      <Row label={t("f.divYield")} value={pct(f.dividend_yield)} help={fhelp("yield", lang)} />
+      <Row label={t("f.epsAnnual")} value={taka(f.eps)} help={fhelp("eps", lang)} />
+      <Row label={t("f.epsGrowthYoY")} value={yoy} help={fhelp("eps_growth", lang)} />
+      <Row label={t("f.navShare")} value={taka(f.nav_per_share)} help={fhelp("nav", lang)} />
       <Row
-        label="52-week range"
+        label={t("range.52w")}
         value={`${taka(f.week52_low)} – ${taka(f.week52_high)}`}
       />
-      <Row label="Free-float cap" value={crore(f.free_float_cap_mn)} />
+      <Row label={t("f.freeFloatCap")} value={crore(f.free_float_cap_mn)} />
       <Row
-        label="Shares outstanding"
+        label={t("f.sharesOut")}
         value={
           f.outstanding_shares == null
             ? dash
             : f.outstanding_shares.toLocaleString()
         }
       />
-      <Row label="Face value" value={taka(f.face_value)} />
-      <Row label="Sector" value={f.sector ?? dash} />
-      <Row label="Credit rating" value={f.credit_rating ?? dash} />
+      <Row label={t("f.faceValue")} value={taka(f.face_value)} />
+      <Row label={t("f.sector")} value={f.sector ?? dash} />
+      <Row label={t("f.creditRating")} value={f.credit_rating ?? dash} />
       <p className="text-[10px] text-muted mt-2">
         Valuation derived from the latest close. Descriptive, not advice.
       </p>

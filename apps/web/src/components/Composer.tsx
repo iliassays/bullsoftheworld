@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { api, ApiError, type Post } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 
 export function Composer({
   onPosted,
   initial = "",
   parentId,
   compact = false,
-  placeholder = "What's your call? Use $GP to tag a stock…",
+  placeholder,
 }: {
   onPosted: (p: Post) => void;
   initial?: string;
@@ -16,6 +17,8 @@ export function Composer({
   placeholder?: string;
 }) {
   const { user } = useAuth();
+  const { t } = useLang();
+  const ph = placeholder ?? t("composer.placeholder");
   const [body, setBody] = useState(initial);
   const [sentiment, setSentiment] = useState<"bull" | "bear" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -37,7 +40,7 @@ export function Composer({
       setBody("");
       setSentiment(null);
     } catch (e) {
-      setErr(e instanceof ApiError ? e.detail : "Failed to post");
+      setErr(e instanceof ApiError ? e.detail : t("composer.failed"));
     } finally {
       setBusy(false);
     }
@@ -57,7 +60,7 @@ export function Composer({
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder={placeholder}
+        placeholder={ph}
         rows={compact ? 2 : 3}
         className="w-full bg-transparent resize-none outline-none text-[15px] placeholder:text-muted"
       />
@@ -69,14 +72,14 @@ export function Composer({
               className={tone("bull")}
               onClick={() => setSentiment(sentiment === "bull" ? null : "bull")}
             >
-              ▲ Bull
+              {t("composer.bull")}
             </button>
             <button
               type="button"
               className={tone("bear")}
               onClick={() => setSentiment(sentiment === "bear" ? null : "bear")}
             >
-              ▼ Bear
+              {t("composer.bear")}
             </button>
           </>
         )}
@@ -86,7 +89,7 @@ export function Composer({
           onClick={submit}
           className="ml-auto bg-accent text-bg font-bold text-sm px-4 py-1.5 rounded-full disabled:opacity-40"
         >
-          {busy ? "…" : compact ? "Reply" : "Post"}
+          {busy ? "…" : compact ? t("common.reply") : t("common.post")}
         </button>
       </div>
       {err && <p className="text-down text-xs mt-2">{err}</p>}

@@ -5,7 +5,7 @@ import { Spinner } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
 import { useLang } from "../lib/i18n";
 import { SCREEN_LESSON } from "../lib/lessons";
-import { ScreenRow, SCREEN_HELP, metricHeader, screenDesc, screenTitle } from "./Markets";
+import { ScreenRow, metricHeader, screenDesc, screenHelp, screenTitle } from "./Markets";
 
 const GROUP_KEY: Record<string, string> = {
   movers: "group.movers",
@@ -131,7 +131,7 @@ export function ScreenExplore() {
           <div className="flex items-center gap-1.5">
             <div className="font-semibold text-sm text-accent">{screenTitle(screen, lang)}</div>
             <InfoTip
-              text={SCREEN_HELP[screen.key] ?? screen.description}
+              text={screenHelp(screen.key, lang) ?? screenDesc(screen, lang)}
               lessonId={lessonId}
             />
           </div>

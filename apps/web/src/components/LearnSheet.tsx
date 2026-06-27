@@ -1,15 +1,17 @@
-import { LESSONS } from "../lib/lessons";
+import { useLang } from "../lib/i18n";
+import { getLesson } from "../lib/lessons";
 
 // A bottom-sheet lesson: how to actually USE a metric to decide, with a worked example.
 // Descriptive education — no buy/sell.
 export function LearnSheet({ lessonId, onClose }: { lessonId: string; onClose: () => void }) {
-  const lesson = LESSONS[lessonId];
+  const { t, lang } = useLang();
+  const lesson = getLesson(lessonId, lang);
   if (!lesson) return null;
   const rows: { label: string; body: string }[] = [
-    { label: "What it is", body: lesson.what },
-    { label: "How traders use it", body: lesson.use },
-    { label: "Watch out for", body: lesson.watch },
-    { label: "Example", body: lesson.example },
+    { label: t("learn.what"), body: lesson.what },
+    { label: t("learn.use"), body: lesson.use },
+    { label: t("learn.watch"), body: lesson.watch },
+    { label: t("learn.example"), body: lesson.example },
   ];
   return (
     <div
@@ -23,7 +25,7 @@ export function LearnSheet({ lessonId, onClose }: { lessonId: string; onClose: (
         <div className="flex items-center justify-between">
           <div className="text-accent font-semibold">🎓 {lesson.title}</div>
           <button onClick={onClose} className="text-muted text-sm px-2">
-            Close
+            {t("common.close")}
           </button>
         </div>
         <div className="mt-3 flex flex-col gap-3">
@@ -34,9 +36,7 @@ export function LearnSheet({ lessonId, onClose }: { lessonId: string; onClose: (
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-muted mt-4">
-          Educational only — not a recommendation to buy or sell.
-        </p>
+        <p className="text-[10px] text-muted mt-4">{t("learn.footer")}</p>
       </div>
     </div>
   );

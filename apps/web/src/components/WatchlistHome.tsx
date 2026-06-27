@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Post, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 import { Pct, taka } from "./ui";
 
 // Personalized home section: the user's watched tickers + the latest agent note for each —
 // "what changed in my stocks" at a glance. Renders nothing for logged-out / empty watchlists.
 export function WatchlistHome() {
   const { user } = useAuth();
+  const { t } = useLang();
   const [items, setItems] = useState<SymbolDetail[] | null>(null);
   const [noteByCode, setNoteByCode] = useState<Record<string, Post>>({});
 
@@ -37,10 +39,10 @@ export function WatchlistHome() {
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between px-1">
         <div className="text-[11px] uppercase tracking-wide text-muted">
-          Your watchlist
+          {t("watchlist.your")}
         </div>
         <Link to="/watchlist" className="text-[11px] text-accent">
-          See all →
+          {t("seeAll")}
         </Link>
       </div>
       {items.slice(0, 8).map(({ symbol, quote }) => {

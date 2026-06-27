@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLang } from "../lib/i18n";
 import { LearnSheet } from "./LearnSheet";
 
 // A small tap-to-toggle "(i)" popover for explaining a widget's metric in plain language.
@@ -6,6 +7,7 @@ import { LearnSheet } from "./LearnSheet";
 // (uppercase/tracking) so the explanation reads as normal prose. With a lessonId, the popover also
 // offers "Learn how to use it →", opening a worked-example lesson sheet.
 export function InfoTip({ text, lessonId }: { text: string; lessonId?: string }) {
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [learn, setLearn] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
@@ -23,7 +25,7 @@ export function InfoTip({ text, lessonId }: { text: string; lessonId?: string })
     <span ref={ref} className="relative inline-flex align-middle">
       <button
         type="button"
-        aria-label="What is this?"
+        aria-label={t("infoTip.aria")}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -47,7 +49,7 @@ export function InfoTip({ text, lessonId }: { text: string; lessonId?: string })
               }}
               className="block mt-2 text-accent font-semibold"
             >
-              Learn how to use it →
+              {t("infoTip.learn")}
             </button>
           )}
         </span>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Post, type ReactionKind } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 import { Composer } from "./Composer";
 import { Avatar, SentimentTag } from "./ui";
 
@@ -46,6 +47,7 @@ export function PostCard({
   isReply?: boolean;
 }) {
   const { user } = useAuth();
+  const { t } = useLang();
   const [translation, setTranslation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -134,7 +136,7 @@ export function PostCard({
           <b className="text-sm">{post.author.name}</b>
           <span className="block text-xs text-muted">
             {isNote ? (
-              <span className="text-accent">🤖 auto · data note</span>
+              <span className="text-accent">🤖 {t("post.dataNote")}</span>
             ) : (
               `@${post.author.handle}`
             )}{" "}
@@ -184,23 +186,23 @@ export function PostCard({
             <button
               onClick={() => react("agree")}
               className={pill(mine === "agree")}
-              title="Agree with this take"
+              title={t("post.agree")}
             >
-              👍 Agree{agree > 0 ? ` ${agree}` : ""}
+              👍 {t("post.agreeBtn")}{agree > 0 ? ` ${agree}` : ""}
             </button>
             <button
               onClick={() => react("disagree")}
               className={pill(mine === "disagree")}
-              title="Disagree with this take"
+              title={t("post.disagree")}
             >
-              👎 Disagree{disagree > 0 ? ` ${disagree}` : ""}
+              👎 {t("post.disagreeBtn")}{disagree > 0 ? ` ${disagree}` : ""}
             </button>
           </>
         ) : (
           // Logged-out: counts are read-only info; tapping invites login rather than dead-ending.
           <Link
             to="/me"
-            title="Log in to react"
+            title={t("post.loginReact")}
             className="flex items-center gap-2"
           >
             <span className={readonlyPill}>👍 {agree}</span>
@@ -214,8 +216,8 @@ export function PostCard({
           >
             💬{" "}
             {replyCount > 0
-              ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
-              : "Reply"}
+              ? `${replyCount} ${replyCount === 1 ? t("post.reply") : t("post.replies")}`
+              : t("common.reply")}
           </button>
         )}
       </div>
@@ -226,18 +228,18 @@ export function PostCard({
             <Composer
               parentId={post.id}
               compact
-              placeholder="Reply…"
+              placeholder={t("post.replyPlaceholder")}
               onPosted={onReplied}
             />
           ) : (
             <Link to="/me" className="text-xs text-accent">
-              Log in to reply →
+              {t("post.loginReply")}
             </Link>
           )}
           {replies === null ? (
-            <p className="text-muted text-xs">Loading…</p>
+            <p className="text-muted text-xs">{t("common.loading")}</p>
           ) : replies.length === 0 ? (
-            <p className="text-muted text-xs">No replies yet.</p>
+            <p className="text-muted text-xs">{t("post.noReplies")}</p>
           ) : (
             replies.map((r) => <PostCard key={r.id} post={r} isReply />)
           )}
