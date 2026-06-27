@@ -26,7 +26,10 @@ async def structured_complete[T: BaseModel](system: str, user: str, schema: type
 async def _claude[T: BaseModel](system: str, user: str, schema: type[T]) -> T:
     resp = await get_client().messages.parse(
         model=default_model(),
-        max_tokens=256,
+        # Generous cap so structured JSON isn't truncated mid-string — Bangla is token-dense and a
+        # 256 cap cut the explainer's output off, producing invalid JSON. Billed on actual output,
+        # not the cap, so it's safe for the tiny sentiment-tag calls too.
+        max_tokens=1500,
         system=system,
         messages=[{"role": "user", "content": user}],
         output_format=schema,
