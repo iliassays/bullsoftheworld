@@ -120,14 +120,18 @@ def simulate(
     near_low=NEAR_LOW,
     max_pos=MAX_POS,
     regime=False,
+    signal_fn=None,
 ):
-    """Run the event-driven sim with the given params. Returns a metrics dict (+ equity curve)."""
+    """Run the event-driven sim with the given params. Returns a metrics dict (+ equity curve).
+
+    signal_fn(bars) -> set[date] plugs in any entry rule (a "scheme"); default = Deep-Value Reversal.
+    """
     bar_map, sig = {}, {}
     for code, bars in by_code.items():
         if len(bars) < WARMUP + 5 or sum(b.volume for b in bars[-20:]) / 20 < MIN_AVG_VOL:
             continue
         bar_map[code] = {b.date: b for b in bars}
-        sig[code] = _signals_by_code(bars, deep, near_low)
+        sig[code] = signal_fn(bars) if signal_fn else _signals_by_code(bars, deep, near_low)
     axis = sorted({d for m in bar_map.values() for d in m})
     dts = sorted(dsex)
     dsex_sma = dict(zip(dts, _sma([dsex[d] for d in dts], 50), strict=True))

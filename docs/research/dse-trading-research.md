@@ -152,6 +152,34 @@ closer-to-low / more-diversified settings did better. **But** robustness to *par
 robustness to *regimes* — the whole surface still rests on one recovering-market window. "Deeper =
 better" is exactly what would invert in a sustained bear (deepest = falling knife).
 
+## 4e. Scheme lab — entry strategies head-to-head (`scripts/schemes.py`)
+
+A "scheme" = an entry rule. All run through the identical portfolio engine (stop −10% / target +25% /
+hold 63d / 10 positions / 0.4% cost) so the leaderboard compares the *entry edge* fairly.
+
+| Scheme | total | CAGR | maxDD | trades | win% | vs index |
+|---|---|---|---|---|---|---|
+| **1 deep-value reversal** | **+33.7%** | +15.6% | −21% | 138 | 41% | **+25.9** |
+| 3 pullback in uptrend | −2.1% | −1.1% | −29% | 95 | 36% | −9.9 |
+| 4 near-low reclaim | −4.0% | −2.0% | −28% | 132 | 36% | −11.8 |
+| 5 volume breakout (momentum) | −6.1% | −3.1% | −28% | 174 | 33% | −13.9 |
+| 2 oversold bounce | −11.8% | −6.1% | −35% | 132 | 34% | −19.6 |
+
+**Verdict: of five price/volume entry rules, only Scheme-1 beat the market — the rest lost money.**
+Lessons: (a) the *combination* in Scheme-1 (deep washout + near 52w-low + 5-day-high breakout) is what
+works — loosen any leg (Scheme-4) or drop the washout context (Scheme-2, pure oversold = falling
+knives) and the edge dies; (b) momentum/breakout (Scheme-5) loses, re-confirming §2. The next frontier
+for a *genuinely different* (and diversifying) scheme is **fundamentals — Quality-Value** — a separate
+data axis, needs the point-in-time fundamental engine (see §2 method), tracked as a build.
+
+### Scheme catalog
+- **Scheme-1 — Deep-Value Reversal** ✅ validated. Entry: >40% below 1yr high AND within 15% of 52w
+  low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. The mean-
+  reversion bucket.
+- **Scheme-2 — Quality-Value** (next): cheap + profitable fundamentals, longer hold. Not yet backtested
+  (needs fundamental point-in-time engine).
+- Rejected on this data: oversold-only, near-low-only, pullback-in-uptrend, volume breakout.
+
 ## 5. Why no deep ML (yet)
 
 PatchTST / deep time-series transformers need thousands of clean examples; we have ~100 movers over a
