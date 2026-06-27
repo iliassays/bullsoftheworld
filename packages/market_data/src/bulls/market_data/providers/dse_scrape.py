@@ -218,7 +218,7 @@ def _news_date(value: str) -> dt.date | None:
     return None
 
 
-def _col(header: list[str], keys: set[str]) -> int | None:
+def _col_idx(header: list[str], keys: set[str]) -> int | None:
     for i, h in enumerate(header):
         if h in keys:
             return i
@@ -238,7 +238,9 @@ def parse_news(html: str) -> list[NewsItem]:
         if not rows:
             continue
         header = [_norm(c.text(strip=True)) for c in rows[0].css("th, td")]
-        di, ci, ti = (_col(header, k) for k in (_NEWS_DATE_KEYS, _NEWS_CODE_KEYS, _NEWS_TITLE_KEYS))
+        di, ci, ti = (
+            _col_idx(header, k) for k in (_NEWS_DATE_KEYS, _NEWS_CODE_KEYS, _NEWS_TITLE_KEYS)
+        )
         if di is None or ci is None or ti is None:
             continue
         for row in rows[1:]:
