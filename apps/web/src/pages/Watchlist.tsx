@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 
 export function Watchlist() {
   const { user } = useAuth();
+  const { t } = useLang();
   const [items, setItems] = useState<SymbolDetail[] | null>(null);
 
   useEffect(() => {
@@ -16,13 +18,13 @@ export function Watchlist() {
     return (
       <Empty>
         <Link to="/me" className="text-accent">
-          Log in
+          {t("common.login")}
         </Link>{" "}
-        to build your watchlist.
+        {t("wl.toBuild")}
       </Empty>
     );
   if (items === null) return <Spinner />;
-  if (items.length === 0) return <Empty>Your watchlist is empty. Tap ☆ on any symbol.</Empty>;
+  if (items.length === 0) return <Empty>{t("wl.empty")}</Empty>;
 
   return (
     <div className="flex flex-col gap-2">

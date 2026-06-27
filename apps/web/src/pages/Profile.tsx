@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
 
 export function Profile() {
   const { user, login, register, logout } = useAuth();
+  const { t } = useLang();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [handle, setHandle] = useState("");
@@ -28,7 +30,7 @@ export function Profile() {
           onClick={logout}
           className="text-down border border-border rounded-xl py-2.5 text-sm font-semibold"
         >
-          Log out
+          {t("profile.logout")}
         </button>
       </div>
     );
@@ -40,7 +42,7 @@ export function Profile() {
       if (mode === "login") await login(handle, password);
       else await register(handle, name, password);
     } catch (e) {
-      setErr(e instanceof ApiError ? e.detail : "Something went wrong");
+      setErr(e instanceof ApiError ? e.detail : t("profile.error"));
     } finally {
       setBusy(false);
     }
@@ -52,18 +54,18 @@ export function Profile() {
   return (
     <div className="flex flex-col gap-3 max-w-sm mx-auto pt-6">
       <h1 className="text-xl font-bold">
-        {mode === "login" ? "Welcome back" : "Join Bulls of Dhaka"} 🐂
+        {mode === "login" ? t("profile.welcomeBack") : t("profile.join")} 🐂
       </h1>
       <input
         className={field}
-        placeholder="handle"
+        placeholder={t("profile.handle")}
         value={handle}
         onChange={(e) => setHandle(e.target.value)}
       />
       {mode === "register" && (
         <input
           className={field}
-          placeholder="full name"
+          placeholder={t("profile.name")}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
@@ -71,7 +73,7 @@ export function Profile() {
       <input
         className={field}
         type="password"
-        placeholder="password (min 8 chars)"
+        placeholder={t("profile.password")}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
@@ -81,7 +83,7 @@ export function Profile() {
         onClick={submit}
         className="bg-accent text-bg font-bold rounded-xl py-2.5 text-sm disabled:opacity-40"
       >
-        {busy ? "…" : mode === "login" ? "Log in" : "Create account"}
+        {busy ? "…" : mode === "login" ? t("common.login") : t("profile.createAccount")}
       </button>
       <button
         onClick={() => {
@@ -90,15 +92,13 @@ export function Profile() {
         }}
         className="text-muted text-sm"
       >
-        {mode === "login"
-          ? "New here? Create an account"
-          : "Already have an account? Log in"}
+        {mode === "login" ? t("profile.toRegister") : t("profile.toLogin")}
       </button>
       <button
         onClick={() => navigate(-1)}
         className="text-muted text-sm border border-border rounded-xl py-2.5"
       >
-        Cancel
+        {t("common.cancel")}
       </button>
     </div>
   );

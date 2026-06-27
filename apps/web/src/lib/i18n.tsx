@@ -306,6 +306,21 @@ const STRINGS: Record<string, Entry> = {
   "cat.halt": { en: "Halt", bn: "স্থগিত" },
   "cat.psi": { en: "Price-sensitive", bn: "মূল্য-সংবেদনশীল" },
   "cat.other": { en: "Other", bn: "অন্যান্য" },
+  // Watchlist + Profile
+  "common.login": { en: "Log in", bn: "লগ ইন" },
+  "common.cancel": { en: "Cancel", bn: "বাতিল" },
+  "wl.toBuild": { en: "to build your watchlist.", bn: "আপনার ওয়াচলিস্ট তৈরি করতে।" },
+  "wl.empty": { en: "Your watchlist is empty. Tap ☆ on any symbol.", bn: "আপনার ওয়াচলিস্ট খালি। যেকোনো শেয়ারে ☆ ট্যাপ করুন।" },
+  "profile.logout": { en: "Log out", bn: "লগ আউট" },
+  "profile.error": { en: "Something went wrong", bn: "কিছু ভুল হয়েছে" },
+  "profile.welcomeBack": { en: "Welcome back", bn: "আবার স্বাগতম" },
+  "profile.join": { en: "Join Bulls of Dhaka", bn: "Bulls of Dhaka-তে যোগ দিন" },
+  "profile.handle": { en: "handle", bn: "হ্যান্ডেল" },
+  "profile.name": { en: "full name", bn: "পুরো নাম" },
+  "profile.password": { en: "password (min 8 chars)", bn: "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)" },
+  "profile.createAccount": { en: "Create account", bn: "অ্যাকাউন্ট তৈরি করুন" },
+  "profile.toRegister": { en: "New here? Create an account", bn: "নতুন? অ্যাকাউন্ট তৈরি করুন" },
+  "profile.toLogin": { en: "Already have an account? Log in", bn: "অ্যাকাউন্ট আছে? লগ ইন করুন" },
 };
 
 interface I18n {
