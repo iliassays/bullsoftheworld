@@ -322,3 +322,29 @@ compares orderings on the same engine (`simulate(rank_fn=...)`).
 So the priority is no worse than what was tested in any distinguishable way, helps when it matters, and
 gives a defensible reason to pick one name over another. `simulate()` defaults to `rank_fn=None`
 (alphabetical), so every earlier result in this doc is unchanged.
+
+## 9. Rotation — should you swap a holding for a stronger new signal when full?
+
+The intuition: while you're fully invested, a better stock fires and you miss it. Test (`scripts/
+rotation_study.py`, engine `simulate(rotate=margin)`): when full, sell the weakest holding (lowest
+entry-conviction) to buy a newcomer whose conviction beats it by > margin.
+
+| mode | total | maxDD | win | rotations | OOS train | OOS test |
+|---|---|---|---|---|---|---|
+| hold to exit (baseline) | +67.7% | -13.4 | 55% | 0 | **+44.3%** | +15.0% |
+| rotate margin 0.05 (eager) | +68.5% | -11.9 | 57% | 11 | +36.5% | +22.2% |
+| rotate margin 0.10 | +62.9% | -11.9 | 57% | 9 | +32.0% | +22.2% |
+| rotate margin 0.20 (rare) | +60.8% | -13.4 | 55% | 8 | +32.3% | +20.4% |
+
+**Verdict — rotation is NOT a durable edge; don't add it.**
+- It triggers rarely: the book is full only ~8% of days (§ occupancy), so only 8-11 swaps happened in
+  2 years. Too few to move the needle.
+- Full-period effect is noise: eager rotation +0.8pp, wider margins clearly *worse*.
+- Out-of-sample is contradictory — rotation **hurts** in train (+36 vs +44) but **helps** in test
+  (+22 vs +15). A real effect is consistent; flip-flopping like this is the signature of noise driven
+  by a handful of lucky/unlucky swaps.
+- Only mild, non-robust positive: eager rotation trimmed drawdown (-11.9 vs -13.4).
+
+So the "miss a better stock" fear, while intuitive, costs ~nothing measurable — the situation is rare
+and the swaps are a coin-flip. Hold-to-exit is simpler and statistically just as good. `rotate`
+defaults to None, so the flagship is unchanged.

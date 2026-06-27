@@ -123,6 +123,7 @@ def simulate(
     signal_fn=None,
     trail=None,
     rank_fn=None,
+    rotate=None,
 ):
     """Run the event-driven sim with the given params. Returns a metrics dict (+ equity curve).
 
@@ -131,6 +132,9 @@ def simulate(
     instead of the fixed target — the initial `stop` still acts as the floor until profit builds.
     rank_fn(code, date) -> float: when more signals fire than there are free slots, fund the highest
     rank first. Default (None) keeps the alphabetical order, so existing results are unchanged.
+    rotate: if set (e.g. 0.10) and the book is full, sell the weakest held name to buy a new signal
+    whose rank_fn conviction exceeds it by more than this margin. Default None = hold to exit (never
+    swap), so existing results are unchanged. Requires rank_fn.
     """
     bar_map, sig = {}, {}
     for code, bars in by_code.items():
@@ -196,11 +200,32 @@ def simulate(
             else:
                 candidates.sort()
             for code in candidates:
-                if len(positions) >= max_pos:
-                    break
                 bar = bar_map[code].get(d)
                 if not bar or not bar.close:
                     continue
+                if len(positions) >= max_pos:
+                    # No free slot. With rotation on, swap out the weakest held name (lowest
+                    # entry-conviction) if this candidate is enough stronger; else stop (candidates
+                    # are rank-sorted, so nothing below beats the weakest either).
+                    if rotate is None or not rank_fn:
+                        break
+                    held = [(positions[c]["rank"], c) for c in positions if bar_map[c].get(d)]
+                    if not held:
+                        break
+                    weak_rank, weak = min(held, key=lambda x: x[0])
+                    if rank_fn(code, d) - weak_rank <= rotate:
+                        break
+                    wbar = bar_map[weak].get(d)
+                    cash += positions[weak]["shares"] * wbar.close * (1 - COST)
+                    rret = wbar.close / positions[weak]["entry"] - 1
+                    trades.append(rret)
+                    trade_log.append({
+                        "code": weak, "in_date": positions[weak]["entry_date"],
+                        "in_px": positions[weak]["entry"], "out_date": d,
+                        "out_px": round(wbar.close, 2), "ret": rret * 100,
+                        "held": positions[weak]["held"], "reason": "rotate",
+                    })
+                    del positions[weak]
                 equity = cash + sum(positions[c]["shares"] * last_px.get(c, 0) for c in positions)
                 alloc = min(equity / max_pos, cash / (1 + COST))
                 if alloc < equity / max_pos * 0.5:
@@ -211,6 +236,7 @@ def simulate(
                     "held": 0,
                     "entry_date": d,
                     "peak": bar.close,
+                    "rank": rank_fn(code, d) if rank_fn else 0,
                 }
                 cash -= alloc * (1 + COST)
                 last_px[code] = bar.close
