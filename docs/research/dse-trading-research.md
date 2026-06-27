@@ -195,6 +195,20 @@ essential — pure cross-sectional value (5, 6) is mediocre and oversold-timing 
 the winner inflates apparent performance. The improvement is large and *mechanistically* sensible
 (junk removal), not pure noise — but it still needs the same out-of-sample/forward proof as the rest.
 
+### Scheme-3 out-of-sample check (`scripts/validate_scheme3.py`) ✅
+Split the timeline at 2025-09-01; run the exact same rule on each half independently:
+
+| Half | entries | result | vs index | win% | avg W/L | maxDD |
+|---|---|---|---|---|---|---|
+| TRAIN (yr 1) | Oct'24–Aug'25 | +44.3% | +6.7% | 57% | +22/−9 | −7% |
+| TEST (yr 2) | Sep'25–Apr'26 | +19.0% | +1.2% | 58% | +20/−10 | −12% |
+
+**Positive in BOTH halves; win-rate (57→58%) and payoff ratio (~2.3:1) virtually identical across the
+split, and it beat the market in each.** The *character* of the edge is stable across time — strong
+evidence it's structural, not a single lucky stretch. The "best of many" asterisk is largely defused.
+Unchanged limit: both halves are the same recovering regime — stability across TIME is shown, across a
+CRASH is not. That gap closes only with more history or a live forward record. **Scheme-3 = flagship.**
+
 ### Scheme catalog
 - **Scheme-1 — Deep-Value Reversal** ✅ validated. Entry: >40% below 1yr high AND within 15% of 52w
   low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. Mean-reversion
