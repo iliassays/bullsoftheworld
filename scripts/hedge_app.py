@@ -16,6 +16,7 @@ import argparse
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from hedge_daily import scan
+from hedge_history import backtest, render_history
 
 app = FastAPI(title="Hedge")
 
@@ -44,7 +45,34 @@ th,td{text-align:left;padding:7px 6px;border-bottom:1px solid #232733}
 th{color:#8b909a;font-weight:500;font-size:11px;text-transform:uppercase}
 .foot{margin-top:22px;font-size:12px;color:#7a7f88;border-top:1px solid #232733;padding-top:12px}
 .empty{color:#8b909a;font-style:italic;padding:8px 0}
+nav{display:flex;gap:8px;margin:12px 0 4px}
+nav a{font-size:13px;color:#b6bbc4;text-decoration:none;padding:6px 14px;border:1px solid #232733;
+  border-radius:20px}
+nav a.on{background:#1f2a22;color:#3ddc84;border-color:#2a5a3f}
+.chart{width:100%;height:auto;margin:6px 0}
+.chart .grid{stroke:#2a2f3a;stroke-width:1}
+.chart .ax{fill:#6b7280;font-size:11px;text-anchor:middle}
+.cap{font-size:12px;color:#7a7f88;margin:4px 0 8px}
+.scroll{max-height:440px;overflow-y:auto;border:1px solid #232733;border-radius:10px}
+.scroll table{font-variant-numeric:tabular-nums}
+.scroll th{position:sticky;top:0;background:#171a21}
+.win{color:#3ddc84}.loss{color:#ff6b6b}
+.pill{font-size:11px;padding:1px 8px;border-radius:20px;background:#232733;color:#9aa0aa}
+.pill.win{background:#16321f;color:#3ddc84}.pill.loss{background:#3a1e1e;color:#ff6b6b}
 """
+
+
+def _shell(active: str, body: str) -> str:
+    def tab(href, label):
+        return f'<a href="{href}" class="{"on" if active == href else ""}">{label}</a>'
+
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Hedge</title>
+<style>{_CSS}</style></head><body>
+<h1>Hedge <span style="color:#3ddc84">·</span></h1>
+<nav>{tab("/", "Today's list")}{tab("/history", "Track record")}</nav>
+{body}
+</body></html>"""
 
 
 def _render(d: dict) -> str:
@@ -75,35 +103,32 @@ def _render(d: dict) -> str:
         or '<tr><td colspan="6" class="empty">Nothing set up right now.</td></tr>'
     )
 
-    return f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Hedge</title>
-<style>{_CSS}</style></head><body>
-<h1>Hedge <span style="color:#3ddc84">·</span></h1>
+    return f"""
 <div class="sub">Daily list · as of EOD {d["as_of"]} · delayed data · for your own use, not advice</div>
-
 <div class="tr">
   <div><div class="k">Backtest 2yr</div><div class="v pos">+{tr["total_2y"]}%</div></div>
   <div><div class="k">vs market</div><div class="v">+{tr["index_2y"]}%</div></div>
   <div><div class="k">win rate</div><div class="v">{tr["win"]}%</div></div>
   <div><div class="k">worst drop</div><div class="v neg">{tr["maxdd"]}%</div></div>
 </div>
-
 <h2>BUY signals ({len(d["fired"])})</h2>
 {buys}
-
 <h2>Watchlist — set up, waiting for the turn ({len(d["watch"])})</h2>
 <table><tr><th>code</th><th>price</th><th>P/E</th><th>ROE</th><th>off high</th><th>sector</th></tr>
 {watch}</table>
-
 <div class="foot">Hold ~2 weeks to 3 months · exit at target (+25%), stop (-10%), or 3 months ·
 risk ~1-2% of capital per name, ~10 positions. Single-regime backtest, EOD data - trade small,
-the stop is mandatory.</div>
-</body></html>"""
+the stop is mandatory.</div>"""
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(days: int = 10):  # ~2 weeks of recent fires for the morning view
-    return _render(await scan(days))
+    return _shell("/", _render(await scan(days)))
+
+
+@app.get("/history", response_class=HTMLResponse)
+async def history():
+    return _shell("/history", render_history(await backtest()))
 
 
 @app.get("/api/signals")
