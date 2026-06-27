@@ -185,22 +185,53 @@ _SCREENS: list[ScreenSpec] = [
         T.dividend_yield,
     ),
     ScreenSpec(
+        # Cross-sectional rank: cheapest P/E relative to its sector (boundary = sector median, 1.0x),
+        # not an arbitrary 0.8x cutoff.
         "value_vs_sector",
         "Cheap vs sector",
-        "P/E below the sector median",
+        "P/E below the sector median, cheapest first",
         "x sector",
-        and_(T.pe_vs_sector.isnot(None), T.pe_vs_sector < 0.8, T.pe_ratio > 0),
+        and_(T.pe_vs_sector.isnot(None), T.pe_vs_sector < 1.0, T.pe_ratio > 0),
         T.pe_vs_sector.asc(),
         T.pe_vs_sector,
     ),
     ScreenSpec(
+        # Cross-sectional rank: highest YoY EPS growth (boundary = growing, >0), not a fixed 15%.
         "eps_growth",
         "Earnings growth",
-        "EPS up year-on-year",
+        "EPS up year-on-year, fastest first",
         "% YoY",
-        T.eps_growth_yoy >= 15,
+        T.eps_growth_yoy > 0,
         T.eps_growth_yoy.desc(),
         T.eps_growth_yoy,
+    ),
+    ScreenSpec(
+        # Volatility-scaled 12-1 momentum: rank by trend strength per unit of risk; show the return.
+        "momentum_12_1",
+        "Strongest trend (12-month)",
+        "Best 12-month trend, skipping the last month, adjusted for volatility",
+        "% 12-1",
+        and_(T.mom_12_1 > 0, T.volatility.isnot(None), T.volatility > 0),
+        (T.mom_12_1 / T.volatility).desc(),
+        T.mom_12_1,
+    ),
+    ScreenSpec(
+        "quality_roe",
+        "High return on equity",
+        "Most profit per taka of shareholder capital (ROE)",
+        "ROE",
+        and_(T.roe.isnot(None), T.roe > 0, T.roe <= 60),
+        T.roe.desc(),
+        T.roe,
+    ),
+    ScreenSpec(
+        "low_volatility",
+        "Steady (low volatility)",
+        "Smallest day-to-day price swings over the past year",
+        "volatility",
+        and_(T.volatility.isnot(None), T.volatility > 0),
+        T.volatility.asc(),
+        T.volatility,
     ),
     ScreenSpec(
         "smart_money_buying",
@@ -229,6 +260,9 @@ _GROUP: dict[str, str] = {
     "eps_growth": "value",
     "accumulation": "value",
     "smart_money_buying": "value",
+    "momentum_12_1": "movers",
+    "quality_roe": "value",
+    "low_volatility": "value",
 }
 
 

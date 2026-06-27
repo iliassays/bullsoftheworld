@@ -12,7 +12,34 @@ Conventions:
 
 from __future__ import annotations
 
+import math
+import statistics
 from collections.abc import Sequence
+
+_TRADING_DAYS = 252  # ~1 year of sessions
+
+
+def momentum_12_1(closes: Sequence[float], *, lookback: int = 252, skip: int = 21) -> float | None:
+    """12-minus-1-month price momentum (%): return from `lookback` days ago to `skip` days ago.
+
+    Skipping the most recent ~month deliberately excludes short-term reversal — last month's
+    winners tend to mean-revert, so quant momentum is measured 12m..1m, not 12m..today.
+    """
+    if len(closes) < lookback + 1:
+        return None
+    old, recent = closes[-1 - lookback], closes[-1 - skip]
+    if not old:
+        return None
+    return (recent / old - 1) * 100
+
+
+def realized_volatility(closes: Sequence[float], *, period: int = 252) -> float | None:
+    """Annualised volatility (%) of daily returns over the last `period` sessions."""
+    window = closes[-(period + 1) :] if len(closes) > period + 1 else closes
+    rets = [window[i] / window[i - 1] - 1 for i in range(1, len(window)) if window[i - 1]]
+    if len(rets) < 2:
+        return None
+    return statistics.pstdev(rets) * math.sqrt(_TRADING_DAYS) * 100
 
 
 def sma(values: Sequence[float], period: int) -> float | None:

@@ -28,7 +28,7 @@ from bulls.core.models import (
     TickerAnalytics,
 )
 
-_LOOKBACK = 260  # enough for the 200-day SMA
+_LOOKBACK = 300  # enough for the 200-day SMA and 12-1 month momentum (needs ~253 bars)
 _FIELDS = (
     "last_close",
     "sma_50",
@@ -37,6 +37,8 @@ _FIELDS = (
     "above_sma_200",
     "rsi_14",
     "atr_14",
+    "mom_12_1",
+    "volatility",
     "nearest_support",
     "nearest_resistance",
     "week52_high",
@@ -53,6 +55,7 @@ _VALUATION_FIELDS = (
     "pe_ratio",
     "pb_ratio",
     "dividend_yield",
+    "roe",
 )
 
 

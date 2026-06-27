@@ -41,6 +41,12 @@ export const SCREEN_HELP: Record<string, string> = {
     "Institutions and foreign investors raised their combined stake at the latest monthly disclosure. e.g. +5 pp means 'big money' ownership went up 5 percentage points. They have more to analyse with — but it's history, not a forecast.",
   most_active:
     "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
+  momentum_12_1:
+    "12-month price trend, skipping the most recent month (which tends to reverse), then divided by volatility so a steady climb ranks above a wild one. e.g. +80% over the year. The quant 'momentum' factor — descriptive history, not a forecast.",
+  quality_roe:
+    "Return on equity = profit ÷ shareholder capital (EPS ÷ NAV per share). Higher = more profit per taka of book value. e.g. 25% ≈ ৳25 earned a year per ৳100 of net worth. A quality marker, not a buy signal.",
+  low_volatility:
+    "Annualised size of daily price swings over the past year. Lower = steadier. e.g. 15% is calm, 60% is wild. Steadier doesn't mean higher returns — just a smoother ride.",
 };
 
 // Format a screen's metric for display, based on its value_label.
@@ -55,6 +61,7 @@ export function fmtValue(label: string, v: number): string {
   if (label === "turnover")
     return `৳${v.toLocaleString(undefined, { maximumFractionDigits: v >= 10 ? 0 : 1 })} Cr`;
   if (label === "pp") return `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`;
+  if (label === "ROE" || label === "volatility") return `${v.toFixed(1)}%`;
   if (label.includes("%")) return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   return v.toFixed(2);
 }
@@ -89,6 +96,9 @@ export function metricChip(label: string, v: number): Chip | null {
   if (label.includes("sector")) return { word: "Cheaper than peers", tone: "neutral" };
   if (label === "% YoY") return { word: v >= 50 ? "Fast growth" : "Growing", tone: "up" };
   if (label === "pp") return { word: v >= 3 ? "Accumulating" : "Buying", tone: "up" };
+  if (label === "% 12-1") return { word: "Strong uptrend", tone: "up" };
+  if (label === "ROE") return { word: v >= 20 ? "Highly profitable" : "Profitable", tone: "neutral" };
+  if (label === "volatility") return { word: v < 25 ? "Very steady" : "Steady", tone: "neutral" };
   return null;
 }
 
@@ -104,6 +114,9 @@ export function metricHeader(label: string): string {
   if (label === "posts") return "Posts";
   if (label === "turnover") return "Turnover";
   if (label === "pp") return "Big money";
+  if (label === "% 12-1") return "Trend";
+  if (label === "ROE") return "ROE";
+  if (label === "volatility") return "Volatility";
   if (label.includes("%")) return "Change";
   return label;
 }

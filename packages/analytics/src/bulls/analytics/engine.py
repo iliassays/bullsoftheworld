@@ -21,6 +21,8 @@ from bulls.analytics.indicators import (
     atr,
     chaikin_money_flow,
     ema,
+    momentum_12_1,
+    realized_volatility,
     rsi,
     sma,
     swing_high_indices,
@@ -69,6 +71,8 @@ class AnalyticsResult(BaseModel):
     # Momentum / volatility
     rsi_14: float | None = None
     atr_14: float | None = None
+    mom_12_1: float | None = None  # 12-minus-1-month price momentum, %
+    volatility: float | None = None  # annualised volatility of daily returns, %
 
     # Structure
     recent_swing_high: Level | None = None
@@ -137,6 +141,8 @@ def compute(
         above_sma_200=None if sma_200 is None else last_close > sma_200,
         rsi_14=_r(rsi(closes, 14)),
         atr_14=_r(atr(highs, lows, closes, 14)),
+        mom_12_1=_r(momentum_12_1(closes)),
+        volatility=_r(realized_volatility(closes)),
         recent_swing_high=(
             Level(value=_r(highs[sh_idx[-1]]), date=rows[sh_idx[-1]].date) if sh_idx else None
         ),

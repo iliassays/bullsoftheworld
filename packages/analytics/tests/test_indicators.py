@@ -6,11 +6,36 @@ from bulls.analytics.indicators import (
     atr,
     chaikin_money_flow,
     ema,
+    momentum_12_1,
+    realized_volatility,
     rsi,
     sma,
     swing_high_indices,
     swing_low_indices,
 )
+
+
+def test_momentum_12_1_skips_recent_month():
+    # 254 closes: 12m ago = closes[-253] = 100, 1m ago = closes[-22]. Set those explicitly.
+    closes = [1.0] * 254
+    closes[-253] = 100.0  # price 12 months ago
+    closes[-22] = 150.0  # price 1 month ago
+    # 12-1 return = 150/100 - 1 = 50%, ignoring the last 21 (recent-month) bars entirely.
+    assert momentum_12_1(closes) == 50.0
+
+
+def test_momentum_none_without_a_year():
+    assert momentum_12_1([1.0] * 200) is None
+
+
+def test_realized_volatility_zero_for_flat_series():
+    assert realized_volatility([10.0] * 300) == 0.0
+
+
+def test_realized_volatility_positive_when_moving():
+    closes = [10.0 + (i % 2) for i in range(300)]  # oscillates -> non-zero vol
+    v = realized_volatility(closes)
+    assert v is not None and v > 0
 
 
 def test_sma_basic():

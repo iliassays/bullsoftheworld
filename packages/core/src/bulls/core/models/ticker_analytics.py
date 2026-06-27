@@ -33,6 +33,8 @@ class TickerAnalytics(Base):
     # Momentum / volatility
     rsi_14: Mapped[float | None] = mapped_column(Float)
     atr_14: Mapped[float | None] = mapped_column(Float)
+    mom_12_1: Mapped[float | None] = mapped_column(Float)  # 12-1 month price momentum, %
+    volatility: Mapped[float | None] = mapped_column(Float)  # annualised daily-return vol, %
 
     # Structure
     nearest_support: Mapped[float | None] = mapped_column(Float)
@@ -53,6 +55,7 @@ class TickerAnalytics(Base):
     pe_ratio: Mapped[float | None] = mapped_column(Float)  # None when EPS <= 0
     pb_ratio: Mapped[float | None] = mapped_column(Float)
     dividend_yield: Mapped[float | None] = mapped_column(Float)  # %
+    roe: Mapped[float | None] = mapped_column(Float)  # % — return on equity (EPS / NAV per share)
     pe_vs_sector: Mapped[float | None] = mapped_column(
         Float
     )  # pe_ratio / sector median (<1 = cheap)

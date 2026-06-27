@@ -87,6 +87,11 @@ export function ScreenExplore() {
           ))}
         </div>
       )}
+      {isMover && period === "1m" && (
+        <p className="text-[10px] text-muted px-1 -mt-1">
+          1-month moves often reverse. For a lasting trend, see “Strongest trend (12-month)”.
+        </p>
+      )}
 
       {screen === null ? (
         <Spinner />
