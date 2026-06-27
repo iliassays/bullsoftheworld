@@ -20,7 +20,7 @@ export function Shell() {
           <div className="leading-tight">
             <div className="font-bold text-base">Bulls of Dhaka</div>
             <div lang="bn" className="text-[11px] text-accent font-semibold">
-              ঢাকার ষাঁড়
+              তথ্যে চলুন, গুজবে নয়
             </div>
           </div>
           <div className="ml-auto text-[10px] text-muted border border-border px-2 py-1 rounded-full">
