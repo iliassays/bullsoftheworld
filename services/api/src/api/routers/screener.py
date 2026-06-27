@@ -19,6 +19,7 @@ from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.core.models import (
     Cashtag,
     DailyBar,
+    MarketSummary,
     Post,
     QuoteSnapshot,
     Symbol,
@@ -230,6 +231,7 @@ _GROUP: dict[str, str] = {
     "top_gainers": "movers",
     "top_losers": "movers",
     "most_active": "movers",
+    "beating_market": "movers",
     "near_52w_high": "movers",
     "near_52w_low": "movers",
     "unusual_volume": "movers",
@@ -647,6 +649,8 @@ async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut 
         return await _momentum(session, market, limit=limit)
     if key == "unusual_volume":
         return await _unusual_volume(session, market, limit=limit)
+    if key == "beating_market":
+        return await _beating_market(session, market, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, limit=limit)
     if key == "most_discussed":
@@ -667,6 +671,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _most_active(session, tenant.market))
     out.append(await _momentum(session, tenant.market))
     out.append(await _unusual_volume(session, tenant.market))
+    out.append(await _beating_market(session, tenant.market))
     out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
@@ -763,6 +768,69 @@ async def _movers_period(
         group="movers",
         items=[ScreenItem(code=c, last_close=p, value=round(chg, 2)) for c, p, chg in rows],
     )
+
+
+_RS_DAYS = 22  # relative-strength lookback (~1 month of sessions)
+
+
+async def _index_return(session, market: str, days: int) -> float | None:
+    """DSEX index % change over the trailing `days` sessions."""
+    levels = (
+        await session.scalars(
+            select(MarketSummary.dsex)
+            .where(MarketSummary.market == market, MarketSummary.dsex.isnot(None))
+            .order_by(MarketSummary.date.desc())
+            .limit(days + 1)
+        )
+    ).all()
+    if len(levels) < days + 1 or not levels[days]:
+        return None
+    return (levels[0] - levels[days]) / levels[days] * 100
+
+
+async def _beating_market(session, market: str, *, limit: int = PER_SCREEN) -> ScreenOut:
+    """Stocks outperforming the DSEX over ~1 month — relative strength, the institutional tell for
+    genuine strength (up while, or more than, the market). Value = excess return vs the index."""
+    idx = await _index_return(session, market, _RS_DAYS)
+    desc_idx = f"{idx:+.1f}%" if idx is not None else "n/a"
+    base = ScreenOut(
+        key="beating_market",
+        title="Beating the market",
+        description=f"Outperforming the DSEX (index {desc_idx} over ~1 month)",
+        value_label="vs market",
+        group="movers",
+        items=[],
+    )
+    if idx is None:
+        return base
+    rn = (
+        func.row_number()
+        .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+        .label("rn")
+    )
+    ranked = (
+        select(DailyBar.code, DailyBar.close, rn)
+        .where(DailyBar.market == market, DailyBar.code.in_(_investable(market)))
+        .subquery()
+    )
+    cur = select(ranked.c.code, ranked.c.close.label("cur")).where(ranked.c.rn == 1).subquery()
+    old = (
+        select(ranked.c.code, ranked.c.close.label("old"))
+        .where(ranked.c.rn == _RS_DAYS + 1)
+        .subquery()
+    )
+    ret = (cur.c.cur - old.c.old) / old.c.old * 100
+    rows = (
+        await session.execute(
+            select(cur.c.code, cur.c.cur, ret.label("ret"))
+            .join(old, cur.c.code == old.c.code)
+            .where(old.c.old > 0, ret > idx)
+            .order_by(ret.desc())
+            .limit(limit)
+        )
+    ).all()
+    base.items = [ScreenItem(code=c, last_close=p, value=round(r - idx, 2)) for c, p, r in rows]
+    return base
 
 
 @router.get("/screens/{key}")

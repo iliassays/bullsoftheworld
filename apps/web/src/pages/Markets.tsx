@@ -44,6 +44,8 @@ export const SCREEN_HELP: Record<string, string> = {
     "Institutions and foreign investors raised their combined stake at the latest monthly disclosure. e.g. +5 pp means 'big money' ownership went up 5 percentage points. They have more to analyse with — but it's history, not a forecast.",
   most_active:
     "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
+  beating_market:
+    "Stocks rising more than the whole market (the DSEX index) over the past month. 'Relative strength' — going up while, or faster than, the market is the institutional tell for genuine strength. The value is how many % it beat the index by.",
   momentum_12_1:
     "12-month price trend, skipping the most recent month (which tends to reverse), then divided by volatility so a steady climb ranks above a wild one. e.g. +80% over the year. The quant 'momentum' factor — descriptive history, not a forecast.",
   quality_roe:
@@ -66,6 +68,7 @@ export function fmtValue(label: string, v: number): string {
   if (label === "pp") return `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`;
   if (label === "ROE" || label === "volatility") return `${v.toFixed(1)}%`;
   if (label === "momentum") return `${v >= 0 ? "+" : ""}${v.toFixed(0)}%`;
+  if (label === "vs market") return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   if (label.includes("%")) return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   return v.toFixed(2);
 }
@@ -110,6 +113,7 @@ export function metricChip(label: string, v: number): Chip | null {
   if (label === "pp") return { word: v >= 3 ? "Accumulating" : "Buying", tone: "up" };
   if (label === "ROE") return { word: v >= 20 ? "Highly profitable" : "Profitable", tone: "neutral" };
   if (label === "volatility") return { word: v < 25 ? "Very steady" : "Steady", tone: "neutral" };
+  if (label === "vs market") return { word: "Outperforming", tone: "up" };
   return null;
 }
 
@@ -126,6 +130,7 @@ export function metricHeader(label: string): string {
   if (label === "turnover") return "Turnover";
   if (label === "pp") return "Big money";
   if (label === "momentum") return "Trend";
+  if (label === "vs market") return "vs DSEX";
   if (label === "ROE") return "ROE";
   if (label === "volatility") return "Volatility";
   if (label.includes("%")) return "Change";
@@ -219,7 +224,14 @@ const LENSES: { id: string; label: string; blurb: string; keys: string[] }[] = [
     id: "momentum",
     label: "📈 Momentum",
     blurb: "Stocks moving and trending — for traders who want strength.",
-    keys: ["momentum_12_1", "top_gainers", "most_active", "near_52w_high", "unusual_volume"],
+    keys: [
+      "momentum_12_1",
+      "beating_market",
+      "top_gainers",
+      "most_active",
+      "near_52w_high",
+      "unusual_volume",
+    ],
   },
   {
     id: "value",
