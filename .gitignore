@@ -24,3 +24,6 @@ data/
 .DS_Store
 .idea/
 .vscode/
+
+# Claude Code session artifacts
+.claude/projects/
