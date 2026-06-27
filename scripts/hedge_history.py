@@ -62,22 +62,12 @@ def _svg(curve, index) -> str:
 
 
 def render_history(d: dict) -> str:
+    """Portfolio growth section: headline stats + the equity curve (the persisted ledger sits below)."""
     s = d["stats"]
-    final = s["final"]
-    rows = ""
-    for i, t in enumerate(sorted(d["trades"], key=lambda x: x["in_date"], reverse=True), 1):
-        cls = "win" if t["ret"] > 0 else "loss"
-        rows += (
-            f"<tr><td>{i}</td><td><b>{t['code']}</b></td>"
-            f"<td>{t['in_date']}</td><td>{t['in_px']:.2f}</td>"
-            f"<td>{t['out_date']}</td><td>{t['out_px']:.2f}</td>"
-            f"<td class='{cls}'>{t['ret']:+.1f}%</td><td>{t['held']}d</td>"
-            f"<td><span class='pill {cls}'>{t['reason']}</span></td></tr>"
-        )
     return f"""
-<h2>Track record &mdash; every trade since {d["curve"][0][0]}</h2>
+<h2>Portfolio growth &mdash; 1,000 since {d["curve"][0][0]}</h2>
 <div class="tr">
-  <div><div class="k">1,000 became</div><div class="v pos">{final:,.0f}</div></div>
+  <div><div class="k">1,000 became</div><div class="v pos">{s["final"]:,.0f}</div></div>
   <div><div class="k">total / CAGR</div><div class="v">+{s["total"]:.0f}% / {s["cagr"]:.0f}%</div></div>
   <div><div class="k">vs market</div><div class="v">+8%</div></div>
   <div><div class="k">win rate</div><div class="v">{s["winrate"]:.0f}%</div></div>
@@ -85,10 +75,5 @@ def render_history(d: dict) -> str:
   <div><div class="k">trades</div><div class="v">{s["n_trades"]}</div></div>
 </div>
 {_svg(d["curve"], d["index"])}
-<div class="cap">Green = the strategy growing 1,000 · grey dashed = the same 1,000 in the market index.</div>
-
-<h2>Trade ledger ({s["n_trades"]})</h2>
-<div class="scroll"><table>
-<tr><th>#</th><th>code</th><th>bought</th><th>buy</th><th>sold</th><th>sell</th><th>result</th><th>held</th><th>exit</th></tr>
-{rows}
-</table></div>"""
+<div class="cap">Green = the strategy growing 1,000 · grey dashed = the same 1,000 in the market index.
+A 10-position portfolio backtest; the full signal ledger is below.</div>"""

@@ -16,6 +16,7 @@ import argparse
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from hedge_daily import scan
+from hedge_forward import read_log, render_ledger, sync
 from hedge_history import backtest, render_history
 
 app = FastAPI(title="Hedge")
@@ -128,7 +129,9 @@ async def home(days: int = 10):  # ~2 weeks of recent fires for the morning view
 
 @app.get("/history", response_class=HTMLResponse)
 async def history():
-    return _shell("/history", render_history(await backtest()))
+    await sync()  # persist + re-score the ledger, then read it back
+    body = render_history(await backtest()) + render_ledger(await read_log())
+    return _shell("/history", body)
 
 
 @app.get("/api/signals")
