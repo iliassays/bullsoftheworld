@@ -43,6 +43,16 @@ class Fundamentals(BaseModel):
     avg_volume_20: float | None = None
 
 
+class OwnershipPoint(BaseModel):
+    """One disclosed shareholding snapshot — for the per-category trend over time."""
+
+    as_of: str
+    sponsor: float | None = None
+    institute: float | None = None
+    foreign: float | None = None
+    public: float | None = None
+
+
 class Ownership(BaseModel):
     sponsor_pct: float | None = None
     institute_pct: float | None = None
@@ -51,6 +61,7 @@ class Ownership(BaseModel):
     institute_delta: float | None = None
     foreign_delta: float | None = None
     as_of: str | None = None
+    history: list[OwnershipPoint] = []  # all disclosures, oldest→newest, for the trend view
 
 
 class EarningsRow(BaseModel):
@@ -82,12 +93,24 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
 
     ta = await session.get(TickerAnalytics, (tenant.market, code))
     prof = await session.get(CompanyProfile, (tenant.market, code))
-    last_sh = await session.scalar(
-        select(ShareholdingSnapshot.as_of_date)
-        .where(ShareholdingSnapshot.market == tenant.market, ShareholdingSnapshot.code == code)
-        .order_by(ShareholdingSnapshot.as_of_date.desc())
-        .limit(1)
+    snaps = list(
+        await session.scalars(
+            select(ShareholdingSnapshot)
+            .where(ShareholdingSnapshot.market == tenant.market, ShareholdingSnapshot.code == code)
+            .order_by(ShareholdingSnapshot.as_of_date.asc())  # oldest→newest, for the trend
+        )
     )
+    sh_history = [
+        OwnershipPoint(
+            as_of=str(s.as_of_date),
+            sponsor=s.sponsor_director,
+            institute=s.institute,
+            foreign=s.foreign_pct,
+            public=s.public,
+        )
+        for s in snaps
+    ]
+    last_sh = snaps[-1].as_of_date if snaps else None
     earnings = list(
         await session.scalars(
             select(AnnualFinancial)
@@ -135,6 +158,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
             institute_delta=ta.institute_delta if ta else None,
             foreign_delta=ta.foreign_delta if ta else None,
             as_of=str(last_sh) if last_sh else None,
+            history=sh_history,
         ),
         earnings=[
             EarningsRow(

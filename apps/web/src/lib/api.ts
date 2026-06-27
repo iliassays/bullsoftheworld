@@ -220,6 +220,13 @@ export interface Company {
     institute_delta: number | null;
     foreign_delta: number | null;
     as_of: string | null;
+    history: {
+      as_of: string;
+      sponsor: number | null;
+      institute: number | null;
+      foreign: number | null;
+      public: number | null;
+    }[];
   };
   earnings: {
     fiscal_year: number;
