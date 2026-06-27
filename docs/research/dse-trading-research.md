@@ -228,6 +228,26 @@ names), which monthly rebalancing can't capture. The low-vol anomaly does NOT sh
 tested ~14 schemes; further hunting risks overfitting for diminishing gains. **Conclusion: Scheme-3 is
 the edge; the productive path is now combine + forward-track, not keep mining.**
 
+### Low-cap-only hunt (`scripts/lowcap_schemes.py`)
+
+Restricted to the bottom 40% by market cap (<৳1,788mn, 149 liquid names), tested entry rules:
+
+| Low-cap scheme | total | maxDD | win% | note |
+|---|---|---|---|---|
+| **quality reversal** | +44.4% | **−6.0%** | **65%** | winner — quality filter saves it |
+| deep-value reversal (no quality filter) | +42.6% | −26.7% | 44% | same return, 4× the drawdown (junk) |
+| near-low reclaim | +11.3% | −27% | 39% | |
+| vol-surge off low | +9.9% | −32% | 42% | |
+| oversold bounce | +4.1% | −29% | 39% | |
+| volume breakout (momentum/pump) | **−23.5%** | **−44%** | 28% | chasing low-cap pumps is ruinous |
+
+**Finding:** a low-cap scheme works — but it's the *same recipe* (Quality Reversal), and the quality
+filter matters MORE here: it cuts drawdown from −27% (pure price) to −6% at the same return. Pure
+momentum/pump-chasing in low-caps is a disaster (−44% DD). OOS check (split 2025-09): TRAIN +21.7% /
+TEST +17.1%, both beat index, win 59%→69% — holds up. **Low-cap quality-reversal has the BEST risk
+profile of anything tested (−6% DD, 65% win)** — but the smallest sample (34 trades) and the *least*
+realistic fills (small-cap spreads/manipulation flatter the backtest most). A real lead; forward-test small.
+
 ### Scheme catalog
 - **Scheme-1 — Deep-Value Reversal** ✅ validated. Entry: >40% below 1yr high AND within 15% of 52w
   low AND breaks 5-day high. Exit: stop −10% / target +25% / time 63d. ~2wk–2mo hold. Mean-reversion
