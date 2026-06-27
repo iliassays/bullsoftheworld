@@ -315,7 +315,11 @@ const STRINGS: Record<string, Entry> = {
   "profile.error": { en: "Something went wrong", bn: "কিছু ভুল হয়েছে" },
   "profile.welcomeBack": { en: "Welcome back", bn: "আবার স্বাগতম" },
   "profile.join": { en: "Join Bulls of Dhaka", bn: "Bulls of Dhaka-তে যোগ দিন" },
-  "profile.handle": { en: "handle", bn: "হ্যান্ডেল" },
+  "profile.handle": { en: "username — e.g. rahim_dhaka", bn: "ইউজারনেম — যেমন rahim_dhaka" },
+  "profile.handleHint": {
+    en: "Your public @name. Letters, numbers and _ only — no spaces.",
+    bn: "আপনার পাবলিক @নাম। শুধু অক্ষর, সংখ্যা ও _ — কোনো স্পেস নয়।",
+  },
   "profile.name": { en: "full name", bn: "পুরো নাম" },
   "profile.password": { en: "password (min 8 chars)", bn: "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)" },
   "profile.createAccount": { en: "Create account", bn: "অ্যাকাউন্ট তৈরি করুন" },

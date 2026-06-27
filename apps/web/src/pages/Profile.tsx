@@ -64,6 +64,9 @@ export function Profile() {
         onChange={(e) => setHandle(e.target.value)}
       />
       {mode === "register" && (
+        <p className="text-[11px] text-muted -mt-1 px-1">{t("profile.handleHint")}</p>
+      )}
+      {mode === "register" && (
         <>
           <input
             className={field}
