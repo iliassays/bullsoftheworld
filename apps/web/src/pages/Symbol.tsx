@@ -18,6 +18,7 @@ import {
   NewsPanel,
   OwnershipPanel,
 } from "../components/CompanyPanels";
+import { BeforeYouTrade } from "../components/BeforeYouTrade";
 import { DigestPanel } from "../components/DigestPanel";
 import { KeyLevels } from "../components/KeyLevels";
 import { PlainReadCard } from "../components/PlainReadCard";
@@ -230,6 +231,7 @@ export function SymbolPage() {
           <CandleChart code={sym} />
           <Technicals code={sym} />
           <KeyLevels code={sym} />
+          <BeforeYouTrade />
         </>
       )}
 

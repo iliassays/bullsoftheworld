@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, type Screen, type ScreenItem, type ScreensResponse } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
+import { SCREEN_LESSON } from "../lib/lessons";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
 export const SCREEN_HELP: Record<string, string> = {
@@ -230,7 +231,7 @@ function ScreenCard({ s }: { s: Screen }) {
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-1.5">
         <div className="font-semibold text-sm text-accent">{s.title}</div>
-        <InfoTip text={SCREEN_HELP[s.key] ?? s.description} />
+        <InfoTip text={SCREEN_HELP[s.key] ?? s.description} lessonId={SCREEN_LESSON[s.key]} />
       </div>
       <div className="text-[11px] text-muted">{s.description}</div>
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">

@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { LearnSheet } from "./LearnSheet";
 
 // A small tap-to-toggle "(i)" popover for explaining a widget's metric in plain language.
 // Tap (not hover) so it works on touch/PWA; closes on outside tap. Resets header text styling
-// (uppercase/tracking) so the explanation reads as normal prose.
-export function InfoTip({ text }: { text: string }) {
+// (uppercase/tracking) so the explanation reads as normal prose. With a lessonId, the popover also
+// offers "Learn how to use it →", opening a worked-example lesson sheet.
+export function InfoTip({ text, lessonId }: { text: string; lessonId?: string }) {
   const [open, setOpen] = useState(false);
+  const [learn, setLearn] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -33,8 +36,23 @@ export function InfoTip({ text }: { text: string }) {
       {open && (
         <span className="absolute left-0 top-6 z-30 w-60 rounded-lg border border-border bg-card p-2.5 text-[11px] font-normal normal-case tracking-normal leading-snug text-fg shadow-lg">
           {text}
+          {lessonId && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setOpen(false);
+                setLearn(true);
+              }}
+              className="block mt-2 text-accent font-semibold"
+            >
+              Learn how to use it →
+            </button>
+          )}
         </span>
       )}
+      {learn && lessonId && <LearnSheet lessonId={lessonId} onClose={() => setLearn(false)} />}
     </span>
   );
 }
