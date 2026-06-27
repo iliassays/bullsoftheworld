@@ -217,6 +217,7 @@ _SCREENS: list[ScreenSpec] = [
 _GROUP: dict[str, str] = {
     "top_gainers": "movers",
     "top_losers": "movers",
+    "most_active": "movers",
     "near_52w_high": "movers",
     "near_52w_low": "movers",
     "unusual_volume": "movers",
@@ -273,6 +274,28 @@ async def _movers(session, market: str, *, gainers: bool, limit: int = PER_SCREE
         value_label="% today",
         group="movers",
         items=[ScreenItem(code=c, last_close=p, value=round(chg, 2)) for c, p, chg in rows],
+    )
+
+
+async def _most_active(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+    """Most heavily traded by value today — DSE's classic 'top turnover' board. Surfaces where the
+    money actually is, including the cheap, heavily-churned names retail follows."""
+    turnover = QuoteSnapshot.volume * QuoteSnapshot.ltp
+    rows = (
+        await session.execute(
+            select(QuoteSnapshot.code, QuoteSnapshot.ltp, turnover.label("t"))
+            .where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(_investable(market)))
+            .order_by(turnover.desc())
+            .limit(limit)
+        )
+    ).all()
+    return ScreenOut(
+        key="most_active",
+        title="Most active today",
+        description="Most heavily traded by value today",
+        value_label="turnover",
+        group="movers",
+        items=[ScreenItem(code=c, last_close=p, value=round(t / 1e7, 2)) for c, p, t in rows],
     )
 
 
@@ -464,6 +487,8 @@ async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut 
     """Build a single screen by key (used by the detail/explore page)."""
     if key in ("top_gainers", "top_losers"):
         return await _movers(session, market, gainers=key == "top_gainers", limit=limit)
+    if key == "most_active":
+        return await _most_active(session, market, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, limit=limit)
     if key == "most_discussed":
@@ -481,6 +506,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     ]
     out.append(await _movers(session, tenant.market, gainers=True))
     out.append(await _movers(session, tenant.market, gainers=False))
+    out.append(await _most_active(session, tenant.market))
     out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
