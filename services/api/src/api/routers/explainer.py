@@ -21,7 +21,9 @@ from bulls.core.models import DailyBar, Symbol
 
 router = APIRouter(tags=["explainer"])
 
-CACHE_TTL = 3600  # technicals change once a day (EOD) — cache an hour
+CACHE_TTL = 86400  # technicals change once a day (EOD); the key includes as_of_date, so a 24h
+# TTL means each ticker is generated at most once per data update and then served from cache to
+# everyone — keeps the per-ticker LLM cost flat regardless of how many users view it.
 _LOOKBACK = 260
 
 
