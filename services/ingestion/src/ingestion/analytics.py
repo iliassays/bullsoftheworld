@@ -37,6 +37,8 @@ _FIELDS = (
     "above_sma_200",
     "rsi_14",
     "atr_14",
+    "mom_3_1",
+    "mom_6_1",
     "mom_12_1",
     "volatility",
     "nearest_support",

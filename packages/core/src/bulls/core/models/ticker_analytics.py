@@ -33,6 +33,8 @@ class TickerAnalytics(Base):
     # Momentum / volatility
     rsi_14: Mapped[float | None] = mapped_column(Float)
     atr_14: Mapped[float | None] = mapped_column(Float)
+    mom_3_1: Mapped[float | None] = mapped_column(Float)  # 3-1 month price momentum, %
+    mom_6_1: Mapped[float | None] = mapped_column(Float)  # 6-1 month price momentum, %
     mom_12_1: Mapped[float | None] = mapped_column(Float)  # 12-1 month price momentum, %
     volatility: Mapped[float | None] = mapped_column(Float)  # annualised daily-return vol, %
 

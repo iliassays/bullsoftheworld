@@ -150,6 +150,7 @@ export interface ScreenItem {
   last_close: number;
   value: number;
   change_1d: number | null; // today's % move; null for movers (their value is already a change)
+  note: string | null; // optional per-row qualifier (momentum: steady / volatile / possible pump)
 }
 export interface Screen {
   key: string;
@@ -286,8 +287,10 @@ export const api = {
     ),
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
-  screen: (key: string, limit = 50, period?: string) =>
-    request<Screen>(`/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}`),
+  screen: (key: string, limit = 50, period?: string, window?: string) =>
+    request<Screen>(
+      `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}`,
+    ),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
 
   bars: (code: string, limit = 180) =>

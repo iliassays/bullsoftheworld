@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import ColumnElement, and_, func, select
+from sqlalchemy import ColumnElement, and_, case, func, or_, select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
@@ -206,16 +206,6 @@ _SCREENS: list[ScreenSpec] = [
         T.eps_growth_yoy,
     ),
     ScreenSpec(
-        # Volatility-scaled 12-1 momentum: rank by trend strength per unit of risk; show the return.
-        "momentum_12_1",
-        "Strongest trend (12-month)",
-        "Best 12-month trend, skipping the last month, adjusted for volatility",
-        "% 12-1",
-        and_(T.mom_12_1 > 0, T.volatility.isnot(None), T.volatility > 0),
-        (T.mom_12_1 / T.volatility).desc(),
-        T.mom_12_1,
-    ),
-    ScreenSpec(
         "quality_roe",
         "High return on equity",
         "Most profit per taka of shareholder capital (ROE)",
@@ -272,6 +262,7 @@ class ScreenItem(BaseModel):
     last_close: float
     value: float
     change_1d: float | None = None  # today's % move, the universal anchor (None for movers)
+    note: str | None = None  # optional per-row qualifier (e.g. momentum: steady vs pump-risk)
 
 
 class ScreenOut(BaseModel):
@@ -436,6 +427,65 @@ async def _attention_rising(session, market: str, limit: int = PER_SCREEN) -> Sc
     )
 
 
+# Momentum windows: which precomputed field + label per timeframe. 1-week / 1-month are deliberately
+# absent — short horizons are reversal, not momentum, and are covered by Top gainers.
+_MOM_FIELD = {"3m": T.mom_3_1, "6m": T.mom_6_1, "12m": T.mom_12_1}
+_MOM_LABEL = {"3m": "3-month", "6m": "6-month", "12m": "12-month"}
+
+
+def _mom_note(mom: float, vol: float | None, mcap: float | None) -> str:
+    """A per-row read of the trend: parabolic/small-cap runs are flagged as possible pumps so the
+    most dangerous name doesn't headline the board unqualified; otherwise steady vs volatile climb."""
+    if mom >= 300 or (mom >= 150 and (mcap or 0) < 1000):
+        return "⚠ Possible pump"
+    if vol is not None and vol < 35:
+        return "Steady climb"
+    if vol is not None and vol > 50:
+        return "Volatile climb"
+    return "Climbing"
+
+
+async def _momentum(
+    session, market: str, *, window: str = "12m", limit: int = PER_SCREEN
+) -> ScreenOut:
+    """Volatility-scaled momentum over 3/6/12 months: rank by trend-per-unit-of-risk, show the return,
+    and tag each row (steady / volatile / possible pump)."""
+    mom = _MOM_FIELD[window]
+    # Push likely pumps to the bottom (same rule as _mom_note) so steady trends headline the board.
+    is_pump = case(
+        (or_(mom >= 300, and_(mom >= 150, func.coalesce(T.market_cap_mn, 0) < 1000)), 1),
+        else_=0,
+    )
+    rows = (
+        await session.execute(
+            select(T.code, T.last_close, mom, T.volatility, T.market_cap_mn)
+            .where(
+                T.market == market,
+                mom > 0,
+                T.volatility > 0,
+                T.code.in_(visible_codes(market)),
+                _LIQUID,
+            )
+            .order_by(is_pump.asc(), (mom / T.volatility).desc())
+            .limit(limit)
+        )
+    ).all()
+    return ScreenOut(
+        key="momentum_12_1",
+        title=f"Strongest trend ({_MOM_LABEL[window]})",
+        description=(
+            "Stocks in the strongest, steadiest uptrend over this window. We skip the last month "
+            "(it often reverses) and reward steady climbs over wild ones."
+        ),
+        value_label="momentum",
+        group="movers",
+        items=[
+            ScreenItem(code=c, last_close=lc, value=round(m, 2), note=_mom_note(m, vol, mc))
+            for c, lc, m, vol, mc in rows
+        ],
+    )
+
+
 async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> ScreenOut:
     rows = (
         await session.execute(
@@ -523,6 +573,8 @@ async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut 
         return await _movers(session, market, gainers=key == "top_gainers", limit=limit)
     if key == "most_active":
         return await _most_active(session, market, limit=limit)
+    if key == "momentum_12_1":
+        return await _momentum(session, market, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, limit=limit)
     if key == "most_discussed":
@@ -541,6 +593,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _movers(session, tenant.market, gainers=True))
     out.append(await _movers(session, tenant.market, gainers=False))
     out.append(await _most_active(session, tenant.market))
+    out.append(await _momentum(session, tenant.market))
     out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
@@ -598,6 +651,7 @@ async def screen_detail(
     session: DbSession,
     limit: int = Query(50, le=200),
     period: str | None = Query(None, description="movers only: 1d | 5d | 1m"),
+    window: str | None = Query(None, description="momentum only: 3m | 6m | 12m"),
 ) -> ScreenOut:
     """One screen's full list — for the explore page's tab view."""
     if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
@@ -607,6 +661,10 @@ async def screen_detail(
             gainers=key == "top_gainers",
             days=_PERIOD_DAYS[period],
             limit=limit,
+        )
+    elif key == "momentum_12_1":
+        screen = await _momentum(
+            session, tenant.market, window=window if window in _MOM_FIELD else "12m", limit=limit
         )
     else:
         screen = await build_screen(session, tenant.market, key, limit)

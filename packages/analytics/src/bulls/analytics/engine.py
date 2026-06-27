@@ -71,6 +71,8 @@ class AnalyticsResult(BaseModel):
     # Momentum / volatility
     rsi_14: float | None = None
     atr_14: float | None = None
+    mom_3_1: float | None = None  # 3-minus-1-month price momentum, %
+    mom_6_1: float | None = None  # 6-minus-1-month price momentum, %
     mom_12_1: float | None = None  # 12-minus-1-month price momentum, %
     volatility: float | None = None  # annualised volatility of daily returns, %
 
@@ -141,6 +143,8 @@ def compute(
         above_sma_200=None if sma_200 is None else last_close > sma_200,
         rsi_14=_r(rsi(closes, 14)),
         atr_14=_r(atr(highs, lows, closes, 14)),
+        mom_3_1=_r(momentum_12_1(closes, lookback=63, skip=21)),
+        mom_6_1=_r(momentum_12_1(closes, lookback=126, skip=21)),
         mom_12_1=_r(momentum_12_1(closes)),
         volatility=_r(realized_volatility(closes)),
         recent_swing_high=(

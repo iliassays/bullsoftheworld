@@ -63,8 +63,16 @@ export function fmtValue(label: string, v: number): string {
     return `৳${v.toLocaleString(undefined, { maximumFractionDigits: v >= 10 ? 0 : 1 })} Cr`;
   if (label === "pp") return `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`;
   if (label === "ROE" || label === "volatility") return `${v.toFixed(1)}%`;
+  if (label === "momentum") return `${v >= 0 ? "+" : ""}${v.toFixed(0)}%`;
   if (label.includes("%")) return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   return v.toFixed(2);
+}
+
+// Tone for a per-row note (momentum: pump = caution, volatile = neutral, otherwise positive).
+function noteTone(note: string): Chip["tone"] {
+  if (note.includes("pump")) return "down";
+  if (note.includes("Volatile")) return "neutral";
+  return "up";
 }
 
 // A short, plain-language reading of the screen's jargon metric — descriptive facts only, never a
@@ -97,7 +105,6 @@ export function metricChip(label: string, v: number): Chip | null {
   if (label.includes("sector")) return { word: "Cheaper than peers", tone: "neutral" };
   if (label === "% YoY") return { word: v >= 50 ? "Fast growth" : "Growing", tone: "up" };
   if (label === "pp") return { word: v >= 3 ? "Accumulating" : "Buying", tone: "up" };
-  if (label === "% 12-1") return { word: "Strong uptrend", tone: "up" };
   if (label === "ROE") return { word: v >= 20 ? "Highly profitable" : "Profitable", tone: "neutral" };
   if (label === "volatility") return { word: v < 25 ? "Very steady" : "Steady", tone: "neutral" };
   return null;
@@ -115,7 +122,7 @@ export function metricHeader(label: string): string {
   if (label === "posts") return "Posts";
   if (label === "turnover") return "Turnover";
   if (label === "pp") return "Big money";
-  if (label === "% 12-1") return "Trend";
+  if (label === "momentum") return "Trend";
   if (label === "ROE") return "ROE";
   if (label === "volatility") return "Volatility";
   if (label.includes("%")) return "Change";
@@ -136,7 +143,11 @@ export function ScreenRow({
   rank?: number;
 }) {
   const isMover = screen.key === "top_gainers" || screen.key === "top_losers";
-  const chip = isMover ? null : metricChip(screen.value_label, item.value);
+  const chip = item.note
+    ? { word: item.note, tone: noteTone(item.note) }
+    : isMover
+      ? null
+      : metricChip(screen.value_label, item.value);
   const showName = item.name && item.name !== item.code;
   return (
     <Link
