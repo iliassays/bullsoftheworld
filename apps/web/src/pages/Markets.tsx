@@ -277,7 +277,9 @@ export function ScreenRow({
             </span>
           )}
         </span>
-        <span className="flex flex-col items-end justify-center w-20">
+        <span
+          className={`flex flex-col items-end justify-center ${isOwnership ? "min-w-[92px]" : "w-20"}`}
+        >
           {isMover ? (
             <span
               className={`text-xs font-semibold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
@@ -287,12 +289,10 @@ export function ScreenRow({
           ) : chip ? (
             <>
               <span className={`text-xs font-semibold ${toneCls(chip.tone)}`}>{chip.word}</span>
-              <span className="text-[10px] text-muted tnum">
-                {fmtValue(screen.value_label, item.value)}
+              <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[10px] text-muted">
+                <span className="tnum">{fmtValue(screen.value_label, item.value)}</span>
+                {sinceMonth && <span>· since {sinceMonth}</span>}
               </span>
-              {sinceMonth && (
-                <span className="text-[10px] text-muted">since {sinceMonth}</span>
-              )}
               {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} />}
               {item.horizons && <MomentumDots h={item.horizons} />}
             </>
