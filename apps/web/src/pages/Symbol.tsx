@@ -270,13 +270,15 @@ export function SymbolPage() {
 
       {tab === "overview" && (
         <>
+          {/* Quick read → optional deep dive → chart → levels → crowd → raw numbers → checklist.
+              Each card answers a distinct question; no two duplicate. */}
           <PlainReadCard code={sym} />
           <ExplainCard code={sym} />
+          <CandleChart code={sym} />
+          <KeyLevels code={sym} />
           <DigestPanel code={sym} />
           <PulseGauges code={sym} />
-          <CandleChart code={sym} />
           <Technicals code={sym} />
-          <KeyLevels code={sym} />
           <BeforeYouTrade />
         </>
       )}

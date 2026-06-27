@@ -32,7 +32,7 @@ export function DigestPanel({ code }: { code: string }) {
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-2">
         <span className="text-accent font-semibold text-sm">
-          ✨ What's happening
+          🗣️ Community buzz
         </span>
         {digest && mood && (
           <span className={`ml-auto text-xs ${mood.cls}`}>

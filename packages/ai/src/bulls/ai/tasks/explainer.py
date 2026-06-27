@@ -20,7 +20,9 @@ log = logging.getLogger(__name__)
 
 
 class TechnicalsFacts(BaseModel):
-    """Computed technicals for one stock — the inputs the explainer narrates (never invents)."""
+    """Computed facts for one stock — the inputs the explainer narrates (never invents). Covers the
+    whole picture (chart + fundamentals + ownership) so the AI write-up is a fuller story than the
+    deterministic snapshot, not a re-narration of the same technicals."""
 
     code: str
     name: str
@@ -35,6 +37,15 @@ class TechnicalsFacts(BaseModel):
     week52_low: float | None = None
     pct_from_52w_high: float | None = None
     relative_volume: float | None = None
+    # Fundamentals + ownership + longer trend — the "story" beyond the chart
+    sector: str | None = None
+    pe_ratio: float | None = None
+    pe_vs_sector: float | None = None
+    roe: float | None = None
+    eps_growth_yoy: float | None = None
+    dividend_yield: float | None = None
+    mom_12_1: float | None = None
+    smart_money_delta: float | None = None  # institutional + foreign ownership change, pp
 
 
 class ExplainerOut(BaseModel):
@@ -62,6 +73,25 @@ def _render(f: TechnicalsFacts) -> str:
         lines.append(f"Distance from 52-week high: {f.pct_from_52w_high:.0f}%")
     if f.relative_volume is not None:
         lines.append(f"Volume vs 20-day average: {f.relative_volume:.1f}x")
+    if f.sector:
+        lines.append(f"Sector: {f.sector}")
+    if f.pe_ratio is not None:
+        lines.append(f"P/E ratio: {f.pe_ratio:.1f}")
+    if f.pe_vs_sector is not None:
+        lines.append(f"P/E vs sector median: {f.pe_vs_sector:.2f}x (below 1.0 = cheaper than peers)")
+    if f.roe is not None:
+        lines.append(f"Return on equity: {f.roe:.0f}% (profit per taka of shareholder capital)")
+    if f.eps_growth_yoy is not None:
+        lines.append(f"Earnings growth year-on-year: {f.eps_growth_yoy:+.0f}%")
+    if f.dividend_yield is not None:
+        lines.append(f"Dividend yield: {f.dividend_yield:.1f}%")
+    if f.mom_12_1 is not None:
+        lines.append(f"12-month price trend (skipping the last month): {f.mom_12_1:+.0f}%")
+    if f.smart_money_delta is not None:
+        lines.append(
+            f"Institutional + foreign ownership change since last disclosure: "
+            f"{f.smart_money_delta:+.1f} percentage points"
+        )
     return "\n".join(lines)
 
 

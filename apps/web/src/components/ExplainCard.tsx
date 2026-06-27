@@ -26,11 +26,12 @@ export function ExplainCard({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">✨ Explain with AI</div>
+      <div className="text-accent font-semibold text-sm">✨ Deeper analysis</div>
       {!text && !loading && (
         <>
           <p className="text-[12px] text-muted mt-1">
-            A plain-language read of this stock's technical picture, written on demand.
+            A fuller written read — the chart, fundamentals, who's buying, and the trend woven into
+            one plain-language picture. Written on demand.
           </p>
           <button
             onClick={run}

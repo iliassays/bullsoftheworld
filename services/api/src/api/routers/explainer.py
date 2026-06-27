@@ -17,7 +17,7 @@ from api.i18n import language_for
 from bulls.ai.tasks.explainer import TechnicalsFacts, explain_technicals
 from bulls.analytics import compute
 from bulls.core.config import get_settings
-from bulls.core.models import DailyBar, Symbol
+from bulls.core.models import DailyBar, Symbol, TickerAnalytics
 
 router = APIRouter(tags=["explainer"])
 
@@ -51,6 +51,8 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
     if not bars:
         raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
     ta = compute(list(reversed(bars)))
+    # Precomputed fundamentals/ownership/momentum — lets the AI tell the fuller story (cheap: 1 row).
+    row = await session.get(TickerAnalytics, (tenant.market, code))
 
     cache_key = f"explainer:{tenant.market}:{code}:{tenant.locale}:{ta.as_of_date}"
     redis = aioredis.from_url(get_settings().redis_url)
@@ -73,6 +75,18 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
             week52_low=ta.week52_low,
             pct_from_52w_high=ta.pct_from_52w_high,
             relative_volume=ta.relative_volume,
+            sector=symbol.sector,
+            pe_ratio=row.pe_ratio if row else None,
+            pe_vs_sector=row.pe_vs_sector if row else None,
+            roe=row.roe if row else None,
+            eps_growth_yoy=row.eps_growth_yoy if row else None,
+            dividend_yield=row.dividend_yield if row else None,
+            mom_12_1=row.mom_12_1 if row else None,
+            smart_money_delta=(
+                (row.institute_delta or 0) + (row.foreign_delta or 0)
+                if row and (row.institute_delta is not None or row.foreign_delta is not None)
+                else None
+            ),
         )
         explanation = await explain_technicals(facts, language=language_for(tenant.locale))
         resp = ExplainerResponse(code=code, explanation=explanation, as_of_date=str(ta.as_of_date))
