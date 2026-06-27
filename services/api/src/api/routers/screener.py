@@ -603,7 +603,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)
 
 
-_PERIOD_DAYS = {"1d": 1, "5d": 5, "1m": 22}  # trading-days back for movers over a period
+_PERIOD_DAYS = {"1d": 1, "5d": 5, "7d": 7, "15d": 15, "1m": 22}  # trading-days back for movers
 
 
 async def _movers_period(

@@ -15,6 +15,8 @@ const GROUP_LABEL: Record<string, string> = {
 const PERIODS = [
   { id: "1d", label: "1D" },
   { id: "5d", label: "5D" },
+  { id: "7d", label: "7D" },
+  { id: "15d", label: "15D" },
   { id: "1m", label: "1M" },
 ];
 const WINDOWS = [
