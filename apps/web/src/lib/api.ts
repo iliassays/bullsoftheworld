@@ -158,6 +158,7 @@ export interface ScreenItem {
   note: string | null; // optional per-row qualifier (momentum: steady / volatile / possible pump)
   spark: number[]; // recent closes (oldest→newest) for an inline sparkline
   horizons?: MomHorizons | null; // momentum screen only: 3M/6M/12M returns for the consistency cue
+  flow?: number[]; // ownership screens: stake % over last disclosures (oldest→newest)
 }
 export interface Screen {
   key: string;

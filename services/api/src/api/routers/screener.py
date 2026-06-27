@@ -22,6 +22,7 @@ from bulls.core.models import (
     MarketSummary,
     Post,
     QuoteSnapshot,
+    ShareholdingSnapshot,
     Symbol,
     TickerAnalytics,
     TickerBuzzDaily,
@@ -40,8 +41,6 @@ _BUZZ_HISTORY = 14  # look-back for the attention baseline
 _PCT_ABOVE_SUPPORT = (T.last_close - T.nearest_support) / T.nearest_support * 100
 _PCT_BELOW_RESISTANCE = (T.nearest_resistance - T.last_close) / T.last_close * 100
 _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
-# Combined rise in institutional + foreign holding (pp) since the last monthly disclosure.
-_SMART_MONEY = func.coalesce(T.institute_delta, 0) + func.coalesce(T.foreign_delta, 0)
 
 # --- Liquidity floor ---------------------------------------------------------
 # Drop only names that are effectively UNTRADEABLE — near-zero turnover / suspended — where a signal
@@ -215,15 +214,6 @@ _SCREENS: list[ScreenSpec] = [
         T.volatility.asc(),
         T.volatility,
     ),
-    ScreenSpec(
-        "smart_money_buying",
-        "Institutions & foreign buying",
-        "Institutions or foreign investors raised their stake at the latest disclosure",
-        "pp",
-        _SMART_MONEY > 0,
-        _SMART_MONEY.desc(),
-        _SMART_MONEY,
-    ),
 ]
 
 # Screen → display group. Anything unlisted defaults to 'technical' (collapsed in the UI).
@@ -242,7 +232,8 @@ _GROUP: dict[str, str] = {
     "value_vs_sector": "value",
     "eps_growth": "value",
     "accumulation": "value",
-    "smart_money_buying": "value",
+    "foreign_buying": "value",
+    "institutional_buying": "value",
     "momentum_12_1": "movers",
     "quality_roe": "value",
     "low_volatility": "value",
@@ -267,6 +258,7 @@ class ScreenItem(BaseModel):
     note: str | None = None  # optional per-row qualifier (e.g. momentum: steady vs pump-risk)
     spark: list[float] = []  # recent closes (oldest→newest) for an inline sparkline
     horizons: MomHorizons | None = None  # momentum screen only: 3M/6M/12M returns for the cue
+    flow: list[float] = []  # ownership screens: stake % over last disclosures (oldest→newest)
 
 
 class ScreenOut(BaseModel):
@@ -651,6 +643,92 @@ async def _sparks(session, market: str, codes: list[str]) -> dict[str, list[floa
     return out
 
 
+# --- Ownership flow (institutional vs foreign accumulation) ------------------
+# Foreign investors (pickier, longer-horizon) and local institutions carry different sentiment, so
+# we keep them as two screens. DSE discloses shareholding ~quarterly, so the "trend" is the last few
+# disclosures — enough to tell sustained accumulation from a one-off bump, not a long history.
+_OWN = {
+    "foreign": (T.foreign_delta, "foreign_pct", "Foreign buying"),
+    "institute": (T.institute_delta, "institute", "Institutional buying"),
+}
+
+
+def _flow_tag(prev_delta: float | None) -> str:
+    """Latest disclosure already shows a rise (filtered). Distinguish sustained vs one-off."""
+    if prev_delta is None:
+        return "Buying"
+    return "Adding 2 in a row" if prev_delta > 0 else "Just started"
+
+
+async def _ownership_flow(
+    session, market: str, codes: list[str], attr: str
+) -> dict[str, tuple[list[float], float | None]]:
+    """For each code: the last 3 disclosed stake %s (oldest→newest) + the prior step's delta."""
+    if not codes:
+        return {}
+    rows = list(
+        await session.scalars(
+            select(ShareholdingSnapshot)
+            .where(
+                ShareholdingSnapshot.market == market,
+                ShareholdingSnapshot.code.in_(codes),
+            )
+            .order_by(ShareholdingSnapshot.code, ShareholdingSnapshot.as_of_date.desc())
+        )
+    )
+    by_code: dict[str, list[ShareholdingSnapshot]] = {}
+    for r in rows:
+        by_code.setdefault(r.code, []).append(r)  # newest-first per code
+    out: dict[str, tuple[list[float], float | None]] = {}
+    for code, snaps in by_code.items():
+        vals = [getattr(s, attr) for s in snaps[:3] if getattr(s, attr) is not None]
+        series = list(reversed(vals))  # oldest→newest, for the sparkline
+        prev_delta = series[-2] - series[-3] if len(series) >= 3 else None
+        out[code] = ([round(v, 2) for v in series], prev_delta)
+    return out
+
+
+async def _ownership_buying(
+    session, market: str, *, kind: str, limit: int = PER_SCREEN
+) -> ScreenOut:
+    delta_col, attr, title = _OWN[kind]
+    rows = (
+        await session.execute(
+            select(T.code, T.last_close, delta_col)
+            .where(
+                T.market == market,
+                delta_col > 0,
+                T.code.in_(visible_codes(market)),
+                _LIQUID,
+            )
+            .order_by(delta_col.desc())
+            .limit(limit)
+        )
+    ).all()
+    flows = await _ownership_flow(session, market, [c for c, _, _ in rows], attr)
+    who = "Foreign investors" if kind == "foreign" else "Local institutions"
+    return ScreenOut(
+        key=f"{'foreign' if kind == 'foreign' else 'institutional'}_buying",
+        title=title,
+        description=(
+            f"{who} raised their stake at the latest disclosure. "
+            "Chart = stake over the last disclosures; tag shows if it's sustained."
+        ),
+        value_label="pp",
+        group="value",
+        items=[
+            ScreenItem(
+                code=c,
+                last_close=lc,
+                value=round(d, 1),
+                note=_flow_tag(flows.get(c, ([], None))[1]),
+                flow=flows.get(c, ([], None))[0],
+            )
+            for c, lc, d in rows
+        ],
+    )
+
+
 async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     """Fill name + 1d change + sparkline on every item, batched across all screens."""
     codes = sorted({it.code for s in screens_list for it in s.items})
@@ -680,6 +758,10 @@ async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut 
         return await _unusual_volume(session, market, limit=limit)
     if key == "beating_market":
         return await _beating_market(session, market, limit=limit)
+    if key == "foreign_buying":
+        return await _ownership_buying(session, market, kind="foreign", limit=limit)
+    if key == "institutional_buying":
+        return await _ownership_buying(session, market, kind="institute", limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, limit=limit)
     if key == "most_discussed":
@@ -701,6 +783,8 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _momentum(session, tenant.market))
     out.append(await _unusual_volume(session, tenant.market))
     out.append(await _beating_market(session, tenant.market))
+    out.append(await _ownership_buying(session, tenant.market, kind="foreign"))
+    out.append(await _ownership_buying(session, tenant.market, kind="institute"))
     out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))

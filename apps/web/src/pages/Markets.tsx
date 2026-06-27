@@ -46,8 +46,10 @@ export const SCREEN_HELP: Record<string, string> = {
   most_discussed: "The names with the most community posts over the last 2 days.",
   attention_rising:
     "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
-  smart_money_buying:
-    "Institutions and foreign investors raised their combined stake at the latest monthly disclosure. e.g. +5 pp means 'big money' ownership went up 5 percentage points. They have more to analyse with — but it's history, not a forecast.",
+  foreign_buying:
+    "Foreign investors raised their stake at the latest disclosure (in pp = percentage points). They're pickier and longer-horizon, so it's a watched signal. The chart shows the stake over recent disclosures; 'Adding 2 in a row' means sustained, not a one-off. History, not a forecast.",
+  institutional_buying:
+    "Local institutions (mutual funds, asset managers) raised their stake at the latest disclosure (in pp = percentage points). The chart shows the stake over recent disclosures; 'Adding 2 in a row' means sustained accumulation. History, not a forecast.",
   most_active:
     "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
   beating_market:
@@ -209,7 +211,7 @@ export function ScreenRow({
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
         </span>
       </span>
-      <Sparkline data={item.spark} />
+      <Sparkline data={item.flow && item.flow.length ? item.flow : item.spark} />
       <span className="flex items-stretch gap-3 shrink-0 text-right">
         <span className="flex flex-col items-end justify-center">
           <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>

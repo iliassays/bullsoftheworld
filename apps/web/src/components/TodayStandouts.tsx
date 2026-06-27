@@ -10,7 +10,7 @@ const PICKS: { key: string; icon: string; label: string }[] = [
   { key: "top_gainers", icon: "🚀", label: "Top mover" },
   { key: "momentum_12_1", icon: "📈", label: "Strongest trend" },
   { key: "beating_market", icon: "💪", label: "Beating the market" },
-  { key: "smart_money_buying", icon: "🏦", label: "Smart money buying" },
+  { key: "foreign_buying", icon: "🌐", label: "Foreign buying" },
   { key: "unusual_volume", icon: "📊", label: "Unusual volume" },
 ];
 

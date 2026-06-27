@@ -89,5 +89,6 @@ export const SCREEN_LESSON: Record<string, string> = {
   distribution: "moneyflow",
   unusual_volume: "volume",
   most_active: "volume",
-  smart_money_buying: "smartmoney",
+  foreign_buying: "smartmoney",
+  institutional_buying: "smartmoney",
 };
