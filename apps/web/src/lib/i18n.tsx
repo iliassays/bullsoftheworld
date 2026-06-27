@@ -66,6 +66,9 @@ const STRINGS: Record<string, Entry> = {
   "range.nearHigh": { en: "near high", bn: "চূড়ার কাছে" },
   "range.nearLow": { en: "near low", bn: "তলানির কাছে" },
   "range.mid": { en: "mid-range", bn: "মাঝামাঝি" },
+  // Plain read card chrome
+  "plainRead.title": { en: "What this means", bn: "এর অর্থ কী" },
+  "plainRead.howTraders": { en: "How traders read this", bn: "ট্রেডাররা এটি যেভাবে পড়েন" },
 };
 
 interface I18n {

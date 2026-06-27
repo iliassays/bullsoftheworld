@@ -31,6 +31,26 @@ def test_quality_steady_uptrend_profile():
     assert "buy" not in r.how_to_read.lower() and "sell" not in r.how_to_read.lower()
 
 
+def test_bangla_locale_renders_and_stays_descriptive():
+    r = build_plain_read(
+        code="SQURPHARMA",
+        as_of_date="2026-06-27",
+        locale="bn",
+        market_cap_mn=200000,
+        adtv_mn=14.0,
+        above_sma_200=True,
+        roe=35.0,
+        volatility=13.0,
+        dividend_yield=6.0,
+    )
+    text = r.headline + " " + " ".join(p.text for p in r.points) + " " + r.how_to_read
+    assert any("ঀ" <= ch <= "৿" for ch in text)  # contains Bangla characters
+    assert "পরামর্শ" not in text  # no advice wording leaked into the body
+    assert "সুপারিশ নয়" in r.disclaimer  # "not a recommendation" in Bangla
+    # never English buy/sell either
+    assert "buy" not in text.lower() and "sell" not in text.lower()
+
+
 def test_nulls_are_omitted_not_guessed():
     r = build_plain_read(code="X", as_of_date="2026-06-27", above_sma_200=None)
     assert all(p.text for p in r.points)
