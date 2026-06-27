@@ -24,7 +24,7 @@ export const SCREEN_HELP: Record<string, string> = {
   distribution:
     "Chaikin Money Flow (CMF) below 0 means money is flowing out — net selling pressure over 20 days. e.g. -0.30 = strong outflow.",
   unusual_volume:
-    "Today's traded volume vs its own 20-day average. 'Very heavy' = 3x+ normal. e.g. $WMSHIPYARD at 4.6x traded 4.6 times its usual daily volume.",
+    "How active a stock is vs its normal pace — a 1-day spike (1D) or sustained over a week/month (5D/1M). Tagged by today's direction: heavy volume while rising = buying, while falling = selling. e.g. 4.6x = 4.6 times its usual volume.",
   uptrend:
     "Trading above its 200-day average price — a common longer-term uptrend marker. The % shows how far above the average it is.",
   near_52w_high: "Within 5% of its highest price over the past 52 weeks (one year).",
@@ -68,10 +68,11 @@ export function fmtValue(label: string, v: number): string {
   return v.toFixed(2);
 }
 
-// Tone for a per-row note (momentum: pump = caution, volatile = neutral, otherwise positive).
+// Tone for a per-row note. Selling/pump = caution, buying/climb = positive, the rest neutral.
 function noteTone(note: string): Chip["tone"] {
-  if (note.includes("pump")) return "down";
-  if (note.includes("Volatile")) return "neutral";
+  if (note.includes("pump") || note.includes("selling")) return "down";
+  if (note.includes("buying")) return "up";
+  if (note.includes("Volatile") || note === "Heavy volume") return "neutral";
   return "up";
 }
 

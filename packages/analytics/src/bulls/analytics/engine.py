@@ -91,7 +91,9 @@ class AnalyticsResult(BaseModel):
     # Volume
     last_volume: int
     avg_volume_20: float | None = None
-    relative_volume: float | None = None
+    relative_volume: float | None = None  # today's volume vs 20-day average
+    rel_volume_5d: float | None = None  # last 5 sessions' avg volume vs the 60-day average
+    rel_volume_1m: float | None = None  # last 22 sessions' avg volume vs the 60-day average
     cmf_20: float | None = None  # Chaikin Money Flow: >0 accumulation, <0 distribution
 
 
@@ -128,6 +130,11 @@ def compute(
 
     volumes = [float(b.volume) for b in rows]
     avg_vol_20 = sma(volumes, 20)
+    # Sustained-interest windows: recent 5d / 22d average vs a stable 60-day baseline. A 1-day spike
+    # shows up in relative_volume; sustained accumulation shows up in these.
+    avg_vol_60 = sma(volumes, 60)
+    rel_vol_5d = sma(volumes, 5) / avg_vol_60 if avg_vol_60 else None
+    rel_vol_1m = sma(volumes, 22) / avg_vol_60 if avg_vol_60 else None
 
     return AnalyticsResult(
         market=last.market,
@@ -162,5 +169,7 @@ def compute(
         last_volume=last.volume,
         avg_volume_20=_r(avg_vol_20),
         relative_volume=_r(last.volume / avg_vol_20) if avg_vol_20 else None,
+        rel_volume_5d=_r(rel_vol_5d),
+        rel_volume_1m=_r(rel_vol_1m),
         cmf_20=_r(chaikin_money_flow(highs, lows, closes, volumes, 20), 3),
     )

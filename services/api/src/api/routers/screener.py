@@ -140,15 +140,6 @@ _SCREENS: list[ScreenSpec] = [
         T.cmf_20,
     ),
     ScreenSpec(
-        "unusual_volume",
-        "Unusual volume",
-        "Trading well above its 20-day average",
-        "x avg vol",
-        T.relative_volume >= 1.5,
-        T.relative_volume.desc(),
-        T.relative_volume,
-    ),
-    ScreenSpec(
         "uptrend",
         "Above 200-day average",
         "In a longer-term uptrend",
@@ -299,6 +290,54 @@ async def _movers(session, market: str, *, gainers: bool, limit: int = PER_SCREE
         value_label="% today",
         group="movers",
         items=[ScreenItem(code=c, last_close=p, value=round(chg, 2)) for c, p, chg in rows],
+    )
+
+
+# Unusual-volume windows: a 1-day spike vs sustained week/month interest, each vs the stock's normal.
+_RVOL_FIELD = {"1d": T.relative_volume, "5d": T.rel_volume_5d, "1m": T.rel_volume_1m}
+_RVOL_MIN = {"1d": 1.5, "5d": 1.3, "1m": 1.2}  # sustained windows need a lower bar to qualify
+_RVOL_DESC = {"1d": "today", "5d": "over the past week", "1m": "over the past month"}
+
+
+def _vol_note(chg: float | None) -> str:
+    """Pair the volume surge with price direction (today's % move): up = buying, down = selling."""
+    if chg is not None and chg >= 0.5:
+        return "Heavy buying"
+    if chg is not None and chg <= -0.5:
+        return "Heavy selling"
+    return "Heavy volume"
+
+
+async def _unusual_volume(
+    session, market: str, *, window: str = "1d", limit: int = PER_SCREEN
+) -> ScreenOut:
+    """Stocks trading above their normal pace — as a 1-day spike or sustained week/month interest —
+    tagged by today's price direction (heavy buying vs heavy selling)."""
+    field = _RVOL_FIELD[window]
+    rows = (
+        await session.execute(
+            select(T.code, T.last_close, field)
+            .where(
+                T.market == market,
+                field >= _RVOL_MIN[window],
+                T.code.in_(visible_codes(market)),
+                _LIQUID,
+            )
+            .order_by(field.desc())
+            .limit(limit)
+        )
+    ).all()
+    changes = await _change_1d(session, market, [c for c, _, _ in rows])
+    return ScreenOut(
+        key="unusual_volume",
+        title="Unusual volume",
+        description=f"Trading well above its usual pace ({_RVOL_DESC[window]})",
+        value_label="x avg vol",
+        group="movers",
+        items=[
+            ScreenItem(code=c, last_close=lc, value=round(v, 2), note=_vol_note(changes.get(c)))
+            for c, lc, v in rows
+        ],
     )
 
 
@@ -575,6 +614,8 @@ async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut 
         return await _most_active(session, market, limit=limit)
     if key == "momentum_12_1":
         return await _momentum(session, market, limit=limit)
+    if key == "unusual_volume":
+        return await _unusual_volume(session, market, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, limit=limit)
     if key == "most_discussed":
@@ -594,6 +635,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _movers(session, tenant.market, gainers=False))
     out.append(await _most_active(session, tenant.market))
     out.append(await _momentum(session, tenant.market))
+    out.append(await _unusual_volume(session, tenant.market))
     out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
@@ -665,6 +707,10 @@ async def screen_detail(
     elif key == "momentum_12_1":
         screen = await _momentum(
             session, tenant.market, window=window if window in _MOM_FIELD else "12m", limit=limit
+        )
+    elif key == "unusual_volume":
+        screen = await _unusual_volume(
+            session, tenant.market, window=period if period in _RVOL_FIELD else "1d", limit=limit
         )
     else:
         screen = await build_screen(session, tenant.market, key, limit)

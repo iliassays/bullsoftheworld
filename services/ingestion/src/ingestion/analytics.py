@@ -49,6 +49,8 @@ _FIELDS = (
     "pct_from_52w_low",
     "avg_volume_20",
     "relative_volume",
+    "rel_volume_5d",
+    "rel_volume_1m",
     "cmf_20",
 )
 _VALUATION_FIELDS = (

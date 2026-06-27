@@ -24,6 +24,12 @@ const WINDOWS = [
   { id: "6m", label: "6M" },
   { id: "12m", label: "12M" },
 ];
+// Unusual volume: spike (1D) vs sustained interest (5D / 1M).
+const VOL_PERIODS = [
+  { id: "1d", label: "1D" },
+  { id: "5d", label: "5D" },
+  { id: "1m", label: "1M" },
+];
 
 // Inline "How to read this" — the explainer lives on the page, no navigation. Default open so a
 // trader sees how to use the screen the moment they land on it.
@@ -82,16 +88,18 @@ export function ScreenExplore() {
   const tabs = all.filter((s) => s.group === group && s.items.length > 0);
   const isMover = active === "top_gainers" || active === "top_losers";
   const isMomentum = active === "momentum_12_1";
+  const isVolume = active === "unusual_volume";
+  const usesPeriod = isMover || isVolume; // both filter by trailing-day period
   const lessonId = SCREEN_LESSON[active];
 
   useEffect(() => {
     if (!active) return;
     setScreen(null);
     api
-      .screen(active, 50, isMover ? period : undefined, isMomentum ? window : undefined)
+      .screen(active, 50, usesPeriod ? period : undefined, isMomentum ? window : undefined)
       .then(setScreen)
       .catch(() => setScreen(null));
-  }, [active, period, window, isMover, isMomentum]);
+  }, [active, period, window, usesPeriod, isMomentum]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -118,9 +126,9 @@ export function ScreenExplore() {
         ))}
       </div>
 
-      {(isMover || isMomentum) && (
+      {(isMover || isMomentum || isVolume) && (
         <div className="flex gap-2">
-          {(isMomentum ? WINDOWS : PERIODS).map((p) => {
+          {(isMomentum ? WINDOWS : isVolume ? VOL_PERIODS : PERIODS).map((p) => {
             const sel = isMomentum ? window === p.id : period === p.id;
             return (
               <button

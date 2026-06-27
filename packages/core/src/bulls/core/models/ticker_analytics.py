@@ -48,7 +48,9 @@ class TickerAnalytics(Base):
 
     # Volume
     avg_volume_20: Mapped[float | None] = mapped_column(Float)
-    relative_volume: Mapped[float | None] = mapped_column(Float)
+    relative_volume: Mapped[float | None] = mapped_column(Float)  # today vs 20-day avg
+    rel_volume_5d: Mapped[float | None] = mapped_column(Float)  # 5-day avg vs 60-day avg
+    rel_volume_1m: Mapped[float | None] = mapped_column(Float)  # 22-day avg vs 60-day avg
     cmf_20: Mapped[float | None] = mapped_column(Float)  # >0 accumulation, <0 distribution
 
     # Valuation — derived daily from last_close x fundamentals (weekly company scrape)
