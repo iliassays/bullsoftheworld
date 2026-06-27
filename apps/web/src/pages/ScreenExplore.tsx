@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Screen } from "../lib/api";
 import { Spinner } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
-import { LESSONS, SCREEN_LESSON } from "../lib/lessons";
+import { SCREEN_LESSON } from "../lib/lessons";
 import { ScreenRow, SCREEN_HELP, metricHeader } from "./Markets";
 
 const GROUP_LABEL: Record<string, string> = {
@@ -31,43 +31,9 @@ const VOL_PERIODS = [
   { id: "1m", label: "1M" },
 ];
 
-// Inline "How to read this" — the explainer lives on the page, no navigation. Default open so a
-// trader sees how to use the screen the moment they land on it.
-function InlineExplainer({ lessonId }: { lessonId: string }) {
-  const [open, setOpen] = useState(true);
-  const lesson = LESSONS[lessonId];
-  if (!lesson) return null;
-  const rows: { label: string; body: string }[] = [
-    { label: "How traders use it", body: lesson.use },
-    { label: "Watch out for", body: lesson.watch },
-    { label: "Example", body: lesson.example },
-  ];
-  return (
-    <div className="bg-surface border border-border rounded-2xl p-4">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-accent font-semibold text-sm"
-      >
-        <span>📖 How to read this</span>
-        <span className="text-muted">{open ? "▾" : "▸"}</span>
-      </button>
-      {open && (
-        <div className="mt-2 flex flex-col gap-2">
-          {rows.map((r) => (
-            <div key={r.label}>
-              <div className="text-[11px] uppercase tracking-wide text-muted">{r.label}</div>
-              <p className="text-[12px] leading-snug mt-0.5">{r.body}</p>
-            </div>
-          ))}
-          <p className="text-[10px] text-muted">Educational only — not a recommendation.</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // Explore page scoped to ONE category: tabs are that category's screens; the active screen shows
-// its full list. Movers get a 1D/5D/1M filter; momentum gets a 3M/6M/12M filter.
+// its full list, with its own timeframe filter attached to the card. "How to read this" lives
+// behind the (i) icon, so the data stays front-and-centre.
 export function ScreenExplore() {
   const { key = "" } = useParams();
   const [all, setAll] = useState<Screen[]>([]);
@@ -75,6 +41,7 @@ export function ScreenExplore() {
   const [period, setPeriod] = useState("1d");
   const [window, setWindow] = useState("12m");
   const [screen, setScreen] = useState<Screen | null>(null);
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     api
@@ -89,8 +56,13 @@ export function ScreenExplore() {
   const isMover = active === "top_gainers" || active === "top_losers";
   const isMomentum = active === "momentum_12_1";
   const isVolume = active === "unusual_volume";
-  const usesPeriod = isMover || isVolume; // both filter by trailing-day period
+  const usesPeriod = isMover || isVolume;
   const lessonId = SCREEN_LESSON[active];
+
+  // Keep the selected tab visible — with many categories it otherwise scrolls off-screen.
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [active, tabs.length]);
 
   useEffect(() => {
     if (!active) return;
@@ -100,6 +72,12 @@ export function ScreenExplore() {
       .then(setScreen)
       .catch(() => setScreen(null));
   }, [active, period, window, usesPeriod, isMomentum]);
+
+  const tf = isMomentum
+    ? { set: WINDOWS, sel: window, choose: setWindow }
+    : usesPeriod
+      ? { set: isVolume ? VOL_PERIODS : PERIODS, sel: period, choose: setPeriod }
+      : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -116,9 +94,12 @@ export function ScreenExplore() {
         {tabs.map((t) => (
           <button
             key={t.key}
+            ref={active === t.key ? activeTabRef : null}
             onClick={() => setActive(t.key)}
             className={`whitespace-nowrap text-xs font-semibold px-3 py-1.5 rounded-full border ${
-              active === t.key ? "text-accent border-accent bg-accent/10" : "text-muted border-border"
+              active === t.key
+                ? "text-accent border-accent bg-accent/10"
+                : "text-muted border-border"
             }`}
           >
             {t.title}
@@ -126,42 +107,41 @@ export function ScreenExplore() {
         ))}
       </div>
 
-      {(isMover || isMomentum || isVolume) && (
-        <div className="flex gap-2">
-          {(isMomentum ? WINDOWS : isVolume ? VOL_PERIODS : PERIODS).map((p) => {
-            const sel = isMomentum ? window === p.id : period === p.id;
-            return (
-              <button
-                key={p.id}
-                onClick={() => (isMomentum ? setWindow(p.id) : setPeriod(p.id))}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
-                  sel ? "text-accent bg-accent/10" : "text-muted"
-                }`}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {isMover && period === "1m" && (
-        <p className="text-[10px] text-muted px-1 -mt-1">
-          1-month moves often reverse. For a lasting trend, see “Strongest trend”.
-        </p>
-      )}
-
-      {lessonId && <InlineExplainer key={lessonId} lessonId={lessonId} />}
-
       {screen === null ? (
         <Spinner />
       ) : (
         <div className="bg-surface border border-border rounded-2xl p-4">
           <div className="flex items-center gap-1.5">
             <div className="font-semibold text-sm text-accent">{screen.title}</div>
-            <InfoTip text={SCREEN_HELP[screen.key] ?? screen.description} />
+            <InfoTip
+              text={SCREEN_HELP[screen.key] ?? screen.description}
+              lessonId={lessonId}
+            />
           </div>
           <div className="text-[11px] text-muted">{screen.description}</div>
-          <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
+
+          {tf && (
+            <div className="flex gap-2 mt-2">
+              {tf.set.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => tf.choose(p.id)}
+                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                    tf.sel === p.id ? "text-accent bg-accent/10" : "text-muted border border-border"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {isMover && period === "1m" && (
+            <p className="text-[10px] text-muted mt-1">
+              1-month moves often reverse. For a lasting trend, see “Strongest trend”.
+            </p>
+          )}
+
+          <div className="mt-3 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
             <span className="pl-7">Symbol</span>
             <span className="flex gap-3">
               <span>Price</span>
