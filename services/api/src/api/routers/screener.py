@@ -650,20 +650,24 @@ async def _sparks(session, market: str, codes: list[str]) -> dict[str, list[floa
 # we keep them as two screens. DSE discloses shareholding ~quarterly, so the "trend" is the last few
 # disclosures — enough to tell sustained accumulation from a one-off bump, not a long history.
 _OWN = {
-    "foreign": (T.foreign_delta, "foreign_pct", "Foreign buying"),
-    "institute": (T.institute_delta, "institute", "Institutional buying"),
+    "foreign": (T.foreign_delta, "foreign_pct", "Foreign", "Foreign investors"),
+    "institute": (T.institute_delta, "institute", "Institutions", "Local institutions"),
 }
 # Only show rises big enough to read as real buying — below this they'd display as "+0.0 pp"
 # (foreign stakes on DSE are tiny, so this keeps the screen honest rather than full of noise).
 _MIN_STAKE_DELTA = 0.05
 
 
-def _flow_tag(prev_delta: float | None) -> str:
-    """Latest disclosure already shows a rise (filtered). Distinguish sustained vs one-off.
-    Worded to avoid implying equal periods — our captured disclosures aren't evenly spaced."""
+def _flow_tag(prev_delta: float | None, direction: str) -> str:
+    """The latest disclosure already moved the filtered way. Distinguish sustained vs one-off,
+    worded to avoid implying equal periods (our captured disclosures aren't evenly spaced)."""
+    if direction == "sell":
+        if prev_delta is None:
+            return "Selling"
+        return "Selling more" if prev_delta < 0 else "Started selling"
     if prev_delta is None:
         return "Buying"
-    return "Adding again" if prev_delta > 0 else "Just started"
+    return "Buying more" if prev_delta > 0 else "Started buying"
 
 
 @dataclass
@@ -735,32 +739,31 @@ async def _period_sparks(
     return {code: _downsample(closes, 30) for code, closes in by_code.items()}
 
 
-async def _ownership_buying(
-    session, market: str, *, kind: str, limit: int = PER_SCREEN
+async def _ownership(
+    session, market: str, *, kind: str, direction: str = "buy", limit: int = PER_SCREEN
 ) -> ScreenOut:
-    delta_col, attr, title = _OWN[kind]
+    """Institutions / foreign investors who moved their stake at the latest disclosure.
+    direction='buy' → accumulation (stake up); 'sell' → distribution (stake down)."""
+    delta_col, attr, title, who = _OWN[kind]
+    selling = direction == "sell"
+    cond = delta_col <= -_MIN_STAKE_DELTA if selling else delta_col >= _MIN_STAKE_DELTA
+    order = delta_col.asc() if selling else delta_col.desc()  # biggest move of that kind first
     rows = (
         await session.execute(
             select(T.code, T.last_close, delta_col)
-            .where(
-                T.market == market,
-                delta_col >= _MIN_STAKE_DELTA,
-                T.code.in_(visible_codes(market)),
-                _LIQUID,
-            )
-            .order_by(delta_col.desc())
+            .where(T.market == market, cond, T.code.in_(visible_codes(market)), _LIQUID)
+            .order_by(order)
             .limit(limit)
         )
     ).all()
     flows = await _ownership_flow(session, market, [c for c, _, _ in rows], attr)
-    # Price over each name's accumulation window (from its earliest shown disclosure).
-    code_from = {
-        c: dt.date.fromisoformat(flows[c].dates[0])
-        for c, _, _ in rows
-        if c in flows and flows[c].dates
-    }
+    # Price over the move window: from the prior disclosure (the comparison point) to now.
+    code_from = {}
+    for c, _, _ in rows:
+        ds = flows[c].dates if c in flows else []
+        if ds:
+            code_from[c] = dt.date.fromisoformat(ds[-2] if len(ds) >= 2 else ds[0])
     psparks = await _period_sparks(session, market, code_from)
-    who = "Foreign investors" if kind == "foreign" else "Local institutions"
     empty = _Flow(series=[], dates=[], prev_delta=None)
     items = []
     for c, lc, d in rows:
@@ -770,18 +773,19 @@ async def _ownership_buying(
                 code=c,
                 last_close=lc,
                 value=round(d, 1),
-                note=_flow_tag(f.prev_delta),
+                note=_flow_tag(f.prev_delta, direction),
                 flow=f.series,
                 flow_dates=f.dates,
                 period_spark=psparks.get(c, []),
             )
         )
+    verb = "trimmed" if selling else "raised"
     return ScreenOut(
         key=f"{'foreign' if kind == 'foreign' else 'institutional'}_buying",
         title=title,
         description=(
-            f"{who} raised their stake since the prior disclosure (the 'since' date on each row). "
-            "Chart = stake at each disclosure; tag shows whether the rise is sustained."
+            f"{who} {verb} their stake since the prior disclosure (the 'since' date on each row). "
+            "Line = price over that window; dots = stake at each disclosure."
         ),
         value_label="pp",
         group="value",
@@ -806,7 +810,9 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
 
 
-async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut | None:
+async def build_screen(
+    session, market: str, key: str, limit: int, *, direction: str = "buy"
+) -> ScreenOut | None:
     """Build a single screen by key (used by the detail/explore page)."""
     if key in ("top_gainers", "top_losers"):
         return await _movers(session, market, gainers=key == "top_gainers", limit=limit)
@@ -819,9 +825,9 @@ async def build_screen(session, market: str, key: str, limit: int) -> ScreenOut 
     if key == "beating_market":
         return await _beating_market(session, market, limit=limit)
     if key == "foreign_buying":
-        return await _ownership_buying(session, market, kind="foreign", limit=limit)
+        return await _ownership(session, market, kind="foreign", direction=direction, limit=limit)
     if key == "institutional_buying":
-        return await _ownership_buying(session, market, kind="institute", limit=limit)
+        return await _ownership(session, market, kind="institute", direction=direction, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, limit=limit)
     if key == "most_discussed":
@@ -843,8 +849,8 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _momentum(session, tenant.market))
     out.append(await _unusual_volume(session, tenant.market))
     out.append(await _beating_market(session, tenant.market))
-    out.append(await _ownership_buying(session, tenant.market, kind="foreign"))
-    out.append(await _ownership_buying(session, tenant.market, kind="institute"))
+    out.append(await _ownership(session, tenant.market, kind="foreign"))
+    out.append(await _ownership(session, tenant.market, kind="institute"))
     out.append(await _most_watched(session, tenant.market))
     out.append(await _most_discussed(session, tenant.market))
     out.append(await _attention_rising(session, tenant.market))
@@ -1014,6 +1020,7 @@ async def screen_detail(
     limit: int = Query(50, le=200),
     period: str | None = Query(None, description="movers only: 1d | 5d | 1m"),
     window: str | None = Query(None, description="momentum only: 3m | 6m | 12m"),
+    direction: str | None = Query(None, description="ownership only: buy | sell"),
 ) -> ScreenOut:
     """One screen's full list — for the explore page's tab view."""
     if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
@@ -1033,7 +1040,9 @@ async def screen_detail(
             session, tenant.market, window=period if period in _RVOL_FIELD else "1d", limit=limit
         )
     else:
-        screen = await build_screen(session, tenant.market, key, limit)
+        screen = await build_screen(
+            session, tenant.market, key, limit, direction="sell" if direction == "sell" else "buy"
+        )
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")
     await _enrich(session, tenant.market, [screen])

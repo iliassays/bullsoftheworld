@@ -30,6 +30,11 @@ const VOL_PERIODS = [
   { id: "5d", label: "5D" },
   { id: "1m", label: "1M" },
 ];
+// Ownership screens: accumulation vs distribution.
+const DIRECTIONS = [
+  { id: "buy", label: "Buying" },
+  { id: "sell", label: "Selling" },
+];
 
 // Explore page scoped to ONE category: tabs are that category's screens; the active screen shows
 // its full list, with its own timeframe filter attached to the card. "How to read this" lives
@@ -40,6 +45,7 @@ export function ScreenExplore() {
   const [active, setActive] = useState(key);
   const [period, setPeriod] = useState("1d");
   const [window, setWindow] = useState("12m");
+  const [direction, setDirection] = useState("buy");
   const [screen, setScreen] = useState<Screen | null>(null);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
 
@@ -56,6 +62,7 @@ export function ScreenExplore() {
   const isMover = active === "top_gainers" || active === "top_losers";
   const isMomentum = active === "momentum_12_1";
   const isVolume = active === "unusual_volume";
+  const isOwnership = active === "foreign_buying" || active === "institutional_buying";
   const usesPeriod = isMover || isVolume;
   const lessonId = SCREEN_LESSON[active];
 
@@ -68,16 +75,24 @@ export function ScreenExplore() {
     if (!active) return;
     setScreen(null);
     api
-      .screen(active, 50, usesPeriod ? period : undefined, isMomentum ? window : undefined)
+      .screen(
+        active,
+        50,
+        usesPeriod ? period : undefined,
+        isMomentum ? window : undefined,
+        isOwnership ? direction : undefined,
+      )
       .then(setScreen)
       .catch(() => setScreen(null));
-  }, [active, period, window, usesPeriod, isMomentum]);
+  }, [active, period, window, direction, usesPeriod, isMomentum, isOwnership]);
 
   const tf = isMomentum
     ? { set: WINDOWS, sel: window, choose: setWindow }
-    : usesPeriod
-      ? { set: isVolume ? VOL_PERIODS : PERIODS, sel: period, choose: setPeriod }
-      : null;
+    : isOwnership
+      ? { set: DIRECTIONS, sel: direction, choose: setDirection }
+      : usesPeriod
+        ? { set: isVolume ? VOL_PERIODS : PERIODS, sel: period, choose: setPeriod }
+        : null;
 
   return (
     <div className="flex flex-col gap-3">

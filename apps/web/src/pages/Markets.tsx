@@ -47,9 +47,9 @@ export const SCREEN_HELP: Record<string, string> = {
   attention_rising:
     "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
   foreign_buying:
-    "Foreign investors' ownership rose since the prior disclosure. pp = percentage points: +5 pp means they went from owning, say, 10% to 15% of the company. The 'since' date on each row is what it's compared to (disclosures come a few times a year, not daily). Chart = stake at each disclosure; tooltip dates each point. History, not a forecast.",
+    "How foreign investors changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ they went from owning 10% to 15%). The line is the share price over that window; the dots are the stake at each disclosure (hover for figures). The 'since' date is the comparison point — disclosures come a few times a year, not daily. History, not a forecast.",
   institutional_buying:
-    "Local institutions (mutual funds, asset managers) raised their ownership since the prior disclosure. pp = percentage points: +5 pp means their stake went up 5 of the company's percentage points. The 'since' date is the comparison point. Chart = stake at each disclosure; 'Adding again' means it also rose last time. History, not a forecast.",
+    "How local institutions (mutual funds, asset managers) changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ stake up 5 of the company's points). The line is the share price over that window; the dots are the stake at each disclosure. History, not a forecast.",
   most_active:
     "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
   beating_market:
@@ -92,9 +92,10 @@ export function fmtValue(label: string, v: number): string {
 
 // Tone for a per-row note. Selling/pump = caution, buying/climb = positive, the rest neutral.
 function noteTone(note: string): Chip["tone"] {
-  if (note.includes("pump") || note.includes("selling")) return "down";
-  if (note.includes("buying")) return "up";
-  if (note.includes("Volatile") || note === "Heavy volume") return "neutral";
+  const n = note.toLowerCase();
+  if (n.includes("pump") || n.includes("selling")) return "down";
+  if (n.includes("buying")) return "up";
+  if (n.includes("volatile") || n === "heavy volume") return "neutral";
   return "up";
 }
 
@@ -237,6 +238,13 @@ export function ScreenRow({
   const fdates = item.flow_dates ?? [];
   const isOwnership = !!(item.flow && item.flow.length);
   const sinceMonth = fdates.length >= 2 ? monthName(fdates[fdates.length - 2]) : null;
+  // Tooltip explaining the price line on ownership rows: what period + how price moved over it.
+  const ps = item.period_spark ?? [];
+  let priceTitle: string | undefined;
+  if (isOwnership && ps.length >= 2 && sinceMonth) {
+    const move = ps[0] ? Math.round((ps[ps.length - 1] / ps[0] - 1) * 100) : 0;
+    priceTitle = `Price since ${sinceMonth}: ${taka(ps[0])} → ${taka(ps[ps.length - 1])} (${move >= 0 ? "+" : ""}${move}%)`;
+  }
   return (
     <Link
       to={`/s/${item.code}`}
@@ -251,10 +259,12 @@ export function ScreenRow({
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
         </span>
       </span>
-      {/* Always a price line. For ownership it spans the disclosure window (the accumulation period). */}
-      <Sparkline
-        data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
-      />
+      {/* Always a price line. For ownership it spans the move window (the title explains the period). */}
+      <span title={priceTitle} className="shrink-0 inline-flex">
+        <Sparkline
+          data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
+        />
+      </span>
       <span className="flex items-stretch gap-3 shrink-0 text-right">
         <span className="flex flex-col items-end justify-center">
           <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>

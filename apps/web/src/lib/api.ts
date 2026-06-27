@@ -305,9 +305,9 @@ export const api = {
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
   sectors: () => request<Sector[]>("/sectors"),
-  screen: (key: string, limit = 50, period?: string, window?: string) =>
+  screen: (key: string, limit = 50, period?: string, window?: string, direction?: string) =>
     request<Screen>(
-      `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}`,
+      `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}${direction ? `&direction=${direction}` : ""}`,
     ),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
 
