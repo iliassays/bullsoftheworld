@@ -27,6 +27,6 @@ ssh "$REMOTE" "cd $APP \
   && git pull -q origin main \
   && ~/.local/bin/uv sync -q \
   && ( cd services/api && ~/.local/bin/uv run alembic upgrade head ) \
-  && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker"
+  && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker bullsofdhaka-ai-worker"
 
 echo "✓ deployed → https://bullsofdhaka.bullstreetai.com"
