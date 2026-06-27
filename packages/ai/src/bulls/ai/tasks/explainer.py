@@ -48,8 +48,14 @@ class TechnicalsFacts(BaseModel):
     smart_money_delta: float | None = None  # institutional + foreign ownership change, pp
 
 
+class ExplainPoint(BaseModel):
+    tag: str  # chart | fundamentals | trend | crowd
+    text: str
+
+
 class ExplainerOut(BaseModel):
-    explanation: str
+    headline: str  # one-line gist of the overall picture
+    points: list[ExplainPoint]  # 2-4 short labelled reads
 
 
 def _render(f: TechnicalsFacts) -> str:
@@ -95,24 +101,30 @@ def _render(f: TechnicalsFacts) -> str:
     return "\n".join(lines)
 
 
-def _safe_fallback(f: TechnicalsFacts) -> str:
+def _safe_fallback(f: TechnicalsFacts) -> ExplainerOut:
     """Deterministic, advice-free summary if the model trips the compliance gate."""
-    parts = [f"${f.code} closed at {f.last_close} on {f.as_of_date}."]
+    points = [
+        ExplainPoint(tag="chart", text=f"${f.code} closed at {f.last_close} on {f.as_of_date}."),
+    ]
     if f.rsi_14 is not None:
-        parts.append(f"RSI is {f.rsi_14:.0f}.")
+        points.append(ExplainPoint(tag="chart", text=f"RSI is {f.rsi_14:.0f}."))
     if f.nearest_support is not None and f.nearest_resistance is not None:
-        parts.append(f"Support ~{f.nearest_support}, resistance ~{f.nearest_resistance}.")
-    return " ".join(parts)
+        points.append(
+            ExplainPoint(
+                tag="chart", text=f"Support ~{f.nearest_support}, resistance ~{f.nearest_resistance}."
+            )
+        )
+    return ExplainerOut(headline=f"${f.code} snapshot ({f.as_of_date})", points=points)
 
 
-async def explain_technicals(facts: TechnicalsFacts, *, language: str = "English") -> str:
-    """Return a plain-language, advice-free explanation of the technicals in the given language."""
+async def explain_technicals(facts: TechnicalsFacts, *, language: str = "English") -> ExplainerOut:
+    """A scannable, advice-free read: one-line headline + 2-4 short labelled points."""
     system = f"{EXPLAINER_SYSTEM_V1}\n\n{language_directive(language)}"
     result = await structured_complete(system, _render(facts), ExplainerOut)
-    explanation = result.explanation.strip()
 
-    finding = contains_advice(explanation)
+    blob = result.headline + " " + " ".join(p.text for p in result.points)
+    finding = contains_advice(blob)
     if finding.is_advice:
         log.warning("explainer tripped no-advice gate for $%s: %s", facts.code, finding.matches)
         return _safe_fallback(facts)
-    return explanation
+    return result

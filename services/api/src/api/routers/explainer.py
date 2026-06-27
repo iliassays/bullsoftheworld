@@ -27,10 +27,16 @@ CACHE_TTL = 86400  # technicals change once a day (EOD); the key includes as_of_
 _LOOKBACK = 260
 
 
+class ExplainPointOut(BaseModel):
+    tag: str
+    text: str
+
+
 class ExplainerResponse(BaseModel):
     code: str
-    explanation: str
     as_of_date: str
+    headline: str
+    points: list[ExplainPointOut]
 
 
 @router.get("/symbols/{code}/explainer")
@@ -54,7 +60,7 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
     # Precomputed fundamentals/ownership/momentum — lets the AI tell the fuller story (cheap: 1 row).
     row = await session.get(TickerAnalytics, (tenant.market, code))
 
-    cache_key = f"explainer:{tenant.market}:{code}:{tenant.locale}:{ta.as_of_date}"
+    cache_key = f"explainer:v2:{tenant.market}:{code}:{tenant.locale}:{ta.as_of_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
@@ -88,8 +94,13 @@ async def get_explainer(code: str, tenant: CurrentTenant, session: DbSession) ->
                 else None
             ),
         )
-        explanation = await explain_technicals(facts, language=language_for(tenant.locale))
-        resp = ExplainerResponse(code=code, explanation=explanation, as_of_date=str(ta.as_of_date))
+        out = await explain_technicals(facts, language=language_for(tenant.locale))
+        resp = ExplainerResponse(
+            code=code,
+            as_of_date=str(ta.as_of_date),
+            headline=out.headline,
+            points=[ExplainPointOut(tag=p.tag, text=p.text) for p in out.points],
+        )
         await redis.set(cache_key, resp.model_dump_json(), ex=CACHE_TTL)
         return resp
     finally:

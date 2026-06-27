@@ -313,9 +313,12 @@ export const api = {
       live_line: string | null;
     }>(`/symbols/${code}/levels`),
   explainer: (code: string) =>
-    request<{ code: string; explanation: string; as_of_date: string }>(
-      `/symbols/${code}/explainer`,
-    ),
+    request<{
+      code: string;
+      as_of_date: string;
+      headline: string;
+      points: { tag: string; text: string }[];
+    }>(`/symbols/${code}/explainer`),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   plainRead: (code: string) => request<PlainRead>(`/symbols/${code}/plain-read`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
