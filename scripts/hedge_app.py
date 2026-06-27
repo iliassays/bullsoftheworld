@@ -12,6 +12,8 @@ JSON too: http://127.0.0.1:8100/api/signals
 from __future__ import annotations
 
 import argparse
+import asyncio
+import time
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -21,6 +23,27 @@ from hedge_history import backtest, render_history
 from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
 
 app = FastAPI(title="Hedge")
+
+# The market data only changes once a day (after EOD), but the scan + backtest are expensive
+# (~2s each: load every bar, recompute Scheme-3). Cache results in-process so navigating the app
+# is instant; a short TTL means it still picks up the day's new bars without a restart. Per-key
+# locks stop two concurrent loads from both doing the heavy work.
+_CACHE: dict[object, tuple[float, object]] = {}
+_LOCKS: dict[object, asyncio.Lock] = {}
+_TTL = 600  # seconds
+
+
+async def _cached(key, factory):
+    hit = _CACHE.get(key)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    async with _LOCKS.setdefault(key, asyncio.Lock()):
+        hit = _CACHE.get(key)  # another request may have filled it while we waited for the lock
+        if hit and hit[0] > time.monotonic():
+            return hit[1]
+        val = await factory()
+        _CACHE[key] = (time.monotonic() + _TTL, val)
+        return val
 
 _CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
@@ -177,27 +200,45 @@ for fewer, bigger ones. The DSE ~10% circuit breaker makes the -10% stop reliabl
 backtest no trade lost more than the stop, so "{risk:g}% at risk" holds up. Delayed EOD data · your own use, not advice.</div>"""
 
 
+async def _scan(days: int):  # shared by Today's-list and Sizing — computed once per TTL
+    return await _cached(("scan", days), lambda: scan(days))
+
+
+async def _history_body() -> str:
+    await sync()  # persist + re-score the ledger, then read it back
+    return render_history(await backtest()) + render_ledger(await read_log())
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(days: int = 10):  # ~2 weeks of recent fires for the morning view
-    return _shell("/", _render(await scan(days)))
+    return _shell("/", _render(await _scan(days)))
 
 
 @app.get("/sizing", response_class=HTMLResponse)
 async def sizing(capital: float = 200_000, risk: float = 1.0, days: int = 10):
     risk = min(max(risk, 0.25), 3.0)  # keep the knob in a sane band
-    return _shell("/sizing", render_sizing(await scan(days), capital, risk))
+    return _shell("/sizing", render_sizing(await _scan(days), capital, risk))
 
 
 @app.get("/history", response_class=HTMLResponse)
 async def history():
-    await sync()  # persist + re-score the ledger, then read it back
-    body = render_history(await backtest()) + render_ledger(await read_log())
-    return _shell("/history", body)
+    return _shell("/history", await _cached("history", _history_body))
 
 
 @app.get("/api/signals")
 async def api(days: int = 5):
-    return await scan(days)
+    return await _scan(days)
+
+
+_warm_tasks: set[asyncio.Task] = set()
+
+
+@app.on_event("startup")
+async def _warm():
+    # Pre-compute the daily scan in the background so the first page load is instant too.
+    t = asyncio.create_task(_scan(10))
+    _warm_tasks.add(t)
+    t.add_done_callback(_warm_tasks.discard)
 
 
 def main():
