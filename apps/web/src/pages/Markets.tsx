@@ -47,9 +47,9 @@ export const SCREEN_HELP: Record<string, string> = {
   attention_rising:
     "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
   foreign_buying:
-    "Foreign investors raised their stake at the latest disclosure (in pp = percentage points). They're pickier and longer-horizon, so it's a watched signal. The chart shows the stake over recent disclosures; 'Adding 2 in a row' means sustained, not a one-off. History, not a forecast.",
+    "Foreign investors' ownership rose since the prior disclosure. pp = percentage points: +5 pp means they went from owning, say, 10% to 15% of the company. The 'since' date on each row is what it's compared to (disclosures come a few times a year, not daily). Chart = stake at each disclosure; tooltip dates each point. History, not a forecast.",
   institutional_buying:
-    "Local institutions (mutual funds, asset managers) raised their stake at the latest disclosure (in pp = percentage points). The chart shows the stake over recent disclosures; 'Adding 2 in a row' means sustained accumulation. History, not a forecast.",
+    "Local institutions (mutual funds, asset managers) raised their ownership since the prior disclosure. pp = percentage points: +5 pp means their stake went up 5 of the company's percentage points. The 'since' date is the comparison point. Chart = stake at each disclosure; 'Adding again' means it also rose last time. History, not a forecast.",
   most_active:
     "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
   beating_market:
@@ -61,6 +61,13 @@ export const SCREEN_HELP: Record<string, string> = {
   low_volatility:
     "Annualised size of daily price swings over the past year. Lower = steadier. e.g. 15% is calm, 60% is wild. Steadier doesn't mean higher returns — just a smoother ride.",
 };
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "2026-04-30" → "Apr '26" (parse the parts directly to avoid timezone shifts).
+function monthLabel(iso: string): string {
+  const [y, m] = iso.split("-");
+  return `${MONTHS[Number(m) - 1] ?? "?"} '${y.slice(2)}`;
+}
 
 // Format a screen's metric for display, based on its value_label.
 export function fmtValue(label: string, v: number): string {
@@ -197,6 +204,14 @@ export function ScreenRow({
       ? null
       : metricChip(screen.value_label, item.value);
   const showName = item.name && item.name !== item.code;
+  // Ownership screens: chart the stake trend, label the comparison period, date the tooltip.
+  const fdates = item.flow_dates ?? [];
+  const sinceMonth = fdates.length >= 2 ? monthLabel(fdates[fdates.length - 2]) : null;
+  const sparkData = item.flow && item.flow.length ? item.flow : item.spark;
+  const flowTitle =
+    item.flow && fdates.length === item.flow.length
+      ? item.flow.map((v, i) => `${monthLabel(fdates[i])}: ${v}%`).join("  ·  ")
+      : undefined;
   return (
     <Link
       to={`/s/${item.code}`}
@@ -211,7 +226,9 @@ export function ScreenRow({
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
         </span>
       </span>
-      <Sparkline data={item.flow && item.flow.length ? item.flow : item.spark} />
+      <span title={flowTitle} className="shrink-0">
+        <Sparkline data={sparkData} />
+      </span>
       <span className="flex items-stretch gap-3 shrink-0 text-right">
         <span className="flex flex-col items-end justify-center">
           <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
@@ -237,6 +254,9 @@ export function ScreenRow({
               <span className="text-[10px] text-muted tnum">
                 {fmtValue(screen.value_label, item.value)}
               </span>
+              {sinceMonth && (
+                <span className="text-[10px] text-muted">since {sinceMonth}</span>
+              )}
               {item.horizons && <MomentumDots h={item.horizons} />}
             </>
           ) : (

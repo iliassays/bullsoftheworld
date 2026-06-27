@@ -259,6 +259,7 @@ class ScreenItem(BaseModel):
     spark: list[float] = []  # recent closes (oldest→newest) for an inline sparkline
     horizons: MomHorizons | None = None  # momentum screen only: 3M/6M/12M returns for the cue
     flow: list[float] = []  # ownership screens: stake % over last disclosures (oldest→newest)
+    flow_dates: list[str] = []  # ISO date of each flow point, aligned with `flow`
 
 
 class ScreenOut(BaseModel):
@@ -657,16 +658,23 @@ _MIN_STAKE_DELTA = 0.05
 
 
 def _flow_tag(prev_delta: float | None) -> str:
-    """Latest disclosure already shows a rise (filtered). Distinguish sustained vs one-off."""
+    """Latest disclosure already shows a rise (filtered). Distinguish sustained vs one-off.
+    Worded to avoid implying equal periods — our captured disclosures aren't evenly spaced."""
     if prev_delta is None:
         return "Buying"
-    return "Adding 2 in a row" if prev_delta > 0 else "Just started"
+    return "Adding again" if prev_delta > 0 else "Just started"
 
 
-async def _ownership_flow(
-    session, market: str, codes: list[str], attr: str
-) -> dict[str, tuple[list[float], float | None]]:
-    """For each code: the last 3 disclosed stake %s (oldest→newest) + the prior step's delta."""
+@dataclass
+class _Flow:
+    series: list[float]  # stake % at each disclosure, oldest→newest
+    dates: list[str]  # ISO date of each disclosure, aligned with series
+    prev_delta: float | None  # the step BEFORE the latest, to judge sustained vs one-off
+
+
+async def _ownership_flow(session, market: str, codes: list[str], attr: str) -> dict[str, _Flow]:
+    """For each code: the last 3 disclosed stake %s + their dates (oldest→newest), so the row can
+    show WHEN the change happened and over what gap (our scrape is irregular, not strictly monthly)."""
     if not codes:
         return {}
     rows = list(
@@ -682,12 +690,14 @@ async def _ownership_flow(
     by_code: dict[str, list[ShareholdingSnapshot]] = {}
     for r in rows:
         by_code.setdefault(r.code, []).append(r)  # newest-first per code
-    out: dict[str, tuple[list[float], float | None]] = {}
+    out: dict[str, _Flow] = {}
     for code, snaps in by_code.items():
-        vals = [getattr(s, attr) for s in snaps[:3] if getattr(s, attr) is not None]
-        series = list(reversed(vals))  # oldest→newest, for the sparkline
+        pairs = [(s.as_of_date, getattr(s, attr)) for s in snaps[:3] if getattr(s, attr) is not None]
+        pairs.reverse()  # oldest→newest
+        series = [round(v, 2) for _, v in pairs]
+        dates = [d.isoformat() for d, _ in pairs]
         prev_delta = series[-2] - series[-3] if len(series) >= 3 else None
-        out[code] = ([round(v, 2) for v in series], prev_delta)
+        out[code] = _Flow(series=series, dates=dates, prev_delta=prev_delta)
     return out
 
 
@@ -710,25 +720,30 @@ async def _ownership_buying(
     ).all()
     flows = await _ownership_flow(session, market, [c for c, _, _ in rows], attr)
     who = "Foreign investors" if kind == "foreign" else "Local institutions"
-    return ScreenOut(
-        key=f"{'foreign' if kind == 'foreign' else 'institutional'}_buying",
-        title=title,
-        description=(
-            f"{who} raised their stake at the latest disclosure. "
-            "Chart = stake over the last disclosures; tag shows if it's sustained."
-        ),
-        value_label="pp",
-        group="value",
-        items=[
+    empty = _Flow(series=[], dates=[], prev_delta=None)
+    items = []
+    for c, lc, d in rows:
+        f = flows.get(c, empty)
+        items.append(
             ScreenItem(
                 code=c,
                 last_close=lc,
                 value=round(d, 1),
-                note=_flow_tag(flows.get(c, ([], None))[1]),
-                flow=flows.get(c, ([], None))[0],
+                note=_flow_tag(f.prev_delta),
+                flow=f.series,
+                flow_dates=f.dates,
             )
-            for c, lc, d in rows
-        ],
+        )
+    return ScreenOut(
+        key=f"{'foreign' if kind == 'foreign' else 'institutional'}_buying",
+        title=title,
+        description=(
+            f"{who} raised their stake since the prior disclosure (the 'since' date on each row). "
+            "Chart = stake at each disclosure; tag shows whether the rise is sustained."
+        ),
+        value_label="pp",
+        group="value",
+        items=items,
     )
 
 

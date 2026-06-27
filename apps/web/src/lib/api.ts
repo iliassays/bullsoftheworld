@@ -159,6 +159,7 @@ export interface ScreenItem {
   spark: number[]; // recent closes (oldest→newest) for an inline sparkline
   horizons?: MomHorizons | null; // momentum screen only: 3M/6M/12M returns for the consistency cue
   flow?: number[]; // ownership screens: stake % over last disclosures (oldest→newest)
+  flow_dates?: string[]; // ISO date of each flow point, aligned with `flow`
 }
 export interface Screen {
   key: string;
