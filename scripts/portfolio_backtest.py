@@ -121,10 +121,13 @@ def simulate(
     max_pos=MAX_POS,
     regime=False,
     signal_fn=None,
+    trail=None,
 ):
     """Run the event-driven sim with the given params. Returns a metrics dict (+ equity curve).
 
     signal_fn(bars) -> set[date] plugs in any entry rule (a "scheme"); default = Deep-Value Reversal.
+    trail: if set (e.g. 0.15), use a trailing stop that far below the running peak (let winners run)
+    instead of the fixed target — the initial `stop` still acts as the floor until profit builds.
     """
     bar_map, sig = {}, {}
     for code, bars in by_code.items():
@@ -145,14 +148,23 @@ def simulate(
             if bar:
                 last_px[code] = bar.close
                 p["held"] += 1
-                stop_px, tgt_px = p["entry"] * (1 + stop), p["entry"] * (1 + target)
+                p["peak"] = max(p["peak"], bar.high)
                 exit_px, reason = None, ""
-                if bar.low <= stop_px:
-                    exit_px, reason = stop_px, "stop"  # assume stop hit first (conservative)
-                elif bar.high >= tgt_px:
-                    exit_px, reason = tgt_px, "target"
-                elif p["held"] >= hold:
-                    exit_px, reason = bar.close, "time"
+                if trail is not None:
+                    # trailing stop below the peak, floored by the initial stop until profit builds
+                    eff = max(p["entry"] * (1 + stop), p["peak"] * (1 - trail))
+                    if bar.low <= eff:
+                        exit_px, reason = eff, "trail"
+                    elif p["held"] >= hold:
+                        exit_px, reason = bar.close, "time"
+                else:
+                    stop_px, tgt_px = p["entry"] * (1 + stop), p["entry"] * (1 + target)
+                    if bar.low <= stop_px:
+                        exit_px, reason = stop_px, "stop"  # assume stop hit first (conservative)
+                    elif bar.high >= tgt_px:
+                        exit_px, reason = tgt_px, "target"
+                    elif p["held"] >= hold:
+                        exit_px, reason = bar.close, "time"
                 if exit_px is not None:
                     cash += p["shares"] * exit_px * (1 - COST)
                     ret = exit_px / p["entry"] - 1
@@ -190,6 +202,7 @@ def simulate(
                     "entry": bar.close,
                     "held": 0,
                     "entry_date": d,
+                    "peak": bar.close,
                 }
                 cash -= alloc * (1 + COST)
                 last_px[code] = bar.close
