@@ -321,6 +321,17 @@ const STRINGS: Record<string, Entry> = {
   "profile.createAccount": { en: "Create account", bn: "অ্যাকাউন্ট তৈরি করুন" },
   "profile.toRegister": { en: "New here? Create an account", bn: "নতুন? অ্যাকাউন্ট তৈরি করুন" },
   "profile.toLogin": { en: "Already have an account? Log in", bn: "অ্যাকাউন্ট আছে? লগ ইন করুন" },
+  // Today's Watch / session brief
+  "session.pre_open": { en: "Morning Brief", bn: "সকালের ব্রিফ" },
+  "session.open": { en: "Midday Pulse", bn: "দুপুরের পালস" },
+  "session.post_close": { en: "Evening Wrap", bn: "সন্ধ্যার সারসংক্ষেপ" },
+  "session.weekend": { en: "Weekend Review", bn: "সাপ্তাহিক পর্যালোচনা" },
+  "session.default": { en: "Today's Watch", bn: "আজকের নজর" },
+  "watch.flat": { en: "flat", bn: "অপরিবর্তিত" },
+  "watch.aiFooter": {
+    en: "AI-generated from today's moves + chatter. Not financial advice.",
+    bn: "আজকের মুভ ও আলোচনা থেকে AI-নির্মিত। আর্থিক পরামর্শ নয়।",
+  },
 };
 
 interface I18n {
