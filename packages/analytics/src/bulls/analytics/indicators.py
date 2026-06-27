@@ -143,6 +143,46 @@ def chaikin_money_flow(
     return mfv_sum / vol_sum
 
 
+def on_balance_volume(closes: Sequence[float], volumes: Sequence[float]) -> list[float]:
+    """On-Balance Volume — a running total that adds the day's volume when price closes up and
+    subtracts it when price closes down. Rising OBV = buying pressure (volume leading price)."""
+    if len(closes) != len(volumes) or len(closes) < 2:
+        return []
+    obv = [0.0]
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i - 1]:
+            obv.append(obv[-1] + volumes[i])
+        elif closes[i] < closes[i - 1]:
+            obv.append(obv[-1] - volumes[i])
+        else:
+            obv.append(obv[-1])
+    return obv
+
+
+def obv_slope(
+    closes: Sequence[float], volumes: Sequence[float], *, period: int = 20
+) -> float | None:
+    """Normalized trend of On-Balance Volume over `period` sessions.
+
+    Returns OBV's average per-session change expressed in multiples of average daily volume, so it
+    is comparable across stocks: > 0 means volume is accumulating (buying pressure building, often
+    ahead of price); < 0 the reverse. e.g. ~+0.2 ≈ OBV rises by a fifth of a day's volume per day.
+    """
+    if period < 2 or len(closes) < period + 1:
+        return None
+    obv = on_balance_volume(closes, volumes)
+    window = obv[-period:]
+    n = len(window)
+    xbar = (n - 1) / 2
+    ybar = statistics.fmean(window)
+    num = sum((i - xbar) * (y - ybar) for i, y in enumerate(window))
+    den = sum((i - xbar) ** 2 for i in range(n))
+    avg_vol = statistics.fmean(volumes[-period:])
+    if den == 0 or not avg_vol:
+        return None
+    return (num / den) / avg_vol
+
+
 def swing_high_indices(highs: Sequence[float], k: int = 5) -> list[int]:
     """Indices of confirmed swing highs: a bar whose high is the max of [i-k, i+k].
 

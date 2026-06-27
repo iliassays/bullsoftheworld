@@ -275,6 +275,7 @@ async def run_factor_agents(
                 factors.detect_momentum(ta, month_key),
                 factors.detect_quality(ta, month_key),
                 factors.detect_smartmoney(ta, month_key),
+                factors.detect_accumulation(ta, month_key),
                 factors.detect_strength(change_pct, dsex_change, day),
             ]
             for sig in sigs:

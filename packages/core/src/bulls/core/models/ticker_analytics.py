@@ -52,6 +52,7 @@ class TickerAnalytics(Base):
     rel_volume_5d: Mapped[float | None] = mapped_column(Float)  # 5-day avg vs 60-day avg
     rel_volume_1m: Mapped[float | None] = mapped_column(Float)  # 22-day avg vs 60-day avg
     cmf_20: Mapped[float | None] = mapped_column(Float)  # >0 accumulation, <0 distribution
+    obv_slope: Mapped[float | None] = mapped_column(Float)  # OBV trend (vol-leads-price): >0 = accum
 
     # Valuation — derived daily from last_close x fundamentals (weekly company scrape)
     market_cap_mn: Mapped[float | None] = mapped_column(Float)

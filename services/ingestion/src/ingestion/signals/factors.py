@@ -29,6 +29,8 @@ _QUALITY_ROE = 15.0  # strong return on equity
 _SMART_MIN_PP = 2.0  # combined institutional + foreign stake rise (pp)
 _STRENGTH_UP = 2.0  # stock up at least this % ...
 _STRENGTH_IDX = -0.3  # ... while DSEX fell at least this much
+_ACCUM_CMF = 0.10  # quiet accumulation: money inflow (Chaikin) ...
+_ACCUM_BAND = 0.10  # ... while price stays within ±10% of its 50-day base
 
 
 def detect_momentum(ta, month_key: str) -> FactorSignal | None:
@@ -67,6 +69,23 @@ def detect_smartmoney(ta, month_key: str) -> FactorSignal | None:
     return FactorSignal(
         "smartmoney", "smart_money_both", f"smartmoney:{month_key}", 20, {"pp": round(id_ + fd, 1)}
     )
+
+
+def detect_accumulation(ta, month_key: str) -> FactorSignal | None:
+    """Money flowing in (Chaikin) AND volume confirming (OBV up) while price stays in its base —
+    the quiet-accumulation divergence. Mirrors the `quiet_accumulation` screen."""
+    cmf, obv, sma, px = ta.cmf_20, ta.obv_slope, ta.sma_50, ta.last_close
+    if cmf is None or obv is None or sma is None or px is None or sma <= 0:
+        return None
+    if cmf >= _ACCUM_CMF and obv > 0 and (1 - _ACCUM_BAND) <= px / sma <= (1 + _ACCUM_BAND):
+        return FactorSignal(
+            "accumulation",
+            "quiet_accumulation",
+            f"accumulation:{month_key}",
+            20,
+            {"cmf": round(cmf, 2)},
+        )
+    return None
 
 
 def detect_strength(
@@ -108,6 +127,12 @@ _T = {
         "{code} rose {chg}% while the market (DSEX) fell {idx_abs}% — relative strength. "
         "Descriptive, not advice.",
         "{code} {chg}% বেড়েছে যেখানে বাজার (DSEX) {idx_abs}% পড়েছে — আপেক্ষিক শক্তি। তথ্য, পরামর্শ নয়।",
+    ),
+    "accumulation": (
+        "{code} is drawing steady money inflow while its price stays flat in its base — a quiet "
+        "accumulation pattern (money in, price not yet moved). A divergence, not a promise. Not advice.",
+        "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের প্যাটার্ন "
+        "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। এটি একটি ডাইভারজেন্স, নিশ্চয়তা নয়। পরামর্শ নয়।",
     ),
 }
 

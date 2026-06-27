@@ -22,6 +22,7 @@ from bulls.analytics.indicators import (
     chaikin_money_flow,
     ema,
     momentum_12_1,
+    obv_slope,
     realized_volatility,
     rsi,
     sma,
@@ -95,6 +96,7 @@ class AnalyticsResult(BaseModel):
     rel_volume_5d: float | None = None  # last 5 sessions' avg volume vs the 60-day average
     rel_volume_1m: float | None = None  # last 22 sessions' avg volume vs the 60-day average
     cmf_20: float | None = None  # Chaikin Money Flow: >0 accumulation, <0 distribution
+    obv_slope: float | None = None  # On-Balance Volume trend (vol-leads-price): >0 accumulating
 
 
 def _r(x: float | None, n: int = 2) -> float | None:
@@ -172,4 +174,5 @@ def compute(
         rel_volume_5d=_r(rel_vol_5d),
         rel_volume_1m=_r(rel_vol_1m),
         cmf_20=_r(chaikin_money_flow(highs, lows, closes, volumes, 20), 3),
+        obv_slope=_r(obv_slope(closes, volumes, period=20), 3),
     )

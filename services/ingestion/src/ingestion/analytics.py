@@ -52,6 +52,7 @@ _FIELDS = (
     "rel_volume_5d",
     "rel_volume_1m",
     "cmf_20",
+    "obv_slope",
 )
 _VALUATION_FIELDS = (
     "market_cap_mn",

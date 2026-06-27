@@ -27,6 +27,7 @@ AGENTS: dict[str, tuple[str, str]] = {
     "strength": ("bullsofdhaka-strength-agent", "Relative Strength"),
     "quality": ("bullsofdhaka-quality-agent", "Quality & Value"),
     "smartmoney": ("bullsofdhaka-smartmoney-agent", "Smart Money"),
+    "accumulation": ("bullsofdhaka-accumulation-agent", "Accumulation"),
 }
 
 # Agents never log in; an unusable hash keeps the account password-locked.

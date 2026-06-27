@@ -55,6 +55,21 @@ def test_strength_up_while_market_down():
     assert "fell 0.5%" in f.render(f.detect_strength(2.5, -0.5, "d"), "GP", "en")
 
 
+def test_accumulation_fires_on_inflow_flat_price():
+    ta = NS(cmf_20=0.25, obv_slope=0.3, sma_50=100.0, last_close=103.0)
+    sig = f.detect_accumulation(ta, "2026-06")
+    assert sig and sig.beat == "accumulation"
+    note = f.render(sig, "GP", "en")
+    assert "not advice" in note.lower() and "buy" not in note.lower()
+
+
+def test_accumulation_skips_when_price_already_ran():
+    # money in + OBV up, but price 25% above its base → not "quiet"
+    assert f.detect_accumulation(NS(cmf_20=0.3, obv_slope=0.3, sma_50=100.0, last_close=125.0), "m") is None
+    # money in but OBV not confirming → skip
+    assert f.detect_accumulation(NS(cmf_20=0.3, obv_slope=-0.1, sma_50=100.0, last_close=101.0), "m") is None
+
+
 def test_bn_locale_renders():
     note = f.render(f.detect_momentum(_STRONG, "2026-06"), "GP", "bn")
     assert "পরামর্শ নয়" in note  # "not advice" in Bangla
