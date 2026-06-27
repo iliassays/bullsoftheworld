@@ -69,6 +69,72 @@ const STRINGS: Record<string, Entry> = {
   // Plain read card chrome
   "plainRead.title": { en: "What this means", bn: "এর অর্থ কী" },
   "plainRead.howTraders": { en: "How traders read this", bn: "ট্রেডাররা এটি যেভাবে পড়েন" },
+  // Explain card
+  "explain.title": { en: "Deeper analysis", bn: "গভীর বিশ্লেষণ" },
+  "explain.aiPrefix": { en: "AI-generated from the", bn: "AI দ্বারা তৈরি —" },
+  "explain.aiSuffix": {
+    en: "close · educational, not advice.",
+    bn: "এর ক্লোজ থেকে · শিক্ষামূলক, পরামর্শ নয়।",
+  },
+  // Key levels
+  "levels.title": { en: "Key levels & what to watch", bn: "মূল লেভেল ও যা লক্ষ্য রাখবেন" },
+  // Digest / community buzz
+  "digest.title": { en: "Community buzz", bn: "কমিউনিটির আলোচনা" },
+  "digest.show": { en: "Show what's happening", bn: "কী ঘটছে দেখুন" },
+  "digest.loading": { en: "Reading the tape and the crowd…", bn: "দর ও আলোচনা পড়া হচ্ছে…" },
+  "digest.error": { en: "Couldn't load the digest", bn: "ডাইজেস্ট লোড করা যায়নি" },
+  "digest.footer": {
+    en: "Built from delayed price + recent posts. Not financial advice.",
+    bn: "বিলম্বিত দর ও সাম্প্রতিক পোস্ট থেকে তৈরি। আর্থিক পরামর্শ নয়।",
+  },
+  posts: { en: "posts", bn: "পোস্ট" },
+  "mood.bullish": { en: "🐂 Bullish crowd", bn: "🐂 তেজি ভিড়" },
+  "mood.bearish": { en: "🐻 Bearish crowd", bn: "🐻 মন্দা ভিড়" },
+  "mood.mixed": { en: "↔ Mixed crowd", bn: "↔ মিশ্র ভিড়" },
+  "mood.quiet": { en: "· Quiet", bn: "· শান্ত" },
+  // Pulse
+  "pulse.title": { en: "Pulse", bn: "পালস" },
+  "pulse.subtitle": {
+    en: "Community activity over the last 7 days.",
+    bn: "গত ৭ দিনের কমিউনিটি কার্যকলাপ।",
+  },
+  "pulse.sentiment": { en: "Sentiment", bn: "মনোভাব" },
+  "pulse.volume": { en: "Message volume", bn: "মেসেজ ভলিউম" },
+  "pulse.participation": { en: "Participation", bn: "অংশগ্রহণ" },
+  // Pulse value words (backend returns English; mapped here)
+  "pv.bullish": { en: "Bullish", bn: "তেজি" },
+  "pv.bearish": { en: "Bearish", bn: "মন্দা" },
+  "pv.mixed": { en: "Mixed", bn: "মিশ্র" },
+  "pv.low": { en: "Low", bn: "কম" },
+  "pv.moderate": { en: "Moderate", bn: "মাঝারি" },
+  "pv.high": { en: "High", bn: "বেশি" },
+  "pv.quiet": { en: "Quiet", bn: "শান্ত" },
+  "pv.neutral": { en: "Neutral", bn: "নিরপেক্ষ" },
+  // Technicals
+  "tech.title": { en: "Technicals", bn: "টেকনিক্যাল" },
+  asOf: { en: "as of", bn: "সর্বশেষ" },
+  close: { en: "close", bn: "ক্লোজ" },
+  "tech.aboveBoth": { en: "Above 50 & 200-day average", bn: "৫০ ও ২০০-দিনের গড়ের উপরে" },
+  "tech.belowBoth": { en: "Below 50 & 200-day average", bn: "৫০ ও ২০০-দিনের গড়ের নিচে" },
+  "tech.mixedMa": { en: "Mixed vs moving averages", bn: "মুভিং এভারেজের মিশ্র অবস্থান" },
+  "tech.momentum": { en: "Momentum (RSI 14)", bn: "মোমেন্টাম (RSI 14)" },
+  "tech.volVs20": { en: "Volume vs 20-day", bn: "২০-দিনের তুলনায় ভলিউম" },
+  "tech.nearestSupport": { en: "Nearest support", bn: "নিকটতম সাপোর্ট" },
+  "tech.nearestResistance": { en: "Nearest resistance", bn: "নিকটতম রেজিস্ট্যান্স" },
+  "rsi.elevated": { en: "elevated", bn: "উঁচু" },
+  "rsi.depressed": { en: "depressed", bn: "নিচু" },
+  "rsi.mid": { en: "mid-range", bn: "মাঝামাঝি" },
+  "tech.fromHigh": { en: "from high", bn: "সর্বোচ্চ থেকে" },
+  "tech.footer": {
+    en: "Computed from end-of-day prices · descriptive, not advice.",
+    bn: "দিনশেষের দাম থেকে গণনা · তথ্যমূলক, পরামর্শ নয়।",
+  },
+  // Candle chart
+  "chart.support": { en: "Support", bn: "সাপোর্ট" },
+  "chart.resistance": { en: "Resistance", bn: "রেজিস্ট্যান্স" },
+  "chart.noHistory": { en: "No price history.", bn: "কোনো দামের ইতিহাস নেই।" },
+  // Sectors
+  "sectors.hot": { en: "Hot sectors today", bn: "আজকের গরম খাত" },
 };
 
 interface I18n {

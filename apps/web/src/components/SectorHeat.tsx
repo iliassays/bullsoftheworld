@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { api, type Sector } from "../lib/api";
+import { useLang } from "../lib/i18n";
 
 // Hot sectors — DSE retail thinks in sectors. A scannable strip of each sector's average move today
 // plus its advancers/decliners breadth, hottest first. Descriptive market context.
 export function SectorHeat() {
+  const { t } = useLang();
   const [sectors, setSectors] = useState<Sector[] | null>(null);
 
   useEffect(() => {
@@ -17,7 +19,7 @@ export function SectorHeat() {
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-[11px] uppercase tracking-wide text-muted px-1">Hot sectors today</div>
+      <div className="text-[11px] uppercase tracking-wide text-muted px-1">{t("sectors.hot")}</div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {sectors.map((s) => {
           const up = s.avg_change >= 0;

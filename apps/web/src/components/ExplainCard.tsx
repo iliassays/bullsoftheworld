@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useLang } from "../lib/i18n";
 import { Spinner } from "./ui";
 
 // AI explainer: auto-loads on view. The API serves a cached plain-language read (headline + labelled
@@ -22,6 +23,7 @@ interface Read {
 }
 
 export function ExplainCard({ code }: { code: string }) {
+  const { t } = useLang();
   const [read, setRead] = useState<Read | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -47,7 +49,7 @@ export function ExplainCard({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">✨ Deeper analysis</div>
+      <div className="text-accent font-semibold text-sm">✨ {t("explain.title")}</div>
       {loading || !read ? (
         <div className="mt-3">
           <Spinner />
@@ -64,7 +66,7 @@ export function ExplainCard({ code }: { code: string }) {
             ))}
           </ul>
           <p className="text-[10px] text-muted mt-2">
-            AI-generated from the {read.asOf} close · educational, not advice.
+            {t("explain.aiPrefix")} {read.asOf} {t("explain.aiSuffix")}
           </p>
         </>
       )}

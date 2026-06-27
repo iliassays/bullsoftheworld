@@ -7,6 +7,7 @@ import {
   createChart,
 } from "lightweight-charts";
 import { api, type Bar } from "../lib/api";
+import { useLang } from "../lib/i18n";
 
 const C = {
   up: "#16c784",
@@ -62,13 +63,14 @@ function lineData(bars: Bar[], series: (number | null)[]) {
 }
 
 function Legend() {
-  const items = [
+  const { t } = useLang();
+  const items: [string, string][] = [
     ["9 EMA", C.ema9],
     ["20 EMA", C.ema20],
     ["VWAP", C.vwap],
-    ["Support", C.up],
-    ["Resistance", C.down],
-  ] as const;
+    [t("chart.support"), C.up],
+    [t("chart.resistance"), C.down],
+  ];
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
       {items.map(([label, color]) => (
@@ -82,6 +84,7 @@ function Legend() {
 }
 
 export function CandleChart({ code }: { code: string }) {
+  const { t } = useLang();
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -244,7 +247,7 @@ export function CandleChart({ code }: { code: string }) {
   }, [code]);
 
   if (empty) {
-    return <div className="text-muted text-sm py-6 text-center">No price history.</div>;
+    return <div className="text-muted text-sm py-6 text-center">{t("chart.noHistory")}</div>;
   }
 
   return (

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useLang } from "../lib/i18n";
 
 type Levels = { lines: string[]; live_line: string | null };
 
 // "Key levels & what to watch" — deterministic, descriptive scenarios (breakout/support/RSI),
 // rendered from server templates. Educational, never a prediction or a call.
 export function KeyLevels({ code }: { code: string }) {
+  const { t } = useLang();
   const [data, setData] = useState<Levels | null>(null);
   const [missing, setMissing] = useState(false);
 
@@ -25,7 +27,7 @@ export function KeyLevels({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">🎯 Key levels &amp; what to watch</div>
+      <div className="text-accent font-semibold text-sm">🎯 {t("levels.title")}</div>
 
       {/* Live (delayed) bridge — only present while the market is open */}
       {data.live_line && (
