@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Company, NewsItem } from "../lib/api";
 import { Empty } from "./ui";
 import { InfoTip } from "./InfoTip";
@@ -268,26 +269,110 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   );
 }
 
+// One compact key-stat box.
+function Stat({ label, value, tip }: { label: string; value: ReactNode; tip?: string }) {
+  return (
+    <div className="flex-1 rounded-lg bg-card border border-border p-2 min-w-0">
+      <div className="text-[10px] text-muted flex items-center gap-1">
+        {label}
+        {tip && <InfoTip text={tip} />}
+      </div>
+      <div className="text-sm font-semibold tnum mt-0.5 truncate">{value}</div>
+    </div>
+  );
+}
+
+// Mini year-by-year bar chart: value above each bar, year below; latest highlighted, losses in red.
+function YearBars({
+  data,
+  fmt,
+  color = "var(--color-accent)",
+}: {
+  data: { year: number; v: number | null }[];
+  fmt: (n: number) => string;
+  color?: string;
+}) {
+  const pts = data.filter((d): d is { year: number; v: number } => d.v != null);
+  if (pts.length < 2) return null;
+  const max = Math.max(...pts.map((d) => Math.abs(d.v)), 0.0001);
+  return (
+    <div className="flex items-end gap-1.5 mt-2 mb-3">
+      {pts.map((d, i) => {
+        const last = i === pts.length - 1;
+        const bg = d.v < 0 ? "var(--color-down)" : last ? color : "var(--color-border)";
+        return (
+          <div key={d.year} className="flex-1 flex flex-col items-center min-w-0">
+            <span className="text-[9px] text-muted tnum mb-0.5">{fmt(d.v)}</span>
+            <div className="w-full h-14 flex items-end">
+              <div
+                className="w-full rounded-t"
+                style={{ height: `${Math.max(4, (Math.abs(d.v) / max) * 100)}%`, backgroundColor: bg }}
+              />
+            </div>
+            <span className={`text-[9px] tnum mt-1 ${last ? "text-fg font-semibold" : "text-muted"}`}>
+              &rsquo;{String(d.year).slice(2)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const _EY_TIP =
+  "Earnings yield = a company's yearly EPS ÷ its share price (the inverse of P/E). e.g. 5% means it earns ৳5 a year for every ৳100 you pay. Higher = more earnings for your money. Compare it with the bank deposit rate.";
+const _PAYOUT_TIP =
+  "Payout ratio = cash dividend ÷ EPS — how much of each year's profit is handed out as cash. e.g. 45% means ৳45 of every ৳100 earned is paid out; the rest is kept in the business.";
+
 export function EarningsPanel({
   earnings,
   dividends,
+  f,
 }: {
   earnings: Company["earnings"];
   dividends: Company["dividends"];
+  f: Company["fundamentals"];
 }) {
   if (!earnings.length && !dividends.length)
     return <Empty>No earnings history yet.</Empty>;
+
+  const yoy = f.eps_growth_yoy;
+  const yoyChip =
+    yoy == null ? null : (
+      <span className={`text-[11px] ${yoy >= 0 ? "text-up" : "text-down"}`}>
+        {" "}
+        {yoy >= 0 ? "▲" : "▼"}
+        {Math.abs(yoy).toFixed(0)}%
+      </span>
+    );
+  const earningsYield = f.pe_ratio && f.pe_ratio > 0 ? 100 / f.pe_ratio : null;
+
+  const eps0 = f.eps ?? earnings[0]?.eps ?? null;
+  const face = f.face_value ?? 10;
+  const latestCash = dividends[0]?.cash_pct ?? null;
+  const payout =
+    latestCash != null && eps0 ? ((latestCash / 100) * face) / eps0 * 100 : null;
+
+  const epsBars = earnings.slice(0, 6).reverse().map((e) => ({ year: e.fiscal_year, v: e.eps }));
+  const cashBars = dividends.slice(0, 6).reverse().map((d) => ({ year: d.year, v: d.cash_pct }));
+
   return (
     <div className="flex flex-col gap-3">
       {earnings.length > 0 && (
-        <Card title="Earnings history">
+        <Card title="Earnings">
+          <div className="flex gap-2 mb-1">
+            <Stat label="EPS (latest)" value={<>{taka(earnings[0]?.eps ?? null)}{yoyChip}</>} />
+            <Stat label="Earnings yield" value={pct(earningsYield)} tip={_EY_TIP} />
+            <Stat label="NAV / share" value={taka(earnings[0]?.nav_per_share ?? null)} />
+          </div>
+          <YearBars data={epsBars} fmt={(n) => `৳${n.toFixed(1)}`} />
           <div className="grid grid-cols-4 text-[11px] text-muted font-semibold pb-1 border-b border-border">
             <span>FY</span>
             <span className="text-right">EPS</span>
             <span className="text-right">NAV</span>
             <span className="text-right">Profit</span>
           </div>
-          {earnings.slice(0, 8).map((e) => (
+          {earnings.slice(0, 6).map((e) => (
             <div
               key={e.fiscal_year}
               className="grid grid-cols-4 text-sm tnum py-1.5 border-b border-border/60 last:border-0"
@@ -295,21 +380,25 @@ export function EarningsPanel({
               <span>{e.fiscal_year}</span>
               <span className="text-right">{taka(e.eps)}</span>
               <span className="text-right">{taka(e.nav_per_share)}</span>
-              <span className="text-right text-muted">
-                {crore(e.profit_mn)}
-              </span>
+              <span className="text-right text-muted">{crore(e.profit_mn)}</span>
             </div>
           ))}
         </Card>
       )}
       {dividends.length > 0 && (
-        <Card title="Dividend history">
+        <Card title="Dividends">
+          <div className="flex gap-2 mb-1">
+            <Stat label="Dividend yield" value={pct(f.dividend_yield)} />
+            <Stat label="Cash (latest)" value={pct(latestCash)} />
+            <Stat label="Payout ratio" value={pct(payout)} tip={_PAYOUT_TIP} />
+          </div>
+          <YearBars data={cashBars} fmt={(n) => `${n.toFixed(0)}%`} color="#0ea5e9" />
           <div className="grid grid-cols-3 text-[11px] text-muted font-semibold pb-1 border-b border-border">
             <span>Year</span>
             <span className="text-right">Cash</span>
             <span className="text-right">Bonus</span>
           </div>
-          {dividends.slice(0, 8).map((d) => (
+          {dividends.slice(0, 6).map((d) => (
             <div
               key={d.year}
               className="grid grid-cols-3 text-sm tnum py-1.5 border-b border-border/60 last:border-0"

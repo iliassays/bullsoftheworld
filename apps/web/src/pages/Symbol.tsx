@@ -347,6 +347,7 @@ export function SymbolPage() {
           <EarningsPanel
             earnings={company.earnings}
             dividends={company.dividends}
+            f={company.fundamentals}
           />
         ) : (
           <Spinner />
