@@ -63,12 +63,13 @@ export const SCREEN_HELP: Record<string, string> = {
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// "2026-04-30" → "Apr 2026" (full year — "'26" reads like a day-of-month). Parse parts directly
-// to avoid timezone shifts.
-function monthLabel(iso: string): string {
-  const [y, m] = iso.split("-");
-  return `${MONTHS[Number(m) - 1] ?? "?"} ${y}`;
-}
+const MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const monthIdx = (iso: string) => Number(iso.split("-")[1]) - 1; // parse directly, no timezone shift
+const shortMonth = (iso: string) => MONTHS[monthIdx(iso)] ?? "?";
+const monthName = (iso: string) => MONTHS_FULL[monthIdx(iso)] ?? "?";
 
 // Format a screen's metric for display, based on its value_label.
 export function fmtValue(label: string, v: number): string {
@@ -189,6 +190,34 @@ function MomentumDots({ h }: { h: MomHorizons }) {
   );
 }
 
+// Ownership trend as direction dots (not a line — a line reads like price). One dot per disclosure:
+// green = stake rose vs the prior disclosure, red = fell, grey = flat or the baseline (no prior).
+function ownDotColor(curr: number, prev: number | undefined): string {
+  if (prev === undefined || curr === prev) return "var(--color-muted)";
+  return curr > prev ? "var(--color-up)" : "var(--color-down)";
+}
+function OwnershipDots({ flow, dates }: { flow: number[]; dates: string[] }) {
+  const title = flow
+    .map((v, i) => `${dates[i] ? shortMonth(dates[i]) : "?"}: ${v}%`)
+    .join("  ·  ");
+  return (
+    <span
+      title={title}
+      aria-label={`Stake trend: ${title}`}
+      className="shrink-0 inline-flex items-center justify-center gap-1.5"
+      style={{ width: 56, height: 18 }}
+    >
+      {flow.map((v, i) => (
+        <span
+          key={i}
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: ownDotColor(v, i > 0 ? flow[i - 1] : undefined) }}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function ScreenRow({
   item,
   screen,
@@ -205,14 +234,10 @@ export function ScreenRow({
       ? null
       : metricChip(screen.value_label, item.value);
   const showName = item.name && item.name !== item.code;
-  // Ownership screens: chart the stake trend, label the comparison period, date the tooltip.
+  // Ownership screens: show the stake trend as dots + the comparison month (no year — short label).
   const fdates = item.flow_dates ?? [];
-  const sinceMonth = fdates.length >= 2 ? monthLabel(fdates[fdates.length - 2]) : null;
-  const sparkData = item.flow && item.flow.length ? item.flow : item.spark;
-  const flowTitle =
-    item.flow && fdates.length === item.flow.length
-      ? item.flow.map((v, i) => `${monthLabel(fdates[i])}: ${v}%`).join("  ·  ")
-      : undefined;
+  const isOwnership = !!(item.flow && item.flow.length);
+  const sinceMonth = fdates.length >= 2 ? monthName(fdates[fdates.length - 2]) : null;
   return (
     <Link
       to={`/s/${item.code}`}
@@ -227,9 +252,11 @@ export function ScreenRow({
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
         </span>
       </span>
-      <span title={flowTitle} className="shrink-0">
-        <Sparkline data={sparkData} />
-      </span>
+      {isOwnership ? (
+        <OwnershipDots flow={item.flow ?? []} dates={fdates} />
+      ) : (
+        <Sparkline data={item.spark} />
+      )}
       <span className="flex items-stretch gap-3 shrink-0 text-right">
         <span className="flex flex-col items-end justify-center">
           <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
