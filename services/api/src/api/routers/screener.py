@@ -42,6 +42,26 @@ _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
 # Combined rise in institutional + foreign holding (pp) since the last monthly disclosure.
 _SMART_MONEY = func.coalesce(T.institute_delta, 0) + func.coalesce(T.foreign_delta, 0)
 
+# --- Liquidity floor ---------------------------------------------------------
+# Institutions never rank a raw universe: they first drop names too illiquid or small to trade,
+# where a signal is just noise and an exit is hard. We require a minimum average daily turnover
+# (avg 20-day volume x price) and market cap. ~92% of DSE names clear this; the illiquid tail and
+# penny-stock pump targets fall out of every computed screen. Community screens (most watched /
+# discussed) are intentionally NOT filtered — they reflect what the community actually follows.
+_MIN_ADTV_MN = 1.0  # average daily turnover over 20 sessions, ৳ millions
+_MIN_MCAP_MN = 100.0  # market capitalisation, ৳ millions
+
+_LIQUID = and_(
+    T.avg_volume_20.isnot(None),
+    T.avg_volume_20 * T.last_close / 1e6 >= _MIN_ADTV_MN,
+    func.coalesce(T.market_cap_mn, 0) >= _MIN_MCAP_MN,
+)
+
+
+def _investable(market: str):
+    """Subquery of investable codes — visible AND liquid — for builders that don't query T."""
+    return select(T.code).where(T.market == market, T.code.in_(visible_codes(market)), _LIQUID)
+
 
 @dataclass
 class ScreenSpec:
@@ -239,7 +259,7 @@ async def _movers(session, market: str, *, gainers: bool, limit: int = PER_SCREE
             select(QuoteSnapshot.code, QuoteSnapshot.ltp, QuoteSnapshot.change_pct)
             .where(
                 QuoteSnapshot.market == market,
-                QuoteSnapshot.code.in_(visible_codes(market)),
+                QuoteSnapshot.code.in_(_investable(market)),
             )
             .order_by(order)
             .limit(limit)
@@ -362,7 +382,7 @@ async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> Scr
     rows = (
         await session.execute(
             select(T.code, T.last_close, spec.value)
-            .where(T.market == market, spec.where, T.code.in_(visible_codes(market)))
+            .where(T.market == market, spec.where, T.code.in_(visible_codes(market)), _LIQUID)
             .order_by(spec.order)
             .limit(limit)
         )
@@ -483,7 +503,7 @@ async def _movers_period(
     )
     ranked = (
         select(DailyBar.code, DailyBar.close, rn)
-        .where(DailyBar.market == market, DailyBar.code.in_(visible_codes(market)))
+        .where(DailyBar.market == market, DailyBar.code.in_(_investable(market)))
         .subquery()
     )
     cur = select(ranked.c.code, ranked.c.close.label("cur")).where(ranked.c.rn == 1).subquery()
