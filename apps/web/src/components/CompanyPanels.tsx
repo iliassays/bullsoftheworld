@@ -153,6 +153,18 @@ export function FundamentalsPanel({ f }: { f: Company["fundamentals"] }) {
   );
 }
 
+// Plain-language read of who's been buying/selling, from the month-over-month deltas.
+function smartMoneyRead(o: Company["ownership"]): string {
+  const moves: string[] = [];
+  if (o.institute_delta != null && o.institute_delta >= 0.1) moves.push("institutions added");
+  else if (o.institute_delta != null && o.institute_delta <= -0.1) moves.push("institutions trimmed");
+  if (o.foreign_delta != null && o.foreign_delta >= 0.1) moves.push("foreign investors added");
+  else if (o.foreign_delta != null && o.foreign_delta <= -0.1) moves.push("foreign investors trimmed");
+  if (!moves.length) return "Big-money holdings barely changed since the prior disclosure.";
+  const s = moves.join(", and ") + " since the prior disclosure.";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   const segs = [
     { label: "Sponsor/Director", v: o.sponsor_pct, cls: "bg-accent" },
@@ -162,6 +174,8 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   ];
   const known = segs.some((s) => s.v != null);
   if (!known) return <Empty>No ownership disclosure yet.</Empty>;
+  const freeFloat =
+    (o.institute_pct ?? 0) + (o.foreign_pct ?? 0) + (o.public_pct ?? 0);
   const delta = (d: number | null) =>
     d == null || d === 0 ? null : (
       <span className={d > 0 ? "text-up" : "text-down"}>
@@ -172,6 +186,13 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
     );
   return (
     <Card title="Ownership">
+      <div className="rounded-xl bg-card border border-border p-3 mb-2">
+        <div className="text-[13px] leading-snug">🏦 {smartMoneyRead(o)}</div>
+        <div className="text-[11px] text-muted mt-1">
+          Free float ~{freeFloat.toFixed(0)}% — the slice held by the public, institutions and
+          foreigners that actually trades.
+        </div>
+      </div>
       <div className="flex h-3 rounded-full overflow-hidden my-2">
         {segs.map((s) => (
           <div

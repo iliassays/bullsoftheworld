@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
+  type Bar,
   type Buzz,
   type Company,
   type NewsItem,
@@ -24,6 +25,8 @@ import { KeyLevels } from "../components/KeyLevels";
 import { PlainReadCard } from "../components/PlainReadCard";
 import { PulseGauges } from "../components/PulseGauges";
 import { PostCard } from "../components/PostCard";
+import { RangeBar } from "../components/RangeBar";
+import { Sparkline } from "../components/Sparkline";
 import { Technicals } from "../components/Technicals";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 
@@ -53,25 +56,51 @@ const crore = (mn: number | null | undefined) =>
 function QuickStrip({
   f,
   volume,
+  price,
 }: {
   f: Company["fundamentals"];
   volume?: number;
+  price?: number;
 }) {
-  const cell = (label: string, value: string) => (
-    <div className="flex flex-col items-center px-2">
+  // A stat with an optional tiny meaning-tag underneath, so the number is interpretable.
+  const cell = (label: string, value: string, tag?: string) => (
+    <div className="flex flex-col items-center px-2 shrink-0">
       <span className="text-[10px] text-muted">{label}</span>
       <span className="text-xs font-semibold tnum">{value}</span>
+      {tag && <span className="text-[9px] text-accent leading-tight">{tag}</span>}
     </div>
   );
+
+  const peTag =
+    f.pe_vs_sector == null
+      ? undefined
+      : f.pe_vs_sector < 0.9
+        ? "cheaper than sector"
+        : f.pe_vs_sector > 1.1
+          ? "pricier than sector"
+          : "in line";
+  const volTag =
+    volume != null && f.avg_volume_20
+      ? `${(volume / f.avg_volume_20).toFixed(1)}× normal`
+      : undefined;
+  const freeFloat =
+    f.free_float_cap_mn != null && f.market_cap_mn
+      ? `${((f.free_float_cap_mn / f.market_cap_mn) * 100).toFixed(0)}%`
+      : "—";
+
   return (
-    <div className="flex justify-between mt-3 pt-3 border-t border-border overflow-x-auto">
-      {cell("Mkt Cap", crore(f.market_cap_mn))}
-      {cell("Vol", volume != null ? volume.toLocaleString() : "—")}
-      {cell("52W H", f.week52_high != null ? `৳${f.week52_high}` : "—")}
-      {cell("52W L", f.week52_low != null ? `৳${f.week52_low}` : "—")}
-      {cell("P/E", f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—")}
-      {cell("EPS", f.eps != null ? `৳${f.eps}` : "—")}
-    </div>
+    <>
+      <div className="flex justify-between mt-3 pt-3 border-t border-border overflow-x-auto">
+        {cell("Mkt Cap", crore(f.market_cap_mn))}
+        {cell("Vol", volume != null ? volume.toLocaleString() : "—", volTag)}
+        {cell("P/E", f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—", peTag)}
+        {cell("EPS", f.eps != null ? `৳${f.eps}` : "—")}
+        {cell("Free float", freeFloat)}
+      </div>
+      {f.week52_low != null && f.week52_high != null && price != null && (
+        <RangeBar low={f.week52_low} high={f.week52_high} value={price} />
+      )}
+    </>
   );
 }
 
@@ -84,6 +113,7 @@ export function SymbolPage() {
   const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [news, setNews] = useState<NewsItem[] | null>(null);
+  const [bars, setBars] = useState<Bar[]>([]);
   const [watched, setWatched] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const discussion = useInfiniteFeed(`${sym}:discussion`, (l, o) =>
@@ -99,10 +129,15 @@ export function SymbolPage() {
     setBuzz(null);
     setCompany(null);
     setNews(null);
+    setBars([]);
     api
       .symbol(sym)
       .then(setDetail)
       .catch(() => setDetail(null));
+    api
+      .bars(sym, 90)
+      .then(setBars)
+      .catch(() => setBars([]));
     api
       .news(sym)
       .then(setNews)
@@ -181,6 +216,11 @@ export function SymbolPage() {
             <div className="text-sm font-semibold pb-1">
               <Pct value={q.change_pct} />
             </div>
+            {bars.length > 1 && (
+              <span className="pb-1">
+                <Sparkline data={bars.map((b) => b.close)} width={84} height={30} />
+              </span>
+            )}
             <div className="ml-auto text-right text-xs text-muted tnum">
               <div>
                 H {q.high} · L {q.low}
@@ -200,7 +240,9 @@ export function SymbolPage() {
             {buzz.chatter_x ? ` · ${buzz.chatter_x}× usual chatter` : ""}
           </div>
         )}
-        {company && <QuickStrip f={company.fundamentals} volume={q?.volume} />}
+        {company && (
+          <QuickStrip f={company.fundamentals} volume={q?.volume} price={q?.ltp} />
+        )}
       </div>
 
       {/* tab bar */}
