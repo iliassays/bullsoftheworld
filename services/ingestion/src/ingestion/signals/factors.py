@@ -179,10 +179,40 @@ _T = {
 }
 
 
+# Extra phrasings for the high-frequency beats so a run of notes doesn't read word-for-word
+# identical. Stable per-code pick keeps it deterministic (no drift). _T holds the default (variant 0).
+_VARIANTS: dict[str, list[tuple[str, str]]] = {
+    "accumulation": [
+        (
+            "{code} is drawing steady money inflow while its price stays flat in its base — a quiet "
+            "accumulation pattern (money in, price not yet moved). A divergence, not a promise. Not advice.",
+            "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের প্যাটার্ন "
+            "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। এটি একটি ডাইভারজেন্স, নিশ্চয়তা নয়। পরামর্শ নয়।",
+        ),
+        (
+            "Money is quietly building in {code} while the price holds flat — the kind of base "
+            "accumulation that sometimes precedes a move. No guarantee it will. Descriptive, not advice.",
+            "{code}-তে দাম স্থির থাকতেই নীরবে অর্থ জমছে — এমন ভিত্তি-সঞ্চয় কখনো কখনো মুভের আগে দেখা যায়। "
+            "নিশ্চয়তা নেই। তথ্যমূলক, পরামর্শ নয়।",
+        ),
+        (
+            "{code}: buyers are absorbing supply (positive money flow) but the price hasn't moved yet — "
+            "a quiet accumulation signature. A divergence, not a forecast. Not advice.",
+            "{code}: ক্রেতারা সরবরাহ শুষে নিচ্ছে (ইতিবাচক অর্থপ্রবাহ) অথচ দাম এখনও নড়েনি — নীরব সঞ্চয়ের "
+            "ছাপ। এটি ডাইভারজেন্স, পূর্বাভাস নয়। পরামর্শ নয়।",
+        ),
+    ],
+}
+
+
 def render(sig: FactorSignal, code: str, locale: str) -> str:
     # circuit shares one beat but two templates (up/down), chosen by direction.
     key = ("circuit_up" if sig.payload.get("dir") == "up" else "circuit_down") if sig.beat == "circuit" else sig.beat
-    tmpl = _T[key][1 if locale == "bn" else 0]
+    if key in _VARIANTS:
+        vs = _VARIANTS[key]
+        tmpl = vs[sum(ord(c) for c in code) % len(vs)][1 if locale == "bn" else 0]
+    else:
+        tmpl = _T[key][1 if locale == "bn" else 0]
     p = dict(sig.payload, code=code)
     if sig.beat == "momentum":
         caution = (
