@@ -63,6 +63,7 @@ const STRINGS: Record<string, Entry> = {
   thisWeek: { en: "this week", bn: "এই সপ্তাহে" },
   "btn.watch": { en: "☆ Watch", bn: "☆ ওয়াচ" },
   "btn.watching": { en: "★ Watching", bn: "★ ওয়াচড" },
+  "btn.watchLogin": { en: "Log in to watch this stock", bn: "এই স্টক ওয়াচ করতে লগ ইন করুন" },
   noQuote: { en: "No quote yet.", bn: "এখনো কোনো দর নেই।" },
   delayedAsOf: { en: "delayed · as of", bn: "বিলম্বিত · সর্বশেষ" },
   attentionRising: { en: "Attention rising", bn: "আলোচনা বাড়ছে" },

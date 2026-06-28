@@ -202,7 +202,7 @@ export function SymbolPage() {
                 )}
               </div>
             )}
-            {user && (
+            {user ? (
               <button
                 onClick={toggleWatch}
                 className={`text-sm px-3 py-1.5 rounded-full border ${
@@ -213,6 +213,15 @@ export function SymbolPage() {
               >
                 {watched ? t("btn.watching") : t("btn.watch")}
               </button>
+            ) : (
+              // Logged out: still show Watch; tapping routes to login (like post reactions).
+              <Link
+                to="/me"
+                title={t("btn.watchLogin")}
+                className="text-sm px-3 py-1.5 rounded-full border text-muted border-border"
+              >
+                {t("btn.watch")}
+              </Link>
             )}
           </div>
         </div>
