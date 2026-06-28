@@ -105,7 +105,7 @@ async def compose_evening_wrap(session, market: str) -> ComposedPost:
                 QuoteSnapshot.ltp > 0,
             )
             .order_by(QuoteSnapshot.change_pct.desc())
-            .limit(3)
+            .limit(6)
         )
     ).all()
     movers = [cards.Mover(code=c, change_pct=p or 0.0) for c, p in rows]
