@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 600" role="img" aria-label="Bulls of Dhaka logo">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd86b"/><stop offset="0.55" stop-color="#f5b82e"/><stop offset="1" stop-color="#c8901a"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2ecc71"/><stop offset="1" stop-color="#0f9d58"/></linearGradient>
+  </defs>
+  <g transform="translate(60,70) scale(0.45)">
+    <g fill="url(#gold)">
+      <path d="M248 198 C172 300 160 388 236 458 L346 556 L386 720 L446 842 L506 902 L566 842 L626 720 L666 556 L788 444 C864 374 852 294 776 198 C776 328 715 407 628 466 L576 544 L512 604 L448 544 L396 466 C309 407 248 328 248 198 Z"/>
+      <path d="M310 478 L394 542 L360 558 L282 502 Z"/><path d="M714 478 L630 542 L664 558 L742 502 Z"/>
+      <path d="M451 752 L490 786 L468 802 Z" fill="#0b0f14"/><path d="M573 752 L534 786 L556 802 Z" fill="#0b0f14"/>
+      <path d="M454 856 L486 870 L464 888 Z" fill="#0b0f14"/><path d="M570 856 L538 870 L560 888 Z" fill="#0b0f14"/>
+      <path d="M360 605 L466 468 L542 560 L808 256 L838 342 L578 648 L468 548 L388 648 Z"/><path d="M786 248 L886 190 L864 306 Z"/>
+    </g>
+    <g fill="url(#green)"><rect x="424" y="315" width="52" height="162" rx="4"/><rect x="492" y="252" width="54" height="224" rx="4"/><rect x="562" y="190" width="62" height="290" rx="4"/></g>
+  </g>
+  <g font-family="Inter, Arial, Helvetica, sans-serif">
+    <text x="570" y="245" font-size="112" font-weight="800" fill="#f4f6f8">Bulls</text>
+    <text x="900" y="245" font-size="84" font-weight="600" fill="#f5b82e">of</text>
+    <text x="1015" y="245" font-size="112" font-weight="800" fill="#0f9d58">Dhaka</text>
+    <text x="570" y="340" font-size="58" font-weight="700" fill="#f5b82e">Facts, not rumours</text>
+    <text x="570" y="420" font-size="34" letter-spacing="8" fill="#b8c0cc">DSE ANALYTICS</text>
+    <text x="930" y="420" font-size="34" font-weight="700" fill="#f5b82e">|</text>
+    <text x="980" y="420" font-size="34" letter-spacing="8" fill="#b8c0cc">MARKET EDGES</text>
+  </g>
+</svg>

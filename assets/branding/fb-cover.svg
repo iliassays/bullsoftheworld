@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="312" viewBox="0 0 820 312">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#11161d"/><stop offset="1" stop-color="#0b0f14"/></linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.3" r="0.5"><stop offset="0" stop-color="#f5b82e" stop-opacity="0.16"/><stop offset="1" stop-color="#f5b82e" stop-opacity="0"/></radialGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#ffd24a"/><stop offset="0.5" stop-color="#f5b82e"/><stop offset="1" stop-color="#d99a1c"/></linearGradient>
+  </defs>
+  <rect width="820" height="312" fill="url(#bg)"/>
+  <rect width="820" height="312" fill="url(#glow)"/>
+  <g transform="translate(150,78) scale(0.80)">
+    <g fill="url(#g)">
+      <path d="M150,96 C182,80 210,78 232,50 C224,84 202,110 172,124 C164,114 156,105 150,96 Z"/>
+      <path d="M106,96 C74,80 46,78 24,50 C32,84 54,110 84,124 C92,114 100,105 106,96 Z"/>
+      <path d="M128,84 C153,84 173,95 175,120 C177,151 170,173 156,185 C146,194 138,195 128,195 C118,195 110,194 100,185 C86,173 79,151 81,120 C83,95 103,84 128,84 Z"/>
+    </g>
+    <g fill="#0d1117">
+      <ellipse cx="106" cy="132" rx="10" ry="7" transform="rotate(-12 106 132)"/>
+      <ellipse cx="150" cy="132" rx="10" ry="7" transform="rotate(12 150 132)"/>
+    </g>
+    <ellipse cx="128" cy="174" rx="22" ry="15" fill="#0d1117" opacity="0.28"/>
+    <g fill="#0d1117"><ellipse cx="119" cy="174" rx="4" ry="5"/><ellipse cx="137" cy="174" rx="4" ry="5"/></g>
+  </g>
+  <text x="330" y="150" font-size="56" font-family="Helvetica,Arial" font-weight="bold" fill="#f5b82e">Bulls of Dhaka</text>
+  <text x="332" y="190" font-size="23" font-family="Helvetica,Arial" fill="#e7ecf2">তথ্যে চলুন, গুজবে নয়  ·  Facts, not rumours</text>
+  <text x="332" y="224" font-size="20" font-family="Helvetica,Arial" font-weight="bold" fill="#f5b82e">Live DSE data  ·  bullsofdhaka.com</text>
+</svg>

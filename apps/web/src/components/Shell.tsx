@@ -38,9 +38,7 @@ export function Shell() {
     <div className="min-h-full max-w-[480px] mx-auto flex flex-col bg-bg">
       <header className="sticky top-0 z-20 bg-bg/85 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg grid place-items-center text-lg bg-gradient-to-br from-accent to-[#c8901a] shadow-[0_4px_14px_rgba(245,184,46,0.35)]">
-            🐂
-          </div>
+          <img src="/logo-mark.png" alt="Bulls of Dhaka" className="w-9 h-9 shrink-0" />
           <div className="leading-tight min-w-0">
             <div className="font-bold text-base">Bulls of Dhaka</div>
             <div lang={lang} className="text-[11px] text-accent font-semibold truncate">
