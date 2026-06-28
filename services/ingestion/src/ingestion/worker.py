@@ -18,6 +18,7 @@ import datetime as dt
 import logging
 from typing import ClassVar
 
+import httpx
 from arq import cron
 from arq.connections import RedisSettings
 
@@ -140,10 +141,34 @@ async def pull_news(ctx) -> str:
 
 
 async def run_market_signals(ctx) -> str:
-    """Disabled: the daily market wrap is now published as a branded card (text + image) via the
-    API (POST /admin/fb/publish-feed), so the in-app feed and Facebook share one source. This
-    avoids a duplicate text-only wrap. Re-enable here only if reverting to text-only wraps."""
-    return "disabled: wrap published as a card via the API"
+    """Auto-publish the daily Evening Wrap card to the in-app feed AND the Facebook page.
+
+    Posting + dedupe live in the API; this just triggers both endpoints (idempotent per day, so a
+    manual publish or a re-run won't double-post). Trading days only.
+    """
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    s = get_settings()
+    if not s.admin_token:
+        return "skipped: ADMIN_TOKEN not set"
+    headers = {"X-Admin-Token": s.admin_token}
+    base = s.api_public_url.rstrip("/")
+    results: dict[str, str] = {}
+    async with httpx.AsyncClient(timeout=90) as client:
+        for name, path in (
+            ("feed", "/admin/fb/publish-feed?kind=evening_wrap"),
+            ("fb", "/admin/fb/publish?kind=evening_wrap"),
+        ):
+            try:
+                r = await client.post(f"{base}{path}", headers=headers)
+                results[name] = (
+                    r.json().get("status", "ok") if r.status_code < 300 else f"err{r.status_code}"
+                )
+            except Exception as e:  # never let one surface break the other / the worker
+                results[name] = f"error: {type(e).__name__}"
+    log.info("evening wrap auto-post: %s", results)
+    return f"wrap {results}"
 
 
 async def run_factor_signals(ctx) -> str:
@@ -194,8 +219,9 @@ class WorkerSettings:
         cron(run_ownership_signals, weekday="fri", hour=14, minute=10, run_at_startup=False),
         # Unusual-volume notes mid/late session, after the :30 quote polls.
         cron(run_volume_signals, hour={5, 6, 7, 8}, minute=45, run_at_startup=False),
-        # Market-wide close wrap, after the EOD summary lands.
-        cron(run_market_signals, hour=13, minute=30, run_at_startup=False),
+        # Evening Wrap card → in-app feed + Facebook, after EOD summary/analytics/factor notes
+        # land (13:05/13:15/13:40 UTC ≈ 19:40 Dhaka). Trading days only; idempotent per day.
+        cron(run_market_signals, hour=13, minute=50, run_at_startup=False),
         # Factor notes (momentum / quality / smart-money / relative strength), after analytics (13:15).
         cron(run_factor_signals, hour=13, minute=40, run_at_startup=False),
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
