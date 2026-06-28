@@ -6,13 +6,15 @@ Deterministic — no LLM — so it's free, reliable, and stays on the descriptiv
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
 from api.deps import visible_codes
 from api.fb import cards
-from bulls.core.models import MarketSummary, QuoteSnapshot
+from bulls.core.models import DailyBar, MarketSummary, QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.market_data.calendar import to_market_tz
 
 LINK = "https://bullsofdhaka.com"
 _NO_ADVICE_BN = "তথ্যমূলক, পরামর্শ নয়।"
@@ -140,3 +142,137 @@ async def compose_evening_wrap(session, market: str) -> ComposedPost:
         png=cards.evening_wrap_card(data),
         link=LINK,
     )
+
+
+# --- Morning Watch (FB only) -------------------------------------------------
+def _codes_str(codes: list[str]) -> str:
+    return ", ".join(f"${c}" for c in codes) or "—"
+
+
+async def _top_codes(session, market: str, col, *, where=None, limit: int = 3):
+    vis = visible_codes(market)
+    stmt = select(TickerAnalytics.code, col).where(
+        TickerAnalytics.market == market, TickerAnalytics.code.in_(vis), col.isnot(None)
+    )
+    if where is not None:
+        stmt = stmt.where(where)
+    stmt = stmt.order_by(col.desc()).limit(limit)
+    return (await session.execute(stmt)).all()
+
+
+async def compose_morning_watch(session, market: str) -> ComposedPost:
+    summary = await session.scalar(
+        select(MarketSummary)
+        .where(MarketSummary.market == market)
+        .order_by(MarketSummary.date.desc())
+        .limit(1)
+    )
+    near = await _top_codes(
+        session, market, TickerAnalytics.pct_from_52w_high,
+        where=TickerAnalytics.pct_from_52w_high >= -5,
+    )
+    mom = await _top_codes(
+        session, market, TickerAnalytics.mom_3_1, where=TickerAnalytics.mom_3_1 > 0
+    )
+    vol = await _top_codes(
+        session, market, TickerAnalytics.rel_volume_5d, where=TickerAnalytics.rel_volume_5d > 1.2
+    )
+    groups = [
+        cards.WatchGroup("NEAR 52W HIGH", [(c, f"{p:.1f}% from high") for c, p in near]),
+        cards.WatchGroup("MOMENTUM", [(c, f"{m:+.0f}% 3M") for c, m in mom]),
+        cards.WatchGroup("HEAVY VOLUME", [(c, f"{v:.1f}x avg") for c, v in vol]),
+    ]
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    dsex = "—" if summary is None or summary.dsex is None else f"{summary.dsex:,.0f}"
+    chg = None if summary is None else index_pct(summary.dsex, summary.dsex_change)
+    chg_txt = "" if chg is None else f" ({chg:+.2f}%)"
+    data = cards.MorningWatchData(
+        date_label=today.strftime("%d %b %Y"),
+        dsex=summary.dsex if summary else None,
+        dsex_change=chg,
+        groups=groups,
+    )
+    nh, mm, vv = (_codes_str([c for c, _ in g]) for g in (near, mom, vol))
+    caption = (
+        f"🌅 মর্নিং ওয়াচ — {data.date_label}\n"
+        f"গত ক্লোজে DSEX {dsex}{chg_txt}।\n"
+        f"আজ নজরে — চূড়ার কাছে: {nh} · মোমেন্টাম: {mm} · বেশি ভলিউম: {vv}।\n{_NO_ADVICE_BN}\n\n"
+        f"🌅 Morning Watch — {data.date_label}\n"
+        f"At last close DSEX {dsex}{chg_txt}.\n"
+        f"On the radar — near highs: {nh} · momentum: {mm} · heavy volume: {vv}.\n{_NO_ADVICE_EN}\n\n"
+        f"👉 {LINK}"
+    )
+    return ComposedPost("morning_watch", str(today), caption, cards.morning_watch_card(data), LINK)
+
+
+# --- Weekly Recap (FB only) --------------------------------------------------
+async def compose_weekly_recap(session, market: str) -> ComposedPost:
+    latest = await session.scalar(
+        select(func.max(DailyBar.date)).where(DailyBar.market == market)
+    )
+    if latest is None:
+        raise cards.CardError("no daily bars available")
+    cutoff = latest - dt.timedelta(days=8)
+    vis = visible_codes(market)
+    rows = (
+        await session.execute(
+            select(DailyBar.code, DailyBar.date, DailyBar.close)
+            .where(DailyBar.market == market, DailyBar.code.in_(vis), DailyBar.date >= cutoff)
+            .order_by(DailyBar.code, DailyBar.date)
+        )
+    ).all()
+    first: dict[str, float] = {}
+    last: dict[str, float] = {}
+    first_date = latest
+    for code, d, close in rows:
+        if close is None or close <= 0:
+            continue
+        if code not in first:
+            first[code] = close
+        last[code] = close
+        first_date = min(first_date, d)
+    pcts = {
+        c: (last[c] - first[c]) / first[c] * 100 for c in first if c in last and first[c] > 0
+    }
+    ranked = sorted(pcts.items(), key=lambda kv: kv[1], reverse=True)
+    gainers = [cards.Mover(c, p) for c, p in ranked[:3]]
+    losers = [cards.Mover(c, p) for c, p in ranked[-3:][::-1]]
+
+    # DSEX week change
+    dsex_rows = (
+        await session.execute(
+            select(MarketSummary.dsex)
+            .where(MarketSummary.market == market, MarketSummary.date >= cutoff)
+            .order_by(MarketSummary.date)
+        )
+    ).scalars().all()
+    week_pct = None
+    if len(dsex_rows) >= 2 and dsex_rows[0]:
+        week_pct = (dsex_rows[-1] - dsex_rows[0]) / dsex_rows[0] * 100
+
+    # leading / lagging sector (>= 3 names)
+    sectors = dict(
+        (await session.execute(select(Symbol.code, Symbol.sector).where(Symbol.market == market))).all()
+    )
+    by_sector: dict[str, list[float]] = {}
+    for c, p in pcts.items():
+        sec = sectors.get(c)
+        if sec:
+            by_sector.setdefault(sec, []).append(p)
+    sec_avg = {s: sum(v) / len(v) for s, v in by_sector.items() if len(v) >= 3}
+    lead = max(sec_avg, key=sec_avg.get) if sec_avg else None
+    lag = min(sec_avg, key=sec_avg.get) if sec_avg else None
+
+    range_label = f"{first_date.strftime("%d")}-{latest.strftime('%d %b %Y')}"
+    data = cards.WeeklyRecapData(range_label, week_pct, gainers, losers, lead, lag)
+    g = ", ".join(f"${m.code} {m.change_pct:+.0f}%" for m in gainers)
+    li = ", ".join(f"${m.code} {m.change_pct:+.0f}%" for m in losers)
+    wk = "—" if week_pct is None else f"{week_pct:+.2f}%"
+    caption = (
+        f"📅 সপ্তাহের সারসংক্ষেপ — {range_label}\n"
+        f"এই সপ্তাহে DSEX {wk}।\nশীর্ষ গেইনার: {g}।\nশীর্ষ লুজার: {li}।\n{_NO_ADVICE_BN}\n\n"
+        f"📅 Week in Review — {range_label}\n"
+        f"DSEX {wk} on the week.\nTop gainers: {g}.\nTop losers: {li}.\n{_NO_ADVICE_EN}\n\n"
+        f"👉 {LINK}"
+    )
+    return ComposedPost("weekly_recap", str(latest), caption, cards.weekly_recap_card(data), LINK)

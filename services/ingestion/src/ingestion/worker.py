@@ -140,35 +140,53 @@ async def pull_news(ctx) -> str:
     return f"news_kept={counts['kept']} notes={sig['published']}"
 
 
-async def run_market_signals(ctx) -> str:
-    """Auto-publish the daily Evening Wrap card to the in-app feed AND the Facebook page.
-
-    Posting + dedupe live in the API; this just triggers both endpoints (idempotent per day, so a
-    manual publish or a re-run won't double-post). Trading days only.
-    """
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
-    if not is_trading_day(today):
-        return "skipped: non-trading day"
+async def _trigger_publish(paths: list[str]) -> dict[str, str]:
+    """POST each publish path against the API (posting + dedupe live there). Idempotent per day,
+    so a manual publish or a re-run won't double-post; one path failing won't break the others."""
     s = get_settings()
     if not s.admin_token:
-        return "skipped: ADMIN_TOKEN not set"
+        return {"_": "skipped: no ADMIN_TOKEN"}
     headers = {"X-Admin-Token": s.admin_token}
     base = s.api_public_url.rstrip("/")
-    results: dict[str, str] = {}
+    out: dict[str, str] = {}
     async with httpx.AsyncClient(timeout=90) as client:
-        for name, path in (
-            ("feed", "/admin/fb/publish-feed?kind=evening_wrap"),
-            ("fb", "/admin/fb/publish?kind=evening_wrap"),
-        ):
+        for p in paths:
+            name = p.rsplit("=", 1)[-1] + ("·feed" if "publish-feed" in p else "")
             try:
-                r = await client.post(f"{base}{path}", headers=headers)
-                results[name] = (
-                    r.json().get("status", "ok") if r.status_code < 300 else f"err{r.status_code}"
-                )
-            except Exception as e:  # never let one surface break the other / the worker
-                results[name] = f"error: {type(e).__name__}"
-    log.info("evening wrap auto-post: %s", results)
-    return f"wrap {results}"
+                r = await client.post(f"{base}{p}", headers=headers)
+                out[name] = r.json().get("status", "ok") if r.status_code < 300 else f"err{r.status_code}"
+            except Exception as e:
+                out[name] = f"error: {type(e).__name__}"
+    return out
+
+
+async def run_market_signals(ctx) -> str:
+    """Daily Evening Wrap card → in-app feed AND Facebook, after the close. Trading days only."""
+    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+        return "skipped: non-trading day"
+    res = await _trigger_publish(
+        ["/admin/fb/publish-feed?kind=evening_wrap", "/admin/fb/publish?kind=evening_wrap"]
+    )
+    log.info("evening wrap auto-post: %s", res)
+    return f"evening {res}"
+
+
+async def run_morning_watch(ctx) -> str:
+    """Pre-open Morning Watch card → Facebook only. Trading days only."""
+    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+        return "skipped: non-trading day"
+    res = await _trigger_publish(["/admin/fb/publish?kind=morning_watch"])
+    log.info("morning watch auto-post: %s", res)
+    return f"morning {res}"
+
+
+async def run_weekly_recap(ctx) -> str:
+    """Weekly recap card → Facebook only. Fires Thursday after close (cron weekday)."""
+    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+        return "skipped: non-trading day"
+    res = await _trigger_publish(["/admin/fb/publish?kind=weekly_recap"])
+    log.info("weekly recap auto-post: %s", res)
+    return f"weekly {res}"
 
 
 async def run_factor_signals(ctx) -> str:
@@ -222,6 +240,10 @@ class WorkerSettings:
         # Evening Wrap card → in-app feed + Facebook, after EOD summary/analytics/factor notes
         # land (13:05/13:15/13:40 UTC ≈ 19:40 Dhaka). Trading days only; idempotent per day.
         cron(run_market_signals, hour=13, minute=50, run_at_startup=False),
+        # Morning Watch card → Facebook only, pre-open (03:30 UTC ≈ 09:30 Dhaka, before 10:00 open).
+        cron(run_morning_watch, hour=3, minute=30, run_at_startup=False),
+        # Weekly Recap card → Facebook only, Thursday after close (14:00 UTC ≈ 20:00 Dhaka).
+        cron(run_weekly_recap, weekday="thu", hour=14, minute=0, run_at_startup=False),
         # Factor notes (momentum / quality / smart-money / relative strength), after analytics (13:15).
         cron(run_factor_signals, hour=13, minute=40, run_at_startup=False),
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,

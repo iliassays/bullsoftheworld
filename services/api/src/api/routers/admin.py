@@ -19,7 +19,11 @@ from bulls.core.config import get_settings
 from bulls.core.models import Symbol
 
 # pillar key -> composer; add a pillar by adding its composer here
-_FB_COMPOSERS = {"evening_wrap": fbcompose.compose_evening_wrap}
+_FB_COMPOSERS = {
+    "evening_wrap": fbcompose.compose_evening_wrap,
+    "morning_watch": fbcompose.compose_morning_watch,
+    "weekly_recap": fbcompose.compose_weekly_recap,
+}
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
