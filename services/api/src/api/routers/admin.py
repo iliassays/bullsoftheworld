@@ -14,6 +14,7 @@ from sqlalchemy import select, update
 from api import facebook
 from api.deps import CurrentTenant, DbSession, require_admin
 from api.fb import compose as fbcompose
+from api.fb import feed as fbfeed
 from bulls.core.config import get_settings
 from bulls.core.models import Symbol
 
@@ -159,3 +160,21 @@ async def fb_publish(
         return {"status": "posted", "post_id": post_id, "ref_date": post.ref_date}
     finally:
         await redis.aclose()
+
+
+@router.post("/fb/publish-feed")
+async def fb_publish_feed(
+    tenant: CurrentTenant,
+    session: DbSession,
+    kind: str = Query("evening_wrap"),
+    force: bool = Query(False, description="Repost even if already in the feed for this ref_date"),
+) -> dict:
+    """Publish a pillar's card into the in-app Bulls feed (agent note + card image)."""
+    if kind != "evening_wrap":
+        raise HTTPException(status_code=404, detail=f"unsupported feed kind: {kind}")
+    try:
+        return await fbfeed.publish_evening_wrap_to_feed(
+            session, tenant.market, tenant_id=tenant.name, force=force
+        )
+    except (fbfeed.FeedPublishError, fbcompose.cards.CardError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e

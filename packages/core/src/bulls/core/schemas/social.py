@@ -81,6 +81,7 @@ class PostOut(BaseModel):
     body: str
     sentiment: Sentiment | None = None
     cashtags: list[str] = []
+    image_url: str | None = None  # agent-generated card (e.g. Evening Wrap); never user uploads
     created_at: dt.datetime
     kind: str = "user"  # 'user' | 'note' (automated agent desk-note)
     parent_id: int | None = None

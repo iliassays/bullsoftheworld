@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.queue import close_pool
 from api.routers import (
@@ -67,6 +68,12 @@ async def resolve_tenant(request: Request, call_next):
     registry: TenantRegistry = request.app.state.tenants
     request.state.tenant = registry.resolve(request.headers.get("host"))
     return await call_next(request)
+
+
+# Serve generated card images (agent cards, e.g. Evening Wrap) referenced from feed posts.
+_card_dir = Path(get_settings().card_dir)
+_card_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/cards", StaticFiles(directory=_card_dir), name="cards")
 
 
 app.include_router(health.router)

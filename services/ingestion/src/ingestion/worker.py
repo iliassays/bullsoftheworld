@@ -35,7 +35,6 @@ from ingestion.signals.news_agents import run_news_agents
 from ingestion.signals.runner import (
     run_factor_agents,
     run_levels_agent,
-    run_market_update,
     run_ownership_agents,
     run_volume_agent,
 )
@@ -141,13 +140,10 @@ async def pull_news(ctx) -> str:
 
 
 async def run_market_signals(ctx) -> str:
-    """Post the daily market-wide close wrap — only on trading days."""
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
-    if not is_trading_day(today):
-        return "skipped: non-trading day"
-    counts = await run_market_update(MARKET)
-    log.info("market wrap: %s published", counts["published"])
-    return f"market={counts['published']}"
+    """Disabled: the daily market wrap is now published as a branded card (text + image) via the
+    API (POST /admin/fb/publish-feed), so the in-app feed and Facebook share one source. This
+    avoids a duplicate text-only wrap. Re-enable here only if reverting to text-only wraps."""
+    return "disabled: wrap published as a card via the API"
 
 
 async def run_factor_signals(ctx) -> str:

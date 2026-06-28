@@ -27,6 +27,8 @@ class Post(Base):
     # Null for user-written posts (shown as typed, in whatever language the author used).
     body_i18n: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     sentiment: Mapped[str | None] = mapped_column(String(8))  # 'bull' | 'bear' | None
+    # Optional image (agent-generated cards only, e.g. the Evening Wrap). Never user uploads.
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     kind: Mapped[str] = mapped_column(String(8), server_default="user")  # 'user' | 'note' (agent)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True

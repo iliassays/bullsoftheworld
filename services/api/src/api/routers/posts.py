@@ -111,6 +111,7 @@ async def _decorate(
                 body=_localized_body(p, locale),
                 sentiment=p.sentiment,
                 cashtags=tags.get(p.id, []),
+                image_url=p.image_url,
                 created_at=p.created_at,
                 kind=p.kind,
                 parent_id=p.parent_id,

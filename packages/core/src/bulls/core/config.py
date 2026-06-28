@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     fb_page_token: str = ""
     fb_graph_version: str = "v21.0"
 
+    # --- Generated card images (served by the API, referenced from feed posts) ---
+    card_dir: str = "/tmp/bulls-cards"  # writable dir for generated card PNGs
+    api_public_url: str = "http://localhost:8090"  # public base the cards are served from
+
     @property
     def email_enabled(self) -> bool:
         return bool(self.resend_api_key or (self.smtp_server and self.smtp_username))

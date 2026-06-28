@@ -44,27 +44,35 @@ def index_pct(dsex: float | None, points: float | None) -> float | None:
     return pct if abs(pct) <= 20 else None
 
 
-def evening_caption(d: cards.EveningWrapData) -> str:
-    """Pure caption builder (bilingual). Numbers stay Western numerals."""
+def evening_bodies(d: cards.EveningWrapData) -> dict[str, str]:
+    """Bilingual wrap prose, one entry per locale (for the in-app feed note)."""
     dsex = "—" if d.dsex is None else f"{d.dsex:,.0f}"
     chg = "" if d.dsex_change is None else f" ({d.dsex_change:+.2f}%)"
     turnover = "" if d.turnover_cr is None else f" · টার্নওভার Tk {d.turnover_cr:,.0f} কোটি"
     turnover_en = "" if d.turnover_cr is None else f" · turnover Tk {d.turnover_cr:,.0f} cr"
     movers = _movers_str(d.movers)
-    bn = (
-        f"🌙 ইভিনিং র‍্যাপ — {d.date_label}\n"
-        f"DSEX {dsex}{chg} · {d.advancers}টি বেড়েছে, {d.decliners}টি কমেছে{turnover}।\n"
-        f"শীর্ষ মুভার: {movers}।\n{_NO_ADVICE_BN}"
-    )
-    en = (
-        f"🌙 Evening Wrap — {d.date_label}\n"
-        f"DSEX {dsex}{chg} · {d.advancers} up, {d.decliners} down{turnover_en}.\n"
-        f"Top movers: {movers}.\n{_NO_ADVICE_EN}"
-    )
-    return f"{bn}\n\n{en}\n\n👉 {LINK}"
+    return {
+        "bn": (
+            f"🌙 ইভিনিং র‍্যাপ — {d.date_label}\n"
+            f"DSEX {dsex}{chg} · {d.advancers}টি বেড়েছে, {d.decliners}টি কমেছে{turnover}।\n"
+            f"শীর্ষ মুভার: {movers}।\n{_NO_ADVICE_BN}"
+        ),
+        "en": (
+            f"🌙 Evening Wrap — {d.date_label}\n"
+            f"DSEX {dsex}{chg} · {d.advancers} up, {d.decliners} down{turnover_en}.\n"
+            f"Top movers: {movers}.\n{_NO_ADVICE_EN}"
+        ),
+    }
 
 
-async def compose_evening_wrap(session, market: str) -> ComposedPost:
+def evening_caption(d: cards.EveningWrapData) -> str:
+    """Combined bilingual caption + link (for the Facebook post)."""
+    b = evening_bodies(d)
+    return f"{b['bn']}\n\n{b['en']}\n\n👉 {LINK}"
+
+
+async def build_evening_data(session, market: str) -> tuple[cards.EveningWrapData, str]:
+    """Fetch market data → (EveningWrapData, ref_date). Shared by the FB card + the feed note."""
     summary = await session.scalar(
         select(MarketSummary)
         .where(MarketSummary.market == market)
@@ -120,9 +128,14 @@ async def compose_evening_wrap(session, market: str) -> ComposedPost:
         turnover_cr=(summary.total_value_mn / 10) if summary.total_value_mn else None,
         movers=movers,
     )
+    return data, str(summary.date)
+
+
+async def compose_evening_wrap(session, market: str) -> ComposedPost:
+    data, ref_date = await build_evening_data(session, market)
     return ComposedPost(
         kind="evening_wrap",
-        ref_date=str(summary.date),
+        ref_date=ref_date,
         caption=evening_caption(data),
         png=cards.evening_wrap_card(data),
         link=LINK,

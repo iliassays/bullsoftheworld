@@ -300,6 +300,7 @@ export interface Post {
   body: string;
   sentiment: "bull" | "bear" | null;
   cashtags: string[];
+  image_url: string | null;
   created_at: string;
   kind: "user" | "note";
   parent_id: number | null;

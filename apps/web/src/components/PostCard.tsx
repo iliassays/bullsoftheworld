@@ -133,6 +133,14 @@ export function PostCard({
         </div>
       </header>
       <Body text={post.body} />
+      {post.image_url && (
+        <img
+          src={post.image_url}
+          alt=""
+          loading="lazy"
+          className="w-full rounded-xl border border-border my-2"
+        />
+      )}
       {post.cashtags.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           {post.cashtags.map((c) => (
