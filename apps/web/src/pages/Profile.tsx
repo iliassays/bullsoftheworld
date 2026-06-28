@@ -8,7 +8,7 @@ import { Avatar } from "../components/ui";
 // Real, monitored mailbox — also set as Reply-To on transactional email.
 const SUPPORT_EMAIL = "hello@bullsofdhaka.com";
 
-const PHONE_RE = /^(\+?880|0)?1\d{9}$/; // lenient BD-mobile check (server is the source of truth)
+const PHONE_RE = /^\+?\d{7,15}$/; // lenient: BD (01…) or international (+cc…); server normalizes
 
 // One contact row (email or phone): shows value + verified state, lets the user add/change it.
 function ContactRow({

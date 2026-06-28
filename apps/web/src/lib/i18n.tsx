@@ -454,8 +454,8 @@ const STRINGS: Record<string, Entry> = {
     bn: "ফোন যাচাই শীঘ্রই আসছে",
   },
   "profile.badPhone": {
-    en: "Enter a valid Bangladeshi mobile number",
-    bn: "সঠিক বাংলাদেশি মোবাইল নম্বর দিন",
+    en: "Enter a valid phone number (with country code if outside Bangladesh)",
+    bn: "সঠিক ফোন নম্বর দিন (বাংলাদেশের বাইরে হলে কান্ট্রি কোডসহ)",
   },
   "profile.password": {
     en: "password (min 8 chars)",

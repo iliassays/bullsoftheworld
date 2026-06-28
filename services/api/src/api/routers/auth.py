@@ -66,7 +66,7 @@ async def register(
         phone = normalize_phone(contact)
         if phone is None:
             raise HTTPException(
-                status_code=400, detail="Enter a valid email or Bangladeshi mobile number"
+                status_code=400, detail="Enter a valid email or phone number"
             )
     if email and await session.scalar(select(User.id).where(User.email == email)):
         raise HTTPException(status_code=409, detail="This email is already registered — please log in")
@@ -201,7 +201,7 @@ async def update_contact(
     if body.phone is not None:
         phone = normalize_phone(body.phone)
         if phone is None:
-            raise HTTPException(status_code=400, detail="Enter a valid Bangladeshi mobile number")
+            raise HTTPException(status_code=400, detail="Enter a valid phone number")
         if phone != user.phone:
             if await session.scalar(select(User.id).where(User.phone == phone, User.id != user.id)):
                 raise HTTPException(status_code=409, detail="This phone is already in use")
