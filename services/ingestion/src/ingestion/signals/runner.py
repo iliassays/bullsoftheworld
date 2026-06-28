@@ -37,7 +37,7 @@ _OWN_COOLDOWN_DAYS = 20  # ownership discloses monthly — don't refire within a
 
 
 async def run_levels_agent(
-    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+    market: str, *, tenant_id: str = "bullsofdhaka"
 ) -> dict[str, int]:
     sm = get_sessionmaker()
     handle = AGENTS[BEAT][0]
@@ -90,7 +90,7 @@ async def run_levels_agent(
                     agent_handle=handle,
                     event_type=sig.event_type,
                     occurrence_key=sig.occurrence_key,
-                    body=render(sig, code, locale),
+                    body_i18n={"bn": render(sig, code, "bn"), "en": render(sig, code, "en")},
                     as_of=today.as_of_date,
                 )
                 published += 1
@@ -100,7 +100,7 @@ async def run_levels_agent(
 
 
 async def run_ownership_agents(
-    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+    market: str, *, tenant_id: str = "bullsofdhaka"
 ) -> dict[str, int]:
     """Compare each symbol's two latest shareholding disclosures; post material stake changes."""
     sm = get_sessionmaker()
@@ -149,7 +149,10 @@ async def run_ownership_agents(
                     agent_handle=handle,
                     event_type=sig.event_type,
                     occurrence_key=sig.occurrence_key,
-                    body=ownership.render(sig, code, locale),
+                    body_i18n={
+                        "bn": ownership.render(sig, code, "bn"),
+                        "en": ownership.render(sig, code, "en"),
+                    },
                     as_of=latest.as_of_date,
                 )
                 published += 1
@@ -158,7 +161,7 @@ async def run_ownership_agents(
 
 
 async def run_volume_agent(
-    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+    market: str, *, tenant_id: str = "bullsofdhaka"
 ) -> dict[str, int]:
     """Flag unusual intraday volume vs the expected-by-now pace. Fires once per name per day."""
     now = dt.datetime.now(dt.UTC)
@@ -222,7 +225,10 @@ async def run_volume_agent(
                 agent_handle=handle,
                 event_type=sig.event_type,
                 occurrence_key=sig.occurrence_key,
-                body=volume.render(sig, code, locale),
+                body_i18n={
+                    "bn": volume.render(sig, code, "bn"),
+                    "en": volume.render(sig, code, "en"),
+                },
                 as_of=today,
             )
             published += 1
@@ -231,7 +237,7 @@ async def run_volume_agent(
 
 
 async def run_factor_agents(
-    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+    market: str, *, tenant_id: str = "bullsofdhaka"
 ) -> dict[str, int]:
     """Descriptive factor notes (momentum / quality-value / smart-money / relative strength) from the
     precomputed analytics row + today's price vs the index. Once per name per factor per month."""
@@ -302,7 +308,10 @@ async def run_factor_agents(
                     agent_handle=AGENTS[sig.beat][0],
                     event_type=sig.event_type,
                     occurrence_key=sig.occurrence_key,
-                    body=factors.render(sig, ta.code, locale),
+                    body_i18n={
+                        "bn": factors.render(sig, ta.code, "bn"),
+                        "en": factors.render(sig, ta.code, "en"),
+                    },
                     as_of=ta.as_of_date,
                 )
                 published += 1
@@ -311,7 +320,7 @@ async def run_factor_agents(
 
 
 async def run_market_update(
-    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+    market: str, *, tenant_id: str = "bullsofdhaka"
 ) -> dict[str, int]:
     """One market-wide close wrap (DSEX + breadth + turnover). No cashtag — global feed only."""
     sm = get_sessionmaker()
@@ -351,7 +360,10 @@ async def run_market_update(
             agent_handle=AGENTS[market_wrap.BEAT][0],
             event_type="market_wrap",
             occurrence_key=key,
-            body=market_wrap.render(summary, adv or 0, dec or 0, locale),
+            body_i18n={
+                "bn": market_wrap.render(summary, adv or 0, dec or 0, "bn"),
+                "en": market_wrap.render(summary, adv or 0, dec or 0, "en"),
+            },
             as_of=summary.date,
             add_cashtag=False,
         )

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -22,6 +22,10 @@ class Post(Base):
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), index=True)
     body: Mapped[str] = mapped_column(Text)
+    # Agent desk-notes come from deterministic bilingual templates, so we store BOTH renders
+    # ({"en": ..., "bn": ...}) and the feed serves whichever matches the reader's language flag.
+    # Null for user-written posts (shown as typed, in whatever language the author used).
+    body_i18n: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     sentiment: Mapped[str | None] = mapped_column(String(8))  # 'bull' | 'bear' | None
     kind: Mapped[str] = mapped_column(String(8), server_default="user")  # 'user' | 'note' (agent)
     created_at: Mapped[dt.datetime] = mapped_column(

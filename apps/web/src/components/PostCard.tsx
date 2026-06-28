@@ -6,8 +6,6 @@ import { useLang } from "../lib/i18n";
 import { Composer } from "./Composer";
 import { Avatar, SentimentTag } from "./ui";
 
-const BANGLA = /[ঀ-৿]/; // any Bengali codepoint → already in Bangla
-
 const ago = (iso: string) => {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${s}s`;
@@ -48,8 +46,6 @@ export function PostCard({
 }) {
   const { user } = useAuth();
   const { t } = useLang();
-  const [translation, setTranslation] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   // conviction state (optimistic)
   const [agree, setAgree] = useState(post.agree);
@@ -60,17 +56,6 @@ export function PostCard({
   const [open, setOpen] = useState(false);
   const [replies, setReplies] = useState<Post[] | null>(null);
   const [replyCount, setReplyCount] = useState(post.reply_count);
-
-  const onTranslate = async () => {
-    setLoading(true);
-    try {
-      setTranslation((await api.translatePost(post.body)).text);
-    } catch {
-      // best-effort; leave the original
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const react = async (kind: ReactionKind) => {
     if (!user) return;
@@ -148,23 +133,6 @@ export function PostCard({
         </div>
       </header>
       <Body text={post.body} />
-      {!BANGLA.test(post.body) &&
-        (translation ? (
-          <p
-            lang="bn"
-            className="text-[14px] leading-relaxed text-muted my-2 break-words"
-          >
-            {translation}
-          </p>
-        ) : (
-          <button
-            onClick={onTranslate}
-            disabled={loading}
-            className="text-xs text-accent mb-2 disabled:opacity-50"
-          >
-            {loading ? "অনুবাদ হচ্ছে…" : "অনুবাদ · Translate to বাংলা"}
-          </button>
-        ))}
       {post.cashtags.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           {post.cashtags.map((c) => (
@@ -188,14 +156,16 @@ export function PostCard({
               className={pill(mine === "agree")}
               title={t("post.agree")}
             >
-              👍 {t("post.agreeBtn")}{agree > 0 ? ` ${agree}` : ""}
+              👍 {t("post.agreeBtn")}
+              {agree > 0 ? ` ${agree}` : ""}
             </button>
             <button
               onClick={() => react("disagree")}
               className={pill(mine === "disagree")}
               title={t("post.disagree")}
             >
-              👎 {t("post.disagreeBtn")}{disagree > 0 ? ` ${disagree}` : ""}
+              👎 {t("post.disagreeBtn")}
+              {disagree > 0 ? ` ${disagree}` : ""}
             </button>
           </>
         ) : (

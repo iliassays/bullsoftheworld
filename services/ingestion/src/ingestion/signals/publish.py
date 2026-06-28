@@ -46,11 +46,20 @@ async def publish_note(
     agent_handle: str,
     event_type: str,
     occurrence_key: str,
-    body: str,
+    body: str | None = None,
+    body_i18n: dict[str, str] | None = None,
     as_of: dt.date | None,
     add_cashtag: bool = True,
 ) -> None:
-    post = Post(tenant_id=tenant_id, author_id=agent_id, body=body, kind="note")
+    # Notes are rendered from bilingual templates: store both languages so the feed can serve
+    # whichever the reader picked. `body` (non-null Text) keeps the Bangla default for back-compat.
+    if body is None:
+        if not body_i18n:
+            raise ValueError("publish_note needs body or body_i18n")
+        body = body_i18n.get("bn") or next(iter(body_i18n.values()))
+    post = Post(
+        tenant_id=tenant_id, author_id=agent_id, body=body, body_i18n=body_i18n, kind="note"
+    )
     session.add(post)
     await session.flush()
     if add_cashtag:

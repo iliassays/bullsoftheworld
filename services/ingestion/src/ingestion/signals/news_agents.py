@@ -50,7 +50,7 @@ def render(category: str, headline: str, code: str, locale: str) -> str:
 
 
 async def run_news_agents(
-    market: str, *, tenant_id: str = "bullsofdhaka", locale: str = "bn"
+    market: str, *, tenant_id: str = "bullsofdhaka"
 ) -> dict[str, int]:
     """Post one note per new material dividend/earnings/rating announcement."""
     since = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=_RECENT_DAYS)
@@ -91,7 +91,10 @@ async def run_news_agents(
                 agent_handle=AGENTS[beat][0],
                 event_type=event_type,
                 occurrence_key=a.key,
-                body=render(a.category, a.headline, a.code, locale),
+                body_i18n={
+                    "bn": render(a.category, a.headline, a.code, "bn"),
+                    "en": render(a.category, a.headline, a.code, "en"),
+                },
                 as_of=a.published_at,
             )
             published += 1

@@ -30,7 +30,6 @@ from api.routers import (
     posts,
     pulse,
     screener,
-    translate,
     trending,
     views,
     watchlist,
@@ -84,7 +83,6 @@ app.include_router(plain_read.router)
 app.include_router(posts.router)
 app.include_router(pulse.router)
 app.include_router(screener.router)
-app.include_router(translate.router)
 app.include_router(trending.router)
 app.include_router(views.router)
 app.include_router(watchlist.router)

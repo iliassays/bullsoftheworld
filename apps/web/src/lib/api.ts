@@ -47,7 +47,8 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, errorMessage(body?.detail, res.statusText));
+  if (!res.ok)
+    throw new ApiError(res.status, errorMessage(body?.detail, res.statusText));
   return body as T;
 }
 
@@ -58,9 +59,13 @@ function errorMessage(detail: unknown, fallback: string): string {
   if (Array.isArray(detail)) {
     const parts = detail.map((d) => {
       const o = (d ?? {}) as { loc?: unknown[]; msg?: string; type?: string };
-      const field = Array.isArray(o.loc) && o.loc.length ? String(o.loc[o.loc.length - 1]) : "";
+      const field =
+        Array.isArray(o.loc) && o.loc.length
+          ? String(o.loc[o.loc.length - 1])
+          : "";
       // Hide the raw regex from users; keep the readable length/required messages.
-      const msg = o.type === "string_pattern_mismatch" ? "invalid format" : (o.msg ?? "");
+      const msg =
+        o.type === "string_pattern_mismatch" ? "invalid format" : (o.msg ?? "");
       return field && msg ? `${field}: ${msg}` : msg;
     });
     return parts.filter(Boolean).join("; ") || fallback;
@@ -312,7 +317,12 @@ export interface User {
 
 export const api = {
   // auth
-  register: (b: { handle: string; name: string; email: string; password: string }) =>
+  register: (b: {
+    handle: string;
+    name: string;
+    email: string;
+    password: string;
+  }) =>
     request<{ access_token: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(b),
@@ -347,7 +357,13 @@ export const api = {
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
   sectors: () => request<Sector[]>("/sectors"),
-  screen: (key: string, limit = 50, period?: string, window?: string, direction?: string) =>
+  screen: (
+    key: string,
+    limit = 50,
+    period?: string,
+    window?: string,
+    direction?: string,
+  ) =>
     request<Screen>(
       `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}${direction ? `&direction=${direction}` : ""}`,
     ),
@@ -371,7 +387,8 @@ export const api = {
       points: { tag: string; text: string }[];
     }>(`/symbols/${code}/explainer`),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
-  plainRead: (code: string) => request<PlainRead>(`/symbols/${code}/plain-read`),
+  plainRead: (code: string) =>
+    request<PlainRead>(`/symbols/${code}/plain-read`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
@@ -384,11 +401,6 @@ export const api = {
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
-  translatePost: (text: string) =>
-    request<{ text: string; language: string }>("/translate", {
-      method: "POST",
-      body: JSON.stringify({ text }),
-    }),
 
   // posts
   feed: (code?: string, kind?: "note", limit?: number, offset?: number) => {

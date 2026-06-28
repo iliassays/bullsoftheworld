@@ -13,7 +13,7 @@ import re
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
-from api.deps import CurrentTenant, CurrentUser, DbSession, OptionalUser
+from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
 from api.queue import enqueue_sentiment
 from bulls.core.models import Cashtag, Post, PostReaction, Symbol, User
 from bulls.core.schemas.social import AuthorOut, PostCreate, PostOut, ReactionIn
@@ -40,7 +40,17 @@ async def _valid_codes(session, market: str, codes: list[str]) -> list[str]:
     return [c for c in codes if c in found]
 
 
-async def _decorate(session, posts: list[Post], *, viewer_id: int | None) -> list[PostOut]:
+def _localized_body(p: Post, locale: str) -> str:
+    """Agent notes carry both languages in body_i18n — serve the reader's pick. User posts have
+    no body_i18n and are shown exactly as typed, in whatever language the author wrote them."""
+    if p.body_i18n:
+        return p.body_i18n.get(locale) or p.body
+    return p.body
+
+
+async def _decorate(
+    session, posts: list[Post], *, viewer_id: int | None, locale: str
+) -> list[PostOut]:
     """Attach authors, cashtags, reply counts, reaction tallies, and the caller's stance.
 
     Batched to avoid N+1 across a feed page.
@@ -98,7 +108,7 @@ async def _decorate(session, posts: list[Post], *, viewer_id: int | None) -> lis
             PostOut(
                 id=p.id,
                 author=AuthorOut(handle=a.handle, name=a.name),
-                body=p.body,
+                body=_localized_body(p, locale),
                 sentiment=p.sentiment,
                 cashtags=tags.get(p.id, []),
                 created_at=p.created_at,
@@ -158,6 +168,7 @@ async def feed(
     tenant: CurrentTenant,
     session: DbSession,
     viewer: OptionalUser,
+    locale: CurrentLocale,
     code: str | None = Query(None, description="Filter to posts tagging this symbol"),
     kind: str | None = Query(None, description="Filter by kind: 'note' = agent desk-notes only"),
     limit: int = Query(50, le=100),
@@ -174,7 +185,7 @@ async def feed(
         stmt = stmt.where(Post.kind == kind)
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)
     posts = list(await session.scalars(stmt))
-    return await _decorate(session, posts, viewer_id=viewer.id if viewer else None)
+    return await _decorate(session, posts, viewer_id=viewer.id if viewer else None, locale=locale)
 
 
 @router.get("/top")
@@ -182,6 +193,7 @@ async def top_post(
     tenant: CurrentTenant,
     session: DbSession,
     viewer: OptionalUser,
+    locale: CurrentLocale,
     code: str = Query(..., description="Symbol code to find the most-discussed post for"),
     days: int = Query(7, ge=1, le=30),
 ) -> PostOut | None:
@@ -203,7 +215,9 @@ async def top_post(
             .limit(100)
         )
     )
-    decorated = await _decorate(session, candidates, viewer_id=viewer.id if viewer else None)
+    decorated = await _decorate(
+        session, candidates, viewer_id=viewer.id if viewer else None, locale=locale
+    )
     ranked = [p for p in decorated if (p.agree + p.disagree + p.reply_count) > 0]
     if not ranked:
         return None
@@ -212,7 +226,11 @@ async def top_post(
 
 @router.get("/{post_id}/replies")
 async def replies(
-    post_id: int, tenant: CurrentTenant, session: DbSession, viewer: OptionalUser
+    post_id: int,
+    tenant: CurrentTenant,
+    session: DbSession,
+    viewer: OptionalUser,
+    locale: CurrentLocale,
 ) -> list[PostOut]:
     children = list(
         await session.scalars(
@@ -221,7 +239,9 @@ async def replies(
             .order_by(Post.created_at.asc())
         )
     )
-    return await _decorate(session, children, viewer_id=viewer.id if viewer else None)
+    return await _decorate(
+        session, children, viewer_id=viewer.id if viewer else None, locale=locale
+    )
 
 
 @router.post("/{post_id}/react", status_code=200)
