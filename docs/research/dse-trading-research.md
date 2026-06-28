@@ -368,3 +368,26 @@ blended return on reserved capital is only +33%. The deeper point: Scheme-3's si
 productively absorb ~170k on average — to put more money to work you need MORE edges (more schemes),
 not a bigger stake on the same sparse signals. The concentrated 200k is efficient precisely because
 it's roughly matched to how much capital the signals can use.
+
+## 11. 9-EMA pullback + bounce (momentum continuation) — daily analogue
+
+User's idea (an intraday setup): a stock in momentum retraces to the 9-EMA, bounces for the next leg,
+held above VWAP. VWAP is intraday (we have only daily bars), so `scripts/momentum_pullback.py` tests
+the DAILY analogue: daily 9-EMA pullback + green reclaim, in an uptrend (3-mo momentum + 9>21 EMA),
+with a 20-day ROLLING VWAP as the "above VWAP" proxy. Momentum exits (trail / fixed).
+
+| exit | filter | total | maxDD | win | trades |
+|---|---|---|---|---|---|
+| trail 10% / 60d | +VWAP | -11.2% | -42.5 | 32% | 256 |
+| trail 10% / 60d | no VWAP | **+4.1%** | -29.2 | 36% | 242 |
+| fixed +15/-8 / 40d | +VWAP | -8.6% | -33.9 | 37% | 262 |
+| trail 8% / 40d | either | -38 to -43% | -47 | 33% | ~400 |
+
+Best (+4.1%) still trails buy & hold (+7.8%) and Scheme-3 (+74%). OOS: lost in BOTH train (-2.9%) and
+test (-2.3%), below index each time. The VWAP proxy made it worse, not better.
+
+**Verdict on DAILY: it loses** — consistent with DSE's known "momentum/continuation doesn't work on
+daily" behavior (pullbacks in apparent uptrends keep falling / chop). BUT this is the wrong timeframe
+for the user's setup, which is INTRADAY by nature (9-EMA bounce + session VWAP within a day). The
+daily failure neither confirms nor refutes the intraday version — that needs the titan_platform 1-min
+DSE data (silver/1m) and is a separate test. Open thread.
