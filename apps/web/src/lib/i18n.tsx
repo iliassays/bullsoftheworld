@@ -435,6 +435,28 @@ const STRINGS: Record<string, Entry> = {
     en: "Your username is created automatically from your name.",
     bn: "আপনার নাম থেকে ইউজারনেম স্বয়ংক্রিয়ভাবে তৈরি হবে।",
   },
+  "profile.account": { en: "Account & verification", bn: "অ্যাকাউন্ট ও যাচাই" },
+  "profile.emailLabel": { en: "Email", bn: "ইমেইল" },
+  "profile.phoneLabel": { en: "Phone", bn: "ফোন" },
+  "profile.verified": { en: "✓ Verified", bn: "✓ যাচাইকৃত" },
+  "profile.unverified": { en: "Unverified", bn: "যাচাই করা হয়নি" },
+  "profile.verifyBtn": { en: "Verify", bn: "যাচাই করুন" },
+  "profile.verifySent": {
+    en: "Verification link sent — check your email.",
+    bn: "যাচাই লিংক পাঠানো হয়েছে — আপনার ইমেইল দেখুন।",
+  },
+  "profile.notAdded": { en: "not added", bn: "যোগ করা হয়নি" },
+  "profile.add": { en: "Add", bn: "যোগ করুন" },
+  "profile.change": { en: "Change", bn: "পরিবর্তন" },
+  "profile.save": { en: "Save", bn: "সেভ" },
+  "profile.phoneVerifySoon": {
+    en: "Phone verification coming soon",
+    bn: "ফোন যাচাই শীঘ্রই আসছে",
+  },
+  "profile.badPhone": {
+    en: "Enter a valid Bangladeshi mobile number",
+    bn: "সঠিক বাংলাদেশি মোবাইল নম্বর দিন",
+  },
   "profile.password": {
     en: "password (min 8 chars)",
     bn: "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)",

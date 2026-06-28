@@ -7,6 +7,7 @@ interface AuthState {
   login: (identifier: string, password: string) => Promise<void>;
   register: (name: string, contact: string, password: string) => Promise<void>;
   applyToken: (token: string) => Promise<void>;
+  refresh: () => Promise<void>;
   logout: () => void;
 }
 
@@ -40,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register: async (name, contact, password) =>
           finishAuth((await api.register({ name, contact, password })).access_token),
         applyToken: finishAuth,
+        refresh: async () => setUser(await api.me()),
         logout: () => {
           tokenStore.clear();
           setUser(null);

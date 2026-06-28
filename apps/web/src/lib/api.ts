@@ -314,6 +314,10 @@ export interface User {
   handle: string;
   name: string;
   locale: string;
+  email: string | null;
+  email_verified: boolean;
+  phone: string | null;
+  phone_verified: boolean;
 }
 
 export const api = {
@@ -344,6 +348,10 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
   me: () => request<User>("/auth/me"),
+  updateContact: (b: { email?: string; phone?: string }) =>
+    request<User>("/auth/me", { method: "PATCH", body: JSON.stringify(b) }),
+  resendVerify: () =>
+    request<{ status: string }>("/auth/resend-verify", { method: "POST" }),
 
   // market
   quotes: (codes?: string[]) =>

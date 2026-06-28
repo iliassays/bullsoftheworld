@@ -1,12 +1,125 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ApiError } from "../lib/api";
+import { api, ApiError, type User } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
 
 // Real, monitored mailbox — also set as Reply-To on transactional email.
 const SUPPORT_EMAIL = "hello@bullsofdhaka.com";
+
+const PHONE_RE = /^(\+?880|0)?1\d{9}$/; // lenient BD-mobile check (server is the source of truth)
+
+// One contact row (email or phone): shows value + verified state, lets the user add/change it.
+function ContactRow({
+  kind,
+  user,
+}: {
+  kind: "email" | "phone";
+  user: User;
+}) {
+  const { t } = useLang();
+  const { refresh } = useAuth();
+  const value = kind === "email" ? user.email : user.phone;
+  const verified = kind === "email" ? user.email_verified : user.phone_verified;
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value ?? "");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const save = async () => {
+    const v = val.trim();
+    if (kind === "phone" && !PHONE_RE.test(v.replace(/[\s-]/g, ""))) {
+      setMsg(t("profile.badPhone"));
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      await api.updateContact({ [kind]: v });
+      await refresh();
+      setEditing(false);
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.detail : t("profile.error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyEmail = async () => {
+    setBusy(true);
+    setMsg("");
+    try {
+      await api.resendVerify();
+      setMsg(t("profile.verifySent"));
+    } catch {
+      setMsg(t("profile.error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1 py-2 border-b border-border last:border-0">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted w-14 shrink-0">
+          {t(kind === "email" ? "profile.emailLabel" : "profile.phoneLabel")}
+        </span>
+        <span className="text-sm flex-1 truncate">
+          {value || <span className="text-muted">{t("profile.notAdded")}</span>}
+        </span>
+        {value &&
+          (verified ? (
+            <span className="text-[11px] text-up font-semibold">{t("profile.verified")}</span>
+          ) : (
+            <span className="text-[11px] text-muted">{t("profile.unverified")}</span>
+          ))}
+        {value && !verified && kind === "email" && (
+          <button onClick={verifyEmail} disabled={busy} className="text-[11px] text-accent font-semibold">
+            {t("profile.verifyBtn")}
+          </button>
+        )}
+        <button onClick={() => setEditing((e) => !e)} className="text-[11px] text-accent">
+          {value ? t("profile.change") : t("profile.add")}
+        </button>
+      </div>
+      {value && !verified && kind === "phone" && (
+        <span className="text-[10px] text-muted pl-16">{t("profile.phoneVerifySoon")}</span>
+      )}
+      {editing && (
+        <div className="flex gap-2 pl-16 mt-1">
+          <input
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            placeholder={t(kind === "email" ? "profile.emailLabel" : "profile.phoneLabel")}
+            className="flex-1 bg-surface border border-border rounded-lg px-2 py-1.5 text-sm outline-none focus:border-accent"
+          />
+          <button
+            onClick={save}
+            disabled={busy || !val.trim()}
+            className="bg-accent text-bg font-bold text-xs px-3 rounded-lg disabled:opacity-40"
+          >
+            {busy ? "…" : t("profile.save")}
+          </button>
+        </div>
+      )}
+      {msg && <span className="text-[11px] text-muted pl-16">{msg}</span>}
+    </div>
+  );
+}
+
+function AccountSection({ user }: { user: User }) {
+  const { t } = useLang();
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-4">
+      <div className="text-xs uppercase tracking-wide text-muted mb-1">
+        {t("profile.account")}
+      </div>
+      <ContactRow kind="email" user={user} />
+      <ContactRow kind="phone" user={user} />
+    </div>
+  );
+}
 
 function ContactLine() {
   const { t } = useLang();
@@ -41,6 +154,7 @@ export function Profile() {
             <div className="text-sm text-muted">@{user.handle}</div>
           </div>
         </div>
+        <AccountSection user={user} />
         <button
           onClick={logout}
           className="text-down border border-border rounded-xl py-2.5 text-sm font-semibold"

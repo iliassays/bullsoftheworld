@@ -53,6 +53,13 @@ class UserOut(BaseModel):
     locale: str
     email: str | None = None
     email_verified: bool = False
+    phone: str | None = None
+    phone_verified: bool = False
+
+
+class ContactUpdateIn(BaseModel):
+    email: str | None = None  # add/change email (re-verifies)
+    phone: str | None = None  # add/change phone (BD mobile)
 
 
 # --- posts ---

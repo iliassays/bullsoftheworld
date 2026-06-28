@@ -21,6 +21,7 @@ from api.ratelimit import (
 from bulls.core.config import get_settings
 from bulls.core.models import User
 from bulls.core.schemas.social import (
+    ContactUpdateIn,
     ForgotIn,
     LoginIn,
     RegisterIn,
@@ -170,3 +171,50 @@ async def verify_email(body: VerifyIn, session: DbSession) -> dict[str, str]:
 @router.get("/me")
 async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)
+
+
+async def _send_verify(user: User) -> None:
+    """Best-effort verification email (never raises)."""
+    try:
+        token = create_purpose_token(str(user.id), "verify", _VERIFY_TTL_MIN)
+        subject, html, text = verify_welcome(user.name, _link("/verify", token), user.locale)
+        await send_email(user.email, subject, html, text)
+    except Exception:
+        log.exception("verify email failed for %s", user.email)
+
+
+@router.patch("/me")
+async def update_contact(
+    body: ContactUpdateIn, user: CurrentUser, session: DbSession
+) -> UserOut:
+    """Add or change email / phone after signup. Changing a contact resets its verified flag."""
+    if body.email is not None:
+        email = body.email.strip().lower()
+        if not is_email(email):
+            raise HTTPException(status_code=400, detail="Enter a valid email")
+        if email != user.email:
+            if await session.scalar(select(User.id).where(User.email == email, User.id != user.id)):
+                raise HTTPException(status_code=409, detail="This email is already in use")
+            user.email = email
+            user.email_verified = False
+            await _send_verify(user)
+    if body.phone is not None:
+        phone = normalize_phone(body.phone)
+        if phone is None:
+            raise HTTPException(status_code=400, detail="Enter a valid Bangladeshi mobile number")
+        if phone != user.phone:
+            if await session.scalar(select(User.id).where(User.phone == phone, User.id != user.id)):
+                raise HTTPException(status_code=409, detail="This phone is already in use")
+            user.phone = phone
+            user.phone_verified = False  # phone OTP verification is a later phase
+    await session.flush()
+    return UserOut.model_validate(user)
+
+
+@router.post("/resend-verify", status_code=202)
+async def resend_verify(user: CurrentUser, request: Request) -> dict[str, str]:
+    """Re-send the email verification link to the user's current (unverified) email."""
+    await throttle(f"verify:{client_ip(request)}", limit=5, window_s=900)
+    if user.email and not user.email_verified:
+        await _send_verify(user)
+    return {"status": "sent"}
