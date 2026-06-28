@@ -436,6 +436,10 @@ const STRINGS: Record<string, Entry> = {
   },
   "profile.email": { en: "email", bn: "ইমেইল" },
   "profile.forgot": { en: "Forgot password?", bn: "পাসওয়ার্ড ভুলে গেছেন?" },
+  "profile.contact": {
+    en: "Questions? Contact us at",
+    bn: "প্রশ্ন আছে? যোগাযোগ করুন",
+  },
   "forgot.title": { en: "Reset your password", bn: "পাসওয়ার্ড রিসেট করুন" },
   "forgot.intro": {
     en: "Enter your email and we'll send a reset link.",

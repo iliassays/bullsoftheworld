@@ -48,8 +48,12 @@ class Settings(BaseSettings):
     # --- Email (transactional) ---------------------------------------------
     # Public base URL of the web app, for links in emails (reset/verify).
     app_base_url: str = "http://localhost:5173"
-    # Branded sender, e.g. "Bulls of Dhaka <no-reply@bullstreetai.com>".
-    email_from: str = "Bulls of Dhaka <no-reply@bullstreetai.com>"
+    # Branded sender, e.g. "Bulls of Dhaka <no-reply@bullsofdhaka.com>".
+    email_from: str = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"
+    # Real, monitored address users can reply to / contact us at (shown in the portal too).
+    support_email: str = "support@bullsofdhaka.com"
+    # Replies to transactional mail go here (defaults to support_email when blank).
+    email_reply_to: str = ""
     # Preferred: a transactional provider (set RESEND_API_KEY). Falls back to SMTP if set, else logs.
     resend_api_key: str = ""
     smtp_server: str = ""
@@ -60,6 +64,10 @@ class Settings(BaseSettings):
     @property
     def email_enabled(self) -> bool:
         return bool(self.resend_api_key or (self.smtp_server and self.smtp_username))
+
+    @property
+    def reply_to(self) -> str:
+        return self.email_reply_to or self.support_email
 
     @property
     def cors_origin_list(self) -> list[str]:

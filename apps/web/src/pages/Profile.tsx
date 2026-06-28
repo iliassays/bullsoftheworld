@@ -5,6 +5,21 @@ import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
 
+// Real, monitored mailbox (Zoho) — also set as Reply-To on transactional email.
+const SUPPORT_EMAIL = "support@bullsofdhaka.com";
+
+function ContactLine() {
+  const { t } = useLang();
+  return (
+    <p className="text-muted text-xs text-center mt-2">
+      {t("profile.contact")}{" "}
+      <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent">
+        {SUPPORT_EMAIL}
+      </a>
+    </p>
+  );
+}
+
 export function Profile() {
   const { user, login, register, logout } = useAuth();
   const { t } = useLang();
@@ -33,6 +48,7 @@ export function Profile() {
         >
           {t("profile.logout")}
         </button>
+        <ContactLine />
       </div>
     );
 
@@ -64,7 +80,9 @@ export function Profile() {
         onChange={(e) => setHandle(e.target.value)}
       />
       {mode === "register" && (
-        <p className="text-[11px] text-muted -mt-1 px-1">{t("profile.handleHint")}</p>
+        <p className="text-[11px] text-muted -mt-1 px-1">
+          {t("profile.handleHint")}
+        </p>
       )}
       {mode === "register" && (
         <>
@@ -96,7 +114,11 @@ export function Profile() {
         onClick={submit}
         className="bg-accent text-bg font-bold rounded-xl py-2.5 text-sm disabled:opacity-40"
       >
-        {busy ? "…" : mode === "login" ? t("common.login") : t("profile.createAccount")}
+        {busy
+          ? "…"
+          : mode === "login"
+            ? t("common.login")
+            : t("profile.createAccount")}
       </button>
       <button
         onClick={() => {
@@ -118,6 +140,7 @@ export function Profile() {
       >
         {t("common.cancel")}
       </button>
+      <ContactLine />
     </div>
   );
 }

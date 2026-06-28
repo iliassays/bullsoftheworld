@@ -28,6 +28,10 @@ def render_email(
     *, heading: str, paragraphs: list[str], cta_label: str | None, cta_url: str | None, footer: str
 ) -> tuple[str, str]:
     """Return (html, plain_text) for a branded email. Content is pre-localized by the caller."""
+    support = get_settings().support_email
+    contact_html = (
+        f'<a href="mailto:{support}" style="color:#777;">{support}</a>' if support else ""
+    )
     body_html = "".join(
         f'<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#1a1a1a;">{p}</p>'
         for p in paragraphs
@@ -54,6 +58,7 @@ def render_email(
       {body_html}
       {cta_html}
       <p style="margin:20px 0 0;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:14px;">{footer}</p>
+      <p style="margin:8px 0 0;font-size:11px;color:#999;">Bulls of Dhaka · {contact_html}</p>
     </div>
   </div>
 </body></html>"""
@@ -61,6 +66,8 @@ def render_email(
     if cta_label and cta_url:
         text_lines.extend(["", f"{cta_label}: {cta_url}"])
     text_lines.extend(["", footer])
+    if support:
+        text_lines.extend(["", f"Bulls of Dhaka · {support}"])
     return html, "\n".join(text_lines)
 
 
@@ -80,7 +87,14 @@ async def _send_resend(s: Settings, to: str, subject: str, html: str, text: str)
             r = await client.post(
                 "https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {s.resend_api_key}"},
-                json={"from": s.email_from, "to": [to], "subject": subject, "html": html, "text": text},
+                json={
+                    "from": s.email_from,
+                    "to": [to],
+                    "reply_to": s.reply_to,
+                    "subject": subject,
+                    "html": html,
+                    "text": text,
+                },
             )
         if r.status_code >= 300:
             log.error("resend send failed %s: %s", r.status_code, r.text)
@@ -96,6 +110,7 @@ def _send_smtp(s: Settings, to: str, subject: str, html: str, text: str) -> bool
     msg["Subject"] = subject
     msg["From"] = s.email_from
     msg["To"] = to
+    msg["Reply-To"] = s.reply_to
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
     try:
