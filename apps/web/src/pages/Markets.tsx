@@ -1,5 +1,5 @@
-import { type FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   api,
   type MomHorizons,
@@ -473,10 +473,8 @@ function ScreenCard({ s }: { s: Screen }) {
 export function Markets() {
   const { t } = useLang();
   const [data, setData] = useState<ScreensResponse | null>(null);
-  const [q, setQ] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lens, setLens] = useState("all");
-  const navigate = useNavigate();
 
   useEffect(() => {
     api
@@ -485,12 +483,6 @@ export function Markets() {
       .catch(() => setData({ as_of: null, screens: [] }));
   }, []);
 
-  const search = (e: FormEvent) => {
-    e.preventDefault();
-    const code = q.trim().toUpperCase();
-    if (code) navigate(`/s/${code}`);
-  };
-
   if (data === null) return <Spinner />;
   const live = data.screens.filter((s) => s.items.length > 0);
   const byKey = new Map(live.map((s) => [s.key, s]));
@@ -498,15 +490,6 @@ export function Markets() {
 
   return (
     <div className="flex flex-col gap-3">
-      <form onSubmit={search}>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t("markets.searchPlaceholder")}
-          className="w-full bg-surface border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-accent"
-        />
-      </form>
-
       <div className="text-[11px] uppercase tracking-wide text-muted px-1">
         {t("markets.lookingFor")}
       </div>
