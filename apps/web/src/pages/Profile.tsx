@@ -25,9 +25,8 @@ export function Profile() {
   const { t } = useLang();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [handle, setHandle] = useState("");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [idField, setIdField] = useState(""); // email/phone (register) or email/phone/username (login)
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,8 +55,8 @@ export function Profile() {
     setBusy(true);
     setErr("");
     try {
-      if (mode === "login") await login(handle, password);
-      else await register(handle, name, email, password);
+      if (mode === "login") await login(idField.trim(), password);
+      else await register(name.trim(), idField.trim(), password);
     } catch (e) {
       setErr(e instanceof ApiError ? e.detail : t("profile.error"));
     } finally {
@@ -73,33 +72,22 @@ export function Profile() {
       <h1 className="text-xl font-bold">
         {mode === "login" ? t("profile.welcomeBack") : t("profile.join")} 🐂
       </h1>
+      {mode === "register" && (
+        <input
+          className={field}
+          placeholder={t("profile.name")}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      )}
       <input
         className={field}
-        placeholder={t("profile.handle")}
-        value={handle}
-        onChange={(e) => setHandle(e.target.value)}
+        placeholder={mode === "register" ? t("profile.emailOrPhone") : t("profile.loginId")}
+        value={idField}
+        onChange={(e) => setIdField(e.target.value)}
       />
       {mode === "register" && (
-        <p className="text-[11px] text-muted -mt-1 px-1">
-          {t("profile.handleHint")}
-        </p>
-      )}
-      {mode === "register" && (
-        <>
-          <input
-            className={field}
-            placeholder={t("profile.name")}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            className={field}
-            type="email"
-            placeholder={t("profile.email")}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </>
+        <p className="text-[11px] text-muted -mt-1 px-1">{t("profile.autoHandleHint")}</p>
       )}
       <input
         className={field}

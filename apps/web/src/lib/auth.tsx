@@ -4,8 +4,8 @@ import { api, tokenStore, type User } from "./api";
 interface AuthState {
   user: User | null;
   loading: boolean;
-  login: (handle: string, password: string) => Promise<void>;
-  register: (handle: string, name: string, email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  register: (name: string, contact: string, password: string) => Promise<void>;
   applyToken: (token: string) => Promise<void>;
   logout: () => void;
 }
@@ -35,10 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
-        login: async (handle, password) =>
-          finishAuth((await api.login({ handle, password })).access_token),
-        register: async (handle, name, email, password) =>
-          finishAuth((await api.register({ handle, name, email, password })).access_token),
+        login: async (identifier, password) =>
+          finishAuth((await api.login({ identifier, password })).access_token),
+        register: async (name, contact, password) =>
+          finishAuth((await api.register({ name, contact, password })).access_token),
         applyToken: finishAuth,
         logout: () => {
           tokenStore.clear();

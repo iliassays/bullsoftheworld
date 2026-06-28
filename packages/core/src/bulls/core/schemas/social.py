@@ -15,15 +15,14 @@ _EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 # --- auth ---
 class RegisterIn(BaseModel):
-    handle: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
     name: str = Field(min_length=1, max_length=120)
-    email: str = Field(max_length=255, pattern=_EMAIL)
+    contact: str = Field(min_length=3, max_length=255)  # email OR phone — handle auto-generated
     password: str = Field(min_length=8, max_length=128)
     locale: str = "bn"
 
 
 class LoginIn(BaseModel):
-    handle: str
+    identifier: str = Field(min_length=2, max_length=255)  # email, phone, or auto-handle
     password: str
 
 

@@ -426,6 +426,15 @@ const STRINGS: Record<string, Entry> = {
     bn: "আপনার পাবলিক @নাম। শুধু অক্ষর, সংখ্যা ও _ — কোনো স্পেস নয়।",
   },
   "profile.name": { en: "full name", bn: "পুরো নাম" },
+  "profile.emailOrPhone": { en: "email or phone number", bn: "ইমেইল বা ফোন নম্বর" },
+  "profile.loginId": {
+    en: "email, phone, or username",
+    bn: "ইমেইল, ফোন বা ইউজারনেম",
+  },
+  "profile.autoHandleHint": {
+    en: "Your username is created automatically from your name.",
+    bn: "আপনার নাম থেকে ইউজারনেম স্বয়ংক্রিয়ভাবে তৈরি হবে।",
+  },
   "profile.password": {
     en: "password (min 8 chars)",
     bn: "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)",

@@ -318,17 +318,12 @@ export interface User {
 
 export const api = {
   // auth
-  register: (b: {
-    handle: string;
-    name: string;
-    email: string;
-    password: string;
-  }) =>
+  register: (b: { name: string; contact: string; password: string }) =>
     request<{ access_token: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(b),
     }),
-  login: (b: { handle: string; password: string }) =>
+  login: (b: { identifier: string; password: string }) =>
     request<{ access_token: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(b),

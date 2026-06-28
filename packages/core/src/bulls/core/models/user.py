@@ -20,6 +20,9 @@ class User(Base):
     # Nullable: existing accounts + agent users have no email. Stored lowercased; unique when present.
     email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, default=None)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Phone (BD, normalized +8801XXXXXXXXX). Unique when present. OTP verification is a later phase.
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, default=None)
+    phone_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     password_hash: Mapped[str] = mapped_column(String(255))
     locale: Mapped[str] = mapped_column(String(8), default="bn")
     created_at: Mapped[dt.datetime] = mapped_column(
