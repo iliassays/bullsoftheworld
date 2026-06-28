@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, type User } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -134,10 +134,21 @@ function ContactLine() {
 }
 
 export function Profile() {
-  const { user, login, register, logout } = useAuth();
+  const { user, login, register, logout, refresh } = useAuth();
   const { t } = useLang();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"login" | "register">("login");
+
+  // Re-fetch on mount + when the tab regains focus, so a verification done elsewhere
+  // (e.g. clicking the email link in another tab) reflects here without a manual reload.
+  useEffect(() => {
+    if (!user) return;
+    refresh();
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [name, setName] = useState("");
   const [idField, setIdField] = useState(""); // email/phone (register) or email/phone/username (login)
   const [password, setPassword] = useState("");

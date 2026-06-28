@@ -97,6 +97,7 @@ export function ResetPassword() {
 
 export function VerifyEmail() {
   const { t } = useLang();
+  const { refresh } = useAuth();
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const [state, setState] = useState<"loading" | "ok" | "fail">("loading");
@@ -108,7 +109,10 @@ export function VerifyEmail() {
     }
     api
       .verifyEmail(token)
-      .then(() => setState("ok"))
+      .then(() => {
+        setState("ok");
+        refresh().catch(() => {}); // update verified badge if signed in
+      })
       .catch(() => setState("fail"));
   }, [token]);
 

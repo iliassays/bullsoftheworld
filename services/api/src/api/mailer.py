@@ -38,20 +38,20 @@ def render_email(
     )
     cta_html = ""
     if cta_label and cta_url:
+        # Just the button — no raw link below it (the long token URL confuses users).
         cta_html = (
             f'<p style="margin:24px 0;"><a href="{cta_url}" '
             f'style="background:{_GOLD};color:#151a21;font-weight:700;text-decoration:none;'
-            'padding:12px 22px;border-radius:9999px;display:inline-block;font-size:15px;">'
+            'padding:13px 26px;border-radius:9999px;display:inline-block;font-size:15px;">'
             f"{cta_label}</a></p>"
-            f'<p style="margin:0 0 14px;font-size:12px;color:#777;word-break:break-all;">{cta_url}</p>'
         )
     html = f"""\
 <!doctype html><html><body style="margin:0;background:#f3f4f6;padding:24px;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
-    <div style="background:#151a21;padding:18px 24px;display:flex;align-items:center;">
-      <span style="font-size:22px;">🐂</span>
-      <span style="color:#fff;font-weight:700;font-size:16px;margin-left:8px;">Bulls of Dhaka</span>
-      <span style="color:{_GOLD};font-size:11px;margin-left:8px;">তথ্যে চলুন, গুজবে নয়</span>
+    <div style="background:#151a21;padding:16px 24px;">
+      <img src="https://bullsofdhaka.com/logo-mark-v2.png" width="28" height="28" alt="" style="vertical-align:middle;border:0;"/>
+      <span style="color:#fff;font-weight:700;font-size:16px;margin-left:8px;vertical-align:middle;">Bulls of Dhaka</span>
+      <span style="color:{_GOLD};font-size:11px;margin-left:8px;vertical-align:middle;">তথ্যে চলুন, গুজবে নয়</span>
     </div>
     <div style="padding:24px;">
       <h1 style="margin:0 0 16px;font-size:19px;color:#151a21;">{heading}</h1>
