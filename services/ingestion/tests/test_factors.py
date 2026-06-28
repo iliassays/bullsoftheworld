@@ -70,6 +70,25 @@ def test_accumulation_skips_when_price_already_ran():
     assert f.detect_accumulation(NS(cmf_20=0.3, obv_slope=-0.1, sma_50=100.0, last_close=101.0), "m") is None
 
 
+def test_circuit_up_and_down():
+    up = f.detect_circuit(10.0, "2026-06-28")
+    assert up and up.beat == "circuit" and up.payload["dir"] == "up"
+    assert "limit" in f.render(up, "GP", "en").lower() and "advice" in f.render(up, "GP", "en").lower()
+    dn = f.detect_circuit(-9.95, "2026-06-28")
+    assert dn and dn.payload["dir"] == "down"
+    assert f.detect_circuit(8.0, "2026-06-28") is None  # not at the limit
+    assert f.detect_circuit(None, "d") is None
+
+
+def test_breakout_needs_near_high_and_up_today():
+    ta = NS(pct_from_52w_high=-0.5)
+    assert f.detect_breakout(ta, 2.0, "d").beat == "breakout"  # within 2% of high + up 2%
+    assert f.detect_breakout(ta, 0.2, "d") is None  # not up enough today
+    assert f.detect_breakout(NS(pct_from_52w_high=-8.0), 3.0, "d") is None  # far from high
+    note = f.render(f.detect_breakout(ta, 2.0, "d"), "GP", "en")
+    assert "52-week high" in note and "buy" not in note.lower()
+
+
 def test_bn_locale_renders():
     note = f.render(f.detect_momentum(_STRONG, "2026-06"), "GP", "bn")
     assert "পরামর্শ নয়" in note  # "not advice" in Bangla

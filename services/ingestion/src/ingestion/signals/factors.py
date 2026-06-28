@@ -31,6 +31,9 @@ _STRENGTH_UP = 2.0  # stock up at least this % ...
 _STRENGTH_IDX = -0.3  # ... while DSEX fell at least this much
 _ACCUM_CMF = 0.10  # quiet accumulation: money inflow (Chaikin) ...
 _ACCUM_BAND = 0.10  # ... while price stays within ±10% of its 50-day base
+_CIRCUIT = 9.9  # ~DSE daily ±10% price limit ("locked at the ceiling/floor")
+_BREAKOUT_NEAR = -2.0  # within 2% of the 52-week high ...
+_BREAKOUT_UP = 1.0  # ... and up at least this much today (a fresh push, not just sitting there)
 
 
 def detect_momentum(ta, month_key: str) -> FactorSignal | None:
@@ -88,6 +91,27 @@ def detect_accumulation(ta, month_key: str) -> FactorSignal | None:
     return None
 
 
+def detect_circuit(change_pct: float | None, day: str) -> FactorSignal | None:
+    """Hit the DSE daily price limit — locked up (+~10%) or down (-~10%). Once per name per day."""
+    if change_pct is None:
+        return None
+    if change_pct >= _CIRCUIT:
+        return FactorSignal("circuit", "circuit_up", f"circuit:{day}", 1, {"dir": "up", "chg": round(change_pct, 1)})
+    if change_pct <= -_CIRCUIT:
+        return FactorSignal("circuit", "circuit_down", f"circuit:{day}", 1, {"dir": "down", "chg": round(change_pct, 1)})
+    return None
+
+
+def detect_breakout(ta, change_pct: float | None, day: str) -> FactorSignal | None:
+    """Pushing to a new 52-week high: within 2% of the high AND up meaningfully today."""
+    pfh = getattr(ta, "pct_from_52w_high", None)
+    if pfh is None or change_pct is None:
+        return None
+    if pfh >= _BREAKOUT_NEAR and change_pct >= _BREAKOUT_UP:
+        return FactorSignal("breakout", "new_52w_high", f"breakout:{day}", 7, {})
+    return None
+
+
 def detect_strength(
     change_pct: float | None, dsex_change: float | None, day: str
 ) -> FactorSignal | None:
@@ -134,11 +158,31 @@ _T = {
         "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের প্যাটার্ন "
         "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। এটি একটি ডাইভারজেন্স, নিশ্চয়তা নয়। পরামর্শ নয়।",
     ),
+    "circuit_up": (
+        "{code} hit today's upper price limit (+{chg}%) — buyers locked it at the ceiling. A strong "
+        "demand signal, but limit moves can reverse. Descriptive, not advice.",
+        "{code} আজ দিনের সর্বোচ্চ দামসীমা ছুঁয়েছে (+{chg}%) — ক্রেতারা সিলিংয়ে আটকে দিয়েছে। শক্তিশালী "
+        "চাহিদার ইঙ্গিত, তবে সীমা-ছোঁয়া দাম উল্টেও যেতে পারে। তথ্যমূলক, পরামর্শ নয়।",
+    ),
+    "circuit_down": (
+        "{code} hit today's lower price limit ({chg}%) — sellers pinned it at the floor. Descriptive, "
+        "not advice.",
+        "{code} আজ দিনের সর্বনিম্ন দামসীমা ছুঁয়েছে ({chg}%) — বিক্রেতারা মেঝেতে আটকে দিয়েছে। তথ্যমূলক, "
+        "পরামর্শ নয়।",
+    ),
+    "breakout": (
+        "{code} is pushing to a new 52-week high. Strength — but extended moves can pull back, so "
+        "check the volume behind it. Descriptive, not advice.",
+        "{code} নতুন ৫২-সপ্তাহের সর্বোচ্চে উঠছে। শক্তি — তবে বেশি বেড়ে গেলে পিছিয়ে আসতে পারে, তাই পেছনের "
+        "ভলিউম দেখুন। তথ্যমূলক, পরামর্শ নয়।",
+    ),
 }
 
 
 def render(sig: FactorSignal, code: str, locale: str) -> str:
-    tmpl = _T[sig.beat][1 if locale == "bn" else 0]
+    # circuit shares one beat but two templates (up/down), chosen by direction.
+    key = ("circuit_up" if sig.payload.get("dir") == "up" else "circuit_down") if sig.beat == "circuit" else sig.beat
+    tmpl = _T[key][1 if locale == "bn" else 0]
     p = dict(sig.payload, code=code)
     if sig.beat == "momentum":
         caution = (

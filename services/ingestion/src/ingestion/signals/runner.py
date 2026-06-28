@@ -277,6 +277,8 @@ async def run_factor_agents(
                 factors.detect_smartmoney(ta, month_key),
                 factors.detect_accumulation(ta, month_key),
                 factors.detect_strength(change_pct, dsex_change, day),
+                factors.detect_circuit(change_pct, day),
+                factors.detect_breakout(ta, change_pct, day),
             ]
             for sig in sigs:
                 if sig is None:

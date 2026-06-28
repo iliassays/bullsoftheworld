@@ -20,6 +20,8 @@ const BEATS: Record<string, { icon: string; en: string; bn: string; introEn: str
   dividend: { icon: "💵", en: "Dividend", bn: "লভ্যাংশ", introEn: "Dividend updates", introBn: "লভ্যাংশ সংক্রান্ত হালনাগাদ" },
   earnings: { icon: "📊", en: "Earnings", bn: "আয়", introEn: "Earnings updates", introBn: "আয় সংক্রান্ত হালনাগাদ" },
   rating: { icon: "🏅", en: "Credit rating", bn: "ক্রেডিট রেটিং", introEn: "Rating updates", introBn: "রেটিং হালনাগাদ" },
+  circuit: { icon: "🛑", en: "Daily price limit", bn: "দিনের দামসীমা", introEn: "Locked at the daily ±10% limit", introBn: "দিনের ±১০% সীমায় আটকে গেছে" },
+  breakout: { icon: "🚀", en: "52-week breakout", bn: "৫২-সপ্তাহের ব্রেকআউট", introEn: "Pushing to a new 52-week high", introBn: "নতুন ৫২-সপ্তাহের সর্বোচ্চে উঠছে" },
   levels: { icon: "🎯", en: "Price levels", bn: "মূল লেভেল", introEn: "Notable support / resistance setups", introBn: "উল্লেখযোগ্য সাপোর্ট / রেজিস্ট্যান্স" },
   market: { icon: "📰", en: "Market update", bn: "মার্কেট আপডেট", introEn: "Market-wide note", introBn: "বাজারজুড়ে নোট" },
 };
