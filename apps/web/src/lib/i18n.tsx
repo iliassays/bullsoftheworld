@@ -1,4 +1,10 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 // Bilingual portal: English + Bangla. The selection is persisted in localStorage and sent to the
 // API as `X-Locale` so generated/dynamic content (Weekend Review, digest, levels, explainer…) comes
@@ -68,7 +74,10 @@ const STRINGS: Record<string, Entry> = {
   "range.mid": { en: "mid-range", bn: "মাঝামাঝি" },
   // Plain read card chrome
   "plainRead.title": { en: "What this means", bn: "এর অর্থ কী" },
-  "plainRead.howTraders": { en: "How traders read this", bn: "ট্রেডাররা এটি যেভাবে পড়েন" },
+  "plainRead.howTraders": {
+    en: "How traders read this",
+    bn: "ট্রেডাররা এটি যেভাবে পড়েন",
+  },
   // Explain card
   "explain.title": { en: "Deeper analysis", bn: "গভীর বিশ্লেষণ" },
   "explain.aiPrefix": { en: "AI-generated from the", bn: "AI দ্বারা তৈরি —" },
@@ -77,12 +86,21 @@ const STRINGS: Record<string, Entry> = {
     bn: "এর ক্লোজ থেকে · শিক্ষামূলক, পরামর্শ নয়।",
   },
   // Key levels
-  "levels.title": { en: "Key levels & what to watch", bn: "মূল লেভেল ও যা লক্ষ্য রাখবেন" },
+  "levels.title": {
+    en: "Key levels & what to watch",
+    bn: "মূল লেভেল ও যা লক্ষ্য রাখবেন",
+  },
   // Digest / community buzz
   "digest.title": { en: "Community buzz", bn: "কমিউনিটির আলোচনা" },
   "digest.show": { en: "Show what's happening", bn: "কী ঘটছে দেখুন" },
-  "digest.loading": { en: "Reading the tape and the crowd…", bn: "দর ও আলোচনা পড়া হচ্ছে…" },
-  "digest.error": { en: "Couldn't load the digest", bn: "ডাইজেস্ট লোড করা যায়নি" },
+  "digest.loading": {
+    en: "Reading the tape and the crowd…",
+    bn: "দর ও আলোচনা পড়া হচ্ছে…",
+  },
+  "digest.error": {
+    en: "Couldn't load the digest",
+    bn: "ডাইজেস্ট লোড করা যায়নি",
+  },
   "digest.footer": {
     en: "Built from delayed price + recent posts. Not financial advice.",
     bn: "বিলম্বিত দর ও সাম্প্রতিক পোস্ট থেকে তৈরি। আর্থিক পরামর্শ নয়।",
@@ -114,13 +132,25 @@ const STRINGS: Record<string, Entry> = {
   "tech.title": { en: "Technicals", bn: "টেকনিক্যাল" },
   asOf: { en: "as of", bn: "সর্বশেষ" },
   close: { en: "close", bn: "ক্লোজ" },
-  "tech.aboveBoth": { en: "Above 50 & 200-day average", bn: "৫০ ও ২০০-দিনের গড়ের উপরে" },
-  "tech.belowBoth": { en: "Below 50 & 200-day average", bn: "৫০ ও ২০০-দিনের গড়ের নিচে" },
-  "tech.mixedMa": { en: "Mixed vs moving averages", bn: "মুভিং এভারেজের মিশ্র অবস্থান" },
+  "tech.aboveBoth": {
+    en: "Above 50 & 200-day average",
+    bn: "৫০ ও ২০০-দিনের গড়ের উপরে",
+  },
+  "tech.belowBoth": {
+    en: "Below 50 & 200-day average",
+    bn: "৫০ ও ২০০-দিনের গড়ের নিচে",
+  },
+  "tech.mixedMa": {
+    en: "Mixed vs moving averages",
+    bn: "মুভিং এভারেজের মিশ্র অবস্থান",
+  },
   "tech.momentum": { en: "Momentum (RSI 14)", bn: "মোমেন্টাম (RSI 14)" },
   "tech.volVs20": { en: "Volume vs 20-day", bn: "২০-দিনের তুলনায় ভলিউম" },
   "tech.nearestSupport": { en: "Nearest support", bn: "নিকটতম সাপোর্ট" },
-  "tech.nearestResistance": { en: "Nearest resistance", bn: "নিকটতম রেজিস্ট্যান্স" },
+  "tech.nearestResistance": {
+    en: "Nearest resistance",
+    bn: "নিকটতম রেজিস্ট্যান্স",
+  },
   "rsi.elevated": { en: "elevated", bn: "উঁচু" },
   "rsi.depressed": { en: "depressed", bn: "নিচু" },
   "rsi.mid": { en: "mid-range", bn: "মাঝামাঝি" },
@@ -136,9 +166,18 @@ const STRINGS: Record<string, Entry> = {
   // Sectors
   "sectors.hot": { en: "Hot sectors today", bn: "আজকের গরম খাত" },
   // Markets page chrome
-  "markets.searchPlaceholder": { en: "Search a code, e.g. GP → Enter", bn: "কোড লিখুন, যেমন GP → এন্টার" },
-  "markets.lookingFor": { en: "What are you looking for?", bn: "আপনি কী খুঁজছেন?" },
-  "markets.browseAll": { en: "Browse every board, grouped.", bn: "সব বোর্ড দেখুন, গ্রুপ অনুযায়ী।" },
+  "markets.searchPlaceholder": {
+    en: "Search a code, e.g. GP → Enter",
+    bn: "কোড লিখুন, যেমন GP → এন্টার",
+  },
+  "markets.lookingFor": {
+    en: "What are you looking for?",
+    bn: "আপনি কী খুঁজছেন?",
+  },
+  "markets.browseAll": {
+    en: "Browse every board, grouped.",
+    bn: "সব বোর্ড দেখুন, গ্রুপ অনুযায়ী।",
+  },
   "markets.footer": {
     en: "Computed from end-of-day prices · descriptive screens, not recommendations.",
     bn: "দিনশেষের দাম থেকে গণনা · তথ্যমূলক স্ক্রিন, সুপারিশ নয়।",
@@ -147,7 +186,10 @@ const STRINGS: Record<string, Entry> = {
   "col.symbol": { en: "Symbol", bn: "টিকার" },
   "col.price": { en: "Price", bn: "দাম" },
   nothingHere: { en: "Nothing here right now.", bn: "এই মুহূর্তে কিছু নেই।" },
-  "screen.descNote": { en: "Descriptive screen — not a recommendation.", bn: "তথ্যমূলক স্ক্রিন — সুপারিশ নয়।" },
+  "screen.descNote": {
+    en: "Descriptive screen — not a recommendation.",
+    bn: "তথ্যমূলক স্ক্রিন — সুপারিশ নয়।",
+  },
   backToMarkets: { en: "← Markets", bn: "← মার্কেট" },
   "explore.moverReversal": {
     en: "1-month moves often reverse. For a lasting trend, see “Strongest trend”.",
@@ -171,7 +213,10 @@ const STRINGS: Record<string, Entry> = {
     en: "Cheap, profitable, growing — for bargain hunters.",
     bn: "সস্তা, লাভজনক, বর্ধনশীল — দরদাম খোঁজাদের জন্য।",
   },
-  "lens.dividend.blurb": { en: "Cash payers — for income seekers.", bn: "নগদ লভ্যাংশদাতা — আয়-সন্ধানীদের জন্য।" },
+  "lens.dividend.blurb": {
+    en: "Cash payers — for income seekers.",
+    bn: "নগদ লভ্যাংশদাতা — আয়-সন্ধানীদের জন্য।",
+  },
   "lens.steady.blurb": {
     en: "Low-swing, quality names — for a calmer ride.",
     bn: "কম ওঠানামা, মানসম্পন্ন — শান্ত যাত্রার জন্য।",
@@ -223,18 +268,33 @@ const STRINGS: Record<string, Entry> = {
   "mc.steady": { en: "Steady", bn: "স্থির" },
   "mc.outperforming": { en: "Outperforming", bn: "বাজারকে ছাড়িয়ে" },
   // Feed
-  "feed.loginCta": { en: "Log in to post your call →", bn: "আপনার মতামত পোস্ট করতে লগ ইন করুন →" },
-  "feed.empty": { en: "No posts yet. Be the first to call $GP.", bn: "এখনো কোনো পোস্ট নেই। $GP নিয়ে প্রথম মতামত দিন।" },
+  "feed.loginCta": {
+    en: "Log in to post your call →",
+    bn: "আপনার মতামত পোস্ট করতে লগ ইন করুন →",
+  },
+  "feed.empty": {
+    en: "No posts yet. Be the first to call $GP.",
+    bn: "এখনো কোনো পোস্ট নেই। $GP নিয়ে প্রথম মতামত দিন।",
+  },
   // Bulls feed
   "bulls.feedTitle": { en: "Bulls Feed", bn: "বুলস ফিড" },
   "bulls.feedDesc": {
     en: "Automated data notes across the market — levels, volume, ownership and more. Descriptive, not advice.",
     bn: "বাজার জুড়ে স্বয়ংক্রিয় ডেটা নোট — লেভেল, ভলিউম, মালিকানা ও আরও। তথ্যমূলক, পরামর্শ নয়।",
   },
-  "bulls.empty": { en: "No notes yet — they appear as the market moves.", bn: "এখনো কোনো নোট নেই — বাজার নড়লে আসবে।" },
-  "bulls.feedDescNote": { en: "Descriptive, not advice.", bn: "তথ্যমূলক, পরামর্শ নয়।" },
+  "bulls.empty": {
+    en: "No notes yet — they appear as the market moves.",
+    bn: "এখনো কোনো নোট নেই — বাজার নড়লে আসবে।",
+  },
+  "bulls.feedDescNote": {
+    en: "Descriptive, not advice.",
+    bn: "তথ্যমূলক, পরামর্শ নয়।",
+  },
   // Composer
-  "composer.placeholder": { en: "What's your call? Use $GP to tag a stock…", bn: "আপনার মতামত কী? স্টক ট্যাগ করতে $GP লিখুন…" },
+  "composer.placeholder": {
+    en: "What's your call? Use $GP to tag a stock…",
+    bn: "আপনার মতামত কী? স্টক ট্যাগ করতে $GP লিখুন…",
+  },
   "composer.failed": { en: "Failed to post", bn: "পোস্ট করা যায়নি" },
   "composer.bull": { en: "▲ Bull", bn: "▲ তেজি" },
   "composer.bear": { en: "▼ Bear", bn: "▼ মন্দা" },
@@ -245,13 +305,19 @@ const STRINGS: Record<string, Entry> = {
   // Post card
   "post.agree": { en: "Agree with this take", bn: "এই মতের সাথে একমত" },
   "post.disagree": { en: "Disagree with this take", bn: "এই মতের সাথে দ্বিমত" },
-  "post.loginReact": { en: "Log in to react", bn: "প্রতিক্রিয়া জানাতে লগ ইন করুন" },
+  "post.loginReact": {
+    en: "Log in to react",
+    bn: "প্রতিক্রিয়া জানাতে লগ ইন করুন",
+  },
   "post.replyPlaceholder": { en: "Reply…", bn: "রিপ্লাই…" },
   "post.noReplies": { en: "No replies yet.", bn: "এখনো কোনো রিপ্লাই নেই।" },
   "post.dataNote": { en: "auto · data note", bn: "অটো · ডেটা নোট" },
   "post.agreeBtn": { en: "Agree", bn: "একমত" },
   "post.disagreeBtn": { en: "Disagree", bn: "দ্বিমত" },
-  "post.loginReply": { en: "Log in to reply →", bn: "রিপ্লাই করতে লগ ইন করুন →" },
+  "post.loginReply": {
+    en: "Log in to reply →",
+    bn: "রিপ্লাই করতে লগ ইন করুন →",
+  },
   "post.reply": { en: "reply", bn: "রিপ্লাই" },
   "post.replies": { en: "replies", bn: "রিপ্লাই" },
   // Watchlist home
@@ -263,18 +329,33 @@ const STRINGS: Record<string, Entry> = {
     en: "The day's biggest signals at a glance — descriptive, not advice.",
     bn: "এক নজরে দিনের সবচেয়ে বড় সংকেত — তথ্যমূলক, পরামর্শ নয়।",
   },
-  "standouts.exploreAll": { en: "Explore all screens →", bn: "সব স্ক্রিন দেখুন →" },
+  "standouts.exploreAll": {
+    en: "Explore all screens →",
+    bn: "সব স্ক্রিন দেখুন →",
+  },
   "standouts.topMover": { en: "Top mover", bn: "টপ মুভার" },
-  "standouts.strongestTrend": { en: "Strongest trend", bn: "সবচেয়ে শক্তিশালী প্রবণতা" },
+  "standouts.strongestTrend": {
+    en: "Strongest trend",
+    bn: "সবচেয়ে শক্তিশালী প্রবণতা",
+  },
   "standouts.quietAccum": { en: "Quiet accumulation", bn: "নীরব সঞ্চয়" },
-  "standouts.beatingMarket": { en: "Beating the market", bn: "বাজারকে ছাড়িয়ে" },
+  "standouts.beatingMarket": {
+    en: "Beating the market",
+    bn: "বাজারকে ছাড়িয়ে",
+  },
   "standouts.foreignBuying": { en: "Foreign buying", bn: "বিদেশি ক্রয়" },
   "standouts.unusualVolume": { en: "Unusual volume", bn: "অস্বাভাবিক ভলিউম" },
   // InfoTip + LearnSheet
-  "infoTip.learn": { en: "Learn how to use it →", bn: "কীভাবে ব্যবহার করবেন শিখুন →" },
+  "infoTip.learn": {
+    en: "Learn how to use it →",
+    bn: "কীভাবে ব্যবহার করবেন শিখুন →",
+  },
   "infoTip.aria": { en: "What is this?", bn: "এটি কী?" },
   "learn.what": { en: "What it is", bn: "এটি কী" },
-  "learn.use": { en: "How traders use it", bn: "ট্রেডাররা যেভাবে ব্যবহার করেন" },
+  "learn.use": {
+    en: "How traders use it",
+    bn: "ট্রেডাররা যেভাবে ব্যবহার করেন",
+  },
   "learn.watch": { en: "Watch out for", bn: "যা খেয়াল রাখবেন" },
   "learn.example": { en: "Example", bn: "উদাহরণ" },
   "learn.footer": {
@@ -296,9 +377,15 @@ const STRINGS: Record<string, Entry> = {
   "f.sector": { en: "Sector", bn: "খাত" },
   "f.creditRating": { en: "Credit rating", bn: "ক্রেডিট রেটিং" },
   // News panel
-  "news.empty": { en: "No news yet for this stock.", bn: "এই শেয়ারের জন্য এখনো খবর নেই।" },
+  "news.empty": {
+    en: "No news yet for this stock.",
+    bn: "এই শেয়ারের জন্য এখনো খবর নেই।",
+  },
   "news.strength": { en: "strength", bn: "শক্তি" },
-  "news.footer": { en: "Exchange disclosures. Descriptive, not advice.", bn: "এক্সচেঞ্জ প্রকাশ। তথ্যমূলক, পরামর্শ নয়।" },
+  "news.footer": {
+    en: "Exchange disclosures. Descriptive, not advice.",
+    bn: "এক্সচেঞ্জ প্রকাশ। তথ্যমূলক, পরামর্শ নয়।",
+  },
   "cat.dividend": { en: "Dividend", bn: "লভ্যাংশ" },
   "cat.earnings": { en: "Earnings", bn: "আয়" },
   "cat.rating": { en: "Rating", bn: "রেটিং" },
@@ -310,22 +397,43 @@ const STRINGS: Record<string, Entry> = {
   // Watchlist + Profile
   "common.login": { en: "Log in", bn: "লগ ইন" },
   "common.cancel": { en: "Cancel", bn: "বাতিল" },
-  "wl.toBuild": { en: "to build your watchlist.", bn: "আপনার ওয়াচলিস্ট তৈরি করতে।" },
-  "wl.empty": { en: "Your watchlist is empty. Tap ☆ on any symbol.", bn: "আপনার ওয়াচলিস্ট খালি। যেকোনো শেয়ারে ☆ ট্যাপ করুন।" },
+  "wl.toBuild": {
+    en: "to build your watchlist.",
+    bn: "আপনার ওয়াচলিস্ট তৈরি করতে।",
+  },
+  "wl.empty": {
+    en: "Your watchlist is empty. Tap ☆ on any symbol.",
+    bn: "আপনার ওয়াচলিস্ট খালি। যেকোনো শেয়ারে ☆ ট্যাপ করুন।",
+  },
   "profile.logout": { en: "Log out", bn: "লগ আউট" },
   "profile.error": { en: "Something went wrong", bn: "কিছু ভুল হয়েছে" },
   "profile.welcomeBack": { en: "Welcome back", bn: "আবার স্বাগতম" },
-  "profile.join": { en: "Join Bulls of Dhaka", bn: "Bulls of Dhaka-তে যোগ দিন" },
-  "profile.handle": { en: "username — e.g. rahim_dhaka", bn: "ইউজারনেম — যেমন rahim_dhaka" },
+  "profile.join": {
+    en: "Join Bulls of Dhaka",
+    bn: "Bulls of Dhaka-তে যোগ দিন",
+  },
+  "profile.handle": {
+    en: "username — e.g. rahim_dhaka",
+    bn: "ইউজারনেম — যেমন rahim_dhaka",
+  },
   "profile.handleHint": {
     en: "Your public @name. Letters, numbers and _ only — no spaces.",
     bn: "আপনার পাবলিক @নাম। শুধু অক্ষর, সংখ্যা ও _ — কোনো স্পেস নয়।",
   },
   "profile.name": { en: "full name", bn: "পুরো নাম" },
-  "profile.password": { en: "password (min 8 chars)", bn: "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)" },
+  "profile.password": {
+    en: "password (min 8 chars)",
+    bn: "পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)",
+  },
   "profile.createAccount": { en: "Create account", bn: "অ্যাকাউন্ট তৈরি করুন" },
-  "profile.toRegister": { en: "New here? Create an account", bn: "নতুন? অ্যাকাউন্ট তৈরি করুন" },
-  "profile.toLogin": { en: "Already have an account? Log in", bn: "অ্যাকাউন্ট আছে? লগ ইন করুন" },
+  "profile.toRegister": {
+    en: "New here? Create an account",
+    bn: "নতুন? অ্যাকাউন্ট তৈরি করুন",
+  },
+  "profile.toLogin": {
+    en: "Already have an account? Log in",
+    bn: "অ্যাকাউন্ট আছে? লগ ইন করুন",
+  },
   "profile.email": { en: "email", bn: "ইমেইল" },
   "profile.forgot": { en: "Forgot password?", bn: "পাসওয়ার্ড ভুলে গেছেন?" },
   "forgot.title": { en: "Reset your password", bn: "পাসওয়ার্ড রিসেট করুন" },
@@ -339,15 +447,24 @@ const STRINGS: Record<string, Entry> = {
     bn: "ইমেইলটি নিবন্ধিত থাকলে একটি রিসেট লিংক পাঠানো হয়েছে — ইনবক্স দেখুন।",
   },
   "reset.title": { en: "Set a new password", bn: "নতুন পাসওয়ার্ড দিন" },
-  "reset.newPassword": { en: "new password (min 8 chars)", bn: "নতুন পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)" },
+  "reset.newPassword": {
+    en: "new password (min 8 chars)",
+    bn: "নতুন পাসওয়ার্ড (কমপক্ষে ৮ অক্ষর)",
+  },
   "reset.submit": { en: "Update password", bn: "পাসওয়ার্ড আপডেট করুন" },
   "reset.invalid": {
     en: "This reset link is invalid or has expired. Request a new one.",
     bn: "এই রিসেট লিংক অবৈধ বা মেয়াদোত্তীর্ণ। নতুন একটি চান।",
   },
-  "verify.verifying": { en: "Verifying your email…", bn: "আপনার ইমেইল যাচাই করা হচ্ছে…" },
+  "verify.verifying": {
+    en: "Verifying your email…",
+    bn: "আপনার ইমেইল যাচাই করা হচ্ছে…",
+  },
   "verify.ok": { en: "Email verified ✓", bn: "ইমেইল যাচাই হয়েছে ✓" },
-  "verify.fail": { en: "This link is invalid or has expired.", bn: "এই লিংক অবৈধ বা মেয়াদোত্তীর্ণ।" },
+  "verify.fail": {
+    en: "This link is invalid or has expired.",
+    bn: "এই লিংক অবৈধ বা মেয়াদোত্তীর্ণ।",
+  },
   "common.backHome": { en: "Back to home", bn: "হোমে ফিরুন" },
   // Today's Watch / session brief
   "session.pre_open": { en: "Morning Brief", bn: "সকালের ব্রিফ" },
@@ -367,10 +484,22 @@ interface I18n {
   setLang: (l: Lang) => void;
   t: (key: string) => string;
 }
-const Ctx = createContext<I18n>({ lang: _lang, setLang: () => {}, t: (k) => k });
+const Ctx = createContext<I18n>({
+  lang: _lang,
+  setLang: () => {},
+  t: (k) => k,
+});
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(_lang);
+  // Sync the non-React mirror SYNCHRONOUSLY at set time. The toggle remounts <main key={lang}>,
+  // and child fetch effects (which read currentLang() via api.ts) run BEFORE the parent's effect
+  // below — so updating _lang only in that effect made refetches use the PREVIOUS locale (the
+  // "reverse language" bug). Setting it here, before the re-render, fixes the ordering.
+  const setLang = (l: Lang) => {
+    _lang = l;
+    setLangState(l);
+  };
   useEffect(() => {
     _lang = lang;
     try {
@@ -381,7 +510,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang;
   }, [lang]);
   const t = (key: string) => STRINGS[key]?.[lang] ?? key;
-  return <Ctx.Provider value={{ lang, setLang: setLangState, t }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ lang, setLang, t }}>{children}</Ctx.Provider>;
 }
 
 export const useLang = () => useContext(Ctx);
