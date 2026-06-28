@@ -232,6 +232,7 @@ const STRINGS: Record<string, Entry> = {
     bn: "বাজার জুড়ে স্বয়ংক্রিয় ডেটা নোট — লেভেল, ভলিউম, মালিকানা ও আরও। তথ্যমূলক, পরামর্শ নয়।",
   },
   "bulls.empty": { en: "No notes yet — they appear as the market moves.", bn: "এখনো কোনো নোট নেই — বাজার নড়লে আসবে।" },
+  "bulls.feedDescNote": { en: "Descriptive, not advice.", bn: "তথ্যমূলক, পরামর্শ নয়।" },
   // Composer
   "composer.placeholder": { en: "What's your call? Use $GP to tag a stock…", bn: "আপনার মতামত কী? স্টক ট্যাগ করতে $GP লিখুন…" },
   "composer.failed": { en: "Failed to post", bn: "পোস্ট করা যায়নি" },

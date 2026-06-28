@@ -60,28 +60,52 @@ def detect(
 
 
 # direction -> (English, Bangla)
-_TEMPLATES = {
-    "buying": (
-        "{code} is trading at ~{relvol}x its usual volume today and rising — heavy buying. Could be "
-        "news; we just flag it. Not advice.",
-        "{code} আজ স্বাভাবিকের প্রায় {relvol}x ভলিউমে লেনদেন হচ্ছে এবং দাম বাড়ছে — জোরালো কেনাকাটা। "
-        "খবর থাকতে পারে; আমরা শুধু জানাচ্ছি। পরামর্শ নয়।",
-    ),
-    "selling": (
-        "{code} is trading at ~{relvol}x its usual volume today and falling — heavy selling. Could be "
-        "news; we just flag it. Not advice.",
-        "{code} আজ স্বাভাবিকের প্রায় {relvol}x ভলিউমে লেনদেন হচ্ছে এবং দাম পড়ছে — জোরালো বিক্রি। "
-        "খবর থাকতে পারে; আমরা শুধু জানাচ্ছি। পরামর্শ নয়।",
-    ),
-    "flat": (
-        "{code} is trading at ~{relvol}x its usual volume today — unusual activity. Could be news; "
-        "we just flag it. Not advice.",
-        "{code} আজ স্বাভাবিকের প্রায় {relvol}x ভলিউমে লেনদেন হচ্ছে — অস্বাভাবিক তৎপরতা। খবর থাকতে পারে; "
-        "আমরা শুধু জানাচ্ছি। পরামর্শ নয়।",
-    ),
+# Several phrasings per direction so a run of volume notes doesn't read word-for-word identical.
+# A stable per-code pick keeps it deterministic (no drift) — a given stock always gets the same one.
+_TEMPLATES: dict[str, list[tuple[str, str]]] = {
+    "buying": [
+        (
+            "{code} is trading at ~{relvol}x its usual volume today and rising — heavy buying. Could be news; we just flag it. Not advice.",
+            "{code} আজ স্বাভাবিকের প্রায় {relvol}x ভলিউমে লেনদেন হচ্ছে এবং দাম বাড়ছে — জোরালো কেনাকাটা। খবর থাকতে পারে; আমরা শুধু জানাচ্ছি। পরামর্শ নয়।",
+        ),
+        (
+            "Heavy buying in {code} — volume is ~{relvol}x normal and the price is up. Worth checking why. Not advice.",
+            "{code}-তে জোরালো ক্রয় — ভলিউম স্বাভাবিকের প্রায় {relvol}x এবং দাম উপরে। কেন, দেখে নিতে পারেন। পরামর্শ নয়।",
+        ),
+        (
+            "{code} is unusually active (~{relvol}x normal) and climbing — buyers in control today. Descriptive, not advice.",
+            "{code} আজ অস্বাভাবিক সক্রিয় (~{relvol}x) এবং উপরে উঠছে — ক্রেতারা নিয়ন্ত্রণে। তথ্যমূলক, পরামর্শ নয়।",
+        ),
+    ],
+    "selling": [
+        (
+            "{code} is trading at ~{relvol}x its usual volume today and falling — heavy selling. Could be news; we just flag it. Not advice.",
+            "{code} আজ স্বাভাবিকের প্রায় {relvol}x ভলিউমে লেনদেন হচ্ছে এবং দাম পড়ছে — জোরালো বিক্রি। খবর থাকতে পারে; আমরা শুধু জানাচ্ছি। পরামর্শ নয়।",
+        ),
+        (
+            "Heavy selling in {code} — volume is ~{relvol}x normal and the price is down. Worth checking why. Not advice.",
+            "{code}-তে জোরালো বিক্রি — ভলিউম স্বাভাবিকের প্রায় {relvol}x এবং দাম নিচে। কেন, যাচাই করুন। পরামর্শ নয়।",
+        ),
+        (
+            "{code} is unusually active (~{relvol}x normal) but sliding — sellers in control today. Descriptive, not advice.",
+            "{code} আজ অস্বাভাবিক সক্রিয় (~{relvol}x) কিন্তু পড়ছে — বিক্রেতারা নিয়ন্ত্রণে। তথ্যমূলক, পরামর্শ নয়।",
+        ),
+    ],
+    "flat": [
+        (
+            "{code} is trading at ~{relvol}x its usual volume today — unusual activity. Could be news; we just flag it. Not advice.",
+            "{code} আজ স্বাভাবিকের প্রায় {relvol}x ভলিউমে লেনদেন হচ্ছে — অস্বাভাবিক তৎপরতা। খবর থাকতে পারে; আমরা শুধু জানাচ্ছি। পরামর্শ নয়।",
+        ),
+        (
+            "Unusual activity in {code} — volume is ~{relvol}x its normal pace. Worth checking why. Not advice.",
+            "{code}-তে অস্বাভাবিক তৎপরতা — ভলিউম স্বাভাবিকের প্রায় {relvol}x। কারণ যাচাই করতে পারেন। পরামর্শ নয়।",
+        ),
+    ],
 }
 
 
 def render(sig: VolSignal, code: str, locale: str) -> str:
-    pair = _TEMPLATES.get(sig.payload.get("direction", "flat"), _TEMPLATES["flat"])
+    variants = _TEMPLATES.get(sig.payload.get("direction", "flat"), _TEMPLATES["flat"])
+    # Stable per-code variant pick (deterministic; avoids process-randomized hash()).
+    pair = variants[sum(ord(c) for c in code) % len(variants)]
     return pair[1 if locale == "bn" else 0].format(code=code, relvol=sig.payload["relvol"])
