@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
 
+    # --- Facebook (page auto-posting) --------------------------------------
+    # Permanent Page access token + Page id for the Bulls of Dhaka page.
+    fb_page_id: str = ""
+    fb_page_token: str = ""
+    fb_graph_version: str = "v21.0"
+
     @property
     def email_enabled(self) -> bool:
         return bool(self.resend_api_key or (self.smtp_server and self.smtp_username))
@@ -68,6 +74,10 @@ class Settings(BaseSettings):
     @property
     def reply_to(self) -> str:
         return self.email_reply_to or self.support_email
+
+    @property
+    def fb_enabled(self) -> bool:
+        return bool(self.fb_page_id and self.fb_page_token)
 
     @property
     def cors_origin_list(self) -> list[str]:

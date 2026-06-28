@@ -6,10 +6,11 @@ view. `is_hidden` is a manual override the scraper never touches, so a hide stic
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
+from api import facebook
 from api.deps import CurrentTenant, DbSession, require_admin
 from bulls.core.models import Symbol
 
@@ -64,3 +65,34 @@ async def set_visibility(
         .values(is_hidden=body.hidden)
     )
     return {"updated": result.rowcount or 0, "hidden": body.hidden}
+
+
+# --- Facebook page posting (admin-gated) ---------------------------------------
+
+
+class FbPostIn(BaseModel):
+    message: str = Field(min_length=1, max_length=5000)
+    link: str | None = None
+    image_url: str | None = None  # if set, posts a photo with `message` as caption
+
+
+@router.get("/fb/status")
+async def fb_status() -> dict:
+    """Verify the Page token works (non-publishing): returns page name + follower count."""
+    try:
+        return await facebook.page_info()
+    except facebook.FacebookError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/fb/post")
+async def fb_post(body: FbPostIn) -> dict:
+    """Publish a post to the Bulls of Dhaka page. Photo if image_url is given, else text/link."""
+    try:
+        if body.image_url:
+            post_id = await facebook.post_photo(body.image_url, body.message)
+        else:
+            post_id = await facebook.post_text(body.message, body.link)
+        return {"status": "posted", "post_id": post_id}
+    except facebook.FacebookError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
