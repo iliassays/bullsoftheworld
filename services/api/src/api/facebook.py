@@ -63,3 +63,16 @@ async def post_photo(image_url: str, caption: str = "") -> str:
         raise FacebookError(f"post_photo failed {r.status_code}: {r.text}")
     j = r.json()
     return j.get("post_id") or j.get("id", "")
+
+
+async def post_photo_bytes(png: bytes, caption: str = "") -> str:
+    """Publish a generated image (raw PNG bytes) with a caption. Returns the post/photo id."""
+    base, page_id, token = _base()
+    files = {"source": ("card.png", png, "image/png")}
+    data = {"caption": caption, "access_token": token}
+    async with httpx.AsyncClient(timeout=45) as client:
+        r = await client.post(f"{base}/{page_id}/photos", data=data, files=files)
+    if r.status_code >= 300:
+        raise FacebookError(f"post_photo_bytes failed {r.status_code}: {r.text}")
+    j = r.json()
+    return j.get("post_id") or j.get("id", "")

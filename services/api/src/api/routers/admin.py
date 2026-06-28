@@ -6,13 +6,19 @@ view. `is_hidden` is a manual override the scraper never touches, so a hide stic
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
 from api import facebook
 from api.deps import CurrentTenant, DbSession, require_admin
+from api.fb import compose as fbcompose
+from bulls.core.config import get_settings
 from bulls.core.models import Symbol
+
+# pillar key -> composer; add a pillar by adding its composer here
+_FB_COMPOSERS = {"evening_wrap": fbcompose.compose_evening_wrap}
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -96,3 +102,60 @@ async def fb_post(body: FbPostIn) -> dict:
         return {"status": "posted", "post_id": post_id}
     except facebook.FacebookError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+async def _compose(kind: str, session, market: str) -> fbcompose.ComposedPost:
+    fn = _FB_COMPOSERS.get(kind)
+    if fn is None:
+        raise HTTPException(status_code=404, detail=f"unknown post kind: {kind}")
+    try:
+        return await fn(session, market)
+    except Exception as e:  # compose/render errors → 400 with reason
+        raise HTTPException(status_code=400, detail=f"compose failed: {e}") from e
+
+
+@router.get("/fb/card")
+async def fb_card(
+    tenant: CurrentTenant, session: DbSession, kind: str = Query("evening_wrap")
+) -> Response:
+    """Render the branded card PNG for a pillar (preview only — does not post)."""
+    post = await _compose(kind, session, tenant.market)
+    return Response(content=post.png, media_type="image/png")
+
+
+@router.get("/fb/preview")
+async def fb_preview(
+    tenant: CurrentTenant, session: DbSession, kind: str = Query("evening_wrap")
+) -> dict:
+    """Preview the caption + card link for a pillar without posting."""
+    post = await _compose(kind, session, tenant.market)
+    return {
+        "kind": post.kind,
+        "ref_date": post.ref_date,
+        "caption": post.caption,
+        "card_url": f"/admin/fb/card?kind={kind}",
+    }
+
+
+@router.post("/fb/publish")
+async def fb_publish(
+    tenant: CurrentTenant,
+    session: DbSession,
+    kind: str = Query("evening_wrap"),
+    force: bool = Query(False, description="Repost even if already posted for this ref_date"),
+) -> dict:
+    """Compose + publish a pillar's card to the page. Idempotent per (kind, ref_date)."""
+    post = await _compose(kind, session, tenant.market)
+    key = f"fb:posted:{kind}:{post.ref_date}"
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        if not force and (existing := await redis.get(key)):
+            return {"status": "already_posted", "post_id": existing.decode(), "ref_date": post.ref_date}
+        try:
+            post_id = await facebook.post_photo_bytes(post.png, post.caption)
+        except facebook.FacebookError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        await redis.set(key, post_id, ex=7 * 24 * 3600)
+        return {"status": "posted", "post_id": post_id, "ref_date": post.ref_date}
+    finally:
+        await redis.aclose()
