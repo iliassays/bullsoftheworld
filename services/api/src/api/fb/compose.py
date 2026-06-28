@@ -32,6 +32,18 @@ def _movers_str(movers: list[cards.Mover]) -> str:
     return ", ".join(f"${m.code} {m.change_pct:+.1f}%" for m in movers[:3]) or "—"
 
 
+def index_pct(dsex: float | None, points: float | None) -> float | None:
+    """MarketSummary.dsex_change is the day's POINT change, not a percent. Convert to %, and
+    omit (None) anything implausible for an index in a day — better blank than misleading."""
+    if dsex is None or points is None:
+        return None
+    prev = dsex - points
+    if not prev:
+        return None
+    pct = points / prev * 100
+    return pct if abs(pct) <= 20 else None
+
+
 def evening_caption(d: cards.EveningWrapData) -> str:
     """Pure caption builder (bilingual). Numbers stay Western numerals."""
     dsex = "—" if d.dsex is None else f"{d.dsex:,.0f}"
@@ -101,7 +113,7 @@ async def compose_evening_wrap(session, market: str) -> ComposedPost:
     data = cards.EveningWrapData(
         date_label=summary.date.strftime("%d %b %Y"),
         dsex=summary.dsex,
-        dsex_change=summary.dsex_change,
+        dsex_change=index_pct(summary.dsex, summary.dsex_change),
         advancers=adv or 0,
         decliners=dec or 0,
         unchanged=flat or 0,

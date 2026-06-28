@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from api.fb import cards
-from api.fb.compose import evening_caption
+from api.fb.compose import evening_caption, index_pct
 
 _DATA = cards.EveningWrapData(
     date_label="28 Jun 2026",
@@ -34,3 +34,11 @@ def test_evening_caption_handles_missing_data():
 def test_card_renders_png():
     png = cards.evening_wrap_card(_DATA)
     assert png[:8] == b"\x89PNG\r\n\x1a\n"  # valid PNG header
+
+
+def test_index_pct_converts_points_and_guards():
+    # +35.99 points on 5652.82 ≈ +0.64% (not +35.99%)
+    pct = index_pct(5652.82, 35.99)
+    assert pct is not None and 0.6 < pct < 0.7
+    assert index_pct(5652.82, None) is None
+    assert index_pct(5000.0, 2000.0) is None  # implausible (>20%) → omit, don't mislead
