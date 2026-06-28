@@ -5,8 +5,8 @@ import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
 
-// Real, monitored mailbox (Zoho) — also set as Reply-To on transactional email.
-const SUPPORT_EMAIL = "support@bullsofdhaka.com";
+// Real, monitored mailbox — also set as Reply-To on transactional email.
+const SUPPORT_EMAIL = "hello@bullsofdhaka.com";
 
 function ContactLine() {
   const { t } = useLang();

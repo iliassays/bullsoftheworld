@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # Branded sender, e.g. "Bulls of Dhaka <no-reply@bullsofdhaka.com>".
     email_from: str = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"
     # Real, monitored address users can reply to / contact us at (shown in the portal too).
-    support_email: str = "support@bullsofdhaka.com"
+    support_email: str = "hello@bullsofdhaka.com"
     # Replies to transactional mail go here (defaults to support_email when blank).
     email_reply_to: str = ""
     # Preferred: a transactional provider (set RESEND_API_KEY). Falls back to SMTP if set, else logs.
