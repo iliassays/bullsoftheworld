@@ -20,12 +20,18 @@ API_URL="${PROD_API_URL:-https://api.bullsofdhaka.com}"
 echo "→ building frontend (VITE_API_BASE=$API_URL)"
 ( cd apps/web && VITE_API_BASE="$API_URL" npm run build )
 
-# Hashed assets are content-addressed → cache forever. index.html must NOT be cached
-# (it points at the latest hashed bundles), or users get a blank page after a deploy.
-echo "→ syncing assets to s3://$PROD_S3_BUCKET (immutable)"
-aws s3 sync apps/web/dist/ "s3://$PROD_S3_BUCKET/" --delete \
-  --exclude index.html \
+# Only the hashed /assets/* bundles are content-addressed → safe to cache forever.
+echo "→ syncing hashed assets to s3://$PROD_S3_BUCKET/assets (immutable)"
+aws s3 sync apps/web/dist/assets/ "s3://$PROD_S3_BUCKET/assets/" --delete \
   --cache-control "public,max-age=31536000,immutable"
+
+# Stable-named root files (favicons, logo-mark, og, manifest, pwa icons) keep their names
+# across rebrands, so they must NOT be immutable — short cache + revalidate so a rebrand
+# actually reaches visitors. (This was the bug: a new logo never propagated.)
+echo "→ syncing root files (short cache, revalidate)"
+aws s3 sync apps/web/dist/ "s3://$PROD_S3_BUCKET/" --delete \
+  --exclude "assets/*" --exclude "index.html" \
+  --cache-control "public,max-age=300,must-revalidate"
 
 echo "→ uploading index.html (no-store)"
 aws s3 cp apps/web/dist/index.html "s3://$PROD_S3_BUCKET/index.html" \
