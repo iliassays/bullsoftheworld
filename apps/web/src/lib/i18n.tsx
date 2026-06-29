@@ -470,7 +470,7 @@ const STRINGS: Record<string, Entry> = {
   "cat.psi": { en: "Price-sensitive", bn: "মূল্য-সংবেদনশীল" },
   "cat.other": { en: "Other", bn: "অন্যান্য" },
   // Watch today (trending activity)
-  "watch.title": { en: "Watch today", bn: "আজকের নজরে" },
+  "watch.title": { en: "Active today", bn: "আজকের সক্রিয়" },
   "watch.subtitle": {
     en: "Unusual activity across price, volume and turnover. Descriptive, not advice.",
     bn: "দাম, ভলিউম ও টার্নওভারে অস্বাভাবিক সক্রিয়তা। তথ্যমূলক, পরামর্শ নয়।",
