@@ -64,3 +64,24 @@ uv run granian --interface asgi api.main:app --host 0.0.0.0 --port 8000   # run 
 3. Core product: auth, posts, cashtags, symbol pages, feed, watchlists, Bangla UI — no AI
 4. First AI feature: sentiment auto-tag + **eval harness**
 5. AI depth: embeddings/search → summaries → RAG Q&A → fraud detection → research agent
+
+## Production & operations (Bulls of Dhaka is LIVE)
+
+- **Deploy:** `./deploy.sh` = push → server `git pull` + `uv sync` + `alembic upgrade head` + restart
+  `bullsofdhaka-{api,hedge,worker,ai-worker}` (backend, shared by prod+staging). `./deploy-prod.sh`
+  (env `PROD_S3_BUCKET=bullsofdhaka-web PROD_CLOUDFRONT_ID=EPJ7LAHUJDDMK`) = build FE → S3 →
+  CloudFront invalidate (bullsofdhaka.com). Server: `ssh bullstreetai`, app `/home/ubuntu/bullsofdhaka`,
+  Postgres in docker (`docker compose -f infra/docker-compose.yml exec -T postgres psql -U bulls -d bulls -p 5432`).
+- **Worker rhythm (arq cron, UTC, trading days):** intraday `poll_quotes` {4–8}:{0,15,30,45}; EOD chain
+  `pull_eod_bars` 13:00 → `pull_eod_summary` 13:05 → `refresh_analytics` 13:15 → `run_trending` 13:25
+  → `run_factor_signals` 13:40 → `run_market_signals` (Evening Wrap → feed+FB) 13:50; `run_morning_watch`
+  3:30; `run_weekly_recap` Thu 14:00. arq weekday strings are `mon,tues,wed,thurs,fri,sat,sun`.
+- **⚠️ Do NOT deploy during the session or the 13:00–13:50 UTC EOD window.** Heavy restart churn can
+  hang the worker's cron loop and silently drop the EOD jobs (the 2026-06-29 incident). Batch changes
+  outside those hours.
+- **Watchdog:** `ingestion.watchdog` runs as an independent systemd timer (every 5 min) — checks
+  worker liveness, intraday quote freshness, API health, and post-EOD data freshness; restarts the
+  worker + emails `iliasfromberlin@gmail.com` on fault. Units in `infra/systemd/`.
+- **Specs worth reading before touching these areas:** `docs/specs/trending-engine.md` (the "Active
+  today" engine + regulatory posture + recovery runbook), `docs/specs/`. Descriptive-only / no
+  buy-sell advice and **omit-over-mislead** are hard rules for all investor-facing data.
