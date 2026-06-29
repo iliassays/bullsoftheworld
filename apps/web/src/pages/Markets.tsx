@@ -390,8 +390,21 @@ const GROUPS: { id: string; labelKey: string; advanced?: boolean }[] = [
   { id: "technical", labelKey: "group.technical", advanced: true },
 ];
 
-// "What are you looking for?" — curate the screens down to a goal, so a beginner sees 3-4 relevant
-// boards instead of twenty. Orientation, not deletion ("All" still shows everything, grouped).
+// Default market read: enough breadth for retail users without turning the page into a wall of cards.
+// The full screen library remains under "All boards".
+const FOCUS_KEYS = [
+  "most_active",
+  "unusual_volume",
+  "top_gainers",
+  "top_losers",
+  "momentum_12_1",
+  "beating_market",
+  "value_vs_sector",
+  "quality_roe",
+];
+
+// "What are you looking for?" — curate the screens down to a goal, so a beginner sees relevant
+// boards instead of twenty. Orientation, not deletion ("All boards" still shows everything, grouped).
 const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; keys: string[] }[] = [
   {
     id: "momentum",
@@ -412,7 +425,21 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
     icon: "🏷️",
     labelKey: "lens.value",
     blurbKey: "lens.value.blurb",
-    keys: ["value_vs_sector", "quality_roe", "eps_growth", "near_52w_low"],
+    keys: [
+      "value_vs_sector",
+      "quality_roe",
+      "eps_growth",
+      "dividend_yield",
+      "quiet_accumulation",
+      "near_52w_low",
+    ],
+  },
+  {
+    id: "smart",
+    icon: "🏦",
+    labelKey: "lens.smart",
+    blurbKey: "lens.smart.blurb",
+    keys: ["institutional_buying", "foreign_buying", "quiet_accumulation", "unusual_volume"],
   },
   {
     id: "dividend",
@@ -474,7 +501,7 @@ export function Markets() {
   const { t } = useLang();
   const [data, setData] = useState<ScreensResponse | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [lens, setLens] = useState("all");
+  const [lens, setLens] = useState("focus");
 
   useEffect(() => {
     api
@@ -487,6 +514,9 @@ export function Markets() {
   const live = data.screens.filter((s) => s.items.length > 0);
   const byKey = new Map(live.map((s) => [s.key, s]));
   const activeLens = LENSES.find((l) => l.id === lens);
+  const isFocus = lens === "focus";
+  const isAllBoards = lens === "all";
+  const focusScreens = FOCUS_KEYS.map((k) => byKey.get(k)).filter((s): s is Screen => Boolean(s));
 
   return (
     <div className="flex flex-col gap-3">
@@ -494,7 +524,7 @@ export function Markets() {
         {t("markets.lookingFor")}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {[{ id: "all", icon: "", labelKey: "lens.all" }, ...LENSES].map((l) => (
+        {[{ id: "focus", icon: "", labelKey: "lens.focus" }, ...LENSES, { id: "all", icon: "", labelKey: "lens.all" }].map((l) => (
           <button
             key={l.id}
             onClick={() => setLens(l.id)}
@@ -510,7 +540,7 @@ export function Markets() {
 
       <div className="flex items-center justify-between px-1">
         <div className="text-[11px] text-muted">
-          {activeLens ? t(activeLens.blurbKey) : t("markets.browseAll")}
+          {isFocus ? t("markets.focusBlurb") : activeLens ? t(activeLens.blurbKey) : t("markets.browseAll")}
         </div>
         {data.as_of && (
           <div className="text-[10px] text-muted shrink-0 ml-2">
@@ -519,9 +549,11 @@ export function Markets() {
         )}
       </div>
 
-      {!activeLens && <SectorHeat />}
+      {(isFocus || isAllBoards) && <SectorHeat />}
 
-      {activeLens
+      {isFocus
+        ? focusScreens.map((s) => <ScreenCard key={s.key} s={s} />)
+        : activeLens
         ? activeLens.keys
             .map((k) => byKey.get(k))
             .filter((s): s is Screen => Boolean(s))

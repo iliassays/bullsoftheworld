@@ -182,8 +182,12 @@ const STRINGS: Record<string, Entry> = {
     bn: "আপনি কী খুঁজছেন?",
   },
   "markets.browseAll": {
-    en: "Browse every board, grouped.",
-    bn: "সব বোর্ড দেখুন, গ্রুপ অনুযায়ী।",
+    en: "Every board, grouped for power users.",
+    bn: "পাওয়ার ইউজারের জন্য সব বোর্ড, গ্রুপ অনুযায়ী।",
+  },
+  "markets.focusBlurb": {
+    en: "High-signal boards for today's DSE read.",
+    bn: "আজকের DSE পড়ার জন্য গুরুত্বপূর্ণ বোর্ড।",
   },
   "markets.footer": {
     en: "Computed from end-of-day prices · descriptive screens, not recommendations.",
@@ -207,9 +211,11 @@ const STRINGS: Record<string, Entry> = {
     bn: "ডট = ৩M·৬M·১২M-এ উঠছে (সবুজ = শক্তিশালী)। তিনটিই সবুজ মানে প্রবণতা ব্যাপক, শুধু সাম্প্রতিক নয়।",
   },
   // Lens chips
-  "lens.all": { en: "All", bn: "সব" },
+  "lens.focus": { en: "Focus", bn: "ফোকাস" },
+  "lens.all": { en: "All boards", bn: "সব বোর্ড" },
   "lens.momentum": { en: "Momentum", bn: "মোমেন্টাম" },
   "lens.value": { en: "Value", bn: "ভ্যালু" },
+  "lens.smart": { en: "Smart money", bn: "স্মার্ট মানি" },
   "lens.dividend": { en: "Dividend", bn: "লভ্যাংশ" },
   "lens.steady": { en: "Steady", bn: "স্থির" },
   "lens.momentum.blurb": {
@@ -219,6 +225,10 @@ const STRINGS: Record<string, Entry> = {
   "lens.value.blurb": {
     en: "Cheap, profitable, growing — for bargain hunters.",
     bn: "সস্তা, লাভজনক, বর্ধনশীল — দরদাম খোঁজাদের জন্য।",
+  },
+  "lens.smart.blurb": {
+    en: "Institutional, foreign and volume-flow clues — history, not a signal to follow blindly.",
+    bn: "প্রতিষ্ঠান, বিদেশি ও ভলিউম-ফ্লোর ইঙ্গিত — ইতিহাস, অন্ধভাবে অনুসরণের সংকেত নয়।",
   },
   "lens.dividend.blurb": {
     en: "Cash payers — for income seekers.",
