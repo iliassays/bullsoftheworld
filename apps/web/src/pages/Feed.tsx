@@ -6,6 +6,7 @@ import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { Composer } from "../components/Composer";
 import { PostCard } from "../components/PostCard";
 import { TickerStrip } from "../components/TickerStrip";
+import { WatchToday } from "../components/WatchToday";
 import { TodayStandouts } from "../components/TodayStandouts";
 import { TodaysWatch } from "../components/TodaysWatch";
 import { WatchlistHome } from "../components/WatchlistHome";
@@ -22,6 +23,7 @@ export function Feed() {
   return (
     <div className="flex flex-col gap-3">
       <TickerStrip />
+      <WatchToday />
       <WatchlistHome />
       <TodayStandouts />
       <TodaysWatch />

@@ -469,6 +469,26 @@ const STRINGS: Record<string, Entry> = {
   "cat.halt": { en: "Halt", bn: "স্থগিত" },
   "cat.psi": { en: "Price-sensitive", bn: "মূল্য-সংবেদনশীল" },
   "cat.other": { en: "Other", bn: "অন্যান্য" },
+  // Watch today (trending activity)
+  "watch.title": { en: "Watch today", bn: "আজকের নজরে" },
+  "watch.subtitle": {
+    en: "Unusual activity across price, volume and turnover. Descriptive, not advice.",
+    bn: "দাম, ভলিউম ও টার্নওভারে অস্বাভাবিক সক্রিয়তা। তথ্যমূলক, পরামর্শ নয়।",
+  },
+  "watch.heating": { en: "Heating up", bn: "সরগরম" },
+  "watch.empty": { en: "No standout activity yet today.", bn: "আজ এখনো উল্লেখযোগ্য সক্রিয়তা নেই।" },
+  "watch.footer": {
+    en: "Ranked nightly by an activity model — each stock vs its own normal, liquid names only. Past activity, not a prediction.",
+    bn: "প্রতি রাতে সক্রিয়তা মডেল দিয়ে র‍্যাঙ্ক — প্রতিটি শেয়ার নিজের স্বাভাবিকের সাপেক্ষে, শুধু তারল্যপূর্ণ নাম। অতীত সক্রিয়তা, ভবিষ্যদ্বাণী নয়।",
+  },
+  "watch.r.volume": { en: "{mult}× normal volume", bn: "{mult}× স্বাভাবিক ভলিউম" },
+  "watch.r.turnover": { en: "৳{cr}cr turnover", bn: "৳{cr}কোটি টার্নওভার" },
+  "watch.r.turnoverMult": { en: "৳{cr}cr ({mult}× usual)", bn: "৳{cr}কোটি ({mult}× স্বাভাবিকের)" },
+  "watch.r.near_high": { en: "near 52-week high", bn: "৫২-সপ্তাহের সর্বোচ্চের কাছে" },
+  "watch.r.near_low": { en: "near 52-week low", bn: "৫২-সপ্তাহের সর্বনিম্নের কাছে" },
+  "watch.r.move": { en: "{pct}% move", bn: "{pct}% নড়াচড়া" },
+  "watch.r.limit_up": { en: "locked limit-up", bn: "সর্বোচ্চ সীমায় আটকে" },
+  "watch.r.limit_down": { en: "locked limit-down", bn: "সর্বনিম্ন সীমায় আটকে" },
   // Watchlist + Profile
   "common.login": { en: "Log in", bn: "লগ ইন" },
   "common.cancel": { en: "Cancel", bn: "বাতিল" },

@@ -1,0 +1,89 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api, type TrendingReason, type TrendingStock } from "../lib/api";
+import { useLang } from "../lib/i18n";
+import { Pct } from "./ui";
+
+// The precomputed daily activity ranking (see ingestion.trending). The frontend just renders the
+// ordered list + the language-neutral reason chips. Descriptive — activity, never a recommendation.
+export function WatchToday() {
+  const { t } = useLang();
+  const [rows, setRows] = useState<TrendingStock[] | null>(null);
+
+  useEffect(() => {
+    api
+      .trendingStocks(15)
+      .then(setRows)
+      .catch(() => setRows([]));
+  }, []);
+
+  const fill = (key: string, vars: Record<string, string | number>) =>
+    t(key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
+
+  const reasonText = (r: TrendingReason): string => {
+    switch (r.kind) {
+      case "volume":
+        return fill("watch.r.volume", { mult: r.mult ?? "" });
+      case "turnover":
+        return r.mult
+          ? fill("watch.r.turnoverMult", { cr: r.cr ?? "", mult: r.mult })
+          : fill("watch.r.turnover", { cr: r.cr ?? "" });
+      case "near_high":
+        return t("watch.r.near_high");
+      case "near_low":
+        return t("watch.r.near_low");
+      case "move":
+        return fill("watch.r.move", { pct: `${(r.pct ?? 0) > 0 ? "+" : ""}${r.pct}` });
+      case "limit_up":
+        return t("watch.r.limit_up");
+      case "limit_down":
+        return t("watch.r.limit_down");
+      default:
+        return "";
+    }
+  };
+
+  if (rows === null)
+    return <div className="bg-surface border border-border rounded-2xl p-4 animate-pulse h-40" />;
+  if (rows.length === 0) return null; // nothing ranked yet (e.g. before the first nightly run)
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-4">
+      <div className="flex items-center gap-2">
+        <span aria-hidden>🔥</span>
+        <span className="font-bold text-sm">{t("watch.title")}</span>
+      </div>
+      <p className="text-[11px] text-muted mt-0.5">{t("watch.subtitle")}</p>
+
+      <div className="mt-3 flex flex-col divide-y divide-border">
+        {rows.map((s, i) => (
+          <Link key={s.code} to={`/s/${s.code}`} className="flex gap-2.5 py-2.5 items-start">
+            <span className="text-[11px] text-muted w-4 text-center pt-0.5">{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-[13px]">${s.code}</span>
+                {s.heating_up && (
+                  <span className="text-[10px] text-accent bg-accent/10 rounded-full px-2 py-0.5 font-semibold shrink-0">
+                    🔥 {t("watch.heating")}
+                  </span>
+                )}
+                <span className="ml-auto text-xs font-semibold shrink-0">
+                  <Pct value={s.change_pct} />
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                {s.reasons.map((r, j) => (
+                  <span key={j} className="text-[11px] text-muted">
+                    {reasonText(r)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      <p className="text-[10px] text-muted mt-2">{t("watch.footer")}</p>
+    </div>
+  );
+}

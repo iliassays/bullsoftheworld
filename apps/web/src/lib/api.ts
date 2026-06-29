@@ -301,6 +301,22 @@ export interface NewsItem {
   headline: string;
   details?: NewsDetails | null;
 }
+export interface TrendingReason {
+  kind: "volume" | "turnover" | "near_high" | "near_low" | "move" | "limit_up" | "limit_down";
+  mult?: number;
+  cr?: number;
+  pct?: number;
+}
+export interface TrendingStock {
+  code: string;
+  name_en: string;
+  name_bn: string | null;
+  ltp: number | null;
+  change_pct: number;
+  direction: "up" | "down" | "flat";
+  heating_up: boolean;
+  reasons: TrendingReason[];
+}
 export interface ReadPoint {
   tag: string;
   text: string;
@@ -434,6 +450,8 @@ export const api = {
     }),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
+  trendingStocks: (limit = 15) =>
+    request<TrendingStock[]>(`/trending-stocks?limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
 
   // posts
