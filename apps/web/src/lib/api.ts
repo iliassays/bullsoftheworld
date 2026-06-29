@@ -265,11 +265,41 @@ export interface Company {
     bonus_pct: number | null;
   }[];
 }
+export interface NewsDetails {
+  // earnings
+  eps_current?: number;
+  eps_prior?: number;
+  eps_trend?: "up" | "down" | "flat" | "loss_widened" | "loss_narrowed" | "to_loss" | "to_profit";
+  nav?: number;
+  nocfps?: number;
+  period?: "Q1" | "H1" | "Q3" | "annual";
+  // dividend
+  cash_pct?: number;
+  stock_pct?: number;
+  no_dividend?: boolean;
+  per_share_cash?: number;
+  face_value?: number;
+  year_ended?: string;
+  agm_date?: string;
+  // board meeting
+  meeting_date?: string;
+  agenda?: ("financials" | "dividend")[];
+  // corporate action / halt
+  record_date?: string;
+  spot_from?: string;
+  spot_to?: string;
+  // rating
+  long_term?: string;
+  short_term?: string;
+  outlook?: string;
+  action?: "upgrade" | "downgrade";
+}
 export interface NewsItem {
   published_at: string;
   category: string;
   strength: number;
   headline: string;
+  details?: NewsDetails | null;
 }
 export interface ReadPoint {
   tag: string;

@@ -38,6 +38,159 @@ const F_HELP_BN: Record<string, string> = {
 const fhelp = (key: string, lang: Lang) =>
   (lang === "bn" ? F_HELP_BN[key] : undefined) ?? F_HELP[key];
 
+const NEWS_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "2026-07-07" → "7 Jul"; returns the raw string if it isn't an ISO date.
+const shortDate = (iso?: string): string => {
+  if (!iso) return "";
+  const [, m, d] = iso.split("-");
+  if (!d) return iso;
+  return `${Number(d)} ${NEWS_MONTHS[Number(m) - 1] ?? "?"}`;
+};
+// "−৳1.87" / "৳1.50" — explicit minus sign + 2 decimals for per-share figures (distinct from the
+// crore-formatting `taka` below used elsewhere in this file).
+const takaSigned = (v: number): string => `${v < 0 ? "−" : ""}৳${Math.abs(v).toFixed(2)}`;
+
+// One labelled date in the corporate-action timeline.
+function DateCell({ label, value, accent }: { label: string; value?: string; accent?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className="flex-1 text-center px-1 py-1.5">
+      <div className="text-[10px] text-muted">{label}</div>
+      <div className={`text-xs font-semibold ${accent ? "text-accent" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function WhatItMeans({ text }: { text: string }) {
+  const { t } = useLang();
+  return (
+    <div className="mt-2 flex gap-1.5 text-xs text-muted leading-relaxed">
+      <span className="text-accent shrink-0">{t("news.whatItMeans")}:</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
+// Renders the decoded body for one announcement, switching on category. Falls back to nothing
+// (the headline alone) when there's no structured detail — so it never shows half-parsed noise.
+function DecodedBody({ n }: { n: NewsItem }) {
+  const { t } = useLang();
+  const d = n.details;
+  const fill = (key: string, vars: Record<string, string | number>) =>
+    t(key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
+  if (!d) return null;
+
+  if (n.category === "earnings" && d.eps_current != null) {
+    const loss = d.eps_current < 0;
+    return (
+      <div className="mt-2">
+        <div className="flex gap-2 flex-wrap">
+          <div className="flex-1 min-w-[120px] bg-bg/40 rounded-xl px-3 py-2">
+            <div className="text-[11px] text-muted">{t("news.eps")}</div>
+            <div className={`text-xl font-bold ${loss ? "text-down" : "text-up"}`}>{takaSigned(d.eps_current)}</div>
+            {d.eps_prior != null && (
+              <div className="text-[11px] text-muted">{fill("news.epsVsPrior", { prior: takaSigned(d.eps_prior) })}</div>
+            )}
+          </div>
+          {d.nav != null && (
+            <div className="flex-1 min-w-[120px] bg-bg/40 rounded-xl px-3 py-2">
+              <div className="text-[11px] text-muted">{t("news.nav")}</div>
+              <div className="text-xl font-bold">{takaSigned(d.nav)}</div>
+              <div className="text-[11px] text-muted">{t("news.navHint")}</div>
+            </div>
+          )}
+        </div>
+        {d.eps_trend && (
+          <span className={`inline-block mt-2 text-[11px] font-semibold rounded-full px-2 py-0.5 ${loss ? "text-down bg-down/10" : "text-up bg-up/10"}`}>
+            {t(`news.trend.${d.eps_trend}`)}
+          </span>
+        )}
+        <WhatItMeans text={t("news.explain.earnings")} />
+      </div>
+    );
+  }
+
+  if (n.category === "dividend") {
+    return (
+      <div className="mt-2">
+        {d.no_dividend ? (
+          <div className="text-sm font-semibold">
+            {t("news.div.none")}{" "}
+            {d.year_ended && <span className="text-muted font-normal">{fill("news.div.forYear", { year: shortDate(d.year_ended) })}</span>}
+          </div>
+        ) : (
+          <>
+            {d.cash_pct != null && (
+              <div className="text-sm font-semibold text-up">
+                {fill("news.div.cash", { pct: d.cash_pct })}{" "}
+                {d.per_share_cash != null && <span>{fill("news.div.perShare", { amt: d.per_share_cash.toFixed(2) })}</span>}
+              </div>
+            )}
+            {d.stock_pct != null && <div className="text-sm">{fill("news.div.stock", { pct: d.stock_pct })}</div>}
+            {d.per_share_cash != null && (
+              <div className="bg-up/10 rounded-xl px-3 py-2 mt-2 text-xs text-text/90 leading-relaxed">
+                {fill("news.div.example", { amt: (d.per_share_cash * 100).toFixed(0) })}
+                <div className="text-muted mt-1">{fill("news.div.priceAdj", { amt: d.per_share_cash.toFixed(2) })}</div>
+              </div>
+            )}
+          </>
+        )}
+        {d.agm_date && (
+          <div className="flex mt-2 border border-border rounded-xl divide-x divide-border">
+            <DateCell label={t("news.agm")} value={shortDate(d.agm_date)} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (n.category === "board_meeting" && d.meeting_date) {
+    const parts = (d.agenda ?? []).map((a) =>
+      a === "financials" ? fill("news.board.financials", { period: t(`news.period.${d.period ?? "annual"}`) }) : t("news.board.dividend"),
+    );
+    return (
+      <div className="mt-2">
+        <p className="text-sm font-semibold">
+          {fill("news.board.title", { date: shortDate(d.meeting_date), what: parts.join(t("news.board.and")) })}
+        </p>
+        <WhatItMeans text={t("news.explain.board")} />
+      </div>
+    );
+  }
+
+  if ((n.category === "corporate_action" || n.category === "halt") && (d.record_date || d.spot_from)) {
+    return (
+      <div className="mt-2">
+        <div className="flex border border-border rounded-xl divide-x divide-border">
+          {d.spot_from && <DateCell label={t("news.spotMarket")} value={`${shortDate(d.spot_from)}–${shortDate(d.spot_to)}`} />}
+          <DateCell label={t("news.recordDate")} value={shortDate(d.record_date)} accent />
+          {d.agm_date && <DateCell label={t("news.agm")} value={shortDate(d.agm_date)} />}
+        </div>
+        <WhatItMeans text={t("news.explain.dates")} />
+      </div>
+    );
+  }
+
+  if (n.category === "rating" && (d.long_term || d.short_term)) {
+    return (
+      <div className="mt-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold">{fill("news.rating.line", { lt: d.long_term ?? "—", st: d.short_term ?? "—" })}</span>
+          {d.outlook && <span className="text-xs text-muted">{fill("news.rating.outlook", { outlook: d.outlook })}</span>}
+          {d.action && (
+            <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${d.action === "upgrade" ? "text-up bg-up/10" : "text-down bg-down/10"}`}>
+              {t(`news.rating.${d.action}`)}
+            </span>
+          )}
+        </div>
+        <WhatItMeans text={t("news.explain.rating")} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
 export function NewsPanel({ items }: { items: NewsItem[] }) {
   const { t } = useLang();
   if (!items.length) return <Empty>{t("news.empty")}</Empty>;
@@ -48,24 +201,15 @@ export function NewsPanel({ items }: { items: NewsItem[] }) {
   return (
     <div className="flex flex-col gap-2">
       {items.map((n, i) => (
-        <div
-          key={i}
-          className="bg-surface border border-border rounded-2xl p-3"
-        >
+        <div key={i} className="bg-surface border border-border rounded-2xl p-3">
           <div className="flex items-center gap-2 text-[11px]">
             <span className="text-accent font-semibold bg-accent/10 rounded-full px-2 py-0.5">
               {catLabel(n.category)}
             </span>
             <span className="text-muted">{n.published_at}</span>
-            <span className="ml-auto text-muted">{t("news.strength")} {n.strength}</span>
           </div>
-          <div className="mt-1 h-1 rounded-full bg-border overflow-hidden">
-            <div
-              className="h-full bg-accent"
-              style={{ width: `${n.strength}%` }}
-            />
-          </div>
-          <p className="text-sm text-text/90 mt-2">{n.headline}</p>
+          <p className="text-sm font-semibold mt-2">{n.headline}</p>
+          <DecodedBody n={n} />
         </div>
       ))}
       <p className="text-[10px] text-muted">{t("news.footer")}</p>
