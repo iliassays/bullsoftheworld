@@ -230,7 +230,9 @@ def _emit_news(item: dict[str, str], out: list[NewsItem]) -> None:
     headline = item.get("title", "").strip()
     date = _news_date(item.get("date", ""))
     if code and headline and date:
-        out.append(NewsItem(code=code, published_at=date, headline=headline))
+        out.append(
+            NewsItem(code=code, published_at=date, headline=headline, body=item.get("body", "").strip())
+        )
 
 
 def parse_news(html: str) -> list[NewsItem]:

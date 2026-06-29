@@ -165,6 +165,7 @@ class NewsItem(BaseModel):
     code: str
     published_at: dt.date
     headline: str
+    body: str = ""  # full announcement text — decoded into structured fields at onboarding
 
 
 @runtime_checkable

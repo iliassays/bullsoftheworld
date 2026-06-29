@@ -23,6 +23,8 @@ from bulls.core.db import get_sessionmaker
 from bulls.core.models import Announcement
 from bulls.market_data import get_provider
 
+from ingestion.news_decode import decode
+
 BACKFILL_DAYS = 760
 DAILY_LOOKBACK_DAYS = 3  # news is time-sensitive; a short re-pull catches late postings
 
@@ -118,12 +120,26 @@ async def collect(market: str, *, days: int) -> dict[str, int]:
     start = end - dt.timedelta(days=days)
     items = await provider.get_news(start, end)
 
+    # DSE splits long announcements across rows that repeat the same title ("(Cont. news of X)").
+    # They share an identity key, so group them and decode the bodies together — otherwise a
+    # continuation fragment overwrites the real declaration and the numbers/dates are lost.
+    groups: dict[str, dict] = {}
+    for it in items:
+        category = classify(it.headline)
+        if category == "noise":
+            continue
+        k = _key(it.code, it.published_at, it.headline)
+        g = groups.setdefault(k, {"item": it, "category": category, "bodies": []})
+        if it.body:
+            g["bodies"].append(it.body)
+
     kept = 0
     async with get_sessionmaker()() as session:
-        for it in items:
-            category = classify(it.headline)
-            if category == "noise":
-                continue
+        for k, g in groups.items():
+            it, category = g["item"], g["category"]
+            # main fragment (not a "(Cont." part) first, so the merged text reads in order
+            ordered = sorted(g["bodies"], key=lambda b: b.strip().lower().startswith(("(cont", "(continuation")))
+            body = "\n".join(ordered)
             row = {
                 "market": market,
                 "code": it.code,
@@ -131,10 +147,20 @@ async def collect(market: str, *, days: int) -> dict[str, int]:
                 "category": category,
                 "strength": strength(category, it.headline),
                 "headline": it.headline,
-                "key": _key(it.code, it.published_at, it.headline),
+                "body": body or None,
+                "details": decode(category, it.headline, body) or None,
+                "key": k,
             }
-            stmt = (
-                pg_insert(Announcement).values(row).on_conflict_do_nothing(index_elements=["key"])
+            # On re-run, refresh the derived columns so improved classification / decoding flows to
+            # rows we already have (identity is the content hash, so this is idempotent).
+            stmt = pg_insert(Announcement).values(row).on_conflict_do_update(
+                index_elements=["key"],
+                set_={
+                    "category": row["category"],
+                    "strength": row["strength"],
+                    "body": row["body"],
+                    "details": row["details"],
+                },
             )
             result = await session.execute(stmt)
             kept += result.rowcount or 0
