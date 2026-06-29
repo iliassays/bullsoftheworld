@@ -35,7 +35,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s watchdog %(levelname
 log = logging.getLogger("watchdog")
 
 WORKER_UNIT = "bullsofdhaka-worker"
-STALE_AFTER = dt.timedelta(minutes=25)  # poll runs every 15 min; 25 = one missed poll + slack
+STALE_AFTER = dt.timedelta(minutes=35)  # poll is every 15 min; 35 tolerates one missed cycle
+# (a transient blip self-heals next poll) but still flags a truly dead worker, whose data only
+# grows staler. Tight enough to catch real faults within ~2 poll cycles, loose enough not to page
+# on a single hiccup or a deploy-restart landing on a poll boundary.
 COOLDOWN_SECONDS = 60 * 60  # page at most once an hour for an ongoing incident
 _COOLDOWN_KEY = "watchdog:alerted"
 
