@@ -30,7 +30,7 @@ export const currentLang = (): Lang => _lang;
 type Entry = { en: string; bn: string };
 const STRINGS: Record<string, Entry> = {
   tagline: { en: "Facts, not rumours", bn: "তথ্যে চলুন, গুজবে নয়" },
-  delayed: { en: "Delayed", bn: "বিলম্বিত" },
+  delayed: { en: "15-min delayed", bn: "১৫ মিনিট বিলম্বিত" },
   "nav.feed": { en: "Feed", bn: "ফিড" },
   "nav.markets": { en: "Markets", bn: "মার্কেট" },
   "nav.bulls": { en: "Bulls", bn: "বুলস" },
