@@ -243,7 +243,9 @@ class WorkerSettings:
         # Morning Watch card → Facebook only, pre-open (03:30 UTC ≈ 09:30 Dhaka, before 10:00 open).
         cron(run_morning_watch, hour=3, minute=30, run_at_startup=False),
         # Weekly Recap card → Facebook only, Thursday after close (14:00 UTC ≈ 20:00 Dhaka).
-        cron(run_weekly_recap, weekday="thu", hour=14, minute=0, run_at_startup=False),
+        # arq's weekday tuple is ('mon','tues','wed','thurs','fri','sat','sun') — it's "thurs", not "thu".
+        # A value not in that tuple makes WEEKDAYS.index() throw on boot and crash-loops the whole worker.
+        cron(run_weekly_recap, weekday="thurs", hour=14, minute=0, run_at_startup=False),
         # Factor notes (momentum / quality / smart-money / relative strength), after analytics (13:15).
         cron(run_factor_signals, hour=13, minute=40, run_at_startup=False),
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
