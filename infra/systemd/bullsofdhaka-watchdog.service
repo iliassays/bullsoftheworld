@@ -1,0 +1,11 @@
+[Unit]
+Description=Bulls of Dhaka Health Watchdog (out-of-band: worker liveness, quote freshness, API)
+After=network.target
+
+[Service]
+Type=oneshot
+# Exit 1 = "found problems and alerted" — not a unit failure, so don't mark the service failed.
+SuccessExitStatus=1
+# Runs as root (no User=) so it can `systemctl restart bullsofdhaka-worker` on a fault.
+WorkingDirectory=/home/ubuntu/bullsofdhaka/services/ingestion
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.watchdog
