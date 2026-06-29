@@ -51,9 +51,16 @@ def volume_gauge(posts_24h: int, chatter_x: float | None) -> Gauge:
     return Gauge(score=score, label=label)
 
 
+_MIN_FOR_PARTICIPATION = 5  # below this there isn't enough chatter to judge diversity of voices
+
+
 def participation_gauge(unique_authors: int, total_posts: int) -> Gauge:
-    """Unique voices ÷ messages. Low = a few accounts dominate the chatter."""
-    if total_posts == 0:
+    """Diversity of voices = unique authors per message (low = a few accounts dominate).
+
+    Only meaningful with enough chatter: 1-2 posts trivially score 100% ("every message is a
+    different person"), which is noise — so below a small floor we report 'quiet', not 'high'.
+    """
+    if total_posts < _MIN_FOR_PARTICIPATION:
         return Gauge(score=0, label="quiet")
     score = round(unique_authors / total_posts * 100)
     label = "high" if score >= 70 else "low" if score < 35 else "normal"
