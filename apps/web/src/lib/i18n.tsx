@@ -81,6 +81,12 @@ const STRINGS: Record<string, Entry> = {
   },
   // Explain card
   "explain.title": { en: "Deeper analysis", bn: "গভীর বিশ্লেষণ" },
+  "explain.cta": { en: "Generate analysis", bn: "বিশ্লেষণ তৈরি করুন" },
+  "explain.hint": {
+    en: "An AI plain-language read of this stock's whole picture — generated when you ask.",
+    bn: "এই শেয়ারের সামগ্রিক চিত্রের একটি AI সহজ-ভাষার বিশ্লেষণ — আপনি চাইলে তৈরি হয়।",
+  },
+  "explain.retry": { en: "Couldn't generate. Try again.", bn: "তৈরি করা যায়নি। আবার চেষ্টা করুন।" },
   "explain.aiPrefix": { en: "AI-generated from the", bn: "AI দ্বারা তৈরি —" },
   "explain.aiSuffix": {
     en: "close · educational, not advice.",
