@@ -8,16 +8,78 @@ from __future__ import annotations
 import datetime as dt
 from zoneinfo import ZoneInfo
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
 from bulls.analytics import AnalyticsResult, compute
-from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
+from bulls.core.models import DailyBar, QuoteSnapshot, Symbol, TrendingScore
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 from bulls.market_data.calendar import MARKET_CLOSE
 
 router = APIRouter(tags=["market"])
+
+
+class TrendingStockOut(BaseModel):
+    """One row of the daily 'Watch today' activity ranking — descriptive, not a recommendation."""
+
+    code: str
+    name_en: str
+    name_bn: str | None
+    ltp: float | None
+    change_pct: float
+    direction: str
+    heating_up: bool
+    reasons: list[dict[str, Any]]
+
+
+@router.get("/trending-stocks")
+async def trending_stocks(
+    tenant: CurrentTenant, session: DbSession, limit: int = Query(15, ge=1, le=25)
+) -> list[TrendingStockOut]:
+    """Precomputed nightly by the worker (anomaly-ranked by self-normalized volume + turnover surge,
+    liquidity-gated). The frontend just reads this ordered list."""
+    rows = list(
+        await session.scalars(
+            select(TrendingScore)
+            .where(TrendingScore.market == tenant.market)
+            .order_by(TrendingScore.rank)
+            .limit(limit)
+        )
+    )
+    if not rows:
+        return []
+    codes = [r.code for r in rows]
+    names = {
+        s.code: s
+        for s in await session.scalars(
+            select(Symbol).where(Symbol.market == tenant.market, Symbol.code.in_(codes))
+        )
+    }
+    ltps = dict(
+        (q.code, q.ltp)
+        for q in await session.scalars(
+            select(QuoteSnapshot).where(
+                QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes)
+            )
+        )
+    )
+    return [
+        TrendingStockOut(
+            code=r.code,
+            name_en=(names.get(r.code).name_en if names.get(r.code) else r.code),
+            name_bn=(names.get(r.code).name_bn if names.get(r.code) else None),
+            ltp=ltps.get(r.code),
+            change_pct=r.change_pct,
+            direction=r.direction,
+            heating_up=r.heating_up,
+            reasons=r.reasons,
+        )
+        for r in rows
+    ]
 
 # Enough history for the longest indicator (200-day SMA) plus headroom.
 _ANALYTICS_LOOKBACK = 260

@@ -16,6 +16,7 @@ from bulls.core.models.signal_event import SignalEvent
 from bulls.core.models.symbol import Symbol
 from bulls.core.models.ticker_analytics import TickerAnalytics
 from bulls.core.models.ticker_buzz_daily import TickerBuzzDaily
+from bulls.core.models.trending import TrendingScore
 from bulls.core.models.user import User
 from bulls.core.models.watchlist import WatchlistItem
 
@@ -37,6 +38,7 @@ __all__ = [
     "Symbol",
     "TickerAnalytics",
     "TickerBuzzDaily",
+    "TrendingScore",
     "User",
     "WatchlistItem",
 ]

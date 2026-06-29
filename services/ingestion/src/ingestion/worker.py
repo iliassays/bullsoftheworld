@@ -39,6 +39,7 @@ from ingestion.signals.runner import (
     run_ownership_agents,
     run_volume_agent,
 )
+from ingestion.trending import compute_trending
 
 log = logging.getLogger(__name__)
 MARKET = "DSE"
@@ -88,6 +89,16 @@ async def refresh_analytics(ctx) -> str:
     counts = await compute_all(MARKET)
     log.info("analytics refresh: %s/%s symbols", counts["computed"], counts["symbols"])
     return f"analytics={counts['computed']}"
+
+
+async def run_trending(ctx) -> str:
+    """Recompute the daily 'Watch today' activity ranking — only on trading days, after analytics."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    stats = await compute_trending(MARKET)
+    log.info("trending: stored %s of %s eligible (as_of %s)", stats["stored"], stats["eligible"], stats["as_of"])
+    return f"trending={stats['stored']}"
 
 
 async def snapshot_buzz(ctx) -> str:
@@ -209,6 +220,7 @@ class WorkerSettings:
         pull_eod_summary,
         refresh_company,
         refresh_analytics,
+        run_trending,
         snapshot_buzz,
         run_signals,
         run_ownership_signals,
@@ -228,6 +240,8 @@ class WorkerSettings:
         cron(refresh_company, weekday="fri", hour=14, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
+        # 'Watch today' activity ranking — after analytics, before the FB market signals (13:50).
+        cron(run_trending, hour=13, minute=25, run_at_startup=False),
         # Snapshot social attention hourly across the session, then finalize after the bar pull.
         # Intraday runs keep watchers_total + today's counts fresh; the 13:20 run is the EOD row.
         cron(snapshot_buzz, hour={4, 5, 6, 7, 8, 13}, minute=20, run_at_startup=False),
