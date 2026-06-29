@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     email_from: str = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"
     # Real, monitored address users can reply to / contact us at (shown in the portal too).
     support_email: str = "hello@bullsofdhaka.com"
+    # Where the ops watchdog pages on a health problem (worker down / stale data / API down).
+    alert_email: str = ""  # defaults to support_email when blank
     # Replies to transactional mail go here (defaults to support_email when blank).
     email_reply_to: str = ""
     # Preferred: a transactional provider (set RESEND_API_KEY). Falls back to SMTP if set, else logs.
