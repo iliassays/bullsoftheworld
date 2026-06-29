@@ -394,6 +394,7 @@ const STRINGS: Record<string, Entry> = {
   "cat.dividend": { en: "Dividend", bn: "লভ্যাংশ" },
   "cat.earnings": { en: "Earnings", bn: "আয়" },
   "cat.rating": { en: "Rating", bn: "রেটিং" },
+  "cat.insider": { en: "Insider dealing", bn: "অভ্যন্তরীণ লেনদেন" },
   "cat.board_meeting": { en: "Board meeting", bn: "বোর্ড সভা" },
   "cat.corporate_action": { en: "Corporate action", bn: "কর্পোরেট অ্যাকশন" },
   "cat.halt": { en: "Halt", bn: "স্থগিত" },

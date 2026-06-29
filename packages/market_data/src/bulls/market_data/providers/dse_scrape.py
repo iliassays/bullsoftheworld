@@ -41,9 +41,10 @@ _ARCHIVE_URL = f"{_BASE}/day_end_archive.php"
 _SUMMARY_URL = f"{_BASE}/market_summary.php"
 _COMPANY_URL = f"{_BASE}/displayCompany.php"
 _SECTOR_PE_URL = f"{_BASE}/sectoral_PE.php"
-# News lives on the corporate site (dse.com.bd), not dsebd.org. URL/params/columns below are the
-# expected shape — confirm against a real news_archive.php capture and a saved fixture.
-_NEWS_URL = "https://www.dse.com.bd/news_archive.php"
+# News on news_archive.php is rendered client-side by a jQuery DataTable that AJAX-loads
+# ajax/load-news.php (same dsebd.org host). That AJAX endpoint is the only one that returns rows,
+# and only when the X-Requested-With: XMLHttpRequest header is present (see get_news).
+_NEWS_URL = f"{_BASE}/ajax/load-news.php"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 
@@ -203,11 +204,6 @@ def parse_market_summary(html: str) -> list[MarketSummary]:
     return summaries
 
 
-_NEWS_DATE_KEYS = {"NEWS DATE", "DATE", "PUBLISH DATE", "PUBLISHED ON"}
-_NEWS_CODE_KEYS = {"TRADING CODE", "CODE", "COMPANY", "TRADING CODE/COMPANY"}
-_NEWS_TITLE_KEYS = {"NEWS TITLE", "NEWS", "TITLE", "HEADLINE"}
-
-
 def _news_date(value: str) -> dt.date | None:
     value = value.strip()
     for fmt in ("%Y-%m-%d", "%b %d, %Y", "%d %b %Y", "%d-%m-%Y"):
@@ -218,40 +214,47 @@ def _news_date(value: str) -> dt.date | None:
     return None
 
 
-def _col_idx(header: list[str], keys: set[str]) -> int | None:
-    for i, h in enumerate(header):
-        if h in keys:
-            return i
-    return None
+# load-news.php renders each item as a vertical block of label/value rows — the value sits in the
+# first cell, the label ("Trading Code:", "News Title:", "Post Date:") in the second. A "Trading
+# Code:" row starts a new item. We key off the label so column/whitespace drift doesn't break it.
+_NEWS_FIELD_BY_LABEL = {
+    "trading code:": "code",
+    "news title:": "title",
+    "news:": "body",
+    "post date:": "date",
+}
+
+
+def _emit_news(item: dict[str, str], out: list[NewsItem]) -> None:
+    code = item.get("code", "").upper().strip()
+    headline = item.get("title", "").strip()
+    date = _news_date(item.get("date", ""))
+    if code and headline and date:
+        out.append(NewsItem(code=code, published_at=date, headline=headline))
 
 
 def parse_news(html: str) -> list[NewsItem]:
-    """Parse the news archive table into raw NewsItems (date, code, headline).
+    """Parse load-news.php into raw NewsItems (date, code, headline).
 
-    Header-keyed (survives column reorder). EXPECTED shape — verify against a real news_archive.php
-    capture; the date/code/title header names may differ.
+    The AJAX response is not a column table: each announcement is a run of rows shaped
+    ``[value, label]`` — e.g. ``["ICBIBANK", "Trading Code:"]`` then ``["…", "News Title:"]`` then
+    ``["…", "Post Date:"]``. We accumulate by label and flush when the next "Trading Code:" begins.
     """
     tree = HTMLParser(html)
     out: list[NewsItem] = []
-    for table in tree.css("table"):
-        rows = table.css("tr")
-        if not rows:
+    current: dict[str, str] = {}
+    for row in tree.css("tr"):
+        cells = [c.text(strip=True) for c in row.css("td, th")]
+        if len(cells) < 2:
             continue
-        header = [_norm(c.text(strip=True)) for c in rows[0].css("th, td")]
-        di, ci, ti = (
-            _col_idx(header, k) for k in (_NEWS_DATE_KEYS, _NEWS_CODE_KEYS, _NEWS_TITLE_KEYS)
-        )
-        if di is None or ci is None or ti is None:
+        field = _NEWS_FIELD_BY_LABEL.get(cells[1].strip().lower())
+        if field is None:
             continue
-        for row in rows[1:]:
-            cells = [c.text(strip=True) for c in row.css("td")]
-            if len(cells) <= max(di, ci, ti):
-                continue
-            date = _news_date(cells[di])
-            code = cells[ci].upper().strip()
-            headline = cells[ti].strip()
-            if date and code and headline:
-                out.append(NewsItem(code=code, published_at=date, headline=headline))
+        if field == "code":  # a new item begins — flush the previous one
+            _emit_news(current, out)
+            current = {}
+        current[field] = cells[0]
+    _emit_news(current, out)  # last item has no trailing "Trading Code:" to flush it
     return out
 
 
@@ -531,9 +534,11 @@ class DseScrapeProvider:
         return parse_sector_pe(resp.text)
 
     async def get_news(self, start: dt.date, end: dt.date) -> list[NewsItem]:
-        # Param names are the expected shape — confirm against the live page.
         params = {"startDate": str(start), "endDate": str(end), "inst": "All Instrument"}
+        # load-news.php returns an empty body unless it looks like the DataTable's AJAX call —
+        # the X-Requested-With header is the gate (a browser UA / Referer alone don't suffice).
+        headers = {"X-Requested-With": "XMLHttpRequest"}
         async with self._client() as client:
-            resp = await client.get(_NEWS_URL, params=params)
+            resp = await client.get(_NEWS_URL, params=params, headers=headers)
             resp.raise_for_status()
         return parse_news(resp.text)

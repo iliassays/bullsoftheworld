@@ -38,12 +38,16 @@ _NOISE = (
     "block transaction",
     "odd lot",
     "renaming",
+    "daily nav",  # mutual funds post a NAV every single day — routine, buries real news
+    "update of information",  # vague administrative re-posts, no material content
 )
 # Ordered (first match wins). board_meeting before dividend/earnings so "board meeting to consider
 # dividend" reads as a heads-up, not the declaration itself.
 _RULES: list[tuple[tuple[str, ...], str]] = [
     (("board meeting", "board of directors"), "board_meeting"),
     (("credit rating", "rating of", "entity rating"), "rating"),
+    # Director/sponsor dealing in their own shares — a smart-money signal worth surfacing.
+    (("buy confirmation", "sale confirmation", "sell confirmation", "intention to"), "insider"),
     (("dividend",), "dividend"),
     (
         (
@@ -52,7 +56,9 @@ _RULES: list[tuple[tuple[str, ...], str]] = [
             "annual report",
             "eps",
             "financial statement",
+            "financials",
             "un-audited",
+            "unaudited",
             "audited accounts",
             "earnings",
             "net profit",
@@ -69,6 +75,7 @@ _BASE_STRENGTH = {
     "dividend": 70,
     "earnings": 65,
     "rating": 60,
+    "insider": 55,
     "psi": 50,
     "board_meeting": 40,
     "corporate_action": 35,
