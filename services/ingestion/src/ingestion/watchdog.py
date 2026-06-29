@@ -29,7 +29,7 @@ from sqlalchemy import text
 
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
-from bulls.market_data.calendar import is_trading_hours, to_market_tz
+from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s watchdog %(levelname)s %(message)s")
 log = logging.getLogger("watchdog")
@@ -41,6 +41,12 @@ STALE_AFTER = dt.timedelta(minutes=35)  # poll is every 15 min; 35 tolerates one
 # on a single hiccup or a deploy-restart landing on a poll boundary.
 COOLDOWN_SECONDS = 60 * 60  # page at most once an hour for an ongoing incident
 _COOLDOWN_KEY = "watchdog:alerted"
+# The EOD chain runs 13:00–13:50 UTC. After it should be done, on a trading day, today's bars +
+# trending must exist. Check window 14:00–17:59 UTC (20:00–23:59 Dhaka): after the chain completes,
+# before the Dhaka date rolls. Catches a hung cron loop (the 2026-06-29 incident) that the intraday
+# quote-freshness check can't see, because it's silent once the market is closed.
+EOD_CHECK_FROM_UTC_HOUR = 14
+EOD_CHECK_TO_UTC_HOUR = 18
 
 
 def _unit_active(unit: str) -> bool:
@@ -89,6 +95,30 @@ async def _api_ok(base_url: str) -> bool:
     except Exception:
         log.warning("API /health check failed", exc_info=True)
         return False
+
+
+async def _eod_problems(now: dt.datetime) -> list[str]:
+    """In the post-EOD window on a trading day, today's bars + trending must be present."""
+    if not (EOD_CHECK_FROM_UTC_HOUR <= now.hour < EOD_CHECK_TO_UTC_HOUR):
+        return []
+    today = to_market_tz(now).date()
+    if not is_trading_day(today):
+        return []
+    async with get_sessionmaker()() as session:
+        bar = (
+            await session.execute(text("select max(date) from daily_bars where market = 'DSE'"))
+        ).scalar_one_or_none()
+        trend = (
+            await session.execute(
+                text("select max(as_of_date) from trending_scores where market = 'DSE'")
+            )
+        ).scalar_one_or_none()
+    problems: list[str] = []
+    if bar != today:
+        problems.append(f"EOD bars not updated for {today} (latest {bar}) — the worker's EOD chain didn't run")
+    if trend != today:
+        problems.append(f"'Active today' not updated for {today} (latest {trend})")
+    return problems
 
 
 async def _send_alert(problems: list[str], actions: list[str]) -> None:
@@ -144,6 +174,11 @@ async def main() -> int:
 
     if not await _api_ok(s.api_public_url):
         problems.append(f"API health check failed ({s.api_public_url}/health)")
+
+    # EOD staleness: alert only — don't restart. The missed jobs are already past (a restart won't
+    # re-run them), and restarting every 5 min through the window would be a restart storm. The
+    # email is the signal to manually re-run the EOD chain.
+    problems += await _eod_problems(now)
 
     if not problems:
         log.info("ok — worker active, quotes fresh, API healthy")
