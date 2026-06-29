@@ -487,11 +487,6 @@ export function Markets() {
   const live = data.screens.filter((s) => s.items.length > 0);
   const byKey = new Map(live.map((s) => [s.key, s]));
   const activeLens = LENSES.find((l) => l.id === lens);
-  const methodology = data.methodology;
-  const fmtMn = (v: number) => (Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1));
-  const methodologyLine = methodology
-    ? `${methodology.market} ${methodology.settlement_cycle} settlement · ${t("markets.institutionalGate")} · ${t("markets.adtvGate")} ≥ ৳${fmtMn(methodology.min_adtv_mn)}M · ${t("markets.mcapGate")} ≥ ৳${fmtMn(methodology.min_mcap_mn)}M`
-    : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -523,11 +518,6 @@ export function Markets() {
           </div>
         )}
       </div>
-      {methodologyLine && (
-        <div className="text-[10px] text-muted px-1 -mt-2">
-          {methodologyLine}
-        </div>
-      )}
 
       {!activeLens && <SectorHeat />}
 

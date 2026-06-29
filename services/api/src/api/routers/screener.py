@@ -47,7 +47,8 @@ _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
 # --- Institutional liquidity floor ------------------------------------------
 # DSE screens should surface names a real desk can plausibly trade without dominating the tape. This
 # is still a discovery floor, not a full capacity model: execution sizing, spread and impact checks
-# belong in the next layer. Community screens are tenant-filtered, but not liquidity-filtered.
+# belong in the next layer. Z-category names stay out of default investable screens; community screens
+# are tenant-filtered, but not liquidity/category-filtered.
 _MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, ৳ millions (~৳50 lakh/day)
 _MIN_MCAP_MN = 500.0  # market capitalisation, ৳ millions (~৳50 crore)
 _MIN_FREE_FLOAT_CAP_MN = 100.0  # applied when available, ৳ millions
@@ -62,9 +63,24 @@ _LIQUID = and_(
 )
 
 
+def _screenable_codes(market: str):
+    """Visible codes eligible for default Market screens.
+
+    DSE Z-category names are left out of the investable discovery boards. They can still appear in
+    community attention widgets, where the product is showing what users follow rather than surfacing
+    a clean tradeable universe.
+    """
+    return select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        or_(Symbol.category.is_(None), Symbol.category != "Z"),
+    )
+
+
 def _investable(market: str):
     """Subquery of investable codes — visible AND liquid — for builders that don't query T."""
-    return select(T.code).where(T.market == market, T.code.in_(visible_codes(market)), _LIQUID)
+    return select(T.code).where(T.market == market, T.code.in_(_screenable_codes(market)), _LIQUID)
 
 
 @dataclass
@@ -363,7 +379,7 @@ async def _unusual_volume(
             .where(
                 T.market == market,
                 field >= _RVOL_MIN[window],
-                T.code.in_(visible_codes(market)),
+                T.code.in_(_screenable_codes(market)),
                 _LIQUID,
             )
             .order_by(field.desc())
@@ -559,7 +575,7 @@ async def _momentum(
                 T.market == market,
                 mom > 0,
                 T.volatility > 0,
-                T.code.in_(visible_codes(market)),
+                T.code.in_(_screenable_codes(market)),
                 _LIQUID,
             )
             .order_by(is_pump.asc(), (mom / T.volatility).desc())
@@ -596,7 +612,7 @@ async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> Scr
     rows = (
         await session.execute(
             select(T.code, T.last_close, spec.value)
-            .where(T.market == market, spec.where, T.code.in_(visible_codes(market)), _LIQUID)
+            .where(T.market == market, spec.where, T.code.in_(_screenable_codes(market)), _LIQUID)
             .order_by(spec.order)
             .limit(limit)
         )
@@ -792,7 +808,7 @@ async def _ownership(
     rows = (
         await session.execute(
             select(T.code, T.last_close, delta_col)
-            .where(T.market == market, cond, T.code.in_(visible_codes(market)), _LIQUID)
+            .where(T.market == market, cond, T.code.in_(_screenable_codes(market)), _LIQUID)
             .order_by(order)
             .limit(limit)
         )
