@@ -26,6 +26,7 @@ from bulls.core.models import (
     Symbol,
     TickerAnalytics,
     TickerBuzzDaily,
+    User,
     WatchlistItem,
 )
 from bulls.market_data.calendar import to_market_tz
@@ -36,26 +37,28 @@ T = TickerAnalytics
 PER_SCREEN = 8
 _DISCUSSED_DAYS = 2  # window for "most discussed"
 _BUZZ_HISTORY = 14  # look-back for the attention baseline
+DSE_SETTLEMENT_CYCLE = "T+2"
 
 # Reused metric expressions
 _PCT_ABOVE_SUPPORT = (T.last_close - T.nearest_support) / T.nearest_support * 100
 _PCT_BELOW_RESISTANCE = (T.nearest_resistance - T.last_close) / T.last_close * 100
 _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
 
-# --- Liquidity floor ---------------------------------------------------------
-# Drop only names that are effectively UNTRADEABLE — near-zero turnover / suspended — where a signal
-# is meaningless and you can't actually get in or out. This is a turnover floor, NOT a price floor:
-# cheap penny stocks that retail actively trades have plenty of turnover and stay in. DSE retail
-# loves low-priced names, so the bar is deliberately gentle (~97% of names clear it); it exists to
-# weed out the dead/frozen tickers, not the cheap ones. Community screens (most watched / discussed)
-# are NOT filtered at all — they reflect what the community actually follows.
-_MIN_ADTV_MN = 0.5  # average daily turnover over 20 sessions, ৳ millions
-_MIN_MCAP_MN = 100.0  # market capitalisation, ৳ millions
+# --- Institutional liquidity floor ------------------------------------------
+# DSE screens should surface names a real desk can plausibly trade without dominating the tape. This
+# is still a discovery floor, not a full capacity model: execution sizing, spread and impact checks
+# belong in the next layer. Community screens are tenant-filtered, but not liquidity-filtered.
+_MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, ৳ millions (~৳50 lakh/day)
+_MIN_MCAP_MN = 500.0  # market capitalisation, ৳ millions (~৳50 crore)
+_MIN_FREE_FLOAT_CAP_MN = 100.0  # applied when available, ৳ millions
 
 _LIQUID = and_(
+    T.last_close > 0,
     T.avg_volume_20.isnot(None),
+    T.avg_volume_20 > 0,
     T.avg_volume_20 * T.last_close / 1e6 >= _MIN_ADTV_MN,
     func.coalesce(T.market_cap_mn, 0) >= _MIN_MCAP_MN,
+    or_(T.free_float_cap_mn.is_(None), T.free_float_cap_mn >= _MIN_FREE_FLOAT_CAP_MN),
 )
 
 
@@ -294,8 +297,19 @@ class ScreenOut(BaseModel):
     items: list[ScreenItem]
 
 
+class MarketMethodology(BaseModel):
+    market: str
+    settlement_cycle: str
+    data_clock: str
+    liquidity_floor: str
+    min_adtv_mn: float
+    min_mcap_mn: float
+    min_free_float_cap_mn: float
+
+
 class ScreensResponse(BaseModel):
     as_of: str | None
+    methodology: MarketMethodology
     screens: list[ScreenOut]
 
 
@@ -405,7 +419,9 @@ async def _last_closes(session, market: str, codes: list[str]) -> dict[str, floa
     return {c: ltp for c, ltp in rows}
 
 
-async def _most_discussed(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _most_discussed(
+    session, market: str, tenant_id: str, limit: int = PER_SCREEN
+) -> ScreenOut:
     """Symbols with the most posts in the last couple of days (live, descriptive)."""
     since = dt.datetime.now(dt.UTC) - dt.timedelta(days=_DISCUSSED_DAYS)
     posts = func.count(func.distinct(Post.id))
@@ -415,6 +431,7 @@ async def _most_discussed(session, market: str, limit: int = PER_SCREEN) -> Scre
             .join(Post, Cashtag.post_id == Post.id)
             .where(
                 Cashtag.market == market,
+                Post.tenant_id == tenant_id,
                 Post.created_at >= since,
                 Cashtag.code.in_(visible_codes(market)),
             )
@@ -434,13 +451,15 @@ async def _most_discussed(session, market: str, limit: int = PER_SCREEN) -> Scre
     )
 
 
-async def _most_watched(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _most_watched(session, market: str, tenant_id: str, limit: int = PER_SCREEN) -> ScreenOut:
     """Most-followed names — the community's 'Watchers' leaderboard."""
     cnt = func.count()
     rows = (
         await session.execute(
             select(WatchlistItem.code, cnt)
+            .join(User, WatchlistItem.user_id == User.id)
             .where(WatchlistItem.market == market, WatchlistItem.code.in_(visible_codes(market)))
+            .where(User.tenant_id == tenant_id)
             .group_by(WatchlistItem.code)
             .order_by(cnt.desc())
             .limit(limit)
@@ -833,7 +852,7 @@ _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
 
 
 async def build_screen(
-    session, market: str, key: str, limit: int, *, direction: str = "buy"
+    session, market: str, key: str, limit: int, *, tenant_id: str, direction: str = "buy"
 ) -> ScreenOut | None:
     """Build a single screen by key (used by the detail/explore page)."""
     if key in ("top_gainers", "top_losers"):
@@ -851,9 +870,9 @@ async def build_screen(
     if key == "institutional_buying":
         return await _ownership(session, market, kind="institute", direction=direction, limit=limit)
     if key == "most_watched":
-        return await _most_watched(session, market, limit=limit)
+        return await _most_watched(session, market, tenant_id=tenant_id, limit=limit)
     if key == "most_discussed":
-        return await _most_discussed(session, market, limit=limit)
+        return await _most_discussed(session, market, tenant_id=tenant_id, limit=limit)
     if key == "attention_rising":
         return await _attention_rising(session, market, limit=limit)
     spec = _SPEC_BY_KEY.get(key)
@@ -873,13 +892,25 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     out.append(await _beating_market(session, tenant.market))
     out.append(await _ownership(session, tenant.market, kind="foreign"))
     out.append(await _ownership(session, tenant.market, kind="institute"))
-    out.append(await _most_watched(session, tenant.market))
-    out.append(await _most_discussed(session, tenant.market))
+    out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
+    out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))
     out.append(await _attention_rising(session, tenant.market))
 
     await _enrich(session, tenant.market, out)
     as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
-    return ScreensResponse(as_of=str(as_of) if as_of else None, screens=out)
+    methodology = MarketMethodology(
+        market=tenant.market,
+        settlement_cycle=DSE_SETTLEMENT_CYCLE,
+        data_clock="End-of-day analytics from DSE closes; live quote boards use latest quote snapshot.",
+        liquidity_floor=(
+            "Institutional discovery: minimum 20-session average daily turnover and market cap; "
+            "free-float cap floor is applied when available."
+        ),
+        min_adtv_mn=_MIN_ADTV_MN,
+        min_mcap_mn=_MIN_MCAP_MN,
+        min_free_float_cap_mn=_MIN_FREE_FLOAT_CAP_MN,
+    )
+    return ScreensResponse(as_of=str(as_of) if as_of else None, methodology=methodology, screens=out)
 
 
 class SectorRow(BaseModel):
@@ -1063,7 +1094,12 @@ async def screen_detail(
         )
     else:
         screen = await build_screen(
-            session, tenant.market, key, limit, direction="sell" if direction == "sell" else "buy"
+            session,
+            tenant.market,
+            key,
+            limit,
+            tenant_id=tenant.name,
+            direction="sell" if direction == "sell" else "buy",
         )
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")

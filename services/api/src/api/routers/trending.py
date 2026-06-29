@@ -158,7 +158,7 @@ async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
     facts: list[str] = []
     for key, fmt in specs:
         try:
-            scr = await build_screen(session, market, key, 1)
+            scr = await build_screen(session, market, key, 1, tenant_id=tenant.name)
             if scr and scr.items:
                 facts.append(fmt(scr.items[0]))
         except Exception:

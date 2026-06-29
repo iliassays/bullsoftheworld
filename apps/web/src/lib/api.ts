@@ -195,8 +195,18 @@ export interface Screen {
   group: string;
   items: ScreenItem[];
 }
+export interface MarketMethodology {
+  market: string;
+  settlement_cycle: string;
+  data_clock: string;
+  liquidity_floor: string;
+  min_adtv_mn: number;
+  min_mcap_mn: number;
+  min_free_float_cap_mn: number;
+}
 export interface ScreensResponse {
   as_of: string | null;
+  methodology?: MarketMethodology;
   screens: Screen[];
 }
 export interface Sector {

@@ -30,6 +30,8 @@ from bulls.core.models import CompanyProfile, DailyBar, Symbol, TrendingScore
 
 BASELINE_W = 60         # trailing window for the self-normal baseline
 MIN_BARS = 60           # need at least this much history to score
+WEEK52_W = 252          # DSE has ~252 trading sessions/year; used only for descriptive range chips
+HISTORY_W = max(BASELINE_W + 5, WEEK52_W)
 TURNOVER_FLOOR_TK = 5_000_000   # median 20-day turnover floor (~৳50 lakh/day) — tradeable only
 MCAP_FLOOR_MN = 500             # ~৳50 crore market cap floor
 TOP_N = 25              # how many to persist (strip shows ~8, list ~15)
@@ -68,6 +70,22 @@ def _reasons(*, vol_mult, turnover_cr, turnover_mult, pct_from_high, pct_from_lo
     return chips[:3]
 
 
+def _week52_position(closes: np.ndarray, latest_close: float) -> tuple[float | None, float | None]:
+    """Percent from the latest 52-week close high/low.
+
+    If we do not have a full yearly window, return no range chips rather than silently relabeling a
+    short range as 52-week context.
+    """
+    if len(closes) < WEEK52_W:
+        return None, None
+    window = closes[-WEEK52_W:]
+    hi = float(np.max(window))
+    lo = float(np.min(window))
+    pct_from_high = (latest_close / hi - 1) * 100 if hi else None
+    pct_from_low = (latest_close / lo - 1) * 100 if lo else None
+    return pct_from_high, pct_from_low
+
+
 async def compute_trending(market: str) -> dict[str, int]:
     sm = get_sessionmaker()
     async with sm() as session:
@@ -100,7 +118,7 @@ async def compute_trending(market: str) -> dict[str, int]:
                     select(DailyBar)
                     .where(DailyBar.market == market, DailyBar.code == code)
                     .order_by(DailyBar.date.desc())
-                    .limit(BASELINE_W + 5)
+                    .limit(HISTORY_W)
                 )
             )
             if len(bars) < MIN_BARS:
@@ -127,10 +145,7 @@ async def compute_trending(market: str) -> dict[str, int]:
             change_pct = (t.close / prev_close - 1) * 100 if prev_close else 0.0
             vol_mult = t.volume / np.mean(vols[-21:-1]) if np.mean(vols[-21:-1]) > 0 else None
             to_mult = turns[-1] / np.mean(turns[-21:-1]) if np.mean(turns[-21:-1]) > 0 else None
-            hi = float(np.max(closes[-252:]))
-            lo = float(np.min(closes[-252:]))
-            pct_from_high = (t.close / hi - 1) * 100 if hi else None
-            pct_from_low = (t.close / lo - 1) * 100 if lo else None
+            pct_from_high, pct_from_low = _week52_position(closes, t.close)
 
             score = vol_z + to_z
             scored.append(

@@ -189,6 +189,18 @@ const STRINGS: Record<string, Entry> = {
     en: "Computed from end-of-day prices · descriptive screens, not recommendations.",
     bn: "দিনশেষের দাম থেকে গণনা · তথ্যমূলক স্ক্রিন, সুপারিশ নয়।",
   },
+  "markets.institutionalGate": {
+    en: "institutional liquidity gate",
+    bn: "প্রাতিষ্ঠানিক লিকুইডিটি ফিল্টার",
+  },
+  "markets.adtvGate": {
+    en: "20D ADTV",
+    bn: "২০ দিনের গড় লেনদেন",
+  },
+  "markets.mcapGate": {
+    en: "mcap",
+    bn: "মার্কেট ক্যাপ",
+  },
   viewMore: { en: "View more →", bn: "আরও দেখুন →" },
   "col.symbol": { en: "Symbol", bn: "টিকার" },
   "col.price": { en: "Price", bn: "দাম" },

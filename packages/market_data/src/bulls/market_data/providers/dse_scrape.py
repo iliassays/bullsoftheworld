@@ -223,6 +223,17 @@ _NEWS_FIELD_BY_LABEL = {
     "news:": "body",
     "post date:": "date",
 }
+_NEWS_TABLE_HEADER = {
+    "trading code": "code",
+    "code": "code",
+    "news title": "title",
+    "title": "title",
+    "headline": "title",
+    "news": "body",
+    "news date": "date",
+    "post date": "date",
+    "date": "date",
+}
 
 
 def _emit_news(item: dict[str, str], out: list[NewsItem]) -> None:
@@ -233,6 +244,33 @@ def _emit_news(item: dict[str, str], out: list[NewsItem]) -> None:
         out.append(
             NewsItem(code=code, published_at=date, headline=headline, body=item.get("body", "").strip())
         )
+
+
+def _parse_news_table(tree: HTMLParser, out: list[NewsItem]) -> None:
+    """Fallback for archive-style tables with column headers."""
+    for table in tree.css("table"):
+        rows = table.css("tr")
+        header: dict[str, int] = {}
+        body_start = 0
+        for idx, row in enumerate(rows):
+            cells = [c.text(strip=True) for c in row.css("td, th")]
+            mapped = {
+                field: i
+                for i, cell in enumerate(cells)
+                if (field := _NEWS_TABLE_HEADER.get(cell.strip().lower().rstrip(":")))
+            }
+            if {"date", "code", "title"}.issubset(mapped):
+                header = mapped
+                body_start = idx + 1
+                break
+        if not header:
+            continue
+        for row in rows[body_start:]:
+            cells = [c.text(strip=True) for c in row.css("td")]
+            if len(cells) <= max(header.values()):
+                continue
+            item = {field: cells[col] for field, col in header.items()}
+            _emit_news(item, out)
 
 
 def parse_news(html: str) -> list[NewsItem]:
@@ -257,6 +295,8 @@ def parse_news(html: str) -> list[NewsItem]:
             current = {}
         current[field] = cells[0]
     _emit_news(current, out)  # last item has no trailing "Trading Code:" to flush it
+    if not out:
+        _parse_news_table(tree, out)
     return out
 
 
