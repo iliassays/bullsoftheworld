@@ -23,6 +23,7 @@ def test_evening_caption_is_bilingual_and_descriptive():
     assert "Evening Wrap" in cap and "ইভিনিং র‍্যাপ" in cap  # EN + BN
     assert "$BEXIMCO" in cap and "5,243" in cap  # cashtag + DSEX
     assert "Top gainers" in cap and "top losers" in cap and "$GP -4.1%" in cap
+    assert "Explore full market boards" in cap and "https://bullsofdhaka.com/markets" in cap
     assert "তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।" in cap
     assert "Descriptive data only, not investment advice." in cap
     assert "buy" not in cap.lower() and "sell" not in cap.lower()  # no advice
@@ -31,7 +32,7 @@ def test_evening_caption_is_bilingual_and_descriptive():
 def test_evening_caption_handles_missing_data():
     blank = cards.EveningWrapData("x", None, None, 0, 0, 0, None, [])
     cap = evening_caption(blank)
-    assert "—" in cap and "👉 https://bullsofdhaka.com" in cap
+    assert "—" in cap and "👉 https://bullsofdhaka.com/markets" in cap
 
 
 def test_card_renders_png():
