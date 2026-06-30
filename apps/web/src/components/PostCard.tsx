@@ -111,9 +111,7 @@ export function PostCard({
 
   return (
     <article
-      className={`rounded-2xl border ${isReply ? "p-3" : "p-4"} ${
-        isNote ? "bg-accent/5 border-accent/30" : "bg-surface border-border"
-      }`}
+      className={`rounded-2xl border bg-surface border-border ${isReply ? "p-3" : "p-4"}`}
     >
       <header className="flex items-center gap-2.5">
         <Avatar name={post.author.name} />
