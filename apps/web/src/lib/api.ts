@@ -205,7 +205,8 @@ export interface MarketMethodology {
   min_free_float_cap_mn: number;
 }
 export interface ScreensResponse {
-  as_of: string | null;
+  as_of: string | null; // EOD analytics date — screen rankings are as-of this close
+  quote_as_of?: string | null; // latest 15-min quote snapshot — price/"today's move" freshness
   methodology?: MarketMethodology;
   screens: Screen[];
 }

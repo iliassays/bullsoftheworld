@@ -10,11 +10,13 @@ import datetime as dt
 from collections import defaultdict
 from dataclasses import dataclass
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
+from bulls.core.config import get_settings
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.core.models import (
     Cashtag,
@@ -324,7 +326,8 @@ class MarketMethodology(BaseModel):
 
 
 class ScreensResponse(BaseModel):
-    as_of: str | None
+    as_of: str | None  # EOD analytics date — the screen RANKINGS are as-of this close
+    quote_as_of: str | None = None  # latest 15-min quote snapshot — prices / "today's move" freshness
     methodology: MarketMethodology
     screens: list[ScreenOut]
 
@@ -895,8 +898,41 @@ async def build_screen(
     return await _build_spec(session, market, spec, limit) if spec else None
 
 
+# Cache safety-sweep TTL. Real invalidation is the data-fingerprinted key (quote + analytics
+# timestamps), so this only reaps keys for days/polls that will never be requested again.
+_SCREENS_TTL = 6 * 60 * 60
+
+
 @router.get("/screens")
 async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
+    """Cached, but keyed on data freshness so it's never staler than the data itself.
+
+    The key folds in BOTH the latest quote snapshot (changes every 15-min poll → intraday prices /
+    'today's move' stay current) AND the analytics recompute time (changes nightly at EOD → the
+    screen rankings refresh). Within a poll window every request is a ~ms Redis read; the heavy
+    multi-screen compute runs once per poll, not once per request.
+    """
+    market = tenant.market
+    quote_ts = await session.scalar(
+        select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
+    )
+    ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
+    key = f"screens:v1:{market}:{quote_ts}:{ana_ts}"
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        cached = await redis.get(key)
+        if cached:
+            return ScreensResponse.model_validate_json(cached)
+        resp = await _build_screens(tenant, session, quote_ts)
+        await redis.set(key, resp.model_dump_json(), ex=_SCREENS_TTL)
+        return resp
+    finally:
+        await redis.aclose()
+
+
+async def _build_screens(
+    tenant: CurrentTenant, session: DbSession, quote_ts: dt.datetime | None
+) -> ScreensResponse:
     out: list[ScreenOut] = [
         await _build_spec(session, tenant.market, spec, PER_SCREEN) for spec in _SCREENS
     ]
@@ -926,7 +962,12 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
         min_mcap_mn=_MIN_MCAP_MN,
         min_free_float_cap_mn=_MIN_FREE_FLOAT_CAP_MN,
     )
-    return ScreensResponse(as_of=str(as_of) if as_of else None, methodology=methodology, screens=out)
+    return ScreensResponse(
+        as_of=str(as_of) if as_of else None,
+        quote_as_of=quote_ts.isoformat() if quote_ts else None,
+        methodology=methodology,
+        screens=out,
+    )
 
 
 class SectorRow(BaseModel):

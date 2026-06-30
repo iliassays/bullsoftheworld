@@ -460,6 +460,36 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
   },
 ];
 
+// DSE trades Sun–Thu, 10:00–14:30 BDT (04:00–08:30 UTC); +buffer for the last delayed snapshot.
+function marketLive(): boolean {
+  const now = new Date();
+  const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const dhakaDay = new Date(now.getTime() + 6 * 3600_000).getUTCDay(); // 0=Sun … 6=Sat
+  return dhakaDay <= 4 && utcMin >= 4 * 60 && utcMin <= 8 * 60 + 45;
+}
+
+// One honest freshness signal (no per-widget badges): during the session show a live dot + the real
+// last-quote time; after the close show the close date. Kills "is this live or yesterday?".
+function FreshnessTag({ asOf, quoteAsOf }: { asOf: string | null; quoteAsOf?: string | null }) {
+  const { t } = useLang();
+  const live = marketLive();
+  if (live && quoteAsOf) {
+    const time = new Date(quoteAsOf).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return (
+      <div className="text-[10px] text-muted shrink-0 ml-2 flex items-center gap-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
+        {t("mkt.live")} · {t("delayed")} · {t("mkt.updated")} {time}
+      </div>
+    );
+  }
+  if (!asOf) return null;
+  return (
+    <div className="text-[10px] text-muted shrink-0 ml-2">
+      {t("asOf")} {asOf} {t("close")}
+    </div>
+  );
+}
+
 export function screenTitle(s: Screen, lang: Lang): string {
   return lang === "bn" ? (SCREEN_BN[s.key]?.t ?? s.title) : s.title;
 }
@@ -545,12 +575,9 @@ export function Markets() {
         <div className="text-[11px] text-muted">
           {isFocus ? t("markets.focusBlurb") : activeLens ? t(activeLens.blurbKey) : t("markets.browseAll")}
         </div>
-        {data.as_of && (
-          <div className="text-[10px] text-muted shrink-0 ml-2">
-            {t("asOf")} {data.as_of} {t("close")}
-          </div>
-        )}
+        <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} />
       </div>
+      <div className="text-[10px] text-muted px-1 -mt-1">{t("mkt.rankNote")}</div>
 
       {isFocus && <WatchToday />}
       {(isFocus || isAllBoards) && <SectorHeat />}

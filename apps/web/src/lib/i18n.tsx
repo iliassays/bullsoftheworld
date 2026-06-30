@@ -139,6 +139,12 @@ const STRINGS: Record<string, Entry> = {
   "tech.title": { en: "Technicals", bn: "টেকনিক্যাল" },
   asOf: { en: "as of", bn: "সর্বশেষ" },
   close: { en: "close", bn: "ক্লোজ" },
+  "mkt.live": { en: "Live", bn: "লাইভ" },
+  "mkt.updated": { en: "updated", bn: "আপডেট" },
+  "mkt.rankNote": {
+    en: "Rankings as of the last close · prices 15-min delayed",
+    bn: "র‍্যাঙ্কিং সর্বশেষ ক্লোজ অনুযায়ী · দাম ১৫ মিনিট বিলম্বিত",
+  },
   "tech.aboveBoth": {
     en: "Above 50 & 200-day average",
     bn: "৫০ ও ২০০-দিনের গড়ের উপরে",
