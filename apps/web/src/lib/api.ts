@@ -425,6 +425,11 @@ export interface ScorecardResponse {
   };
   red_flags: { code: string; flags: RedFlag[]; clean: boolean; note: string };
 }
+export interface NoteBeat {
+  handle: string;
+  name: string;
+  count: number;
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -550,15 +555,18 @@ export const api = {
     kind?: "note" | "user",
     limit?: number,
     offset?: number,
+    author?: string,
   ) => {
     const q = new URLSearchParams();
     if (code) q.set("code", code);
     if (kind) q.set("kind", kind);
+    if (author) q.set("author", author);
     if (limit != null) q.set("limit", String(limit));
     if (offset != null) q.set("offset", String(offset));
     const s = q.toString();
     return request<Post[]>(`/posts${s ? `?${s}` : ""}`);
   },
+  noteBeats: () => request<NoteBeat[]>("/posts/note-beats"),
   createPost: (b: {
     body: string;
     sentiment: "bull" | "bear" | null;

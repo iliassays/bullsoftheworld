@@ -11,6 +11,7 @@ import datetime as dt
 import re
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
@@ -172,6 +173,9 @@ async def feed(
     locale: CurrentLocale,
     code: str | None = Query(None, description="Filter to posts tagging this symbol"),
     kind: str | None = Query(None, description="Filter by kind: 'note' = agent desk-notes only"),
+    author: str | None = Query(
+        None, description="Filter to one author handle (e.g. an agent beat in the Bulls feed)"
+    ),
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[PostOut]:
@@ -184,9 +188,42 @@ async def feed(
         stmt = stmt.where(Post.id.in_(tagged))
     if kind:
         stmt = stmt.where(Post.kind == kind)
+    if author:
+        stmt = stmt.where(
+            Post.author_id.in_(
+                select(User.id).where(User.tenant_id == tenant.name, User.handle == author)
+            )
+        )
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)
     posts = list(await session.scalars(stmt))
     return await _decorate(session, posts, viewer_id=viewer.id if viewer else None, locale=locale)
+
+
+class NoteBeat(BaseModel):
+    """One agent beat with notes in the Bulls feed — drives the filter chips. Data-driven, so only
+    beats that have actually posted appear (no empty chips), newest-active first."""
+
+    handle: str
+    name: str
+    count: int
+
+
+@router.get("/note-beats")
+async def note_beats(tenant: CurrentTenant, session: DbSession) -> list[NoteBeat]:
+    """Agent beats that have posted data notes (author handle + display name + how many), so the
+    Bulls feed can offer filter chips by category (Circuit Limit, Accumulation, 52-Week, …)."""
+    rows = await session.execute(
+        select(User.handle, User.name, func.count(Post.id))
+        .join(Post, Post.author_id == User.id)
+        .where(
+            Post.tenant_id == tenant.name,
+            Post.kind == "note",
+            Post.parent_id.is_(None),
+        )
+        .group_by(User.handle, User.name)
+        .order_by(func.count(Post.id).desc())
+    )
+    return [NoteBeat(handle=h, name=n, count=c) for h, n, c in rows]
 
 
 @router.get("/top")
