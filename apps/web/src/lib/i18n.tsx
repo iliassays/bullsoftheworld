@@ -309,6 +309,7 @@ const STRINGS: Record<string, Entry> = {
   "rowDetails.title": { en: "Ticker context", bn: "টিকার কনটেক্সট" },
   "rowDetails.open": { en: "Open full stock page", bn: "পুরো স্টক পেজ খুলুন" },
   "rowDetails.why": { en: "Why it appears", bn: "কেন দেখাচ্ছে" },
+  "rowDetails.context": { en: "How to read this board", bn: "এই বোর্ড কীভাবে পড়বেন" },
   "rowDetails.liquidity": { en: "Liquidity", bn: "লিকুইডিটি" },
   "rowDetails.order": { en: "Order guide", bn: "অর্ডার গাইড" },
   "rowDetails.value": { en: "Board metric", bn: "বোর্ড মেট্রিক" },
@@ -320,6 +321,10 @@ const STRINGS: Record<string, Entry> = {
   "rowDetails.orderHelp": {
     en: "Roughly 5% of ADTV. Bigger orders may need splitting so your own trade does not move the price.",
     bn: "ADTV-এর প্রায় ৫%। এর বেশি অর্ডার হলে ভাগ করে দেওয়া লাগতে পারে, যাতে আপনার অর্ডারেই দাম না নড়ে।",
+  },
+  "rowDetails.fullHint": {
+    en: "Open the full page for chart, news, fundamentals, ownership, levels, and community context.",
+    bn: "চার্ট, খবর, ফান্ডামেন্টাল, মালিকানা, লেভেল ও কমিউনিটি প্রসঙ্গের জন্য পুরো স্টক পেজ খুলুন।",
   },
   "col.symbol": { en: "Symbol", bn: "টিকার" },
   "col.price": { en: "Price", bn: "দাম" },

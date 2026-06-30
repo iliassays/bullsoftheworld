@@ -336,6 +336,226 @@ function DetailStat({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
+function signedPct(v: number, digits = 1): string {
+  return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
+}
+
+function priceMoveText(item: ScreenItem, lang: Lang): string | null {
+  if (item.change_1d == null) return null;
+  return lang === "bn" ? `আজ দাম ${signedPct(item.change_1d)}` : `1D ${signedPct(item.change_1d)}`;
+}
+
+function priceMoveOverPeriod(item: ScreenItem, lang: Lang): string | null {
+  const ps = item.period_spark ?? [];
+  if (ps.length < 2 || !ps[0]) return null;
+  const move = Math.round((ps[ps.length - 1] / ps[0] - 1) * 100);
+  return lang === "bn" ? `ঐ সময়ে দাম ${signedPct(move, 0)}` : `Price over period ${signedPct(move, 0)}`;
+}
+
+function stakeContextChip(flow: number[], dates: string[], idx: number, lang: Lang): string | null {
+  if (flow[idx] == null) return null;
+  const when = dates[idx] ? monthYy(dates[idx]) : "";
+  const label = idx === flow.length - 1 ? (lang === "bn" ? "সর্বশেষ" : "Latest") : (lang === "bn" ? "আগে" : "Previous");
+  return `${label}${when ? ` ${when}` : ""} ${flow[idx].toFixed(2)}%`;
+}
+
+function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
+  const metric = fmtValue(screen.value_label, item.value);
+  const title = screenTitle(screen, lang);
+  if (lang === "bn") {
+    switch (screen.key) {
+      case "institutional_buying":
+        return `প্রতিষ্ঠানের মালিকানা ${metric} ${item.value >= 0 ? "বেড়েছে" : "কমেছে"}`;
+      case "foreign_buying":
+        return `বিদেশি মালিকানা ${metric} ${item.value >= 0 ? "বেড়েছে" : "কমেছে"}`;
+      case "value_vs_sector":
+        return `P/E খাতের মধ্যমার ${metric}`;
+      case "dividend_yield":
+        return `সর্বশেষ নগদ লভ্যাংশের ইল্ড ${metric}`;
+      case "quality_roe":
+        return `ROE ${metric}`;
+      case "eps_growth":
+        return `EPS বছরওয়ারি ${metric}`;
+      case "beating_market":
+        return `DSEX-কে ${metric} ছাড়িয়েছে`;
+      case "momentum_12_1":
+        return `ঝুঁকি-সমন্বিত মোমেন্টাম ${metric}`;
+      case "low_volatility":
+        return `বার্ষিক ওঠানামা ${metric}`;
+      case "most_active":
+        return `আজকের টার্নওভার ${metric}`;
+      case "unusual_volume":
+        return `স্বাভাবিকের ${metric} ভলিউম`;
+      case "most_discussed":
+        return `গত ২ দিনে ${metric} পোস্ট`;
+      case "most_watched":
+        return `${metric} জনের ওয়াচলিস্টে`;
+      case "attention_rising":
+        return `আলোচনা স্বাভাবিকের ${metric}`;
+      case "near_support":
+        return `সাপোর্টের ${metric} উপরে`;
+      case "near_resistance":
+        return `রেজিস্ট্যান্সের ${metric} নিচে`;
+      case "near_52w_high":
+        return `৫২-সপ্তাহের সর্বোচ্চ থেকে ${metric}`;
+      case "near_52w_low":
+        return `৫২-সপ্তাহের সর্বনিম্ন থেকে ${metric}`;
+      case "oversold":
+      case "overbought":
+        return `RSI ${metric}`;
+      case "accumulation":
+        return `CMF ${metric} - অর্থ ঢুকছে`;
+      case "distribution":
+        return `CMF ${metric} - অর্থ বেরোচ্ছে`;
+      case "quiet_accumulation":
+        return `দাম শান্ত, কিন্তু অর্থপ্রবাহে সঞ্চয়ের ইঙ্গিত`;
+      default:
+        return `${title}: ${metricHeader(screen.value_label, () => screen.value_label)} ${metric}`;
+    }
+  }
+  switch (screen.key) {
+    case "institutional_buying":
+      return `Institutions changed stake by ${metric}`;
+    case "foreign_buying":
+      return `Foreign investors changed stake by ${metric}`;
+    case "value_vs_sector":
+      return `P/E is ${metric} of the sector median`;
+    case "beating_market":
+      return `Beat DSEX by ${metric}`;
+    case "unusual_volume":
+      return `${metric} normal volume`;
+    default:
+      return `${title}: ${metricHeader(screen.value_label, () => screen.value_label)} ${metric}`;
+  }
+}
+
+function rowReason(screen: Screen, item: ScreenItem, lang: Lang, t: Tr): string {
+  const parts = [
+    rowReasonStem(screen, item, lang),
+    priceMoveText(item, lang),
+    item.adtv_mn != null ? `${t("liq.adtv")} ${takaMn(item.adtv_mn)}` : null,
+    item.safe_order_mn != null ? `${t("rowDetails.order")} ${takaMn(item.safe_order_mn)}` : null,
+    item.category ? `${t("liq.cat")} ${item.category}` : null,
+  ];
+  return parts.filter(Boolean).join(" · ");
+}
+
+function detailContext(screen: Screen, item: ScreenItem, lang: Lang) {
+  const metric = fmtValue(screen.value_label, item.value);
+  const flow = item.flow ?? [];
+  const dates = item.flow_dates ?? [];
+  const prevStake = flow.length >= 2 ? stakeContextChip(flow, dates, flow.length - 2, lang) : null;
+  const latestStake = flow.length >= 1 ? stakeContextChip(flow, dates, flow.length - 1, lang) : null;
+  const periodMove = priceMoveOverPeriod(item, lang);
+
+  if (lang === "bn") {
+    switch (screen.key) {
+      case "institutional_buying":
+        return {
+          body: "শেয়ারহোল্ডিং প্রকাশ প্রতিদিন হয় না। নতুন প্রকাশে প্রতিষ্ঠানের অংশ বদলেছে; দামের মুভ, খবর, ভলিউম ও লিকুইডিটি মিলিয়ে পড়ুন।",
+          chips: [prevStake, latestStake, periodMove].filter((v): v is string => Boolean(v)),
+        };
+      case "foreign_buying":
+        return {
+          body: "বিদেশি মালিকানা বদল শক্তিশালী সংকেত হতে পারে, কিন্তু এটি প্রকাশভিত্তিক ডেটা, দৈনিক ফ্লো নয়। দাম ও লিকুইডিটির সাথে মিলিয়ে দেখুন।",
+          chips: [prevStake, latestStake, periodMove].filter((v): v is string => Boolean(v)),
+        };
+      case "value_vs_sector":
+        return {
+          body: "১.০x মানে খাতের মধ্যম P/E। ১.০x-এর নিচে সস্তা, কিন্তু আয় দুর্বল হলে বা ঝুঁকি থাকলে এটি ভ্যালু ট্র্যাপও হতে পারে।",
+          chips: [`বর্তমান ${metric}`, "সীমা 1.0x", "EPS ও খবর যাচাই করুন"],
+        };
+      case "dividend_yield":
+        return {
+          body: "এটি সর্বশেষ ঘোষিত নগদ লভ্যাংশের ইল্ড। ভবিষ্যৎ লভ্যাংশ নিশ্চিত করে না; EPS, NAV, নগদ পেআউট ও রেকর্ড ডেট দেখুন।",
+          chips: [`ইল্ড ${metric}`, "অতীত নগদ লভ্যাংশ", "ভবিষ্যৎ গ্যারান্টি নয়"],
+        };
+      case "quality_roe":
+        return {
+          body: "ROE দেখায় শেয়ারহোল্ডার মূলধনের প্রতি টাকায় কত মুনাফা হচ্ছে। একবারের লাভ বা অতিরিক্ত ঋণ আছে কি না পুরো পেজে মিলিয়ে দেখুন।",
+          chips: [`ROE ${metric}`, "EPS/NAV দেখুন", "ধারাবাহিকতা জরুরি"],
+        };
+      case "eps_growth":
+        return {
+          body: "EPS বৃদ্ধি মানে আয় আগের বছরের তুলনায় বেড়েছে। এটি ধারাবাহিক কিনা, একবারের আয় কিনা, এবং মূল্য ইতিমধ্যে বেশি উঠে গেছে কিনা দেখুন।",
+          chips: [`বৃদ্ধি ${metric}`, "ধারাবাহিকতা দেখুন", "মূল্যায়ন মিলান"],
+        };
+      case "beating_market":
+        return {
+          body: "DSEX-এর চেয়ে বেশি ওঠা আপেক্ষিক শক্তির ইঙ্গিত। শক্তি টেকসই কিনা বুঝতে ট্রেন্ড, ভলিউম ও নিউজ একসাথে দেখুন।",
+          chips: [`DSEX থেকে ${metric} বেশি`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+        };
+      case "unusual_volume":
+      case "most_active":
+        return {
+          body: "ব্যস্ততা দেখায় আজ কোথায় টাকা ঘুরছে। শুধু ভলিউম যথেষ্ট নয়; দাম কোন দিকে যাচ্ছে, খবর আছে কি না, আর অর্ডার সাইজ নিরাপদ কিনা দেখুন।",
+          chips: [item.turnover_mn != null ? `টার্নওভার ${takaMn(item.turnover_mn)}` : null, item.adtv_mn != null ? `ADTV ${takaMn(item.adtv_mn)}` : null].filter((v): v is string => Boolean(v)),
+        };
+      case "momentum_12_1":
+      case "top_gainers":
+      case "top_losers":
+      case "near_52w_high":
+      case "near_52w_low":
+        return {
+          body: "মোমেন্টাম শক্তি দেখায়, কিন্তু দ্রুত ওঠা শেয়ারে ফিরে আসার ঝুঁকি থাকে। ট্রেন্ডের ধারাবাহিকতা, ভলিউম ও নিকটবর্তী লেভেল দেখুন।",
+          chips: [priceMoveText(item, lang), metric].filter((v): v is string => Boolean(v)),
+        };
+      case "near_support":
+      case "near_resistance":
+      case "oversold":
+      case "overbought":
+      case "uptrend":
+        return {
+          body: "এটি টেকনিক্যাল অবস্থান। সাপোর্ট, রেজিস্ট্যান্স বা RSI একা সিদ্ধান্ত নয়; ভলিউম, খবর ও ঝুঁকি সীমা মিলিয়ে পড়ুন।",
+          chips: [`মেট্রিক ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+        };
+      case "accumulation":
+      case "distribution":
+      case "quiet_accumulation":
+        return {
+          body: "মানি ফ্লো দামের সাথে ভলিউম মিলিয়ে চাপ বোঝায়। এটি ইঙ্গিত, প্রমাণ নয়; ব্রেকআউট, খবর এবং লিকুইডিটি দিয়ে নিশ্চিত করুন।",
+          chips: [`CMF ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+        };
+      case "most_discussed":
+      case "attention_rising":
+      case "most_watched":
+        return {
+          body: "কমিউনিটি আগ্রহ ট্রাফিক ও আলোচনার গতি দেখায়, কিন্তু শব্দ বেশি হতে পারে। বাস্তব খবর, দাম ও লিকুইডিটি যাচাই করুন।",
+          chips: [`বোর্ড মেট্রিক ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+        };
+      case "low_volatility":
+        return {
+          body: "কম অস্থিরতা মানে দাম তুলনামূলক শান্ত। এটি বেশি রিটার্নের গ্যারান্টি নয়; আয়, ডিভিডেন্ড ও ট্রেন্ড মিলিয়ে দেখুন।",
+          chips: [`অস্থিরতা ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+        };
+      default:
+        return {
+          body: screenHelp(screen.key, lang) ?? screenDesc(screen, lang),
+          chips: [metric, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+        };
+    }
+  }
+
+  switch (screen.key) {
+    case "institutional_buying":
+    case "foreign_buying":
+      return {
+        body: "Ownership updates are disclosure-based, not daily flow. Read the stake change together with price reaction, news, volume, and liquidity.",
+        chips: [prevStake, latestStake, periodMove].filter((v): v is string => Boolean(v)),
+      };
+    case "value_vs_sector":
+      return {
+        body: "1.0x is the sector median P/E. Below 1.0x is cheaper than peers, but weak earnings or risk can still make it a value trap.",
+        chips: [`Current ${metric}`, "Line 1.0x", "Check EPS/news"],
+      };
+    default:
+      return {
+        body: screenHelp(screen.key, lang) ?? screenDesc(screen, lang),
+        chips: [metric, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
+      };
+  }
+}
+
 function ScreenRowSheet({
   item,
   screen,
@@ -352,6 +572,8 @@ function ScreenRowSheet({
   const { t, lang } = useLang();
   const localizedTitle = lang === "bn" ? (SCREEN_BN[screen.key]?.t ?? screen.title) : screen.title;
   const liquidity = liquidityLabel(item.liquidity, t);
+  const why = rowReason(screen, item, lang, t);
+  const context = detailContext(screen, item, lang);
   const priceTone: Chip["tone"] | undefined =
     item.change_1d == null ? undefined : item.change_1d >= 0 ? "up" : "down";
   const rows = [
@@ -410,12 +632,29 @@ function ScreenRowSheet({
           {liquidity && <DetailStat label={t("rowDetails.liquidity")} value={liquidity} />}
         </div>
 
-        {item.why && (
-          <section className="mt-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted">{t("rowDetails.why")}</div>
-            <p className="mt-1 text-[13px] leading-snug text-text/90">{item.why}</p>
-          </section>
-        )}
+        <section className="mt-4">
+          <div className="text-[11px] uppercase tracking-wide text-muted">{t("rowDetails.why")}</div>
+          <p className="mt-1 text-[13px] leading-snug text-text/90">{why}</p>
+        </section>
+
+        <section className="mt-4 rounded-xl bg-card/50 border border-border p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted">
+            {t("rowDetails.context")}
+          </div>
+          <p className="mt-1 text-[12px] leading-snug text-text/90">{context.body}</p>
+          {context.chips.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {context.chips.map((c) => (
+                <span
+                  key={c}
+                  className="rounded-full bg-surface border border-border px-2.5 py-1 text-[11px] text-muted"
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
 
         {rows.length > 0 && (
           <section className="mt-4">
@@ -448,6 +687,7 @@ function ScreenRowSheet({
           </section>
         )}
 
+        <p className="mt-4 text-[11px] leading-snug text-muted">{t("rowDetails.fullHint")}</p>
         <Link
           to={`/s/${item.code}`}
           className="mt-4 block text-center bg-accent text-bg font-bold rounded-xl py-2.5 text-sm"
