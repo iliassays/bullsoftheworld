@@ -186,6 +186,18 @@ export interface ScreenItem {
   flow?: number[]; // ownership screens: stake % over last disclosures (oldest→newest)
   flow_dates?: string[]; // ISO date of each flow point, aligned with `flow`
   period_spark?: number[]; // ownership: price over the disclosure window (oldest→newest)
+  category?: string | null;
+  adtv_mn?: number | null;
+  turnover_mn?: number | null;
+  safe_order_mn?: number | null;
+  market_cap_mn?: number | null;
+  free_float_cap_mn?: number | null;
+  liquidity?: string | null;
+  setup_quality?: string | null;
+  why?: string | null;
+  catalyst?: string | null;
+  catalyst_date?: string | null;
+  catalyst_category?: string | null;
 }
 export interface Screen {
   key: string;
@@ -216,6 +228,23 @@ export interface Sector {
   advancers: number;
   decliners: number;
   count: number;
+}
+export interface MarketPulse {
+  as_of: string | null;
+  quote_as_of?: string | null;
+  dsex: number | null;
+  dsex_change_pct: number | null;
+  turnover_cr: number | null;
+  turnover_vs_20d: number | null;
+  advancers: number;
+  decliners: number;
+  unchanged: number;
+  total: number;
+  top_sector: string | null;
+  top_sector_change: number | null;
+  weak_sector: string | null;
+  weak_sector_change: number | null;
+  risk_mode: "risk_on" | "mixed" | "defensive";
 }
 export interface Buzz {
   code: string;
@@ -417,6 +446,7 @@ export const api = {
     ),
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
+  marketPulse: () => request<MarketPulse>("/market-pulse"),
   sectors: () => request<Sector[]>("/sectors"),
   screen: (
     key: string,

@@ -16,9 +16,10 @@ from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
-from bulls.core.config import get_settings
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
+from bulls.core.config import get_settings
 from bulls.core.models import (
+    Announcement,
     Cashtag,
     DailyBar,
     MarketSummary,
@@ -54,6 +55,16 @@ _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
 _MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, ৳ millions (~৳50 lakh/day)
 _MIN_MCAP_MN = 500.0  # market capitalisation, ৳ millions (~৳50 crore)
 _MIN_FREE_FLOAT_CAP_MN = 100.0  # applied when available, ৳ millions
+_MATERIAL_ANNOUNCEMENT_CATEGORIES = (
+    "dividend",
+    "earnings",
+    "board_meeting",
+    "rating",
+    "halt",
+    "corporate_action",
+    "insider",
+    "psi",
+)
 
 _LIQUID = and_(
     T.last_close > 0,
@@ -304,6 +315,18 @@ class ScreenItem(BaseModel):
     flow: list[float] = []  # ownership screens: stake % over last disclosures (oldest→newest)
     flow_dates: list[str] = []  # ISO date of each flow point, aligned with `flow`
     period_spark: list[float] = []  # ownership: price over the disclosure window (oldest→newest)
+    category: str | None = None  # DSE category (A/B/G/N/Z), for execution context
+    adtv_mn: float | None = None  # 20D average daily traded value, ৳ millions
+    turnover_mn: float | None = None  # latest quote turnover, ৳ millions
+    safe_order_mn: float | None = None  # 5% ADTV proxy, ৳ millions
+    market_cap_mn: float | None = None
+    free_float_cap_mn: float | None = None
+    liquidity: str | None = None  # Deep | Tradeable | Thin | Watch size
+    setup_quality: str | None = None  # Clean setup | Mixed setup | High-risk setup
+    why: str | None = None  # short row-level explanation of why this ticker appears
+    catalyst: str | None = None  # latest material DSE announcement, if any
+    catalyst_date: str | None = None
+    catalyst_category: str | None = None
 
 
 class ScreenOut(BaseModel):
@@ -330,6 +353,24 @@ class ScreensResponse(BaseModel):
     quote_as_of: str | None = None  # latest 15-min quote snapshot — prices / "today's move" freshness
     methodology: MarketMethodology
     screens: list[ScreenOut]
+
+
+class MarketPulseOut(BaseModel):
+    as_of: str | None
+    quote_as_of: str | None = None
+    dsex: float | None = None
+    dsex_change_pct: float | None = None
+    turnover_cr: float | None = None
+    turnover_vs_20d: float | None = None
+    advancers: int
+    decliners: int
+    unchanged: int
+    total: int
+    top_sector: str | None = None
+    top_sector_change: float | None = None
+    weak_sector: str | None = None
+    weak_sector_change: float | None = None
+    risk_mode: str  # risk_on | mixed | defensive
 
 
 async def _movers(session, market: str, *, gainers: bool, limit: int = PER_SCREEN) -> ScreenOut:
@@ -672,6 +713,153 @@ async def _change_1d(session, market: str, codes: list[str]) -> dict[str, float]
     return {c: round(v, 2) for c, v in rows}
 
 
+def _bdt_mn(n: float | None) -> str:
+    """Compact BDT text from ৳ millions: >=10mn as crore, below as lakh."""
+    if n is None:
+        return "n/a"
+    if n >= 10:
+        return f"৳{n / 10:,.1f}cr"
+    return f"৳{n * 10:,.0f}L"
+
+
+def _metric_text(label: str, value: float) -> str:
+    if label == "RSI":
+        return f"RSI {value:.0f}"
+    if label == "CMF":
+        return f"CMF {value:.2f}"
+    if label == "yield":
+        return f"{value:.1f}% yield"
+    if "sector" in label:
+        return f"{value:.2f}x sector P/E"
+    if "avg vol" in label or "usual" in label:
+        return f"{value:.1f}x normal volume"
+    if label == "turnover":
+        return f"{_bdt_mn(value * 10)} turnover"
+    if label == "pp":
+        return f"{value:+.1f} pp stake change"
+    if label in {"ROE", "volatility", "% today", "% period", "% YoY"}:
+        return f"{value:+.1f}%"
+    if label == "momentum":
+        return f"{value:+.0f}% momentum"
+    if label == "vs market":
+        return f"{value:+.1f}% vs DSEX"
+    return f"{value:.2f} {label}"
+
+
+def _liquidity_label(adtv_mn: float | None, category: str | None) -> str | None:
+    if category == "Z":
+        return "High-risk: Z category"
+    if adtv_mn is None:
+        return None
+    if adtv_mn >= 50:
+        return "Deep liquidity"
+    if adtv_mn >= 10:
+        return "Tradeable liquidity"
+    if adtv_mn >= _MIN_ADTV_MN:
+        return "Watch order size"
+    return "Thin liquidity"
+
+
+def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
+    high_risk_note = (item.note or "").lower()
+    if (
+        item.category == "Z"
+        or "pump" in high_risk_note
+        or (item.adtv_mn is not None and item.adtv_mn < _MIN_ADTV_MN)
+    ):
+        return "High-risk read"
+    if item.adtv_mn is not None and item.adtv_mn >= 20 and (
+        item.catalyst
+        or screen.key
+        in {
+            "institutional_buying",
+            "foreign_buying",
+            "quality_roe",
+            "dividend_yield",
+            "beating_market",
+            "quiet_accumulation",
+        }
+    ):
+        return "Clean read"
+    return "Mixed read"
+
+
+def _why_text(screen: ScreenOut, item: ScreenItem) -> str:
+    metric = _metric_text(screen.value_label, item.value)
+    parts = [f"{screen.title}: {metric}"]
+    if item.change_1d is not None:
+        parts.append(f"1D {item.change_1d:+.1f}%")
+    if item.adtv_mn is not None and item.safe_order_mn is not None:
+        parts.append(f"ADTV {_bdt_mn(item.adtv_mn)}")
+        parts.append(f"5% size {_bdt_mn(item.safe_order_mn)}")
+    if item.category:
+        parts.append(f"Cat {item.category}")
+    if item.catalyst:
+        parts.append(f"{item.catalyst_category} {item.catalyst_date}")
+    return " · ".join(parts)
+
+
+async def _execution_context(session, market: str, codes: list[str]) -> dict[str, dict[str, float | str | None]]:
+    if not codes:
+        return {}
+    out: dict[str, dict[str, float | str | None]] = {c: {} for c in codes}
+    ta_rows = (
+        await session.execute(
+            select(T.code, T.last_close, T.avg_volume_20, T.market_cap_mn, T.free_float_cap_mn)
+            .where(T.market == market, T.code.in_(codes))
+        )
+    ).all()
+    for code, last_close, avg_vol_20, market_cap_mn, free_float_cap_mn in ta_rows:
+        adtv_mn = (avg_vol_20 * last_close / 1e6) if avg_vol_20 and last_close else None
+        out.setdefault(code, {}).update(
+            {
+                "adtv_mn": round(adtv_mn, 2) if adtv_mn is not None else None,
+                "safe_order_mn": round(adtv_mn * 0.05, 2) if adtv_mn is not None else None,
+                "market_cap_mn": round(market_cap_mn, 2) if market_cap_mn is not None else None,
+                "free_float_cap_mn": round(free_float_cap_mn, 2) if free_float_cap_mn is not None else None,
+            }
+        )
+    q_rows = (
+        await session.execute(
+            select(QuoteSnapshot.code, QuoteSnapshot.volume, QuoteSnapshot.ltp)
+            .where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+        )
+    ).all()
+    for code, volume, ltp in q_rows:
+        turnover_mn = volume * ltp / 1e6 if volume is not None and ltp is not None else None
+        out.setdefault(code, {})["turnover_mn"] = round(turnover_mn, 2) if turnover_mn is not None else None
+    s_rows = (
+        await session.execute(
+            select(Symbol.code, Symbol.category).where(Symbol.market == market, Symbol.code.in_(codes))
+        )
+    ).all()
+    for code, category in s_rows:
+        out.setdefault(code, {})["category"] = category
+    return out
+
+
+async def _recent_catalysts(session, market: str, codes: list[str]) -> dict[str, Announcement]:
+    if not codes:
+        return {}
+    cutoff = to_market_tz(dt.datetime.now(dt.UTC)).date() - dt.timedelta(days=21)
+    rows = list(
+        await session.scalars(
+            select(Announcement)
+            .where(
+                Announcement.market == market,
+                Announcement.code.in_(codes),
+                Announcement.category.in_(_MATERIAL_ANNOUNCEMENT_CATEGORIES),
+                Announcement.published_at >= cutoff,
+            )
+            .order_by(Announcement.code, Announcement.published_at.desc(), Announcement.strength.desc())
+        )
+    )
+    out: dict[str, Announcement] = {}
+    for row in rows:
+        out.setdefault(row.code, row)
+    return out
+
+
 # Top gainers/losers already carry the price change in their value, so the separate 1d column would
 # be redundant. Every other screen (incl. unusual_volume, near 52w high/low) shows it.
 _NO_1D = {"top_gainers", "top_losers"}
@@ -860,11 +1048,38 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     skip = {it.code for s in screens_list if s.key in _NO_1D for it in s.items}
     changes = await _change_1d(session, market, sorted(set(codes) - skip))
     sparks = await _sparks(session, market, codes)
+    context = await _execution_context(session, market, codes)
+    catalysts = await _recent_catalysts(session, market, codes)
     for s in screens_list:
         for it in s.items:
             it.name = names.get(it.code, "")
             it.change_1d = None if s.key in _NO_1D else changes.get(it.code)
             it.spark = sparks.get(it.code, [])
+            ctx = context.get(it.code, {})
+            it.category = ctx.get("category") if isinstance(ctx.get("category"), str) else None
+            it.adtv_mn = ctx.get("adtv_mn") if isinstance(ctx.get("adtv_mn"), float) else None
+            it.turnover_mn = (
+                ctx.get("turnover_mn") if isinstance(ctx.get("turnover_mn"), float) else None
+            )
+            it.safe_order_mn = (
+                ctx.get("safe_order_mn") if isinstance(ctx.get("safe_order_mn"), float) else None
+            )
+            it.market_cap_mn = (
+                ctx.get("market_cap_mn") if isinstance(ctx.get("market_cap_mn"), float) else None
+            )
+            it.free_float_cap_mn = (
+                ctx.get("free_float_cap_mn")
+                if isinstance(ctx.get("free_float_cap_mn"), float)
+                else None
+            )
+            it.liquidity = _liquidity_label(it.adtv_mn, it.category)
+            catalyst = catalysts.get(it.code)
+            if catalyst:
+                it.catalyst = catalyst.headline
+                it.catalyst_date = str(catalyst.published_at)
+                it.catalyst_category = catalyst.category
+            it.setup_quality = _setup_quality(s, it)
+            it.why = _why_text(s, it)
 
 
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
@@ -917,7 +1132,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
-    key = f"screens:v1:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v2:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -979,11 +1194,31 @@ class SectorRow(BaseModel):
     count: int
 
 
-@router.get("/sectors")
-async def sectors(tenant: CurrentTenant, session: DbSession) -> list[SectorRow]:
-    """Today's move aggregated by sector — DSE retail thinks in sectors (bank, pharma, textile…).
-    Average change + advancers/decliners breadth across the visible universe, hottest first."""
-    market = tenant.market
+def _index_pct_from_points(level: float | None, points: float | None) -> float | None:
+    if level is None or points is None:
+        return None
+    prev = level - points
+    if not prev:
+        return None
+    pct = points / prev * 100
+    return round(pct, 2) if abs(pct) <= 20 else None
+
+
+async def _breadth(session, market: str) -> tuple[int, int, int, int]:
+    adv, dec, flat, total = (
+        await session.execute(
+            select(
+                func.count().filter(QuoteSnapshot.change_pct > 0),
+                func.count().filter(QuoteSnapshot.change_pct < 0),
+                func.count().filter(QuoteSnapshot.change_pct == 0),
+                func.count(),
+            ).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(visible_codes(market)))
+        )
+    ).one()
+    return int(adv or 0), int(dec or 0), int(flat or 0), int(total or 0)
+
+
+async def _sector_rows(session, market: str) -> list[SectorRow]:
     avg_chg = func.avg(QuoteSnapshot.change_pct)
     adv = func.count().filter(QuoteSnapshot.change_pct > 0)
     dec = func.count().filter(QuoteSnapshot.change_pct < 0)
@@ -1017,6 +1252,82 @@ async def sectors(tenant: CurrentTenant, session: DbSession) -> list[SectorRow]:
         )
         for s, a, up, down, n in rows
     ]
+
+
+def _risk_mode(dsex_pct: float | None, turnover_vs_20d: float | None, adv: int, dec: int) -> str:
+    decided = adv + dec
+    breadth = adv / decided if decided else 0.5
+    turn = turnover_vs_20d or 1.0
+    pct = dsex_pct or 0.0
+    if pct >= 0.25 and breadth >= 0.58 and turn >= 0.9:
+        return "risk_on"
+    if pct <= -0.25 and breadth <= 0.42:
+        return "defensive"
+    return "mixed"
+
+
+@router.get("/market-pulse")
+async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulseOut:
+    """One institutional-style market regime read before drilling into individual screens."""
+    market = tenant.market
+    summary = await session.scalar(
+        select(MarketSummary)
+        .where(MarketSummary.market == market)
+        .order_by(MarketSummary.date.desc())
+        .limit(1)
+    )
+    values = (
+        await session.scalars(
+            select(MarketSummary.total_value_mn)
+            .where(MarketSummary.market == market, MarketSummary.total_value_mn.isnot(None))
+            .order_by(MarketSummary.date.desc())
+            .limit(21)
+        )
+    ).all()
+    latest_turnover = values[0] if values else None
+    prior_values = values[1:] if len(values) > 1 else values
+    avg_turnover = sum(prior_values) / len(prior_values) if prior_values else None
+    turnover_vs_20d = (
+        round(latest_turnover / avg_turnover, 2)
+        if latest_turnover is not None and avg_turnover
+        else None
+    )
+    adv, dec, flat, total = await _breadth(session, market)
+    sectors = await _sector_rows(session, market)
+    quote_ts = await session.scalar(
+        select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
+    )
+    dsex_pct = _index_pct_from_points(
+        summary.dsex if summary else None, summary.dsex_change if summary else None
+    )
+    top = sectors[0] if sectors else None
+    weak = sectors[-1] if sectors else None
+    return MarketPulseOut(
+        as_of=str(summary.date) if summary else None,
+        quote_as_of=quote_ts.isoformat() if quote_ts else None,
+        dsex=round(summary.dsex, 2) if summary and summary.dsex is not None else None,
+        dsex_change_pct=dsex_pct,
+        turnover_cr=round(summary.total_value_mn / 10, 1)
+        if summary and summary.total_value_mn is not None
+        else None,
+        turnover_vs_20d=turnover_vs_20d,
+        advancers=adv,
+        decliners=dec,
+        unchanged=flat,
+        total=total,
+        top_sector=top.sector if top else None,
+        top_sector_change=top.avg_change if top else None,
+        weak_sector=weak.sector if weak else None,
+        weak_sector_change=weak.avg_change if weak else None,
+        risk_mode=_risk_mode(dsex_pct, turnover_vs_20d, adv, dec),
+    )
+
+
+@router.get("/sectors")
+async def sectors(tenant: CurrentTenant, session: DbSession) -> list[SectorRow]:
+    """Today's move aggregated by sector — DSE retail thinks in sectors (bank, pharma, textile…).
+    Average change + advancers/decliners breadth across the visible universe, hottest first."""
+    return await _sector_rows(session, tenant.market)
 
 
 _PERIOD_DAYS = {"1d": 1, "5d": 5, "7d": 7, "15d": 15, "1m": 22}  # trading-days back for movers

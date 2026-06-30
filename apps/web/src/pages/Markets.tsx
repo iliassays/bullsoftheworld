@@ -9,6 +9,7 @@ import {
 } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
+import { MarketPulse } from "../components/MarketPulse";
 import { Sparkline } from "../components/Sparkline";
 import { SectorHeat } from "../components/SectorHeat";
 import { WatchToday } from "../components/WatchToday";
@@ -142,6 +143,27 @@ export function fmtValue(label: string, v: number): string {
   if (label === "vs market") return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   if (label.includes("%")) return `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
   return v.toFixed(2);
+}
+
+function takaMn(mn: number | null | undefined): string {
+  if (mn == null) return "—";
+  if (mn >= 10)
+    return `৳${(mn / 10).toLocaleString(undefined, { maximumFractionDigits: mn >= 100 ? 0 : 1 })}Cr`;
+  return `৳${(mn * 10).toLocaleString(undefined, { maximumFractionDigits: mn >= 1 ? 0 : 1 })}L`;
+}
+
+function setupTone(setup: string | null | undefined): Chip["tone"] {
+  if (!setup) return "neutral";
+  if (setup.includes("Clean")) return "up";
+  if (setup.includes("High-risk")) return "down";
+  return "neutral";
+}
+
+function setupLabel(setup: string | null | undefined, t: Tr): string | null {
+  if (!setup) return null;
+  if (setup.includes("Clean")) return t("setup.clean");
+  if (setup.includes("High-risk")) return t("setup.risky");
+  return t("setup.mixed");
 }
 
 // Tone for a per-row note. Selling/pump = caution, buying/climb = positive, the rest neutral.
@@ -314,6 +336,8 @@ export function ScreenRow({
   const fdates = item.flow_dates ?? [];
   const isOwnership = !!(item.flow && item.flow.length);
   const sinceMonth = fdates.length >= 2 ? monthYy(fdates[fdates.length - 2]) : null;
+  const setup = setupLabel(item.setup_quality, t);
+  const setupChip = setup ? { word: setup, tone: setupTone(item.setup_quality) } : null;
   // Tooltip explaining the price line on ownership rows: what period + how price moved over it.
   const ps = item.period_spark ?? [];
   let priceTitle: string | undefined;
@@ -330,9 +354,45 @@ export function ScreenRow({
         {rank != null && (
           <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
         )}
-        <span className="flex flex-col min-w-0">
-          <span className="font-bold text-[13px]">${item.code}</span>
+        <span className="flex flex-col min-w-0 gap-0.5">
+          <span className="flex items-center gap-1.5 min-w-0">
+            <span className="font-bold text-[13px]">${item.code}</span>
+            {setupChip && (
+              <span className={`text-[9px] font-semibold rounded-full px-1.5 py-0.5 ${toneCls(setupChip.tone)} bg-card border border-border shrink-0`}>
+                {setupChip.word}
+              </span>
+            )}
+          </span>
           {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
+          <span className="text-[10px] text-muted leading-snug">
+            {item.adtv_mn != null && (
+              <>
+                {t("liq.adtv")} {takaMn(item.adtv_mn)}
+                {item.safe_order_mn != null && (
+                  <>
+                    {" · "}
+                    {t("liq.size5")} {takaMn(item.safe_order_mn)}
+                  </>
+                )}
+              </>
+            )}
+            {item.category && (
+              <>
+                {item.adtv_mn != null ? " · " : ""}
+                {t("liq.cat")} {item.category}
+              </>
+            )}
+          </span>
+          {item.catalyst && (
+            <span className="text-[10px] text-accent truncate">
+              {t("catalyst.latest")} {item.catalyst_category} · {item.catalyst_date}
+            </span>
+          )}
+          {item.why && (
+            <span title={item.why} className="text-[10px] text-muted/80 truncate">
+              {item.why}
+            </span>
+          )}
         </span>
       </span>
       {/* Always a price line. For ownership it spans the move window (the title explains the period). */}
@@ -608,6 +668,7 @@ export function Markets() {
       </div>
       <div className="text-[10px] text-muted px-1 -mt-1">{t("mkt.rankNote")}</div>
 
+      <MarketPulse />
       {isFocus && <MarketIntro />}
       {isFocus && <WatchToday />}
       {(isFocus || isAllBoards) && <SectorHeat />}
