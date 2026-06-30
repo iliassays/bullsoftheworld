@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { Composer } from "../components/Composer";
+import { DhakaMood } from "../components/DhakaMood";
 import { PostCard } from "../components/PostCard";
 import { TickerStrip } from "../components/TickerStrip";
 import { TodaysWatch } from "../components/TodaysWatch";
@@ -21,6 +22,7 @@ export function Feed() {
   return (
     <div className="flex flex-col gap-3">
       <TickerStrip />
+      <DhakaMood />
       <WatchlistHome />
       <TodaysWatch />
       {user ? (

@@ -8,6 +8,7 @@ import {
   type ScreensResponse,
 } from "../lib/api";
 import { Spinner, taka } from "../components/ui";
+import { DhakaMood } from "../components/DhakaMood";
 import { InfoTip } from "../components/InfoTip";
 import { MarketPulse } from "../components/MarketPulse";
 import { Sparkline } from "../components/Sparkline";
@@ -1319,6 +1320,7 @@ export function Markets() {
       </div>
       <div className="text-[10px] text-muted px-1 -mt-1">{t("mkt.rankNote")}</div>
 
+      <DhakaMood />
       <MarketPulse />
       {isFocus && <MarketIntro />}
       {isFocus && <WatchToday />}

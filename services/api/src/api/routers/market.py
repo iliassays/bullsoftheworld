@@ -9,15 +9,26 @@ import datetime as dt
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from api.deps import CurrentTenant, DbSession, visible_codes
-from bulls.analytics import AnalyticsResult, compute
-from bulls.core.models import DailyBar, QuoteSnapshot, Symbol, TickerAnalytics, TrendingScore
+from api.deps import CurrentLocale, CurrentTenant, DbSession, visible_codes
+from bulls.analytics import AnalyticsResult, MoodIndex, build_mood, compute
+from bulls.core.config import get_settings
+from bulls.core.models import (
+    DailyBar,
+    MarketSummary,
+    QuoteSnapshot,
+    Symbol,
+    TickerAnalytics,
+    TrendingScore,
+)
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 from bulls.market_data.calendar import MARKET_CLOSE
+
+_MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
 
 router = APIRouter(tags=["market"])
 
@@ -267,3 +278,93 @@ async def get_analytics(code: str, tenant: CurrentTenant, session: DbSession) ->
         raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
     rows.reverse()  # engine expects oldest-first
     return compute(rows)
+
+
+async def _mood_inputs(session, market: str) -> dict[str, Any]:
+    """Gather the raw stats the Dhaka Mood Index is built from — all from persisted tables."""
+    codes = visible_codes(market)
+
+    adv, dec = (
+        await session.execute(
+            select(
+                func.count().filter(QuoteSnapshot.change_pct > 0),
+                func.count().filter(QuoteSnapshot.change_pct < 0),
+            ).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+        )
+    ).one()
+
+    # % of the liquid universe above its 200-day average (only rows where the MA is defined).
+    above, total_ma = (
+        await session.execute(
+            select(
+                func.count().filter(TickerAnalytics.above_sma_200.is_(True)),
+                func.count(),
+            ).where(
+                TickerAnalytics.market == market,
+                TickerAnalytics.code.in_(codes),
+                TickerAnalytics.sma_200.isnot(None),
+            )
+        )
+    ).one()
+    pct_above = (above / total_ma) if total_ma else None
+
+    # Shares pressed against their 52-week extremes (within 3%).
+    n_high, n_low = (
+        await session.execute(
+            select(
+                func.count().filter(TickerAnalytics.pct_from_52w_high >= -3),
+                func.count().filter(TickerAnalytics.pct_from_52w_low <= 3),
+            ).where(TickerAnalytics.market == market, TickerAnalytics.code.in_(codes))
+        )
+    ).one()
+
+    # DSEX history for the volatility read + latest date for the as-of stamp.
+    summaries = list(
+        await session.scalars(
+            select(MarketSummary)
+            .where(MarketSummary.market == market)
+            .order_by(MarketSummary.date.desc())
+            .limit(120)
+        )
+    )
+    dsex_closes = [s.dsex for s in reversed(summaries) if s.dsex is not None]
+    as_of = str(summaries[0].date) if summaries else ""
+
+    # Turnover vs its trailing 20-day average (context chip, not scored).
+    values = [s.total_value_mn for s in summaries if s.total_value_mn is not None]
+    turnover_vs_20d = None
+    if len(values) > 1:
+        prior = values[1:21]
+        avg = sum(prior) / len(prior) if prior else None
+        if avg:
+            turnover_vs_20d = round(values[0] / avg, 2)
+
+    return {
+        "as_of_date": as_of,
+        "advancers": int(adv or 0),
+        "decliners": int(dec or 0),
+        "pct_above_200dma": pct_above,
+        "n_near_52w_high": int(n_high or 0),
+        "n_near_52w_low": int(n_low or 0),
+        "dsex_closes": dsex_closes,
+        "turnover_vs_20d": turnover_vs_20d,
+    }
+
+
+@router.get("/market-mood")
+async def market_mood(
+    tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
+) -> MoodIndex:
+    """Dhaka Mood Index — a descriptive 0-100 fear/greed read built from breadth, strength,
+    52-week highs/lows and DSEX volatility. Deterministic and templated (no AI); cached per day."""
+    cache_key = f"mood:v1:{tenant.market}:{locale}"
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        cached = await redis.get(cache_key)
+        if cached:
+            return MoodIndex.model_validate_json(cached)
+        mood = build_mood(locale=locale, **await _mood_inputs(session, tenant.market))
+        await redis.set(cache_key, mood.model_dump_json(), ex=_MOOD_TTL)
+        return mood
+    finally:
+        await redis.aclose()

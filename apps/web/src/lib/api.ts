@@ -384,6 +384,28 @@ export interface Pulse {
   message_volume: Gauge;
   participation: Gauge;
 }
+export interface MoodComponent {
+  key: string;
+  label: string;
+  score: number;
+  detail: string;
+}
+export interface MoodIndex {
+  as_of_date: string;
+  score: number | null;
+  band:
+    | "extreme_fear"
+    | "fear"
+    | "neutral"
+    | "greed"
+    | "extreme_greed"
+    | "unknown";
+  label: string;
+  components: MoodComponent[];
+  context: string[];
+  caption: string;
+  disclaimer: string;
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -452,6 +474,7 @@ export const api = {
   symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
   screens: () => request<ScreensResponse>("/screens"),
   marketPulse: () => request<MarketPulse>("/market-pulse"),
+  marketMood: () => request<MoodIndex>("/market-mood"),
   sectors: () => request<Sector[]>("/sectors"),
   screen: (
     key: string,
