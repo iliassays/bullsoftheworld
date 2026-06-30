@@ -336,6 +336,15 @@ function DetailStat({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg bg-surface/70 border border-border px-2.5 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-muted truncate">{label}</div>
+      <div className="text-[12px] font-semibold text-text truncate tnum">{value}</div>
+    </div>
+  );
+}
+
 function signedPct(v: number, digits = 1): string {
   return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
 }
@@ -440,6 +449,109 @@ function rowReason(screen: Screen, item: ScreenItem, lang: Lang, t: Tr): string 
   return parts.filter(Boolean).join(" · ");
 }
 
+function metricDetailLabel(screen: Screen, lang: Lang): string {
+  if (lang === "bn") {
+    switch (screen.key) {
+      case "institutional_buying":
+      case "foreign_buying":
+        return "মালিকানা পরিবর্তন";
+      case "value_vs_sector":
+        return "P/E বনাম খাত";
+      case "dividend_yield":
+        return "ডিভিডেন্ড ইল্ড";
+      case "quality_roe":
+        return "ROE";
+      case "eps_growth":
+        return "EPS বৃদ্ধি";
+      case "beating_market":
+        return "DSEX-এর তুলনায়";
+      case "momentum_12_1":
+        return "মোমেন্টাম";
+      case "low_volatility":
+        return "অস্থিরতা";
+      case "most_active":
+        return "টার্নওভার";
+      case "unusual_volume":
+        return "ভলিউম বনাম গড়";
+      case "most_discussed":
+        return "পোস্ট";
+      case "most_watched":
+        return "ওয়াচার";
+      case "attention_rising":
+        return "আলোচনা বনাম গড়";
+      case "near_support":
+        return "সাপোর্ট থেকে";
+      case "near_resistance":
+        return "রেজিস্ট্যান্স থেকে";
+      case "near_52w_high":
+        return "৫২W হাই থেকে";
+      case "near_52w_low":
+        return "৫২W লো থেকে";
+      case "oversold":
+      case "overbought":
+        return "RSI";
+      case "accumulation":
+      case "distribution":
+      case "quiet_accumulation":
+        return "মানি ফ্লো";
+      default:
+        return "বোর্ড মেট্রিক";
+    }
+  }
+  switch (screen.key) {
+    case "institutional_buying":
+    case "foreign_buying":
+      return "Stake change";
+    case "value_vs_sector":
+      return "P/E vs sector";
+    case "dividend_yield":
+      return "Dividend yield";
+    case "quality_roe":
+      return "ROE";
+    case "eps_growth":
+      return "EPS growth";
+    case "beating_market":
+      return "Vs DSEX";
+    case "momentum_12_1":
+      return "Momentum";
+    case "low_volatility":
+      return "Volatility";
+    case "most_active":
+      return "Turnover";
+    case "unusual_volume":
+      return "Volume vs avg";
+    case "most_discussed":
+      return "Posts";
+    case "most_watched":
+      return "Watchers";
+    case "attention_rising":
+      return "Chatter vs avg";
+    case "near_support":
+      return "Above support";
+    case "near_resistance":
+      return "Below resistance";
+    case "near_52w_high":
+      return "From 52W high";
+    case "near_52w_low":
+      return "From 52W low";
+    case "oversold":
+    case "overbought":
+      return "RSI";
+    case "accumulation":
+    case "distribution":
+    case "quiet_accumulation":
+      return "Money flow";
+    default:
+      return "Board metric";
+  }
+}
+
+function ctaTitle(code: string, lang: Lang): string {
+  return lang === "bn"
+    ? `$${code}-এর চার্ট ও পূর্ণ বিশ্লেষণ দেখুন`
+    : `See chart and full analysis for $${code}`;
+}
+
 function detailContext(screen: Screen, item: ScreenItem, lang: Lang) {
   const metric = fmtValue(screen.value_label, item.value);
   const flow = item.flow ?? [];
@@ -447,112 +559,134 @@ function detailContext(screen: Screen, item: ScreenItem, lang: Lang) {
   const prevStake = flow.length >= 2 ? stakeContextChip(flow, dates, flow.length - 2, lang) : null;
   const latestStake = flow.length >= 1 ? stakeContextChip(flow, dates, flow.length - 1, lang) : null;
   const periodMove = priceMoveOverPeriod(item, lang);
+  const ctx = (body: string, checks: string[], chips: (string | null)[] = []) => ({
+    body,
+    checks,
+    chips: chips.filter((v): v is string => Boolean(v)),
+  });
 
   if (lang === "bn") {
     switch (screen.key) {
       case "institutional_buying":
-        return {
-          body: "শেয়ারহোল্ডিং প্রকাশ প্রতিদিন হয় না। নতুন প্রকাশে প্রতিষ্ঠানের অংশ বদলেছে; দামের মুভ, খবর, ভলিউম ও লিকুইডিটি মিলিয়ে পড়ুন।",
-          chips: [prevStake, latestStake, periodMove].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "নতুন প্রকাশে প্রতিষ্ঠানের অংশ বদলেছে। এটি দৈনিক ফ্লো নয়, তাই দামের প্রতিক্রিয়া, খবর, ভলিউম ও লিকুইডিটি মিলিয়ে পড়ুন।",
+          ["মালিকানার তারিখ", "দামের প্রতিক্রিয়া", "খবর/ঘোষণা", "অর্ডার সাইজ"],
+          [prevStake, latestStake, periodMove],
+        );
       case "foreign_buying":
-        return {
-          body: "বিদেশি মালিকানা বদল শক্তিশালী সংকেত হতে পারে, কিন্তু এটি প্রকাশভিত্তিক ডেটা, দৈনিক ফ্লো নয়। দাম ও লিকুইডিটির সাথে মিলিয়ে দেখুন।",
-          chips: [prevStake, latestStake, periodMove].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "বিদেশি মালিকানা বদল শক্তিশালী সংকেত হতে পারে, কিন্তু এটি প্রকাশভিত্তিক ডেটা। দাম, খবর ও লিকুইডিটির সাথে মিলিয়ে দেখুন।",
+          ["মালিকানার তারিখ", "দামের প্রতিক্রিয়া", "ঘোষণা", "লিকুইডিটি"],
+          [prevStake, latestStake, periodMove],
+        );
       case "value_vs_sector":
-        return {
-          body: "১.০x মানে খাতের মধ্যম P/E। ১.০x-এর নিচে সস্তা, কিন্তু আয় দুর্বল হলে বা ঝুঁকি থাকলে এটি ভ্যালু ট্র্যাপও হতে পারে।",
-          chips: [`বর্তমান ${metric}`, "সীমা 1.0x", "EPS ও খবর যাচাই করুন"],
-        };
+        return ctx(
+          "১.০x মানে খাতের মধ্যম P/E। এর নিচে সস্তা, কিন্তু আয় দুর্বল হলে বা ঝুঁকি থাকলে এটি ভ্যালু ট্র্যাপও হতে পারে।",
+          ["EPS ট্রেন্ড", "সেক্টর তুলনা", "খবর/ঝুঁকি", "দাম কত উঠেছে"],
+          [`বর্তমান ${metric}`, "সীমা 1.0x"],
+        );
       case "dividend_yield":
-        return {
-          body: "এটি সর্বশেষ ঘোষিত নগদ লভ্যাংশের ইল্ড। ভবিষ্যৎ লভ্যাংশ নিশ্চিত করে না; EPS, NAV, নগদ পেআউট ও রেকর্ড ডেট দেখুন।",
-          chips: [`ইল্ড ${metric}`, "অতীত নগদ লভ্যাংশ", "ভবিষ্যৎ গ্যারান্টি নয়"],
-        };
+        return ctx(
+          "এটি সর্বশেষ ঘোষিত নগদ লভ্যাংশের ইল্ড। ভবিষ্যৎ লভ্যাংশ নিশ্চিত করে না; EPS, NAV, পেআউট ও রেকর্ড ডেট দেখুন।",
+          ["EPS কভার করছে?", "রেকর্ড ডেট", "পেআউট ইতিহাস", "দাম সমন্বয়"],
+          [`ইল্ড ${metric}`, "অতীত নগদ লভ্যাংশ"],
+        );
       case "quality_roe":
-        return {
-          body: "ROE দেখায় শেয়ারহোল্ডার মূলধনের প্রতি টাকায় কত মুনাফা হচ্ছে। একবারের লাভ বা অতিরিক্ত ঋণ আছে কি না পুরো পেজে মিলিয়ে দেখুন।",
-          chips: [`ROE ${metric}`, "EPS/NAV দেখুন", "ধারাবাহিকতা জরুরি"],
-        };
+        return ctx(
+          "ROE দেখায় শেয়ারহোল্ডার মূলধনের প্রতি টাকায় কত মুনাফা হচ্ছে। একবারের লাভ বা অতিরিক্ত ঋণ আছে কি না মিলিয়ে দেখুন।",
+          ["EPS/NAV", "ধারাবাহিকতা", "ঋণ/ঝুঁকি", "সেক্টর তুলনা"],
+          [`ROE ${metric}`],
+        );
       case "eps_growth":
-        return {
-          body: "EPS বৃদ্ধি মানে আয় আগের বছরের তুলনায় বেড়েছে। এটি ধারাবাহিক কিনা, একবারের আয় কিনা, এবং মূল্য ইতিমধ্যে বেশি উঠে গেছে কিনা দেখুন।",
-          chips: [`বৃদ্ধি ${metric}`, "ধারাবাহিকতা দেখুন", "মূল্যায়ন মিলান"],
-        };
+        return ctx(
+          "EPS বৃদ্ধি মানে আয় আগের বছরের তুলনায় বেড়েছে। এটি ধারাবাহিক কিনা এবং দাম ইতিমধ্যে বেশি উঠে গেছে কিনা দেখুন।",
+          ["ত্রৈমাসিক ধারাবাহিকতা", "একবারের আয়?", "P/E", "খবর"],
+          [`বৃদ্ধি ${metric}`],
+        );
       case "beating_market":
-        return {
-          body: "DSEX-এর চেয়ে বেশি ওঠা আপেক্ষিক শক্তির ইঙ্গিত। শক্তি টেকসই কিনা বুঝতে ট্রেন্ড, ভলিউম ও নিউজ একসাথে দেখুন।",
-          chips: [`DSEX থেকে ${metric} বেশি`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "DSEX-এর চেয়ে বেশি ওঠা আপেক্ষিক শক্তির ইঙ্গিত। শক্তি টেকসই কিনা বুঝতে ট্রেন্ড, ভলিউম ও খবর একসাথে দেখুন।",
+          ["ট্রেন্ড", "ভলিউম", "সাপোর্ট/রেজিস্ট্যান্স", "খবর"],
+          [`DSEX থেকে ${metric} বেশি`, priceMoveText(item, lang)],
+        );
       case "unusual_volume":
       case "most_active":
-        return {
-          body: "ব্যস্ততা দেখায় আজ কোথায় টাকা ঘুরছে। শুধু ভলিউম যথেষ্ট নয়; দাম কোন দিকে যাচ্ছে, খবর আছে কি না, আর অর্ডার সাইজ নিরাপদ কিনা দেখুন।",
-          chips: [item.turnover_mn != null ? `টার্নওভার ${takaMn(item.turnover_mn)}` : null, item.adtv_mn != null ? `ADTV ${takaMn(item.adtv_mn)}` : null].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "ব্যস্ততা দেখায় আজ কোথায় টাকা ঘুরছে। শুধু ভলিউম যথেষ্ট নয়; দাম কোন দিকে যাচ্ছে এবং খবর আছে কি না দেখুন।",
+          ["দামের দিক", "ঘোষণা/খবর", "স্বাভাবিক ভলিউম", "অর্ডার সাইজ"],
+          [item.turnover_mn != null ? `টার্নওভার ${takaMn(item.turnover_mn)}` : null, item.adtv_mn != null ? `ADTV ${takaMn(item.adtv_mn)}` : null],
+        );
       case "momentum_12_1":
       case "top_gainers":
       case "top_losers":
       case "near_52w_high":
       case "near_52w_low":
-        return {
-          body: "মোমেন্টাম শক্তি দেখায়, কিন্তু দ্রুত ওঠা শেয়ারে ফিরে আসার ঝুঁকি থাকে। ট্রেন্ডের ধারাবাহিকতা, ভলিউম ও নিকটবর্তী লেভেল দেখুন।",
-          chips: [priceMoveText(item, lang), metric].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "মোমেন্টাম শক্তি দেখায়, কিন্তু দ্রুত ওঠা শেয়ারে ফিরে আসার ঝুঁকি থাকে। ট্রেন্ডের ধারাবাহিকতা ও নিকটবর্তী লেভেল দেখুন।",
+          ["৩M/৬M/১২M ট্রেন্ড", "ভলিউম", "নিকটবর্তী লেভেল", "খবর"],
+          [priceMoveText(item, lang), metric],
+        );
       case "near_support":
       case "near_resistance":
       case "oversold":
       case "overbought":
       case "uptrend":
-        return {
-          body: "এটি টেকনিক্যাল অবস্থান। সাপোর্ট, রেজিস্ট্যান্স বা RSI একা সিদ্ধান্ত নয়; ভলিউম, খবর ও ঝুঁকি সীমা মিলিয়ে পড়ুন।",
-          chips: [`মেট্রিক ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "এটি টেকনিক্যাল অবস্থান। সাপোর্ট, রেজিস্ট্যান্স বা RSI একা সিদ্ধান্ত নয়; ভলিউম, খবর ও ঝুঁকি সীমা মিলিয়ে পড়ুন।",
+          ["লেভেল", "ভলিউম", "খবর", "রিস্ক লিমিট"],
+          [`মেট্রিক ${metric}`, priceMoveText(item, lang)],
+        );
       case "accumulation":
       case "distribution":
       case "quiet_accumulation":
-        return {
-          body: "মানি ফ্লো দামের সাথে ভলিউম মিলিয়ে চাপ বোঝায়। এটি ইঙ্গিত, প্রমাণ নয়; ব্রেকআউট, খবর এবং লিকুইডিটি দিয়ে নিশ্চিত করুন।",
-          chips: [`CMF ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "মানি ফ্লো দামের সাথে ভলিউম মিলিয়ে চাপ বোঝায়। এটি ইঙ্গিত, প্রমাণ নয়; ব্রেকআউট, খবর এবং লিকুইডিটি দিয়ে নিশ্চিত করুন।",
+          ["দাম কি নিশ্চিত করছে?", "ভলিউম", "ব্রেকআউট", "খবর"],
+          [`CMF ${metric}`, priceMoveText(item, lang)],
+        );
       case "most_discussed":
       case "attention_rising":
       case "most_watched":
-        return {
-          body: "কমিউনিটি আগ্রহ ট্রাফিক ও আলোচনার গতি দেখায়, কিন্তু শব্দ বেশি হতে পারে। বাস্তব খবর, দাম ও লিকুইডিটি যাচাই করুন।",
-          chips: [`বোর্ড মেট্রিক ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "কমিউনিটি আগ্রহ ট্রাফিক ও আলোচনার গতি দেখায়, কিন্তু শব্দ বেশি হতে পারে। বাস্তব খবর, দাম ও লিকুইডিটি যাচাই করুন।",
+          ["আসল খবর", "দামের দিক", "লিকুইডিটি", "আলোচনার মান"],
+          [`বোর্ড মেট্রিক ${metric}`, priceMoveText(item, lang)],
+        );
       case "low_volatility":
-        return {
-          body: "কম অস্থিরতা মানে দাম তুলনামূলক শান্ত। এটি বেশি রিটার্নের গ্যারান্টি নয়; আয়, ডিভিডেন্ড ও ট্রেন্ড মিলিয়ে দেখুন।",
-          chips: [`অস্থিরতা ${metric}`, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          "কম অস্থিরতা মানে দাম তুলনামূলক শান্ত। এটি বেশি রিটার্নের গ্যারান্টি নয়; আয়, ডিভিডেন্ড ও ট্রেন্ড মিলিয়ে দেখুন।",
+          ["আয়", "ডিভিডেন্ড", "ট্রেন্ড", "লিকুইডিটি"],
+          [`অস্থিরতা ${metric}`, priceMoveText(item, lang)],
+        );
       default:
-        return {
-          body: screenHelp(screen.key, lang) ?? screenDesc(screen, lang),
-          chips: [metric, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-        };
+        return ctx(
+          screenHelp(screen.key, lang) ?? screenDesc(screen, lang),
+          ["খবর", "দামের দিক", "লিকুইডিটি"],
+          [metric, priceMoveText(item, lang)],
+        );
     }
   }
 
   switch (screen.key) {
     case "institutional_buying":
     case "foreign_buying":
-      return {
-        body: "Ownership updates are disclosure-based, not daily flow. Read the stake change together with price reaction, news, volume, and liquidity.",
-        chips: [prevStake, latestStake, periodMove].filter((v): v is string => Boolean(v)),
-      };
+      return ctx(
+        "Ownership updates are disclosure-based, not daily flow. Read the stake change together with price reaction, news, volume, and liquidity.",
+        ["Disclosure date", "Price reaction", "News", "Order size"],
+        [prevStake, latestStake, periodMove],
+      );
     case "value_vs_sector":
-      return {
-        body: "1.0x is the sector median P/E. Below 1.0x is cheaper than peers, but weak earnings or risk can still make it a value trap.",
-        chips: [`Current ${metric}`, "Line 1.0x", "Check EPS/news"],
-      };
+      return ctx(
+        "1.0x is the sector median P/E. Below 1.0x is cheaper than peers, but weak earnings or risk can still make it a value trap.",
+        ["EPS trend", "Sector comparison", "News/risk", "Price stretch"],
+        [`Current ${metric}`, "Line 1.0x"],
+      );
     default:
-      return {
-        body: screenHelp(screen.key, lang) ?? screenDesc(screen, lang),
-        chips: [metric, priceMoveText(item, lang)].filter((v): v is string => Boolean(v)),
-      };
+      return ctx(
+        screenHelp(screen.key, lang) ?? screenDesc(screen, lang),
+        ["News", "Price action", "Liquidity"],
+        [metric, priceMoveText(item, lang)],
+      );
   }
 }
 
@@ -574,126 +708,156 @@ function ScreenRowSheet({
   const liquidity = liquidityLabel(item.liquidity, t);
   const why = rowReason(screen, item, lang, t);
   const context = detailContext(screen, item, lang);
+  const metricLabel = metricDetailLabel(screen, lang);
   const priceTone: Chip["tone"] | undefined =
     item.change_1d == null ? undefined : item.change_1d >= 0 ? "up" : "down";
-  const rows = [
-    item.adtv_mn != null ? `${t("liq.adtv")} ${takaMn(item.adtv_mn)}` : null,
-    item.safe_order_mn != null ? `${t("rowDetails.order")} ${takaMn(item.safe_order_mn)}` : null,
-    item.turnover_mn != null ? `${t("rowDetails.turnover")} ${takaMn(item.turnover_mn)}` : null,
-    item.category ? `${t("liq.cat")} ${item.category}` : null,
-    item.market_cap_mn != null ? `${t("rowDetails.marketCap")} ${takaMn(item.market_cap_mn)}` : null,
-    item.free_float_cap_mn != null
-      ? `${t("rowDetails.freeFloat")} ${takaMn(item.free_float_cap_mn)}`
+  const executionRows = [
+    item.adtv_mn != null ? { label: t("liq.adtv"), value: takaMn(item.adtv_mn) } : null,
+    item.safe_order_mn != null ? { label: t("rowDetails.order"), value: takaMn(item.safe_order_mn) } : null,
+    item.turnover_mn != null ? { label: t("rowDetails.turnover"), value: takaMn(item.turnover_mn) } : null,
+    item.category ? { label: t("liq.cat"), value: item.category } : null,
+    item.market_cap_mn != null
+      ? { label: t("rowDetails.marketCap"), value: takaMn(item.market_cap_mn) }
       : null,
-  ].filter((row): row is string => Boolean(row));
+    item.free_float_cap_mn != null
+      ? { label: t("rowDetails.freeFloat"), value: takaMn(item.free_float_cap_mn) }
+      : null,
+  ].filter((row): row is { label: string; value: string } => Boolean(row));
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-surface border border-border rounded-t-2xl p-4 max-h-[82vh] overflow-y-auto shadow-2xl"
+        className="w-full max-w-md bg-surface border border-border rounded-t-2xl max-h-[86vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wide text-muted">
-              {t("rowDetails.title")}
+        <div className="p-4 pb-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wide text-muted">
+                {t("rowDetails.title")}
+              </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="text-lg font-extrabold text-text truncate">${item.code}</div>
+                {setupChip && (
+                  <span
+                    className={`rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold shrink-0 ${toneCls(setupChip.tone)}`}
+                  >
+                    {setupChip.word}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                <span className="truncate">{item.name || item.code}</span>
+                <span className="text-border">•</span>
+                <span className="text-accent">{localizedTitle}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="text-lg font-extrabold text-text truncate">${item.code}</div>
-              {setupChip && (
-                <span
-                  className={`rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold shrink-0 ${toneCls(setupChip.tone)}`}
-                >
-                  {setupChip.word}
-                </span>
-              )}
-            </div>
-            <div className="text-[11px] text-muted truncate">{item.name || localizedTitle}</div>
+            <button onClick={onClose} className="text-muted text-sm px-2" aria-label={t("common.close")}>
+              {t("common.close")}
+            </button>
           </div>
-          <button onClick={onClose} className="text-muted text-sm px-2" aria-label={t("common.close")}>
-            {t("common.close")}
-          </button>
-        </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <DetailStat label={t("rowDetails.price")} value={taka(item.last_close)} tone={priceTone} />
-          <DetailStat
-            label={t("rowDetails.value")}
-            value={fmtValue(screen.value_label, item.value)}
-            tone={chip?.tone}
-          />
-          {item.change_1d != null && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <DetailStat label={t("rowDetails.price")} value={taka(item.last_close)} tone={priceTone} />
             <DetailStat
-              label="1D"
-              value={`${item.change_1d >= 0 ? "+" : ""}${item.change_1d.toFixed(1)}%`}
-              tone={priceTone}
+              label={metricLabel}
+              value={fmtValue(screen.value_label, item.value)}
+              tone={chip?.tone}
             />
-          )}
-          {liquidity && <DetailStat label={t("rowDetails.liquidity")} value={liquidity} />}
-        </div>
-
-        <section className="mt-4">
-          <div className="text-[11px] uppercase tracking-wide text-muted">{t("rowDetails.why")}</div>
-          <p className="mt-1 text-[13px] leading-snug text-text/90">{why}</p>
-        </section>
-
-        <section className="mt-4 rounded-xl bg-card/50 border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wide text-muted">
-            {t("rowDetails.context")}
+            {item.change_1d != null && (
+              <DetailStat
+                label="1D"
+                value={`${item.change_1d >= 0 ? "+" : ""}${item.change_1d.toFixed(1)}%`}
+                tone={priceTone}
+              />
+            )}
+            {liquidity && <DetailStat label={t("rowDetails.liquidity")} value={liquidity} />}
           </div>
-          <p className="mt-1 text-[12px] leading-snug text-text/90">{context.body}</p>
-          {context.chips.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {context.chips.map((c) => (
-                <span
-                  key={c}
-                  className="rounded-full bg-surface border border-border px-2.5 py-1 text-[11px] text-muted"
-                >
-                  {c}
-                </span>
-              ))}
-            </div>
-          )}
-        </section>
 
-        {rows.length > 0 && (
-          <section className="mt-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted">{t("rowDetails.liquidity")}</div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {rows.map((r) => (
-                <span
-                  key={r}
-                  className="rounded-full bg-card border border-border px-2.5 py-1 text-[11px] text-muted"
-                >
-                  {r}
-                </span>
-              ))}
+          <section className="mt-4 rounded-xl bg-accent/8 border border-accent/25 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-muted">
+              {t("rowDetails.summary")}
             </div>
-            {item.safe_order_mn != null && (
-              <p className="mt-2 text-[11px] leading-snug text-muted">{t("rowDetails.orderHelp")}</p>
+            <p className="mt-1 text-[14px] leading-snug text-text">{why}</p>
+          </section>
+
+          <section className="mt-3 rounded-xl bg-card/60 border border-border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] uppercase tracking-wide text-muted">
+                {t("rowDetails.context")}
+              </div>
+              <span className="shrink-0 rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] text-accent">
+                {localizedTitle}
+              </span>
+            </div>
+            <p className="mt-1.5 text-[12px] leading-snug text-text/90">{context.body}</p>
+            {context.checks.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[10px] uppercase tracking-wide text-muted">
+                  {t("rowDetails.checks")}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  {context.checks.map((check) => (
+                    <div key={check} className="flex items-center gap-1.5 text-[11px] text-muted">
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent shrink-0" />
+                      <span className="truncate">{check}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {context.chips.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {context.chips.map((c) => (
+                  <span
+                    key={c}
+                    className="rounded-full bg-surface border border-border px-2.5 py-1 text-[11px] text-muted"
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
             )}
           </section>
-        )}
 
-        {item.catalyst && (
-          <section className="mt-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted">
-              {t("rowDetails.catalyst")}
-            </div>
-            <p className="mt-1 text-[13px] leading-snug text-accent">
-              {item.catalyst_category} · {item.catalyst_date}
-            </p>
-            <p className="mt-0.5 text-[12px] leading-snug text-muted">{item.catalyst}</p>
-          </section>
-        )}
+          {executionRows.length > 0 && (
+            <section className="mt-3 rounded-xl bg-card/40 border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wide text-muted">
+                {t("rowDetails.execution")}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {executionRows.map((r) => (
+                  <MiniMetric key={`${r.label}-${r.value}`} label={r.label} value={r.value} />
+                ))}
+              </div>
+              {item.safe_order_mn != null && (
+                <p className="mt-2 text-[11px] leading-snug text-muted">{t("rowDetails.orderHelp")}</p>
+              )}
+            </section>
+          )}
 
-        <p className="mt-4 text-[11px] leading-snug text-muted">{t("rowDetails.fullHint")}</p>
-        <Link
-          to={`/s/${item.code}`}
-          className="mt-4 block text-center bg-accent text-bg font-bold rounded-xl py-2.5 text-sm"
-        >
-          {t("rowDetails.open")}
-        </Link>
+          {item.catalyst && (
+            <section className="mt-3 rounded-xl bg-card/40 border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wide text-muted">
+                {t("rowDetails.catalyst")}
+              </div>
+              <p className="mt-1 text-[13px] leading-snug text-accent">
+                {item.catalyst_category} · {item.catalyst_date}
+              </p>
+              <p className="mt-0.5 text-[12px] leading-snug text-muted">{item.catalyst}</p>
+            </section>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 mt-4 bg-surface/95 backdrop-blur border-t border-border p-4">
+          <Link
+            to={`/s/${item.code}`}
+            className="block text-center bg-accent text-bg font-extrabold rounded-xl py-3 text-sm"
+          >
+            {ctaTitle(item.code, lang)} →
+          </Link>
+          <p className="mt-2 text-center text-[11px] leading-snug text-muted">{t("rowDetails.ctaSub")}</p>
+        </div>
       </div>
     </div>
   );
