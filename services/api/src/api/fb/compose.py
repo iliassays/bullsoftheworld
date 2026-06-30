@@ -20,11 +20,31 @@ LINK = "https://bullsofdhaka.com"
 MARKETS_LINK = f"{LINK}/markets"
 _NO_ADVICE_BN = "তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।"
 _NO_ADVICE_EN = "Descriptive data only, not investment advice."
-_MARKET_CTA = (
-    "🔎 পুরো মার্কেট বোর্ড, সেক্টর হিটম্যাপ ও স্টক ডিটেইলস দেখুন:\n"
-    "Explore full market boards, sector heatmap and stock pages:\n"
-    f"👉 {MARKETS_LINK}"
-)
+
+
+def _campaign_link(campaign: str) -> str:
+    return f"{MARKETS_LINK}?utm_source=facebook&utm_medium=social&utm_campaign={campaign}"
+
+
+def _market_cta(campaign: str) -> str:
+    link = _campaign_link(campaign)
+    if campaign == "morning_watch":
+        return (
+            "🔎 আজকের Market Pulse, Active Today ও ADTV/Order Guide দেখুন:\n"
+            "See today's Market Pulse, Active Today and ADTV/Order Guide:\n"
+            f"👉 {link}"
+        )
+    if campaign == "evening_wrap":
+        return (
+            "🔎 পুরো Evening Wrap, সেক্টর হিটম্যাপ ও স্টক ডিটেইলস দেখুন:\n"
+            "See the full Evening Wrap, sector heatmap and stock pages:\n"
+            f"👉 {link}"
+        )
+    return (
+        "🔎 পুরো মার্কেট বোর্ড, সেক্টর হিটম্যাপ ও স্টক ডিটেইলস দেখুন:\n"
+        "Explore full market boards, sector heatmap and stock pages:\n"
+        f"👉 {link}"
+    )
 
 # Keep public Facebook radar posts on the same investable universe as the Market page.
 _MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, Tk millions
@@ -113,7 +133,7 @@ def evening_bodies(d: cards.EveningWrapData) -> dict[str, str]:
 def evening_caption(d: cards.EveningWrapData) -> str:
     """Combined bilingual caption + link (for the Facebook post)."""
     b = evening_bodies(d)
-    return f"{b['bn']}\n\n{b['en']}\n\n{_MARKET_CTA}"
+    return f"{b['bn']}\n\n{b['en']}\n\n{_market_cta('evening_wrap')}"
 
 
 async def build_evening_data(session, market: str) -> tuple[cards.EveningWrapData, str]:
@@ -200,7 +220,7 @@ async def compose_evening_wrap(session, market: str) -> ComposedPost:
         ref_date=ref_date,
         caption=evening_caption(data),
         png=cards.evening_wrap_card(data),
-        link=MARKETS_LINK,
+        link=_campaign_link("evening_wrap"),
     )
 
 
@@ -293,10 +313,14 @@ async def compose_morning_watch(session, market: str) -> ComposedPost:
         f"At last close DSEX {dsex}{chg_txt}.\n"
         f"Data radar — near highs: {nh} · near lows: {ll} · momentum: {mm} · "
         f"heavy volume: {vv}.\n{_NO_ADVICE_EN}\n\n"
-        f"{_MARKET_CTA}"
+        f"{_market_cta('morning_watch')}"
     )
     return ComposedPost(
-        "morning_watch", str(today), caption, cards.morning_watch_card(data), MARKETS_LINK
+        "morning_watch",
+        str(today),
+        caption,
+        cards.morning_watch_card(data),
+        _campaign_link("morning_watch"),
     )
 
 
@@ -368,8 +392,12 @@ async def compose_weekly_recap(session, market: str) -> ComposedPost:
         f"এই সপ্তাহে DSEX {wk}।\nশীর্ষ গেইনার: {g}।\nশীর্ষ লুজার: {li}।\n{_NO_ADVICE_BN}\n\n"
         f"📅 Week in Review — {range_label}\n"
         f"DSEX {wk} on the week.\nTop gainers: {g}.\nTop losers: {li}.\n{_NO_ADVICE_EN}\n\n"
-        f"{_MARKET_CTA}"
+        f"{_market_cta('weekly_recap')}"
     )
     return ComposedPost(
-        "weekly_recap", str(latest), caption, cards.weekly_recap_card(data), MARKETS_LINK
+        "weekly_recap",
+        str(latest),
+        caption,
+        cards.weekly_recap_card(data),
+        _campaign_link("weekly_recap"),
     )
