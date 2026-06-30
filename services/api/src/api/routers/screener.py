@@ -208,8 +208,8 @@ _SCREENS: list[ScreenSpec] = [
     ),
     ScreenSpec(
         "dividend_yield",
-        "Top dividend yield",
-        "Highest cash dividend yield at today's price",
+        "Top cash dividend",
+        "Last declared cash dividend ÷ today's price (trailing — past payout, not a forecast)",
         "yield",
         T.dividend_yield > 0,
         T.dividend_yield.desc(),

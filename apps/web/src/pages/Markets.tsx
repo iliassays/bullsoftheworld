@@ -11,6 +11,7 @@ import { Spinner, taka } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
 import { Sparkline } from "../components/Sparkline";
 import { SectorHeat } from "../components/SectorHeat";
+import { WatchToday } from "../components/WatchToday";
 import { type Lang, useLang } from "../lib/i18n";
 import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
 
@@ -390,17 +391,19 @@ const GROUPS: { id: string; labelKey: string; advanced?: boolean }[] = [
   { id: "technical", labelKey: "group.technical", advanced: true },
 ];
 
-// Default market read: enough breadth for retail users without turning the page into a wall of cards.
-// The full screen library remains under "All boards".
+// Default "Today's Market" — the high-signal, distinctive boards a DSE investor actually decides on,
+// anchored by the "Active today" engine (rendered above these as the live what's-moving view). We
+// deliberately do NOT lead with top gainers/losers/most-active: every DSE portal shows those, the
+// "Active today" engine already covers what's genuinely moving (liquidity-gated, not thin-circuit
+// noise), and they live under the Momentum lens / All boards for anyone who wants them. Each card
+// here is a different decision axis — smart money, relative strength, income, value × quality, buzz.
 const FOCUS_KEYS = [
-  "most_active",
-  "unusual_volume",
-  "top_gainers",
-  "top_losers",
-  "momentum_12_1",
-  "beating_market",
-  "value_vs_sector",
-  "quality_roe",
+  "institutional_buying", // smart money — what institutions are accumulating
+  "beating_market", // relative strength vs the DSEX
+  "dividend_yield", // trailing cash income — BD investors care
+  "value_vs_sector", // cheap vs its sector...
+  "quality_roe", // ...paired with quality so it's not a value trap
+  "most_discussed", // the community pulse
 ];
 
 // "What are you looking for?" — curate the screens down to a goal, so a beginner sees relevant
@@ -549,6 +552,7 @@ export function Markets() {
         )}
       </div>
 
+      {isFocus && <WatchToday />}
       {(isFocus || isAllBoards) && <SectorHeat />}
 
       {isFocus
