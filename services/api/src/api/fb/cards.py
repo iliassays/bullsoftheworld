@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import functools
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _ASSETS = Path(__file__).parent / "assets"
@@ -183,6 +183,7 @@ class EveningWrapData:
     unchanged: int
     turnover_cr: float | None
     movers: list[Mover]
+    losers: list[Mover] = field(default_factory=list)
 
 
 def _fmt(n: float | None, dp: int = 0) -> str:
@@ -199,7 +200,15 @@ def _stat(left: int, icon: str, num: str, label: str, num_color: str) -> str:
     )
 
 
-def _mover_row(m: Mover, idx: int, badge_x: int, code_x: int, pct_x: int, y: int) -> str:
+def _mover_row(
+    m: Mover,
+    idx: int,
+    badge_x: int,
+    code_x: int,
+    pct_x: int,
+    y: int,
+    color: str = _GREEN,
+) -> str:
     return (
         f'<rect x="{badge_x}" y="{y - 25}" width="40" height="40" rx="9" fill="#1b2230"/>'
         f'<text x="{badge_x + 20}" y="{y - 1}" font-size="22" font-family="{_FONT}" '
@@ -207,7 +216,7 @@ def _mover_row(m: Mover, idx: int, badge_x: int, code_x: int, pct_x: int, y: int
         f'<text x="{code_x}" y="{y}" font-size="36" font-family="{_FONT}" '
         f'font-weight="700" fill="{_GOLD}">${_esc(m.code)}</text>'
         f'<text x="{pct_x}" y="{y}" font-size="36" font-family="{_FONT}" '
-        f'font-weight="800" fill="{_GREEN}" text-anchor="end">{m.change_pct:+.2f}%</text>'
+        f'font-weight="800" fill="{color}" text-anchor="end">{m.change_pct:+.2f}%</text>'
     )
 
 
@@ -258,12 +267,13 @@ def evening_wrap_card(d: EveningWrapData) -> bytes:
     chg_txt = "—" if chg is None else f"{chg:+.2f}%"
     turnover = "—" if d.turnover_cr is None else f"Tk {_fmt(d.turnover_cr)} cr"
 
-    rows = ""
-    cols = [(96, 156, 776), (824, 884, 1504)]
+    gainer_rows = ""
+    loser_rows = ""
     ys = [702, 762, 822]
-    for i, m in enumerate(d.movers[:6]):
-        bx, cx, px = cols[i // 3]
-        rows += _mover_row(m, i + 1, bx, cx, px, ys[i % 3])
+    for i, m in enumerate(d.movers[:3]):
+        gainer_rows += _mover_row(m, i + 1, 96, 156, 776, ys[i], _GREEN)
+    for i, m in enumerate(d.losers[:3]):
+        loser_rows += _mover_row(m, i + 1, 824, 884, 1504, ys[i], _RED)
 
     cl = [64, 432, 800, 1168]
     turnover_cell = (
@@ -287,14 +297,16 @@ def evening_wrap_card(d: EveningWrapData) -> bytes:
   {_stat(cl[1], _tri_down(cl[1] + 40, 495), str(d.decliners), "down", _RED)}
   {_stat(cl[2], _dot(cl[2] + 40, 495), str(d.unchanged), "flat", _WHITE)}
   {turnover_cell}
-  {_section(64, 614, "TOP MOVERS")}
+  {_section(64, 614, "TOP GAINERS")}
+  {_section(824, 614, "TOP LOSERS")}
   {_panel(64, 645, 1472, 207)}
   <line x1="800" y1="672" x2="800" y2="825" stroke="{_SEP}" stroke-opacity="0.08"/>
   <line x1="96" y1="732" x2="776" y2="732" stroke="{_SEP}" stroke-opacity="0.08"/>
   <line x1="96" y1="792" x2="776" y2="792" stroke="{_SEP}" stroke-opacity="0.08"/>
   <line x1="824" y1="732" x2="1504" y2="732" stroke="{_SEP}" stroke-opacity="0.08"/>
   <line x1="824" y1="792" x2="1504" y2="792" stroke="{_SEP}" stroke-opacity="0.08"/>
-  {rows}"""
+  {gainer_rows}
+  {loser_rows}"""
     return render(_frame("EVENING WRAP", d.date_label, inner))
 
 

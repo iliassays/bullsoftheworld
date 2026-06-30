@@ -49,6 +49,14 @@ def _liquid_universe():
     )
 
 
+def _investable_codes(market: str):
+    return select(TickerAnalytics.code).where(
+        TickerAnalytics.market == market,
+        TickerAnalytics.code.in_(_screenable_codes(market)),
+        _liquid_universe(),
+    )
+
+
 @dataclass
 class ComposedPost:
     kind: str
@@ -80,17 +88,18 @@ def evening_bodies(d: cards.EveningWrapData) -> dict[str, str]:
     chg = "" if d.dsex_change is None else f" ({d.dsex_change:+.2f}%)"
     turnover = "" if d.turnover_cr is None else f" · টার্নওভার Tk {d.turnover_cr:,.0f} কোটি"
     turnover_en = "" if d.turnover_cr is None else f" · turnover Tk {d.turnover_cr:,.0f} cr"
-    movers = _movers_str(d.movers)
+    gainers = _movers_str(d.movers)
+    losers = _movers_str(d.losers)
     return {
         "bn": (
             f"🌙 ইভিনিং র‍্যাপ — {d.date_label}\n"
             f"DSEX {dsex}{chg} · {d.advancers}টি বেড়েছে, {d.decliners}টি কমেছে{turnover}।\n"
-            f"শীর্ষ মুভার: {movers}।\n{_NO_ADVICE_BN}"
+            f"শীর্ষ গেইনার: {gainers} · শীর্ষ লুজার: {losers}।\n{_NO_ADVICE_BN}"
         ),
         "en": (
             f"🌙 Evening Wrap — {d.date_label}\n"
             f"DSEX {dsex}{chg} · {d.advancers} up, {d.decliners} down{turnover_en}.\n"
-            f"Top movers: {movers}.\n{_NO_ADVICE_EN}"
+            f"Top gainers: {gainers} · top losers: {losers}.\n{_NO_ADVICE_EN}"
         ),
     }
 
@@ -134,19 +143,35 @@ async def build_evening_data(session, market: str) -> tuple[cards.EveningWrapDat
             QuoteSnapshot.change_pct == 0,
         )
     )
-    rows = (
+    investable = _investable_codes(market)
+    gainer_rows = (
         await session.execute(
             select(QuoteSnapshot.code, QuoteSnapshot.change_pct)
             .where(
                 QuoteSnapshot.market == market,
-                QuoteSnapshot.code.in_(vis),
+                QuoteSnapshot.code.in_(investable),
                 QuoteSnapshot.ltp > 0,
+                QuoteSnapshot.change_pct > 0,
             )
             .order_by(QuoteSnapshot.change_pct.desc())
-            .limit(6)
+            .limit(3)
         )
     ).all()
-    movers = [cards.Mover(code=c, change_pct=p or 0.0) for c, p in rows]
+    loser_rows = (
+        await session.execute(
+            select(QuoteSnapshot.code, QuoteSnapshot.change_pct)
+            .where(
+                QuoteSnapshot.market == market,
+                QuoteSnapshot.code.in_(investable),
+                QuoteSnapshot.ltp > 0,
+                QuoteSnapshot.change_pct < 0,
+            )
+            .order_by(QuoteSnapshot.change_pct.asc())
+            .limit(3)
+        )
+    ).all()
+    movers = [cards.Mover(code=c, change_pct=p or 0.0) for c, p in gainer_rows]
+    losers = [cards.Mover(code=c, change_pct=p or 0.0) for c, p in loser_rows]
 
     data = cards.EveningWrapData(
         date_label=summary.date.strftime("%d %b %Y"),
@@ -157,6 +182,7 @@ async def build_evening_data(session, market: str) -> tuple[cards.EveningWrapDat
         unchanged=flat or 0,
         turnover_cr=(summary.total_value_mn / 10) if summary.total_value_mn else None,
         movers=movers,
+        losers=losers,
     )
     return data, str(summary.date)
 

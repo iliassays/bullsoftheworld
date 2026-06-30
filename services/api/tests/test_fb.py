@@ -14,6 +14,7 @@ _DATA = cards.EveningWrapData(
     unchanged=72,
     turnover_cr=612,
     movers=[cards.Mover("BEXIMCO", 9.86), cards.Mover("WMSHIPYARD", 9.38)],
+    losers=[cards.Mover("GP", -4.12), cards.Mover("BRACBANK", -3.25)],
 )
 
 
@@ -21,6 +22,7 @@ def test_evening_caption_is_bilingual_and_descriptive():
     cap = evening_caption(_DATA)
     assert "Evening Wrap" in cap and "ইভিনিং র‍্যাপ" in cap  # EN + BN
     assert "$BEXIMCO" in cap and "5,243" in cap  # cashtag + DSEX
+    assert "Top gainers" in cap and "top losers" in cap and "$GP -4.1%" in cap
     assert "তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।" in cap
     assert "Descriptive data only, not investment advice." in cap
     assert "buy" not in cap.lower() and "sell" not in cap.lower()  # no advice
