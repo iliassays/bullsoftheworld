@@ -25,6 +25,7 @@ import { DigestPanel } from "../components/DigestPanel";
 import { ExplainCard } from "../components/ExplainCard";
 import { KeyLevels } from "../components/KeyLevels";
 import { PlainReadCard } from "../components/PlainReadCard";
+import { ScorecardCard } from "../components/ScorecardCard";
 import { PulseGauges } from "../components/PulseGauges";
 import { PostCard } from "../components/PostCard";
 import { RangeBar } from "../components/RangeBar";
@@ -286,6 +287,7 @@ export function SymbolPage() {
           {/* Quick read → optional deep dive → chart → levels → crowd → raw numbers → checklist.
               Each card answers a distinct question; no two duplicate. */}
           <PlainReadCard code={sym} />
+          <ScorecardCard code={sym} />
           <ExplainCard code={sym} />
           <CandleChart code={sym} />
           <KeyLevels code={sym} />

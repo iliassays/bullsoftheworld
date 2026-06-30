@@ -406,6 +406,25 @@ export interface MoodIndex {
   caption: string;
   disclaimer: string;
 }
+export interface ScorecardDimension {
+  key: string;
+  label: string;
+  score: number;
+  detail: string;
+}
+export interface RedFlag {
+  key: string;
+  label: string;
+}
+export interface ScorecardResponse {
+  scorecard: {
+    code: string;
+    as_of_date: string;
+    dimensions: ScorecardDimension[];
+    disclaimer: string;
+  };
+  red_flags: { code: string; flags: RedFlag[]; clean: boolean; note: string };
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -508,6 +527,8 @@ export const api = {
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
   plainRead: (code: string) =>
     request<PlainRead>(`/symbols/${code}/plain-read`),
+  scorecard: (code: string) =>
+    request<ScorecardResponse>(`/symbols/${code}/scorecard`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),

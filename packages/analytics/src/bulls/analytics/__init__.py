@@ -18,22 +18,36 @@ from bulls.analytics.indicators import (
 from bulls.analytics.mood import MoodComponent, MoodIndex, build_mood
 from bulls.analytics.plain_read import PlainRead, ReadPoint, build_plain_read
 from bulls.analytics.scenarios import LevelsInsight, build_levels
+from bulls.analytics.scorecard import (
+    Dimension,
+    RedFlag,
+    RedFlags,
+    Scorecard,
+    build_red_flags,
+    build_scorecard,
+)
 from bulls.analytics.valuation import ValuationResult, compute_valuation
 
 __all__ = [
     "AnalyticsResult",
     "BarLike",
+    "Dimension",
     "Level",
     "LevelsInsight",
     "MoodComponent",
     "MoodIndex",
     "PlainRead",
     "ReadPoint",
+    "RedFlag",
+    "RedFlags",
+    "Scorecard",
     "ValuationResult",
     "atr",
     "build_levels",
     "build_mood",
     "build_plain_read",
+    "build_red_flags",
+    "build_scorecard",
     "chaikin_money_flow",
     "compute",
     "compute_valuation",
