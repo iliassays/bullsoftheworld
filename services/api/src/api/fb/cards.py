@@ -21,10 +21,10 @@ _GOLD = "#f5b82e"
 _GREEN = "#2ecc71"
 _RED = "#ef5350"
 _WHITE = "#f5f7fa"
-_GREY = "#9aa4b2"
+_GREY = "#a0a8b4"
 _BG = "#070b12"
-_PANEL = "#070f1b"  # rendered at 0.8 opacity
-_BORDER = _GOLD  # at 0.25 opacity — one border style everywhere
+_PANEL = "#07111d"  # panel fill, rendered at 0.8 opacity
+_BORDER = _GOLD  # at 0.35 opacity — one border style everywhere
 _SEP = "#ffffff"  # at 0.08 opacity — one separator style everywhere
 _W, _H = 1600, 900
 
@@ -90,12 +90,61 @@ def _dot(cx: int, cy: int) -> str:
     return f'<circle cx="{cx}" cy="{cy}" r="12" fill="{_GREY}"/>'
 
 
-def _barchart(cx: int, cy: int) -> str:
+def _barchart(cx: int, cy: int, color: str = _GOLD) -> str:
     bars = ""
     for i, h in enumerate((14, 22, 30)):
         x = cx - 18 + i * 13
-        bars += f'<rect x="{x}" y="{cy + 15 - h}" width="9" height="{h}" rx="2" fill="{_GOLD}"/>'
+        bars += f'<rect x="{x}" y="{cy + 15 - h}" width="9" height="{h}" rx="2" fill="{color}"/>'
     return bars
+
+
+def _ic_peak(cx: int, cy: int, color: str = _GOLD) -> str:  # near 52w high (mountain)
+    return f'<polygon points="{cx - 18},{cy + 12} {cx - 5},{cy - 11} {cx + 2},{cy} {cx + 11},{cy - 15} {cx + 18},{cy + 12}" fill="{color}"/>'
+
+
+def _ic_uptrend(cx: int, cy: int, color: str = _GOLD) -> str:  # rising trend + arrow
+    return (
+        f'<polyline points="{cx - 18},{cy + 9} {cx - 4},{cy - 3} {cx + 3},{cy + 3} {cx + 16},{cy - 13}" '
+        f'fill="none" stroke="{color}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<polygon points="{cx + 8},{cy - 15} {cx + 19},{cy - 17} {cx + 17},{cy - 6}" fill="{color}"/>'
+    )
+
+
+def _ic_low(cx: int, cy: int, color: str = _GOLD) -> str:  # close to 52w low / support zone
+    return (
+        f'<polyline points="{cx - 18},{cy - 9} {cx - 5},{cy + 4} {cx + 6},{cy + 4} {cx + 18},{cy - 9}" '
+        f'fill="none" stroke="{color}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<line x1="{cx - 20}" y1="{cy + 14}" x2="{cx + 20}" y2="{cy + 14}" '
+        f'stroke="{color}" stroke-width="3.5" stroke-linecap="round"/>'
+    )
+
+
+def _ic_coins(cx: int, cy: int, color: str = _GOLD) -> str:  # turnover (stacked coins)
+    out = ""
+    for dy in (11, 0, -11):
+        out += (
+            f'<ellipse cx="{cx}" cy="{cy + dy}" rx="15" ry="5.5" fill="{color}" '
+            f'stroke="{_BG}" stroke-width="1.5"/>'
+        )
+    return out
+
+
+_QUAD_ICONS = {
+    "high": _ic_uptrend,
+    "low": _ic_low,
+    "momentum": _ic_uptrend,
+    "volume": _barchart,
+    "turnover": _ic_coins,
+    "gainers": _ic_uptrend,
+}
+
+
+def _info(cx: int, cy: int) -> str:
+    return (
+        f'<circle cx="{cx}" cy="{cy}" r="12" fill="none" stroke="{_GOLD}" stroke-width="2.2"/>'
+        f'<circle cx="{cx}" cy="{cy - 5}" r="1.7" fill="{_GOLD}"/>'
+        f'<line x1="{cx}" y1="{cy - 1}" x2="{cx}" y2="{cy + 6}" stroke="{_GOLD}" stroke-width="2.4" stroke-linecap="round"/>'
+    )
 
 
 def _globe(cx: int, cy: int) -> str:
@@ -162,10 +211,10 @@ def _mover_row(m: Mover, idx: int, badge_x: int, code_x: int, pct_x: int, y: int
     )
 
 
-def _panel(x: int, y: int, w: int, h: int, r: int = 18) -> str:
+def _panel(x: int, y: int, w: int, h: int, r: int = 16) -> str:
     return (
         f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" '
-        f'fill="{_PANEL}" fill-opacity="0.8" stroke="{_BORDER}" stroke-opacity="0.25"/>'
+        f'fill="{_PANEL}" fill-opacity="0.8" stroke="{_BORDER}" stroke-opacity="0.35"/>'
     )
 
 
@@ -193,10 +242,13 @@ def _frame(subtitle: str, date_label: str, inner: str) -> str:
   <text x="1536" y="108" font-size="34" font-family="{_FONT}" font-weight="500" fill="{_GREY}" text-anchor="end">{_esc(date_label)}</text>
   <rect x="1240" y="126" width="296" height="3" rx="1.5" fill="url(#goldline)"/>
   {inner}
+  <line x1="64" y1="838" x2="1536" y2="838" stroke="{_SEP}" stroke-opacity="0.08"/>
   {_globe(80, 873)}
-  <text x="106" y="881" font-size="25" font-family="{_FONT}" font-weight="400" fill="{_GREY}">bullsofdhaka.com</text>
-  {_shield(1042, 873)}
-  <text x="1536" y="881" font-size="24" font-family="{_FONT}" font-weight="400" fill="{_GREY}" text-anchor="end">Informational data, not investment advice</text>
+  <text x="106" y="881" font-size="24" font-family="{_FONT}" font-weight="400" fill="{_GREY}">bullsofdhaka.com</text>
+  <line x1="340" y1="858" x2="340" y2="888" stroke="{_SEP}" stroke-opacity="0.10"/>
+  {_info(372, 873)}
+  <text x="396" y="881" font-size="23" font-family="{_FONT}"><tspan font-weight="700" fill="{_GOLD}">DATA ONLY.</tspan><tspan dx="8" font-weight="400" fill="{_GREY}">Not investment advice.</tspan></text>
+  <text x="1536" y="881" font-size="21" font-family="{_FONT}" font-weight="400" fill="{_GREY}" text-anchor="end">DSE EOD data · subject to correction</text>
 </svg>"""
 
 
@@ -250,7 +302,11 @@ def evening_wrap_card(d: EveningWrapData) -> bytes:
 @dataclass
 class WatchGroup:
     label: str
-    items: list[tuple[str, str]]  # (code, small metric text)
+    subtitle: str
+    icon: str  # key into _QUAD_ICONS: volume | high | turnover | gainers
+    items: list[tuple[str, str, str]]  # (code, value, unit)
+    accent: str = _GOLD  # icon + ring colour
+    value_color: str = _GREEN  # metric value colour
 
 
 @dataclass
@@ -258,38 +314,49 @@ class MorningWatchData:
     date_label: str
     dsex: float | None
     dsex_change: float | None  # last close %, points already converted
-    groups: list[WatchGroup]  # exactly 3 columns
+    groups: list[WatchGroup]  # 4 quadrants
 
 
 def morning_watch_card(d: MorningWatchData) -> bytes:
     chg = d.dsex_change
     chg_color = _GREEN if (chg or 0) >= 0 else _RED
+    arrow = "▲" if (chg or 0) >= 0 else "▼"
     dsex = _fmt(d.dsex, 2)
-    chg_txt = "" if chg is None else f"({chg:+.2f}%)"
+    chg_txt = "" if chg is None else f"({chg:+.2f}%) {arrow}"
 
+    pw, ph = 720, 248
+    pos = [(64, 316), (816, 316), (64, 576), (816, 576)]  # TL, TR, BL, BR
     panels = ""
-    px = [64, 564, 1064]
-    pw = 472
-    for i, g in enumerate(d.groups[:3]):
-        x = px[i]
-        panels += _panel(x, 345, pw, 470)
+    for i, g in enumerate(d.groups[:4]):
+        x, y = pos[i]
+        icon = _QUAD_ICONS.get(g.icon, _ic_uptrend)
+        panels += _panel(x, y, pw, ph)
+        panels += f'<circle cx="{x + 62}" cy="{y + 60}" r="32" fill="none" stroke="{g.accent}" stroke-width="2.5"/>'
+        panels += icon(x + 62, y + 60, g.accent)
         panels += (
-            f'<text x="{x + 34}" y="{400}" font-size="27" font-family="{_FONT}" '
-            f'font-weight="800" fill="{_GOLD}" letter-spacing="3">{_esc(g.label)}</text>'
+            f'<text x="{x + 116}" y="{y + 52}" font-size="30" font-family="{_FONT}" '
+            f'font-weight="800" fill="{g.accent}" letter-spacing="1">{_esc(g.label)}</text>'
+            f'<text x="{x + 116}" y="{y + 84}" font-size="22" font-family="{_FONT}" '
+            f'font-weight="400" fill="{_GREY}">{_esc(g.subtitle)}</text>'
         )
-        panels += f'<line x1="{x + 30}" y1="420" x2="{x + pw - 30}" y2="420" stroke="{_SEP}" stroke-opacity="0.10"/>'
-        for j, (code, metric) in enumerate(g.items[:3]):
-            ry = 488 + j * 100
+        panels += f'<line x1="{x + 30}" y1="{y + 106}" x2="{x + pw - 30}" y2="{y + 106}" stroke="{_SEP}" stroke-opacity="0.08"/>'
+        for j, (code, value, unit) in enumerate(g.items[:3]):
+            ry = y + 150 + j * 42
             panels += (
-                f'<text x="{x + 34}" y="{ry}" font-size="38" font-family="{_FONT}" '
+                f'<rect x="{x + 30}" y="{ry - 25}" width="38" height="38" rx="9" fill="#1b2230"/>'
+                f'<text x="{x + 49}" y="{ry - 1}" font-size="20" font-family="{_FONT}" '
+                f'font-weight="500" fill="{_GREY}" text-anchor="middle">{j + 1}</text>'
+                f'<text x="{x + 88}" y="{ry}" font-size="32" font-family="{_FONT}" '
                 f'font-weight="700" fill="{_GOLD}">${_esc(code)}</text>'
-                f'<text x="{x + 34}" y="{ry + 34}" font-size="24" font-family="{_FONT}" '
-                f'font-weight="500" fill="{_GREY}">{_esc(metric)}</text>'
+                f'<text x="{x + pw - 30}" y="{ry}" font-family="{_FONT}" text-anchor="end">'
+                f'<tspan font-size="26" font-weight="700" fill="{g.value_color}">{_esc(value)}</tspan>'
+                f'<tspan dx="7" font-size="23" font-weight="500" fill="{_GREY}">{_esc(unit)}</tspan></text>'
             )
 
     inner = f"""
-  <text x="64" y="232" font-size="36" font-family="{_FONT}" font-weight="500" fill="{_GREY}">Last close · <tspan fill="{_WHITE}" font-weight="800">DSEX {dsex}</tspan> <tspan fill="{chg_color}" font-weight="800">{chg_txt}</tspan></text>
-  {_section(64, 312, "ON THE RADAR TODAY")}
+  <text x="64" y="208" font-size="38" font-family="{_FONT}" font-weight="500" fill="{_GREY}">Last close · <tspan fill="{_WHITE}" font-weight="800">DSEX {dsex}</tspan> <tspan fill="{chg_color}" font-weight="800">{chg_txt}</tspan></text>
+  <text x="64" y="244" font-size="24" font-family="{_FONT}" font-weight="400" fill="{_GREY}">Based on previous trading day data</text>
+  {_section(64, 296, "ON THE RADAR TODAY")}
   {panels}"""
     return render(_frame("MORNING WATCH", d.date_label, inner))
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from api.deps import visible_codes
 from api.fb import cards
@@ -17,8 +17,36 @@ from bulls.core.models import DailyBar, MarketSummary, QuoteSnapshot, Symbol, Ti
 from bulls.market_data.calendar import to_market_tz
 
 LINK = "https://bullsofdhaka.com"
-_NO_ADVICE_BN = "তথ্যমূলক, পরামর্শ নয়।"
-_NO_ADVICE_EN = "Descriptive data, not advice."
+_NO_ADVICE_BN = "তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।"
+_NO_ADVICE_EN = "Descriptive data only, not investment advice."
+
+# Keep public Facebook radar posts on the same investable universe as the Market page.
+_MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, Tk millions
+_MIN_MCAP_MN = 500.0  # market capitalisation, Tk millions
+_MIN_FREE_FLOAT_CAP_MN = 100.0  # applied when available, Tk millions
+
+
+def _screenable_codes(market: str):
+    return select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        or_(Symbol.category.is_(None), Symbol.category != "Z"),
+    )
+
+
+def _liquid_universe():
+    return and_(
+        TickerAnalytics.last_close > 0,
+        TickerAnalytics.avg_volume_20.isnot(None),
+        TickerAnalytics.avg_volume_20 > 0,
+        TickerAnalytics.avg_volume_20 * TickerAnalytics.last_close / 1e6 >= _MIN_ADTV_MN,
+        func.coalesce(TickerAnalytics.market_cap_mn, 0) >= _MIN_MCAP_MN,
+        or_(
+            TickerAnalytics.free_float_cap_mn.is_(None),
+            TickerAnalytics.free_float_cap_mn >= _MIN_FREE_FLOAT_CAP_MN,
+        ),
+    )
 
 
 @dataclass
@@ -149,15 +177,21 @@ def _codes_str(codes: list[str]) -> str:
     return ", ".join(f"${c}" for c in codes) or "—"
 
 
-async def _top_codes(session, market: str, col, *, where=None, limit: int = 3):
-    vis = visible_codes(market)
+async def _top_codes(session, market: str, col, *, where=None, asc: bool = False, limit: int = 3):
     stmt = select(TickerAnalytics.code, col).where(
-        TickerAnalytics.market == market, TickerAnalytics.code.in_(vis), col.isnot(None)
+        TickerAnalytics.market == market,
+        TickerAnalytics.code.in_(_screenable_codes(market)),
+        col.isnot(None),
+        _liquid_universe(),
     )
     if where is not None:
         stmt = stmt.where(where)
-    stmt = stmt.order_by(col.desc()).limit(limit)
+    stmt = stmt.order_by(col.asc() if asc else col.desc()).limit(limit)
     return (await session.execute(stmt)).all()
+
+
+def _watch_items(rows, value_fmt, unit: str) -> list[tuple[str, str, str]]:
+    return [(c, value_fmt(v), unit) for c, v in rows]
 
 
 async def compose_morning_watch(session, market: str) -> ComposedPost:
@@ -171,6 +205,10 @@ async def compose_morning_watch(session, market: str) -> ComposedPost:
         session, market, TickerAnalytics.pct_from_52w_high,
         where=TickerAnalytics.pct_from_52w_high >= -5,
     )
+    low = await _top_codes(
+        session, market, TickerAnalytics.pct_from_52w_low,
+        where=TickerAnalytics.pct_from_52w_low <= 5, asc=True,
+    )
     mom = await _top_codes(
         session, market, TickerAnalytics.mom_3_1, where=TickerAnalytics.mom_3_1 > 0
     )
@@ -178,9 +216,30 @@ async def compose_morning_watch(session, market: str) -> ComposedPost:
         session, market, TickerAnalytics.rel_volume_5d, where=TickerAnalytics.rel_volume_5d > 1.2
     )
     groups = [
-        cards.WatchGroup("NEAR 52W HIGH", [(c, f"{p:.1f}% from high") for c, p in near]),
-        cards.WatchGroup("MOMENTUM", [(c, f"{m:+.0f}% 3M") for c, m in mom]),
-        cards.WatchGroup("HEAVY VOLUME", [(c, f"{v:.1f}x avg") for c, v in vol]),
+        cards.WatchGroup(
+            "NEAR 52W HIGH",
+            "Close within 5% of high",
+            "high",
+            _watch_items(near, lambda p: f"{p:.1f}%", "from high"),
+        ),
+        cards.WatchGroup(
+            "NEAR 52W LOW",
+            "Close within 5% of low",
+            "low",
+            _watch_items(low, lambda p: f"{p:.1f}%", "from low"),
+        ),
+        cards.WatchGroup(
+            "MOMENTUM",
+            "3M trend, last month skipped",
+            "momentum",
+            _watch_items(mom, lambda m: f"{m:+.0f}%", "3M"),
+        ),
+        cards.WatchGroup(
+            "HEAVY VOLUME",
+            "5D volume vs 60D avg",
+            "volume",
+            _watch_items(vol, lambda v: f"{v:.1f}x", "5D/60D"),
+        ),
     ]
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     dsex = "—" if summary is None or summary.dsex is None else f"{summary.dsex:,.0f}"
@@ -192,14 +251,16 @@ async def compose_morning_watch(session, market: str) -> ComposedPost:
         dsex_change=chg,
         groups=groups,
     )
-    nh, mm, vv = (_codes_str([c for c, _ in g]) for g in (near, mom, vol))
+    nh, ll, mm, vv = (_codes_str([c for c, _ in g]) for g in (near, low, mom, vol))
     caption = (
         f"🌅 মর্নিং ওয়াচ — {data.date_label}\n"
         f"গত ক্লোজে DSEX {dsex}{chg_txt}।\n"
-        f"আজ নজরে — চূড়ার কাছে: {nh} · মোমেন্টাম: {mm} · বেশি ভলিউম: {vv}।\n{_NO_ADVICE_BN}\n\n"
+        f"আজকের ডেটা-রাডার — চূড়ার কাছে: {nh} · তলানির কাছে: {ll} · "
+        f"মোমেন্টাম: {mm} · বেশি ভলিউম: {vv}।\n{_NO_ADVICE_BN}\n\n"
         f"🌅 Morning Watch — {data.date_label}\n"
         f"At last close DSEX {dsex}{chg_txt}.\n"
-        f"On the radar — near highs: {nh} · momentum: {mm} · heavy volume: {vv}.\n{_NO_ADVICE_EN}\n\n"
+        f"Data radar — near highs: {nh} · near lows: {ll} · momentum: {mm} · "
+        f"heavy volume: {vv}.\n{_NO_ADVICE_EN}\n\n"
         f"👉 {LINK}"
     )
     return ComposedPost("morning_watch", str(today), caption, cards.morning_watch_card(data), LINK)

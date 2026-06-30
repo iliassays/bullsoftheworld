@@ -21,7 +21,8 @@ def test_evening_caption_is_bilingual_and_descriptive():
     cap = evening_caption(_DATA)
     assert "Evening Wrap" in cap and "ইভিনিং র‍্যাপ" in cap  # EN + BN
     assert "$BEXIMCO" in cap and "5,243" in cap  # cashtag + DSEX
-    assert "তথ্যমূলক, পরামর্শ নয়।" in cap and "Descriptive data, not advice." in cap
+    assert "তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।" in cap
+    assert "Descriptive data only, not investment advice." in cap
     assert "buy" not in cap.lower() and "sell" not in cap.lower()  # no advice
 
 
@@ -33,6 +34,42 @@ def test_evening_caption_handles_missing_data():
 
 def test_card_renders_png():
     png = cards.evening_wrap_card(_DATA)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # valid PNG header
+
+
+def test_morning_watch_card_renders_png():
+    data = cards.MorningWatchData(
+        date_label="30 Jun 2026",
+        dsex=5722.54,
+        dsex_change=0.05,
+        groups=[
+            cards.WatchGroup(
+                "NEAR 52W HIGH",
+                "Close within 5% of high",
+                "high",
+                [("GP", "0.0%", "from high"), ("SQURPHARMA", "-1.2%", "from high")],
+            ),
+            cards.WatchGroup(
+                "NEAR 52W LOW",
+                "Close within 5% of low",
+                "low",
+                [("RENATA", "1.8%", "from low"), ("BATBC", "3.4%", "from low")],
+            ),
+            cards.WatchGroup(
+                "MOMENTUM",
+                "3M trend, last month skipped",
+                "momentum",
+                [("BEXIMCO", "+42%", "3M"), ("BRACBANK", "+18%", "3M")],
+            ),
+            cards.WatchGroup(
+                "HEAVY VOLUME",
+                "5D volume vs 60D avg",
+                "volume",
+                [("CITYBANK", "3.1x", "5D/60D"), ("ROBI", "2.4x", "5D/60D")],
+            ),
+        ],
+    )
+    png = cards.morning_watch_card(data)
     assert png[:8] == b"\x89PNG\r\n\x1a\n"  # valid PNG header
 
 
