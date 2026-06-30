@@ -356,6 +356,11 @@ export interface TrendingStock {
   direction: "up" | "down" | "flat";
   heating_up: boolean;
   reasons: TrendingReason[];
+  category?: string | null;
+  adtv_mn?: number | null;
+  safe_order_mn?: number | null;
+  turnover_mn?: number | null;
+  liquidity?: string | null;
 }
 export interface ReadPoint {
   tag: string;

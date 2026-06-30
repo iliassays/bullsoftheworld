@@ -6,9 +6,8 @@ Everything is scoped to the active tenant's market, so Bulls of Dhaka only ever 
 from __future__ import annotations
 
 import datetime as dt
-from zoneinfo import ZoneInfo
-
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -16,11 +15,27 @@ from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
 from bulls.analytics import AnalyticsResult, compute
-from bulls.core.models import DailyBar, QuoteSnapshot, Symbol, TrendingScore
+from bulls.core.models import DailyBar, QuoteSnapshot, Symbol, TickerAnalytics, TrendingScore
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 from bulls.market_data.calendar import MARKET_CLOSE
 
 router = APIRouter(tags=["market"])
+
+_MIN_ADTV_MN = 5.0
+
+
+def _liquidity_label(adtv_mn: float | None, category: str | None) -> str | None:
+    if category == "Z":
+        return "High-risk: Z category"
+    if adtv_mn is None:
+        return None
+    if adtv_mn >= 50:
+        return "Deep liquidity"
+    if adtv_mn >= 10:
+        return "Tradeable liquidity"
+    if adtv_mn >= _MIN_ADTV_MN:
+        return "Watch order size"
+    return "Thin liquidity"
 
 
 class TrendingStockOut(BaseModel):
@@ -34,6 +49,11 @@ class TrendingStockOut(BaseModel):
     direction: str
     heating_up: bool
     reasons: list[dict[str, Any]]
+    category: str | None = None
+    adtv_mn: float | None = None
+    safe_order_mn: float | None = None
+    turnover_mn: float | None = None
+    liquidity: str | None = None
 
 
 @router.get("/trending-stocks")
@@ -59,27 +79,56 @@ async def trending_stocks(
             select(Symbol).where(Symbol.market == tenant.market, Symbol.code.in_(codes))
         )
     }
-    ltps = dict(
-        (q.code, q.ltp)
+    snapshots = {
+        q.code: q
         for q in await session.scalars(
             select(QuoteSnapshot).where(
                 QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes)
             )
         )
-    )
-    return [
-        TrendingStockOut(
-            code=r.code,
-            name_en=(names.get(r.code).name_en if names.get(r.code) else r.code),
-            name_bn=(names.get(r.code).name_bn if names.get(r.code) else None),
-            ltp=ltps.get(r.code),
-            change_pct=r.change_pct,
-            direction=r.direction,
-            heating_up=r.heating_up,
-            reasons=r.reasons,
+    }
+    analytics = {
+        a.code: a
+        for a in await session.scalars(
+            select(TickerAnalytics).where(
+                TickerAnalytics.market == tenant.market,
+                TickerAnalytics.code.in_(codes),
+            )
         )
-        for r in rows
-    ]
+    }
+    out: list[TrendingStockOut] = []
+    for r in rows:
+        symbol = names.get(r.code)
+        quote = snapshots.get(r.code)
+        ta = analytics.get(r.code)
+        adtv_mn = (
+            ta.avg_volume_20 * ta.last_close / 1e6
+            if ta and ta.avg_volume_20 and ta.last_close
+            else None
+        )
+        turnover_mn = (
+            quote.volume * quote.ltp / 1e6
+            if quote and quote.volume is not None and quote.ltp is not None
+            else None
+        )
+        out.append(
+            TrendingStockOut(
+                code=r.code,
+                name_en=(symbol.name_en if symbol else r.code),
+                name_bn=(symbol.name_bn if symbol else None),
+                ltp=quote.ltp if quote else None,
+                change_pct=r.change_pct,
+                direction=r.direction,
+                heating_up=r.heating_up,
+                reasons=r.reasons,
+                category=(symbol.category if symbol else None),
+                adtv_mn=round(adtv_mn, 2) if adtv_mn is not None else None,
+                safe_order_mn=round(adtv_mn * 0.05, 2) if adtv_mn is not None else None,
+                turnover_mn=round(turnover_mn, 2) if turnover_mn is not None else None,
+                liquidity=_liquidity_label(adtv_mn, symbol.category if symbol else None),
+            )
+        )
+    return out
 
 # Enough history for the longest indicator (200-day SMA) plus headroom.
 _ANALYTICS_LOOKBACK = 260

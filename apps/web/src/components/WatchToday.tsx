@@ -5,6 +5,13 @@ import { useLang } from "../lib/i18n";
 import { InfoTip } from "./InfoTip";
 import { Pct } from "./ui";
 
+function takaMn(mn: number | null | undefined): string {
+  if (mn == null) return "—";
+  if (mn >= 10)
+    return `৳${(mn / 10).toLocaleString(undefined, { maximumFractionDigits: mn >= 100 ? 0 : 1 })}Cr`;
+  return `৳${(mn * 10).toLocaleString(undefined, { maximumFractionDigits: mn >= 1 ? 0 : 1 })}L`;
+}
+
 // The precomputed daily activity ranking (see ingestion.trending). The frontend just renders the
 // ordered list + the language-neutral reason chips. Descriptive — activity, never a recommendation.
 export function WatchToday() {
@@ -80,6 +87,27 @@ export function WatchToday() {
                   </span>
                 ))}
               </div>
+              {(s.adtv_mn != null || s.category) && (
+                <div className="mt-1 text-[10px] text-muted leading-snug">
+                  {s.adtv_mn != null && (
+                    <>
+                      {t("liq.adtv")} {takaMn(s.adtv_mn)}
+                      {s.safe_order_mn != null && (
+                        <>
+                          {" · "}
+                          {t("liq.size5")} {takaMn(s.safe_order_mn)}
+                        </>
+                      )}
+                    </>
+                  )}
+                  {s.category && (
+                    <>
+                      {s.adtv_mn != null ? " · " : ""}
+                      {t("liq.cat")} {s.category}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </Link>
         ))}

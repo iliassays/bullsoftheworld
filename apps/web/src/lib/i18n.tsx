@@ -584,14 +584,14 @@ const STRINGS: Record<string, Entry> = {
   // Watch today (trending activity)
   "watch.title": { en: "Active today", bn: "আজকের সক্রিয়" },
   "watch.subtitle": {
-    en: "Unusual activity across price, volume and turnover. Descriptive, not advice.",
-    bn: "দাম, ভলিউম ও টার্নওভারে অস্বাভাবিক সক্রিয়তা। তথ্যমূলক, পরামর্শ নয়।",
+    en: "Stocks unusually busy versus their own normal trading. ADTV and Order guide help you judge entry/exit risk.",
+    bn: "নিজের স্বাভাবিক লেনদেনের তুলনায় অস্বাভাবিক ব্যস্ত শেয়ার। ADTV ও অর্ডার গাইড ঢোকা/বের হওয়ার ঝুঁকি বুঝতে সাহায্য করে।",
   },
   "watch.heating": { en: "Heating up", bn: "সরগরম" },
   "watch.empty": { en: "No standout activity yet today.", bn: "আজ এখনো উল্লেখযোগ্য সক্রিয়তা নেই।" },
   "watch.footer": {
-    en: "Ranked nightly by an activity model — each stock vs its own normal, liquid names only. Past activity, not a prediction.",
-    bn: "প্রতি রাতে সক্রিয়তা মডেল দিয়ে র‍্যাঙ্ক — প্রতিটি শেয়ার নিজের স্বাভাবিকের সাপেক্ষে, শুধু তারল্যপূর্ণ নাম। অতীত সক্রিয়তা, ভবিষ্যদ্বাণী নয়।",
+    en: "Ranked from latest completed trading data by volume + turnover anomaly. Liquid names only. Past activity, not a prediction.",
+    bn: "সর্বশেষ সম্পন্ন ট্রেডিং ডেটা থেকে ভলিউম + টার্নওভার অস্বাভাবিকতা দিয়ে র‍্যাঙ্ক। শুধু তারল্যপূর্ণ নাম। অতীত সক্রিয়তা, ভবিষ্যদ্বাণী নয়।",
   },
   "watch.r.volume": { en: "{mult}× normal volume", bn: "{mult}× স্বাভাবিক ভলিউম" },
   "watch.r.turnover": { en: "৳{cr}cr turnover", bn: "৳{cr}কোটি টার্নওভার" },
