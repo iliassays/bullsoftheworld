@@ -275,7 +275,9 @@ def evening_wrap_card(d: EveningWrapData) -> bytes:
     for i, m in enumerate(d.losers[:3]):
         loser_rows += _mover_row(m, i + 1, 824, 884, 1504, ys[i], _RED)
 
-    cl = [64, 432, 800, 1168]
+    # Turnover ("Turnover Tk 1,574 cr") is far wider than the up/down/flat numbers, so its column
+    # starts earlier and is wider — borrowing the slack the short stat cells leave on their right.
+    cl = [64, 432, 800, 1060]
     turnover_cell = (
         f"{_barchart(cl[3] + 30, 495)}"
         f'<text x="{cl[3] + 66}" y="511" font-family="{_FONT}">'
@@ -292,7 +294,7 @@ def evening_wrap_card(d: EveningWrapData) -> bytes:
   {_panel(64, 445, 1472, 104)}
   <line x1="432" y1="469" x2="432" y2="525" stroke="{_SEP}" stroke-opacity="0.08"/>
   <line x1="800" y1="469" x2="800" y2="525" stroke="{_SEP}" stroke-opacity="0.08"/>
-  <line x1="1168" y1="469" x2="1168" y2="525" stroke="{_SEP}" stroke-opacity="0.08"/>
+  <line x1="1060" y1="469" x2="1060" y2="525" stroke="{_SEP}" stroke-opacity="0.08"/>
   {_stat(cl[0], _tri_up(cl[0] + 40, 495), str(d.advancers), "up", _GREEN)}
   {_stat(cl[1], _tri_down(cl[1] + 40, 495), str(d.decliners), "down", _RED)}
   {_stat(cl[2], _dot(cl[2] + 40, 495), str(d.unchanged), "flat", _WHITE)}
