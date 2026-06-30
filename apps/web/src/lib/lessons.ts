@@ -67,6 +67,13 @@ export const LESSONS: Record<string, Lesson> = {
     watch: "Big volume on a penny stock can be a pump. Look at turnover (money), not just share count, and find the reason.",
     example: "4× the usual volume on a results day is real interest; 4× on no news is suspicious.",
   },
+  active_today: {
+    title: "Active today",
+    what: "Stocks trading unusually heavily versus their OWN normal — by shares (volume) and by money (turnover) — whether the price is up or down.",
+    use: "It tells you where attention and money are concentrating right now, so you know what to look at first. Then you check WHY — the news/announcements — before forming any view.",
+    watch: "Heavy trading shows interest, not direction: a surge can be heavy buying OR heavy selling. It is not a buy list. We show only liquid names and filter out the thin pump-prone ones, but always confirm the reason yourself.",
+    example: "A blue-chip trading 4× its normal volume with ৳40cr turnover is genuinely 'in play'. A thin penny stock spiking is more likely a pump — which is exactly what the liquidity filter removes.",
+  },
   smartmoney: {
     title: "Institutions & foreign buying",
     what: "Whether institutions and foreign investors raised their stake at the last monthly disclosure.",
@@ -133,6 +140,13 @@ export const LESSONS_BN: Record<string, Lesson> = {
     use: "ভলিউম স্পাইক মানে কিছু ঘটছে — খবর, ব্রেকআউট, বা পাম্প। ট্রেডাররা কাজ করার আগে কেন তা বের করেন।",
     watch: "পেনি স্টকে বড় ভলিউম পাম্প হতে পারে। শুধু শেয়ার সংখ্যা নয়, টার্নওভার (অর্থ) দেখুন এবং কারণ খুঁজুন।",
     example: "ফলাফলের দিনে স্বাভাবিকের ৪× ভলিউম প্রকৃত আগ্রহ; খবর ছাড়া ৪× সন্দেহজনক।",
+  },
+  active_today: {
+    title: "আজকের সক্রিয়",
+    what: "যেসব শেয়ার নিজের স্বাভাবিকের তুলনায় অস্বাভাবিক বেশি লেনদেন হচ্ছে — শেয়ার সংখ্যায় (ভলিউম) ও অর্থে (টার্নওভার) — দাম ওঠা বা নামা যাই হোক।",
+    use: "এটি দেখায় এখন কোথায় মনোযোগ ও অর্থ জমছে, তাই প্রথমে কোনদিকে তাকাবেন বুঝবেন। তারপর কোনো মত গঠনের আগে কারণ — খবর/ঘোষণা — যাচাই করুন।",
+    watch: "বেশি লেনদেন আগ্রহ বোঝায়, দিক নয়: স্পাইক মানে ভারী ক্রয় বা ভারী বিক্রয় দুটোই হতে পারে। এটি কেনার তালিকা নয়। আমরা শুধু তারল্যপূর্ণ নাম দেখাই ও পাতলা পাম্প-প্রবণগুলো বাদ দিই, তবু কারণ নিজে যাচাই করুন।",
+    example: "একটি ব্লু-চিপ নিজের স্বাভাবিকের ৪× ভলিউম ও ৳৪০কোটি টার্নওভারে সত্যিকারের 'সক্রিয়'। একটি পাতলা পেনি স্টকের স্পাইক বরং পাম্প — যা তারল্য ফিল্টার বাদ দেয়।",
   },
   smartmoney: {
     title: "প্রতিষ্ঠান ও বিদেশি ক্রয়",

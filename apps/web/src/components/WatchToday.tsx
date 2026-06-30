@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type TrendingReason, type TrendingStock } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { InfoTip } from "./InfoTip";
 import { Pct } from "./ui";
 
 // The precomputed daily activity ranking (see ingestion.trending). The frontend just renders the
@@ -52,6 +53,7 @@ export function WatchToday() {
       <div className="flex items-center gap-2">
         <span aria-hidden>🔥</span>
         <span className="font-bold text-sm">{t("watch.title")}</span>
+        <InfoTip text={t("watch.subtitle")} lessonId="active_today" />
       </div>
       <p className="text-[11px] text-muted mt-0.5">{t("watch.subtitle")}</p>
 

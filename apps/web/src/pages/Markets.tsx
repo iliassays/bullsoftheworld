@@ -490,6 +490,35 @@ function FreshnessTag({ asOf, quoteAsOf }: { asOf: string | null; quoteAsOf?: st
   );
 }
 
+// First-run framing: sets the mental model (descriptive, not tips) and teaches the ⓘ gesture, once.
+function MarketIntro() {
+  const { t } = useLang();
+  const [seen, setSeen] = useState(() => localStorage.getItem("bulls.mktIntro") === "1");
+  if (seen) return null;
+  const dismiss = () => {
+    localStorage.setItem("bulls.mktIntro", "1");
+    setSeen(true);
+  };
+  return (
+    <div className="bg-accent/5 border border-accent/30 rounded-2xl p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-accent">
+        🎓 {t("mktIntro.title")}
+      </div>
+      <ul className="mt-2 flex flex-col gap-1 text-[12px] text-muted leading-relaxed">
+        <li>• {t("mktIntro.p1")}</li>
+        <li>• {t("mktIntro.p2")}</li>
+        <li>• {t("mktIntro.p3")}</li>
+      </ul>
+      <button
+        onClick={dismiss}
+        className="mt-2 text-[11px] font-semibold text-accent border border-accent/40 rounded-full px-3 py-1"
+      >
+        {t("mktIntro.dismiss")}
+      </button>
+    </div>
+  );
+}
+
 export function screenTitle(s: Screen, lang: Lang): string {
   return lang === "bn" ? (SCREEN_BN[s.key]?.t ?? s.title) : s.title;
 }
@@ -579,6 +608,7 @@ export function Markets() {
       </div>
       <div className="text-[10px] text-muted px-1 -mt-1">{t("mkt.rankNote")}</div>
 
+      {isFocus && <MarketIntro />}
       {isFocus && <WatchToday />}
       {(isFocus || isAllBoards) && <SectorHeat />}
 

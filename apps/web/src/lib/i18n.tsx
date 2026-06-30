@@ -141,6 +141,20 @@ const STRINGS: Record<string, Entry> = {
   close: { en: "close", bn: "ক্লোজ" },
   "mkt.live": { en: "Live", bn: "লাইভ" },
   "mkt.updated": { en: "updated", bn: "আপডেট" },
+  "mktIntro.title": { en: "New here? How to read this page", bn: "নতুন? এই পেজ কীভাবে পড়বেন" },
+  "mktIntro.p1": {
+    en: "These are descriptive signals — what the data shows, not buy/sell tips.",
+    bn: "এগুলো বর্ণনামূলক সংকেত — ডেটা যা দেখায়, কেনা-বেচার টিপস নয়।",
+  },
+  "mktIntro.p2": {
+    en: "Tap the ⓘ on any board to learn what it means and how traders read it.",
+    bn: "যেকোনো বোর্ডের ⓘ চাপুন — এর অর্থ ও ট্রেডাররা কীভাবে পড়েন জানতে।",
+  },
+  "mktIntro.p3": {
+    en: "Always check WHY (the news) before deciding — and remember what each signal does NOT tell you.",
+    bn: "সিদ্ধান্তের আগে সবসময় কারণ (খবর) যাচাই করুন — আর মনে রাখুন প্রতিটি সংকেত কী বলে না।",
+  },
+  "mktIntro.dismiss": { en: "Got it", bn: "বুঝেছি" },
   "mkt.rankNote": {
     en: "Rankings as of the last close · prices 15-min delayed",
     bn: "র‍্যাঙ্কিং সর্বশেষ ক্লোজ অনুযায়ী · দাম ১৫ মিনিট বিলম্বিত",
