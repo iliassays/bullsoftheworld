@@ -177,8 +177,54 @@ const STRINGS: Record<string, Entry> = {
   "risk.mixed": { en: "Mixed", bn: "মিশ্র" },
   "risk.defensive": { en: "Defensive", bn: "ডিফেন্সিভ" },
   "liq.adtv": { en: "ADTV", bn: "ADTV" },
-  "liq.size5": { en: "5% size", bn: "৫% সাইজ" },
+  "liq.size5": { en: "Order guide", bn: "অর্ডার গাইড" },
   "liq.cat": { en: "Cat", bn: "ক্যাট" },
+  "liqGuide.title": {
+    en: "How to read ADTV and order guide",
+    bn: "ADTV ও অর্ডার গাইড কীভাবে পড়বেন",
+  },
+  "liqGuide.subtitle": {
+    en: "These numbers estimate liquidity and execution risk. They do not say whether a stock is cheap, expensive, or a buy.",
+    bn: "এগুলো লিকুইডিটি ও অর্ডার এক্সিকিউশনের ঝুঁকি বুঝায়। শেয়ার সস্তা, দামি, বা কেনার মতো কি না তা বলে না।",
+  },
+  "liqGuide.adtvTitle": { en: "ADTV", bn: "ADTV" },
+  "liqGuide.adtvBody": {
+    en: "Average Daily Traded Value over the last 20 sessions: 20D average volume x last close price.",
+    bn: "শেষ ২০ সেশনের গড় ট্রেডেড ভ্যালু: ২০D গড় ভলিউম x সর্বশেষ ক্লোজ দাম।",
+  },
+  "liqGuide.orderTitle": { en: "Order guide", bn: "অর্ডার গাইড" },
+  "liqGuide.orderBody": {
+    en: "Roughly 5% of ADTV. Orders above this may need splitting, otherwise your own order can move the price or become hard to exit.",
+    bn: "ADTV-এর প্রায় ৫%। এর বেশি অর্ডার হলে ভাগ করে দেওয়া ভালো হতে পারে, নাহলে আপনার অর্ডারেই দাম নড়তে পারে বা বের হওয়া কঠিন হতে পারে।",
+  },
+  "liqGuide.liquidExampleTitle": {
+    en: "Liquid example",
+    bn: "লিকুইড উদাহরণ",
+  },
+  "liqGuide.liquidExampleBody": {
+    en: "ADTV ৳8.5cr -> order guide ~৳42L. A ৳1-5L order is usually small versus normal trading; a ৳40L+ order should be split.",
+    bn: "ADTV ৳8.5cr -> অর্ডার গাইড ~৳42L। ৳1-5L অর্ডার সাধারণত ছোট; ৳40L+ হলে ভাগ করে দেওয়া ভালো।",
+  },
+  "liqGuide.thinExampleTitle": {
+    en: "Thin example",
+    bn: "পাতলা লিকুইডিটি উদাহরণ",
+  },
+  "liqGuide.thinExampleBody": {
+    en: "ADTV ৳20L -> order guide ~৳1L. A ৳5L order is 25% of normal daily value, so entry and exit can be difficult.",
+    bn: "ADTV ৳20L -> অর্ডার গাইড ~৳1L। ৳5L অর্ডার স্বাভাবিক দৈনিক ভ্যালুর ২৫%, তাই ঢোকা ও বের হওয়া কঠিন হতে পারে।",
+  },
+  "liqGuide.setupTitle": {
+    en: "Setup labels",
+    bn: "সেটআপ লেবেল",
+  },
+  "liqGuide.setupBody": {
+    en: "Clean read = stronger context plus liquidity. Mixed read = useful signal but needs confirmation. High-risk read = thin liquidity, Z category, or pump-like behavior.",
+    bn: "Clean read = লিকুইডিটি ও কারণ তুলনামূলক শক্ত। Mixed read = সংকেত আছে, তবে নিশ্চিতকরণ দরকার। High-risk read = পাতলা লিকুইডিটি, Z category, বা pump-like আচরণ।",
+  },
+  "liqGuide.footer": {
+    en: "Still check price, news, spread, and your own risk limit. Informational data, not investment advice.",
+    bn: "তবুও দাম, খবর, স্প্রেড এবং নিজের ঝুঁকির সীমা যাচাই করুন। তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।",
+  },
   "setup.clean": { en: "Clean read", bn: "পরিষ্কার রিড" },
   "setup.mixed": { en: "Mixed read", bn: "মিশ্র রিড" },
   "setup.risky": { en: "High-risk read", bn: "উচ্চ-ঝুঁকি রিড" },

@@ -619,6 +619,48 @@ function ScreenCard({ s }: { s: Screen }) {
   );
 }
 
+function LiquidityGuide() {
+  const { t } = useLang();
+  return (
+    <section className="bg-surface border border-border rounded-2xl p-4">
+      <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
+      <p className="mt-1 text-[12px] text-muted leading-relaxed">{t("liqGuide.subtitle")}</p>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="border-l-2 border-accent pl-3">
+          <div className="text-[11px] font-semibold text-text">{t("liqGuide.adtvTitle")}</div>
+          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.adtvBody")}</p>
+        </div>
+        <div className="border-l-2 border-accent pl-3">
+          <div className="text-[11px] font-semibold text-text">{t("liqGuide.orderTitle")}</div>
+          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.orderBody")}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-border/60 grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className="text-[11px] font-semibold text-up">{t("liqGuide.liquidExampleTitle")}</div>
+          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
+            {t("liqGuide.liquidExampleBody")}
+          </p>
+        </div>
+        <div>
+          <div className="text-[11px] font-semibold text-down">{t("liqGuide.thinExampleTitle")}</div>
+          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
+            {t("liqGuide.thinExampleBody")}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-border/60">
+        <div className="text-[11px] font-semibold text-text">{t("liqGuide.setupTitle")}</div>
+        <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.setupBody")}</p>
+        <p className="mt-2 text-[10px] text-muted">{t("liqGuide.footer")}</p>
+      </div>
+    </section>
+  );
+}
+
 export function Markets() {
   const { t } = useLang();
   const [data, setData] = useState<ScreensResponse | null>(null);
@@ -712,6 +754,7 @@ export function Markets() {
         );
       })}
 
+      <LiquidityGuide />
       <p className="text-[10px] text-muted px-1 pb-2">{t("markets.footer")}</p>
     </div>
   );
