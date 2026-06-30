@@ -119,7 +119,7 @@ export function PostCard({
           <b className="text-sm">{post.author.name}</b>
           <span className="block text-xs text-muted">
             {isNote ? (
-              <span className="text-accent">🤖 {t("post.dataNote")}</span>
+              <span className="text-muted">🤖 {t("post.dataNote")}</span>
             ) : (
               `@${post.author.handle}`
             )}{" "}
@@ -145,7 +145,7 @@ export function PostCard({
             <Link
               key={c}
               to={`/s/${c}`}
-              className="text-xs text-accent bg-accent/10 px-2 py-0.5 rounded-full"
+              className="text-xs text-accent border border-border px-2 py-0.5 rounded-full"
             >
               ${c}
             </Link>

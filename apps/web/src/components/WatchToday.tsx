@@ -72,7 +72,7 @@ export function WatchToday() {
               <div className="flex items-center gap-2">
                 <span className="font-bold text-[13px]">${s.code}</span>
                 {s.heating_up && (
-                  <span className="text-[10px] text-accent bg-accent/10 rounded-full px-2 py-0.5 font-semibold shrink-0">
+                  <span className="text-[10px] text-muted font-semibold shrink-0">
                     🔥 {t("watch.heating")}
                   </span>
                 )}
