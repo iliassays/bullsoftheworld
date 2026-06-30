@@ -7,8 +7,10 @@ import { useLang } from "../lib/i18n";
 
 // Five colour zones (fear → greed), matching the 0..100 dial. Endpoints precomputed from the arc
 // geometry in cards.py's gauge so the segments line up; see build_mood for the band thresholds.
+// Fear → greed ramp. The endpoints are the app's theme red/green (#ea3943 / #16c784); the middle
+// three are intermediate gradient steps.
 const ZONES = [
-  { d: "M65,175 A135 135 0 0 1 104.5,79.5", c: "#e0414d" },
+  { d: "M65,175 A135 135 0 0 1 104.5,79.5", c: "#ea3943" },
   { d: "M104.5,79.5 A135 135 0 0 1 178.9,41.7", c: "#e8804a" },
   { d: "M178.9,41.7 A135 135 0 0 1 221.1,41.7", c: "#d9b53a" },
   { d: "M221.1,41.7 A135 135 0 0 1 295.5,79.5", c: "#2bb673" },

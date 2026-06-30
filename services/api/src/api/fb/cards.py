@@ -17,12 +17,13 @@ from pathlib import Path
 _ASSETS = Path(__file__).parent / "assets"
 _MARK = _ASSETS / "mark.png"
 _FONT = "Inter"
-_GOLD = "#f5b82e"
-_GREEN = "#2ecc71"
-_RED = "#ef5350"
-_WHITE = "#f5f7fa"
-_GREY = "#a0a8b4"
-_BG = "#070b12"
+# Palette mirrors the web app's @theme tokens (apps/web/src/index.css) so cards match the in-app UI.
+_GOLD = "#f5b82e"  # --color-accent
+_GREEN = "#16c784"  # --color-up
+_RED = "#ea3943"  # --color-down
+_WHITE = "#e8edf2"  # --color-text
+_GREY = "#8b97a6"  # --color-muted
+_BG = "#0b0e11"  # --color-bg
 _PANEL = "#07111d"  # panel fill, rendered at 0.8 opacity
 _BORDER = _GOLD  # at 0.35 opacity — one border style everywhere
 _SEP = "#ffffff"  # at 0.08 opacity — one separator style everywhere
