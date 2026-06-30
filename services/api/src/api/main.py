@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api.queue import close_pool
@@ -53,6 +54,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Bulls of the World API", lifespan=lifespan)
+
+# Compress JSON responses (the /screens payload is ~65KB → ~10KB gzip'd). Only kicks in for clients
+# that send Accept-Encoding: gzip (every browser) and responses over the threshold.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,
