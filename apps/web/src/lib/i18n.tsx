@@ -429,9 +429,11 @@ const STRINGS: Record<string, Entry> = {
     bn: "আপনার মতামত পোস্ট করতে লগ ইন করুন →",
   },
   "feed.empty": {
-    en: "No posts yet. Be the first to call $GP.",
-    bn: "এখনো কোনো পোস্ট নেই। $GP নিয়ে প্রথম মতামত দিন।",
+    en: "No posts yet — be the first. Automated market notes live in 🐂 Bulls.",
+    bn: "এখনো কোনো পোস্ট নেই — প্রথম মতামত দিন। স্বয়ংক্রিয় মার্কেট নোট আছে 🐂 বুলস-এ।",
   },
+  "home.today": { en: "Today", bn: "আজ" },
+  "home.discussion": { en: "Discussion", bn: "আলোচনা" },
   // Bulls feed
   "bulls.feedTitle": { en: "Bulls Feed", bn: "বুলস ফিড" },
   "bulls.feedDesc": {

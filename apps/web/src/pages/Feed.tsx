@@ -14,17 +14,29 @@ import { Empty, Spinner } from "../components/ui";
 export function Feed() {
   const { user } = useAuth();
   const { t } = useLang();
+  // Home shows the human community only ("user" posts); automated agent notes live in 🐂 Bulls.
   const { items, setItems, loading, sentinelRef } = useInfiniteFeed(
     "home",
-    (l, o) => api.feed(undefined, undefined, l, o),
+    (l, o) => api.feed(undefined, "user", l, o),
+  );
+
+  const sectionLabel = (text: string) => (
+    <div className="text-[11px] font-semibold uppercase tracking-wide text-muted px-1">
+      {text}
+    </div>
   );
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Today — the market-overview dashboard. */}
+      {sectionLabel(t("home.today"))}
       <TickerStrip />
       <DhakaMood />
       <WatchlistHome />
       <TodaysWatch />
+
+      {/* Discussion — the human community feed (auto notes are in Bulls). */}
+      {sectionLabel(t("home.discussion"))}
       {user ? (
         <Composer onPosted={(p) => setItems((cur) => [p, ...cur])} />
       ) : (

@@ -545,7 +545,12 @@ export const api = {
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
 
   // posts
-  feed: (code?: string, kind?: "note", limit?: number, offset?: number) => {
+  feed: (
+    code?: string,
+    kind?: "note" | "user",
+    limit?: number,
+    offset?: number,
+  ) => {
     const q = new URLSearchParams();
     if (code) q.set("code", code);
     if (kind) q.set("kind", kind);
