@@ -11,7 +11,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
 
@@ -922,7 +922,8 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     try:
         cached = await redis.get(key)
         if cached:
-            return ScreensResponse.model_validate_json(cached)
+            # Serve the cached JSON bytes verbatim — skip the pydantic parse + re-serialize of ~65KB.
+            return Response(content=cached, media_type="application/json")
         resp = await _build_screens(tenant, session, quote_ts)
         await redis.set(key, resp.model_dump_json(), ex=_SCREENS_TTL)
         return resp
