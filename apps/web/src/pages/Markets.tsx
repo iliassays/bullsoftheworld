@@ -621,6 +621,11 @@ function ScreenCard({ s }: { s: Screen }) {
 
 function LiquidityGuide() {
   const { t } = useLang();
+  const setupRows: { label: string; body: string; tone: Chip["tone"] }[] = [
+    { label: t("setup.clean"), body: t("liqGuide.setupCleanBody"), tone: "up" },
+    { label: t("setup.mixed"), body: t("liqGuide.setupMixedBody"), tone: "neutral" },
+    { label: t("setup.risky"), body: t("liqGuide.setupRiskyBody"), tone: "down" },
+  ];
   return (
     <section className="bg-surface border border-border rounded-2xl p-4">
       <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
@@ -654,7 +659,18 @@ function LiquidityGuide() {
 
       <div className="mt-3 pt-3 border-t border-border/60">
         <div className="text-[11px] font-semibold text-text">{t("liqGuide.setupTitle")}</div>
-        <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.setupBody")}</p>
+        <div className="mt-2 flex flex-col gap-2">
+          {setupRows.map((row) => (
+            <div key={row.label} className="rounded-xl border border-border bg-card/50 p-2">
+              <span
+                className={`inline-flex rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold ${toneCls(row.tone)}`}
+              >
+                {row.label}
+              </span>
+              <p className="mt-1 text-[12px] text-muted leading-relaxed">{row.body}</p>
+            </div>
+          ))}
+        </div>
         <p className="mt-2 text-[10px] text-muted">{t("liqGuide.footer")}</p>
       </div>
     </section>

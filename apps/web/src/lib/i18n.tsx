@@ -221,6 +221,18 @@ const STRINGS: Record<string, Entry> = {
     en: "Clean read means the signal has liquidity and supporting context. Mixed read means something looks interesting, but you should confirm with news and chart. High-risk read means thin trading, Z category, or pump-like behavior.",
     bn: "Clean read মানে সংকেতের সাথে লিকুইডিটি ও সহায়ক কারণ আছে। Mixed read মানে কিছু আকর্ষণীয়, তবে খবর ও চার্ট দিয়ে নিশ্চিত করা দরকার। High-risk read মানে পাতলা লেনদেন, Z category, বা pump-like আচরণ।",
   },
+  "liqGuide.setupCleanBody": {
+    en: "The signal has enough liquidity and supporting context, such as institutional/foreign buying, quality, dividend, relative strength, or material news.",
+    bn: "সংকেতের সাথে পর্যাপ্ত লিকুইডিটি ও সহায়ক কারণ আছে — যেমন প্রতিষ্ঠান/বিদেশি কেনা, মান, ডিভিডেন্ড, বাজারের চেয়ে শক্তি, বা গুরুত্বপূর্ণ খবর।",
+  },
+  "liqGuide.setupMixedBody": {
+    en: "Something is interesting, but it needs confirmation. Check the latest news, chart level, volume, and whether the move is already stretched.",
+    bn: "কিছু আকর্ষণীয় আছে, তবে নিশ্চিত করা দরকার। সর্বশেষ খবর, চার্টের লেভেল, ভলিউম, এবং মুভ বেশি দূর চলে গেছে কি না দেখুন।",
+  },
+  "liqGuide.setupRiskyBody": {
+    en: "Be careful: thin trading, Z category, or pump-like behavior can make entry and exit difficult.",
+    bn: "সতর্ক থাকুন: পাতলা লেনদেন, Z category, বা pump-like আচরণে ঢোকা ও বের হওয়া কঠিন হতে পারে।",
+  },
   "liqGuide.footer": {
     en: "Use this as a risk check before buying. It is informational data, not investment advice.",
     bn: "কেনার আগে এটি ঝুঁকি যাচাই হিসেবে ব্যবহার করুন। এটি তথ্যমূলক ডেটা, বিনিয়োগ পরামর্শ নয়।",
