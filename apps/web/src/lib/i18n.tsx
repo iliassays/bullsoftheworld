@@ -471,7 +471,7 @@ const STRINGS: Record<string, Entry> = {
   },
   "post.replyPlaceholder": { en: "Reply…", bn: "রিপ্লাই…" },
   "post.noReplies": { en: "No replies yet.", bn: "এখনো কোনো রিপ্লাই নেই।" },
-  "post.dataNote": { en: "auto · data note", bn: "অটো · ডেটা নোট" },
+  "post.dataNote": { en: "Auto · facts only", bn: "স্বয়ংক্রিয় · শুধু তথ্য" },
   "post.agreeBtn": { en: "Agree", bn: "একমত" },
   "post.disagreeBtn": { en: "Disagree", bn: "দ্বিমত" },
   "post.loginReply": {
