@@ -626,7 +626,7 @@ function LiquidityGuide() {
       <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
       <p className="mt-1 text-[12px] text-muted leading-relaxed">{t("liqGuide.subtitle")}</p>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 flex flex-col gap-3">
         <div className="border-l-2 border-accent pl-3">
           <div className="text-[11px] font-semibold text-text">{t("liqGuide.adtvTitle")}</div>
           <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.adtvBody")}</p>
@@ -637,7 +637,7 @@ function LiquidityGuide() {
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-border/60 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 pt-3 border-t border-border/60 flex flex-col gap-3">
         <div>
           <div className="text-[11px] font-semibold text-up">{t("liqGuide.liquidExampleTitle")}</div>
           <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
