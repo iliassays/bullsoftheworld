@@ -27,7 +27,7 @@ export function KeyLevels({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">🎯 {t("levels.title")}</div>
+      <div className="font-semibold text-sm">🎯 {t("levels.title")}</div>
 
       {/* Live (delayed) bridge — only present while the market is open */}
       {data.live_line && (

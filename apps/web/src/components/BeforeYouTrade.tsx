@@ -31,7 +31,7 @@ export function BeforeYouTrade() {
     <div className="bg-surface border border-border rounded-2xl p-4">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-accent font-semibold text-sm"
+        className="flex w-full items-center justify-between font-semibold text-sm"
       >
         <span>✅ Before you trade</span>
         <span className="text-muted">{open ? "▾" : "▸"}</span>

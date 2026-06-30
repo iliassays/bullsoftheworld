@@ -43,7 +43,7 @@ export function ScorecardCard({ code }: { code: string }) {
     <>
       <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-baseline justify-between">
-          <div className="text-accent font-semibold text-sm">
+          <div className="font-semibold text-sm">
             🎯 {bn ? "স্কোরকার্ড" : "Scorecard"}
           </div>
           <div className="text-[10px] text-muted">
@@ -85,7 +85,7 @@ export function ScorecardCard({ code }: { code: string }) {
 
       <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-center justify-between">
-          <div className="text-accent font-semibold text-sm">
+          <div className="font-semibold text-sm">
             🚩 {bn ? "রেড ফ্ল্যাগ" : "Red Flags"}
           </div>
           {red_flags.clean && (

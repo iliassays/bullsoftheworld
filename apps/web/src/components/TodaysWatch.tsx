@@ -55,7 +55,7 @@ export function TodaysWatch() {
   if (loading && !data) {
     return (
       <div className="bg-surface border border-border rounded-2xl p-4">
-        <div className="text-accent font-semibold text-sm">📋 {t("session.default")}</div>
+        <div className="font-semibold text-sm">📋 {t("session.default")}</div>
         <p className="text-muted text-sm mt-2">{t("digest.loading")}</p>
       </div>
     );
@@ -66,7 +66,7 @@ export function TodaysWatch() {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">
+      <div className="font-semibold text-sm">
         {heading.icon} {t(heading.key)}
       </div>
       {data.breadth && data.breadth.total > 0 && <BreadthBar b={data.breadth} />}

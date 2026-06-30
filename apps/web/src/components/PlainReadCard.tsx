@@ -37,7 +37,7 @@ export function PlainReadCard({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">🧭 {t("plainRead.title")}</div>
+      <div className="font-semibold text-sm">🧭 {t("plainRead.title")}</div>
       <p className="text-[15px] font-semibold mt-1 leading-snug">{read.headline}</p>
 
       <ul className="mt-3 flex flex-col gap-1.5">

@@ -33,7 +33,7 @@ export function DigestPanel({ code }: { code: string }) {
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-2">
-        <span className="text-accent font-semibold text-sm">
+        <span className="font-semibold text-sm">
           🗣️ {t("digest.title")}
         </span>
         {digest && mood && (

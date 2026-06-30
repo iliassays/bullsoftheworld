@@ -16,7 +16,7 @@ export function BullsFeed() {
   return (
     <div className="flex flex-col gap-3">
       <div className="bg-surface border border-border rounded-2xl p-4">
-        <div className="text-accent font-semibold text-sm">
+        <div className="font-semibold text-sm">
           🐂 {t("bulls.feedTitle")}
         </div>
         <p className="text-xs text-muted mt-1">{t("bulls.feedDesc")}</p>

@@ -71,7 +71,7 @@ function QuickStrip({
     <div className="flex flex-col items-center px-2 shrink-0">
       <span className="text-[10px] text-muted">{label}</span>
       <span className="text-xs font-semibold tnum">{value}</span>
-      {tag && <span className="text-[9px] text-accent leading-tight">{tag}</span>}
+      {tag && <span className="text-[9px] text-muted leading-tight">{tag}</span>}
     </div>
   );
 
@@ -183,7 +183,7 @@ export function SymbolPage() {
       <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <div className="text-xl font-bold text-accent">${sym}</div>
+            <div className="text-xl font-bold">${sym}</div>
             <div className="text-xs text-muted">{detail.symbol.name_en}</div>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
@@ -302,7 +302,7 @@ export function SymbolPage() {
         <>
           {topPost && (
             <div className="flex flex-col gap-2">
-              <div className="text-accent font-semibold text-sm">
+              <div className="font-semibold text-sm">
                 🔥 Most discussed
               </div>
               <PostCard post={topPost} />

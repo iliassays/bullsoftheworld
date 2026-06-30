@@ -49,7 +49,7 @@ export function PulseGauges({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">📊 {t("pulse.title")}</div>
+      <div className="font-semibold text-sm">📊 {t("pulse.title")}</div>
       <p className="text-[10px] text-muted mb-1">{t("pulse.subtitle")}</p>
       {row(t("pulse.sentiment"), pulse.sentiment, sentColor)}
       {row(t("pulse.volume"), pulse.message_volume, "bg-accent")}

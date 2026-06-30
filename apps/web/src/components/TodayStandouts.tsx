@@ -40,7 +40,7 @@ export function TodayStandouts() {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">⚡ {t("standouts.title")}</div>
+      <div className="font-semibold text-sm">⚡ {t("standouts.title")}</div>
       <div className="text-[11px] text-muted">{t("standouts.subtitle")}</div>
       <div className="mt-2 flex flex-col">
         {rows.map((r) => (

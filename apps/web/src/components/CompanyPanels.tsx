@@ -262,7 +262,7 @@ function Card({
 }) {
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm mb-1">{title}</div>
+      <div className="font-semibold text-sm mb-1">{title}</div>
       {children}
     </div>
   );

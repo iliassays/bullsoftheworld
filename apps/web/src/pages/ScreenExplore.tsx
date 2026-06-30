@@ -129,7 +129,7 @@ export function ScreenExplore() {
       ) : (
         <div className="bg-surface border border-border rounded-2xl p-4">
           <div className="flex items-center gap-1.5">
-            <div className="font-semibold text-sm text-accent">{screenTitle(screen, lang)}</div>
+            <div className="font-semibold text-sm">{screenTitle(screen, lang)}</div>
             <InfoTip
               text={screenHelp(screen.key, lang) ?? screenDesc(screen, lang)}
               lessonId={lessonId}

@@ -1108,7 +1108,7 @@ function MarketIntro() {
   };
   return (
     <div className="bg-accent/5 border border-accent/30 rounded-2xl p-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-accent">
+      <div className="flex items-center gap-2 text-sm font-semibold">
         🎓 {t("mktIntro.title")}
       </div>
       <ul className="mt-2 flex flex-col gap-1 text-[12px] text-muted leading-relaxed">
@@ -1138,7 +1138,7 @@ function ScreenCard({ s }: { s: Screen }) {
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-1.5">
-        <div className="font-semibold text-sm text-accent">{screenTitle(s, lang)}</div>
+        <div className="font-semibold text-sm">{screenTitle(s, lang)}</div>
         <InfoTip text={screenHelp(s.key, lang) ?? screenDesc(s, lang)} lessonId={SCREEN_LESSON[s.key]} />
       </div>
       <div className="text-[11px] text-muted">{screenDesc(s, lang)}</div>
@@ -1181,7 +1181,7 @@ function LiquidityGuideSheet({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
+            <div className="font-semibold text-sm">{t("liqGuide.title")}</div>
             <p className="mt-1 text-[12px] text-muted leading-relaxed">{t("liqGuide.subtitle")}</p>
           </div>
           <button
@@ -1255,7 +1255,7 @@ function LiquidityGuide() {
     <>
       <section className="bg-surface border border-border rounded-2xl p-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
+          <div className="font-semibold text-sm">{t("liqGuide.title")}</div>
           <p className="mt-0.5 text-[12px] text-muted leading-snug">{t("liqGuide.compact")}</p>
         </div>
         <button

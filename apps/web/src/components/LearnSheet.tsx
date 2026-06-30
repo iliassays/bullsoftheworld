@@ -23,7 +23,7 @@ export function LearnSheet({ lessonId, onClose }: { lessonId: string; onClose: (
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <div className="text-accent font-semibold">🎓 {lesson.title}</div>
+          <div className="font-semibold">🎓 {lesson.title}</div>
           <button onClick={onClose} className="text-muted text-sm px-2">
             {t("common.close")}
           </button>

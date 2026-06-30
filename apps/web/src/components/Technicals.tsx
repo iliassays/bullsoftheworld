@@ -62,7 +62,7 @@ export function Technicals({ code }: { code: string }) {
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center">
-        <span className="text-accent font-semibold text-sm">📊 {t("tech.title")}</span>
+        <span className="font-semibold text-sm">📊 {t("tech.title")}</span>
         <span className="ml-auto text-[10px] text-muted">
           {t("asOf")} {a.as_of_date} {t("close")}
         </span>

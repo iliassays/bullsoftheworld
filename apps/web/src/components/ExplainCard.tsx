@@ -52,7 +52,7 @@ export function ExplainCard({ code }: { code: string }) {
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="text-accent font-semibold text-sm">✨ {t("explain.title")}</div>
+      <div className="font-semibold text-sm">✨ {t("explain.title")}</div>
 
       {!started && (
         <>
