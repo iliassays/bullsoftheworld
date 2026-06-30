@@ -151,7 +151,13 @@ async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
 
     # Factor standouts — the smart-money story beyond raw % moves.
     specs = [
-        ("institutional_buying", lambda it: f"Institutions accumulating: {it.code} (+{it.value:g} pp)"),
+        (
+            "institutional_buying",
+            lambda it: (
+                f"{it.code}: institutions raised their ownership stake by {it.value:g} percentage "
+                f"points (an ownership change at the last disclosure — NOT a price move)"
+            ),
+        ),
         ("quiet_accumulation", lambda it: f"Quiet accumulation (money in, price flat): {it.code}"),
         ("momentum_12_1", lambda it: f"Strongest 12-month trend: {it.code} ({it.value:+.0f}%)"),
     ]

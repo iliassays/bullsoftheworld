@@ -28,6 +28,11 @@ stand out (big move, institutions accumulating, quiet accumulation, heavy discus
 
 Rules:
 - Use ONLY the data given. Never invent prices, percentages, turnover, sectors, or events.
+- A stock's price move is ONLY the percentage listed beside it in "Active / moving stocks". Never \
+state a price change for a stock that has none listed.
+- Ownership/accumulation figures are "percentage points (pp)" of who owns the stock — they are NOT \
+price changes. Never write an ownership "pp" figure as a price "%". If you mention accumulation, \
+describe it as a stake change, without a "%" price.
 - Describe what HAPPENED. Do NOT predict what happens next — no forecasts, no buy/sell calls, no \
 price targets, no advice.
 - Neutral, concrete, plain language."""

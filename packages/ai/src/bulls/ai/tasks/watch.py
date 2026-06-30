@@ -7,6 +7,7 @@ writes the prose naming them. One LLM call for the whole note (cheap, cacheable 
 from __future__ import annotations
 
 import logging
+import re
 
 from pydantic import BaseModel
 
@@ -63,6 +64,35 @@ def _fallback(items: list[WatchItem]) -> str:
     return "Movers: " + ", ".join(f"${i.code} {i.change_pct:+.1f}%" for i in top)
 
 
+# Numbers written with a "%" must be real price/return moves. Ownership deltas (given as "pp") are
+# deliberately excluded from the allowed set, so the model cannot relabel a +12.57 pp stake change
+# as a "+12.6%" price surge (the RDFOOD bug). x-multiples ("1.3x"), counts, and "pp" stay unchecked.
+_PCT_IN_TEXT = re.compile(r"[-+]?\d+(?:\.\d+)?(?=\s*%)")
+_PCT_IN_FACT = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*%")
+
+
+def _allowed_pcts(items: list[WatchItem], extras: list[str] | None) -> list[float]:
+    """Price/return percentages the note is allowed to cite: each stock's listed move, plus any
+    %-suffixed figure in the grounded fact lines (sector averages, 12-month trend). pp is excluded."""
+    allowed = [it.change_pct for it in items]
+    for line in extras or []:
+        allowed += [float(m) for m in _PCT_IN_FACT.findall(line)]
+    return allowed
+
+
+def _ungrounded_pcts(summary: str, allowed: list[float], *, tol: float = 0.6) -> list[str]:
+    """Return any '%' figures in the prose whose magnitude doesn't match a real price/return figure
+    (± tol). Magnitude, not signed value: prose often carries direction in words ("slipped 0.7%")
+    and writes the number unsigned — that's fine; a fabricated magnitude like 12.6 is what we catch."""
+    bad = []
+    mags = [abs(a) for a in allowed]
+    for tok in _PCT_IN_TEXT.findall(summary):
+        v = abs(float(tok))
+        if not any(abs(v - m) <= tol for m in mags):
+            bad.append(f"{tok}%")
+    return bad
+
+
 async def todays_watch(
     items: list[WatchItem],
     *,
@@ -79,8 +109,28 @@ async def todays_watch(
     if not items:
         return ""
     system = f"{WATCH_SYSTEM_V2}\n\n{language_directive(language)}"
-    result = await structured_complete(system, _render(items, breadth, extras), WatchOut)
+    user = _render(items, breadth, extras)
+    allowed = _allowed_pcts(items, extras)
+
+    result = await structured_complete(system, user, WatchOut)
     summary = result.summary.strip()
+
+    # Hard grounding gate: every "%" in the prose must be a real price/return move. If the model
+    # invented or mislabeled one (e.g. an ownership pp written as a price %), regenerate once with
+    # the offending figures called out, then fall back to the deterministic note if it still fails.
+    bad = _ungrounded_pcts(summary, allowed)
+    if bad:
+        log.warning("today's watch cited unsupported %% %s; regenerating", bad)
+        correction = (
+            f"{user}\n\nA previous draft stated {', '.join(bad)}, which is NOT supported by the "
+            "data above (likely an ownership 'pp' figure written as a price '%'). Rewrite using "
+            "only the price percentages explicitly listed beside each stock."
+        )
+        result = await structured_complete(system, correction, WatchOut)
+        summary = result.summary.strip()
+        if _ungrounded_pcts(summary, allowed):
+            log.warning("today's watch still ungrounded; using fallback")
+            return _fallback(items)
 
     if contains_advice(summary).is_advice:
         log.warning("today's watch tripped no-advice gate; using fallback")
