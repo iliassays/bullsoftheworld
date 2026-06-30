@@ -166,6 +166,16 @@ function setupLabel(setup: string | null | undefined, t: Tr): string | null {
   return t("setup.mixed");
 }
 
+function liquidityLabel(liquidity: string | null | undefined, t: Tr): string | null {
+  if (!liquidity) return null;
+  if (liquidity.includes("High-risk")) return t("liq.highRisk");
+  if (liquidity.includes("Deep")) return t("liq.deep");
+  if (liquidity.includes("Tradeable")) return t("liq.tradeable");
+  if (liquidity.includes("Watch")) return t("liq.watchSize");
+  if (liquidity.includes("Thin")) return t("liq.thin");
+  return liquidity;
+}
+
 // Tone for a per-row note. Selling/pump = caution, buying/climb = positive, the rest neutral.
 function noteTone(note: string): Chip["tone"] {
   const n = note.toLowerCase();
@@ -315,6 +325,140 @@ function OwnershipDots({ flow, dates }: { flow: number[]; dates: string[] }) {
   );
 }
 
+function DetailStat({ label, value, tone }: { label: string; value: string; tone?: Chip["tone"] }) {
+  return (
+    <div className="rounded-xl bg-card border border-border p-2 min-w-0">
+      <div className="text-[10px] uppercase tracking-wide text-muted truncate">{label}</div>
+      <div className={`text-sm font-bold tnum mt-0.5 truncate ${tone ? toneCls(tone) : ""}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ScreenRowSheet({
+  item,
+  screen,
+  setupChip,
+  chip,
+  onClose,
+}: {
+  item: ScreenItem;
+  screen: Screen;
+  setupChip: Chip | null;
+  chip: Chip | null;
+  onClose: () => void;
+}) {
+  const { t, lang } = useLang();
+  const localizedTitle = lang === "bn" ? (SCREEN_BN[screen.key]?.t ?? screen.title) : screen.title;
+  const liquidity = liquidityLabel(item.liquidity, t);
+  const priceTone: Chip["tone"] | undefined =
+    item.change_1d == null ? undefined : item.change_1d >= 0 ? "up" : "down";
+  const rows = [
+    item.adtv_mn != null ? `${t("liq.adtv")} ${takaMn(item.adtv_mn)}` : null,
+    item.safe_order_mn != null ? `${t("rowDetails.order")} ${takaMn(item.safe_order_mn)}` : null,
+    item.turnover_mn != null ? `${t("rowDetails.turnover")} ${takaMn(item.turnover_mn)}` : null,
+    item.category ? `${t("liq.cat")} ${item.category}` : null,
+    item.market_cap_mn != null ? `${t("rowDetails.marketCap")} ${takaMn(item.market_cap_mn)}` : null,
+    item.free_float_cap_mn != null
+      ? `${t("rowDetails.freeFloat")} ${takaMn(item.free_float_cap_mn)}`
+      : null,
+  ].filter((row): row is string => Boolean(row));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55" onClick={onClose}>
+      <div
+        className="w-full max-w-md bg-surface border border-border rounded-t-2xl p-4 max-h-[82vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wide text-muted">
+              {t("rowDetails.title")}
+            </div>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-lg font-extrabold text-text truncate">${item.code}</div>
+              {setupChip && (
+                <span
+                  className={`rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold shrink-0 ${toneCls(setupChip.tone)}`}
+                >
+                  {setupChip.word}
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-muted truncate">{item.name || localizedTitle}</div>
+          </div>
+          <button onClick={onClose} className="text-muted text-sm px-2" aria-label={t("common.close")}>
+            {t("common.close")}
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <DetailStat label={t("rowDetails.price")} value={taka(item.last_close)} tone={priceTone} />
+          <DetailStat
+            label={t("rowDetails.value")}
+            value={fmtValue(screen.value_label, item.value)}
+            tone={chip?.tone}
+          />
+          {item.change_1d != null && (
+            <DetailStat
+              label="1D"
+              value={`${item.change_1d >= 0 ? "+" : ""}${item.change_1d.toFixed(1)}%`}
+              tone={priceTone}
+            />
+          )}
+          {liquidity && <DetailStat label={t("rowDetails.liquidity")} value={liquidity} />}
+        </div>
+
+        {item.why && (
+          <section className="mt-4">
+            <div className="text-[11px] uppercase tracking-wide text-muted">{t("rowDetails.why")}</div>
+            <p className="mt-1 text-[13px] leading-snug text-text/90">{item.why}</p>
+          </section>
+        )}
+
+        {rows.length > 0 && (
+          <section className="mt-4">
+            <div className="text-[11px] uppercase tracking-wide text-muted">{t("rowDetails.liquidity")}</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {rows.map((r) => (
+                <span
+                  key={r}
+                  className="rounded-full bg-card border border-border px-2.5 py-1 text-[11px] text-muted"
+                >
+                  {r}
+                </span>
+              ))}
+            </div>
+            {item.safe_order_mn != null && (
+              <p className="mt-2 text-[11px] leading-snug text-muted">{t("rowDetails.orderHelp")}</p>
+            )}
+          </section>
+        )}
+
+        {item.catalyst && (
+          <section className="mt-4">
+            <div className="text-[11px] uppercase tracking-wide text-muted">
+              {t("rowDetails.catalyst")}
+            </div>
+            <p className="mt-1 text-[13px] leading-snug text-accent">
+              {item.catalyst_category} · {item.catalyst_date}
+            </p>
+            <p className="mt-0.5 text-[12px] leading-snug text-muted">{item.catalyst}</p>
+          </section>
+        )}
+
+        <Link
+          to={`/s/${item.code}`}
+          className="mt-4 block text-center bg-accent text-bg font-bold rounded-xl py-2.5 text-sm"
+        >
+          {t("rowDetails.open")}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export function ScreenRow({
   item,
   screen,
@@ -338,6 +482,8 @@ export function ScreenRow({
   const sinceMonth = fdates.length >= 2 ? monthYy(fdates[fdates.length - 2]) : null;
   const setup = setupLabel(item.setup_quality, t);
   const setupChip = setup ? { word: setup, tone: setupTone(item.setup_quality) } : null;
+  const liquidity = liquidityLabel(item.liquidity, t);
+  const [open, setOpen] = useState(false);
   // Tooltip explaining the price line on ownership rows: what period + how price moved over it.
   const ps = item.period_spark ?? [];
   let priceTitle: string | undefined;
@@ -346,100 +492,96 @@ export function ScreenRow({
     priceTitle = `Price since ${sinceMonth}: ${taka(ps[0])} → ${taka(ps[ps.length - 1])} (${move >= 0 ? "+" : ""}${move}%)`;
   }
   return (
-    <Link
-      to={`/s/${item.code}`}
-      className="flex items-center gap-3 py-2 border-t border-border/60 first:border-t-0"
-    >
-      <span className="flex items-center gap-2 min-w-0 flex-1">
-        {rank != null && (
-          <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
-        )}
-        <span className="flex flex-col min-w-0 gap-0.5">
-          <span className="flex items-center gap-1.5 min-w-0">
-            <span className="font-bold text-[13px]">${item.code}</span>
-            {setupChip && (
-              <span className={`text-[9px] font-semibold rounded-full px-1.5 py-0.5 ${toneCls(setupChip.tone)} bg-card border border-border shrink-0`}>
-                {setupChip.word}
-              </span>
-            )}
-          </span>
-          {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
-          <span className="text-[10px] text-muted leading-snug">
-            {item.adtv_mn != null && (
-              <>
-                {t("liq.adtv")} {takaMn(item.adtv_mn)}
-                {item.safe_order_mn != null && (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full text-left flex items-center gap-3 py-2 border-t border-border/60 first:border-t-0"
+      >
+        <span className="flex items-center gap-2 min-w-0 flex-1">
+          {rank != null && (
+            <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
+          )}
+          <span className="flex flex-col min-w-0 gap-0.5">
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="font-bold text-[13px]">${item.code}</span>
+              {setupChip && (
+                <span
+                  className={`text-[9px] font-semibold rounded-full px-1.5 py-0.5 ${toneCls(setupChip.tone)} bg-card border border-border shrink-0`}
+                >
+                  {setupChip.word}
+                </span>
+              )}
+            </span>
+            {showName && <span className="text-[11px] text-muted truncate">{item.name}</span>}
+            {(liquidity || item.category) && (
+              <span className="text-[10px] text-muted leading-snug truncate">
+                {liquidity}
+                {item.category && (
                   <>
-                    {" · "}
-                    {t("liq.size5")} {takaMn(item.safe_order_mn)}
+                    {liquidity ? " · " : ""}
+                    {t("liq.cat")} {item.category}
                   </>
                 )}
-              </>
-            )}
-            {item.category && (
-              <>
-                {item.adtv_mn != null ? " · " : ""}
-                {t("liq.cat")} {item.category}
-              </>
+              </span>
             )}
           </span>
-          {item.catalyst && (
-            <span className="text-[10px] text-accent truncate">
-              {t("catalyst.latest")} {item.catalyst_category} · {item.catalyst_date}
-            </span>
-          )}
-          {item.why && (
-            <span title={item.why} className="text-[10px] text-muted/80 truncate">
-              {item.why}
-            </span>
-          )}
         </span>
-      </span>
-      {/* Always a price line. For ownership it spans the move window (the title explains the period). */}
-      <span title={priceTitle} className="shrink-0 inline-flex">
-        <Sparkline
-          data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
-        />
-      </span>
-      <span className="flex items-stretch gap-3 shrink-0 text-right">
-        <span className="flex flex-col items-end justify-center">
-          <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
-          {item.change_1d != null && (
-            <span
-              className={`text-[11px] tnum ${item.change_1d >= 0 ? "text-up" : "text-down"}`}
-            >
-              {item.change_1d >= 0 ? "+" : ""}
-              {item.change_1d.toFixed(1)}%
-            </span>
-          )}
+        {/* Always a price line. For ownership it spans the move window (the title explains the period). */}
+        <span title={priceTitle} className="shrink-0 inline-flex">
+          <Sparkline
+            data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
+          />
         </span>
-        <span
-          className={`flex flex-col items-end justify-center ${isOwnership ? "min-w-[92px]" : "w-20"}`}
-        >
-          {isMover ? (
-            <span
-              className={`text-xs font-semibold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
-            >
-              {fmtValue(screen.value_label, item.value)}
-            </span>
-          ) : chip ? (
-            <>
-              <span className={`text-xs font-semibold ${toneCls(chip.tone)}`}>{chip.word}</span>
-              <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[10px] text-muted">
-                <span className="tnum">{fmtValue(screen.value_label, item.value)}</span>
-                {sinceMonth && <span>· since {sinceMonth}</span>}
+        <span className="flex items-stretch gap-3 shrink-0 text-right">
+          <span className="flex flex-col items-end justify-center">
+            <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
+            {item.change_1d != null && (
+              <span
+                className={`text-[11px] tnum ${item.change_1d >= 0 ? "text-up" : "text-down"}`}
+              >
+                {item.change_1d >= 0 ? "+" : ""}
+                {item.change_1d.toFixed(1)}%
               </span>
-              {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} />}
-              {item.horizons && <MomentumDots h={item.horizons} />}
-            </>
-          ) : (
-            <span className="text-xs font-semibold text-accent tnum">
-              {fmtValue(screen.value_label, item.value)}
-            </span>
-          )}
+            )}
+          </span>
+          <span
+            className={`flex flex-col items-end justify-center ${isOwnership ? "min-w-[92px]" : "w-20"}`}
+          >
+            {isMover ? (
+              <span
+                className={`text-xs font-semibold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
+              >
+                {fmtValue(screen.value_label, item.value)}
+              </span>
+            ) : chip ? (
+              <>
+                <span className={`text-xs font-semibold ${toneCls(chip.tone)}`}>{chip.word}</span>
+                <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[10px] text-muted">
+                  <span className="tnum">{fmtValue(screen.value_label, item.value)}</span>
+                  {sinceMonth && <span>· since {sinceMonth}</span>}
+                </span>
+                {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} />}
+                {item.horizons && <MomentumDots h={item.horizons} />}
+              </>
+            ) : (
+              <span className="text-xs font-semibold text-accent tnum">
+                {fmtValue(screen.value_label, item.value)}
+              </span>
+            )}
+          </span>
         </span>
-      </span>
-    </Link>
+      </button>
+      {open && (
+        <ScreenRowSheet
+          item={item}
+          screen={screen}
+          setupChip={setupChip}
+          chip={chip}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -619,7 +761,7 @@ function ScreenCard({ s }: { s: Screen }) {
   );
 }
 
-function LiquidityGuide() {
+function LiquidityGuideSheet({ onClose }: { onClose: () => void }) {
   const { t } = useLang();
   const setupRows: { label: string; body: string; tone: Chip["tone"] }[] = [
     { label: t("setup.clean"), body: t("liqGuide.setupCleanBody"), tone: "up" },
@@ -627,53 +769,100 @@ function LiquidityGuide() {
     { label: t("setup.risky"), body: t("liqGuide.setupRiskyBody"), tone: "down" },
   ];
   return (
-    <section className="bg-surface border border-border rounded-2xl p-4">
-      <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
-      <p className="mt-1 text-[12px] text-muted leading-relaxed">{t("liqGuide.subtitle")}</p>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55" onClick={onClose}>
+      <section
+        className="w-full max-w-md bg-surface border border-border rounded-t-2xl p-4 max-h-[82vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
+            <p className="mt-1 text-[12px] text-muted leading-relaxed">{t("liqGuide.subtitle")}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-muted text-sm px-2 shrink-0"
+            aria-label={t("common.close")}
+          >
+            {t("common.close")}
+          </button>
+        </div>
 
-      <div className="mt-3 flex flex-col gap-3">
-        <div className="border-l-2 border-accent pl-3">
-          <div className="text-[11px] font-semibold text-text">{t("liqGuide.adtvTitle")}</div>
-          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.adtvBody")}</p>
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="border-l-2 border-accent pl-3">
+            <div className="text-[11px] font-semibold text-text">{t("liqGuide.adtvTitle")}</div>
+            <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
+              {t("liqGuide.adtvBody")}
+            </p>
+          </div>
+          <div className="border-l-2 border-accent pl-3">
+            <div className="text-[11px] font-semibold text-text">{t("liqGuide.orderTitle")}</div>
+            <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
+              {t("liqGuide.orderBody")}
+            </p>
+          </div>
         </div>
-        <div className="border-l-2 border-accent pl-3">
-          <div className="text-[11px] font-semibold text-text">{t("liqGuide.orderTitle")}</div>
-          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">{t("liqGuide.orderBody")}</p>
-        </div>
-      </div>
 
-      <div className="mt-3 pt-3 border-t border-border/60 flex flex-col gap-3">
-        <div>
-          <div className="text-[11px] font-semibold text-up">{t("liqGuide.liquidExampleTitle")}</div>
-          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
-            {t("liqGuide.liquidExampleBody")}
-          </p>
-        </div>
-        <div>
-          <div className="text-[11px] font-semibold text-down">{t("liqGuide.thinExampleTitle")}</div>
-          <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
-            {t("liqGuide.thinExampleBody")}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-3 pt-3 border-t border-border/60">
-        <div className="text-[11px] font-semibold text-text">{t("liqGuide.setupTitle")}</div>
-        <div className="mt-2 flex flex-col gap-2">
-          {setupRows.map((row) => (
-            <div key={row.label} className="rounded-xl border border-border bg-card/50 p-2">
-              <span
-                className={`inline-flex rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold ${toneCls(row.tone)}`}
-              >
-                {row.label}
-              </span>
-              <p className="mt-1 text-[12px] text-muted leading-relaxed">{row.body}</p>
+        <div className="mt-3 pt-3 border-t border-border/60 flex flex-col gap-3">
+          <div>
+            <div className="text-[11px] font-semibold text-up">
+              {t("liqGuide.liquidExampleTitle")}
             </div>
-          ))}
+            <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
+              {t("liqGuide.liquidExampleBody")}
+            </p>
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold text-down">
+              {t("liqGuide.thinExampleTitle")}
+            </div>
+            <p className="mt-0.5 text-[12px] text-muted leading-relaxed">
+              {t("liqGuide.thinExampleBody")}
+            </p>
+          </div>
         </div>
-        <p className="mt-2 text-[10px] text-muted">{t("liqGuide.footer")}</p>
-      </div>
-    </section>
+
+        <div className="mt-3 pt-3 border-t border-border/60">
+          <div className="text-[11px] font-semibold text-text">{t("liqGuide.setupTitle")}</div>
+          <div className="mt-2 flex flex-col gap-2">
+            {setupRows.map((row) => (
+              <div key={row.label} className="rounded-xl border border-border bg-card/50 p-2">
+                <span
+                  className={`inline-flex rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold ${toneCls(row.tone)}`}
+                >
+                  {row.label}
+                </span>
+                <p className="mt-1 text-[12px] text-muted leading-relaxed">{row.body}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] text-muted">{t("liqGuide.footer")}</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LiquidityGuide() {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <section className="bg-surface border border-border rounded-2xl p-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold text-sm text-accent">{t("liqGuide.title")}</div>
+          <p className="mt-0.5 text-[12px] text-muted leading-snug">{t("liqGuide.compact")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="shrink-0 rounded-full border border-accent/60 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent"
+        >
+          {t("liqGuide.open")}
+        </button>
+      </section>
+      {open && <LiquidityGuideSheet onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
