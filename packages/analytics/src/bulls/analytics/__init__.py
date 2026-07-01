@@ -15,6 +15,7 @@ from bulls.analytics.indicators import (
     swing_high_indices,
     swing_low_indices,
 )
+from bulls.analytics.investor_lens import InvestorLens, InvestorLensResponse, build_investor_lens
 from bulls.analytics.mood import MoodComponent, MoodIndex, build_mood
 from bulls.analytics.plain_read import PlainRead, ReadPoint, build_plain_read
 from bulls.analytics.scenarios import LevelsInsight, build_levels
@@ -32,6 +33,8 @@ __all__ = [
     "AnalyticsResult",
     "BarLike",
     "Dimension",
+    "InvestorLens",
+    "InvestorLensResponse",
     "Level",
     "LevelsInsight",
     "MoodComponent",
@@ -43,6 +46,7 @@ __all__ = [
     "Scorecard",
     "ValuationResult",
     "atr",
+    "build_investor_lens",
     "build_levels",
     "build_mood",
     "build_plain_read",

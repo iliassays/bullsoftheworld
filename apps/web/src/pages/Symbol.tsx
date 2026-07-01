@@ -24,6 +24,7 @@ import { BeforeYouTrade } from "../components/BeforeYouTrade";
 import { DigestPanel } from "../components/DigestPanel";
 import { ExplainCard } from "../components/ExplainCard";
 import { KeyLevels } from "../components/KeyLevels";
+import { InvestorLensCard } from "../components/InvestorLensCard";
 import { PlainReadCard } from "../components/PlainReadCard";
 import { ScorecardCard } from "../components/ScorecardCard";
 import { PulseGauges } from "../components/PulseGauges";
@@ -35,6 +36,7 @@ import { Empty, Pct, Spinner, taka } from "../components/ui";
 
 type Tab =
   | "overview"
+  | "lens"
   | "feed"
   | "bulls"
   | "news"
@@ -43,6 +45,7 @@ type Tab =
   | "earnings";
 const TABS: { id: Tab; icon?: string; key: string }[] = [
   { id: "overview", key: "tab.overview" },
+  { id: "lens", icon: "🧠", key: "tab.investorLens" },
   { id: "feed", icon: "💬", key: "tab.feed" },
   { id: "bulls", icon: "🐂", key: "tab.bulls" },
   { id: "news", icon: "📰", key: "tab.news" },
@@ -302,6 +305,8 @@ export function SymbolPage() {
           <BeforeYouTrade />
         </>
       )}
+
+      {tab === "lens" && <InvestorLensCard code={sym} />}
 
       {tab === "feed" && (
         <>

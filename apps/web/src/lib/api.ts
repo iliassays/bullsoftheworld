@@ -445,6 +445,23 @@ export interface ScorecardResponse {
   };
   red_flags: { code: string; flags: RedFlag[]; clean: boolean; note: string };
 }
+export interface InvestorLensItem {
+  key: string;
+  name: string;
+  persona: string;
+  verdict: "supportive" | "mixed" | "caution" | "thin_data";
+  score: number | null;
+  summary: string;
+  points: string[];
+  watch_next: string[];
+}
+export interface InvestorLensResponse {
+  code: string;
+  as_of_date: string;
+  headline: string;
+  lenses: InvestorLensItem[];
+  disclaimer: string;
+}
 export interface NoteBeat {
   handle: string;
   name: string;
@@ -572,6 +589,8 @@ export const api = {
     request<PlainRead>(`/symbols/${code}/plain-read`),
   scorecard: (code: string) =>
     request<ScorecardResponse>(`/symbols/${code}/scorecard`),
+  investorLens: (code: string) =>
+    request<InvestorLensResponse>(`/symbols/${code}/investor-lens`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),

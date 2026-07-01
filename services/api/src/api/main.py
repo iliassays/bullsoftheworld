@@ -27,6 +27,7 @@ from api.routers import (
     digest,
     explainer,
     health,
+    investor_lens,
     levels,
     market,
     moderation,
@@ -87,6 +88,7 @@ app.mount("/cards", StaticFiles(directory=_card_dir), name="cards")
 
 
 app.include_router(health.router)
+app.include_router(investor_lens.router)
 app.include_router(admin.router)
 app.include_router(admin_overview.router)
 app.include_router(auth.router)

@@ -13,11 +13,22 @@ function fmt(ts: string | null): string {
   return new Date(ts).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-function Stat({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
+function Stat({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  hint?: string;
+  tone?: string;
+}) {
   return (
     <div className="rounded-2xl border border-border bg-card px-4 py-3">
       <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
       <div className={`mt-1 text-2xl font-bold tnum ${tone ?? "text-text"}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-muted leading-tight">{hint}</div>}
     </div>
   );
 }
@@ -170,19 +181,28 @@ export function App() {
 
           {ov && (
             <>
+              <div className="text-[11px] uppercase tracking-wide text-muted mb-2">People &amp; content</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <Stat label="Users" value={ov.users} />
-                <Stat label="Posts (total)" value={ov.posts_total} />
-                <Stat label="Posts today" value={ov.posts_today} />
+                <Stat label="People" value={ov.users_people} hint="real signed-up accounts" />
+                <Stat label="Official desks" value={ov.users_desks} hint="automated agent accounts" />
+                <Stat label="User posts" value={ov.user_posts} hint="written by people (all time)" />
+                <Stat label="Agent notes" value={ov.agent_notes} hint="posted by desks (all time)" />
+                <Stat label="People posts today" value={ov.people_posts_today} hint={`published today · ${ov.market} time`} />
+                <Stat label="Agent notes today" value={ov.agent_notes_today} hint={`published today · ${ov.market} time`} />
+                <Stat label="Reactions (7d)" value={ov.reactions_7d} hint="agree/disagree, last 7 days" />
                 <Stat
                   label="Review pending"
                   value={ov.review_pending}
+                  hint="posts awaiting your approve/block"
                   tone={ov.review_pending ? "text-accent" : "text-text"}
                 />
-                <Stat label="Agent notes" value={ov.agent_notes} />
-                <Stat label="Reactions (7d)" value={ov.reactions_7d} />
-                <Stat label="Blocked" value={m.blocked ?? 0} tone={(m.blocked ?? 0) ? "text-down" : "text-text"} />
-                <Stat label="Flagged (24h)" value={ov.flagged_24h} />
+              </div>
+              <div className="text-[11px] uppercase tracking-wide text-muted mb-2">Moderation</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <Stat label="Published" value={m.published ?? 0} hint="live in the feed" />
+                <Stat label="Pending" value={m.pending ?? 0} hint="held at write, awaiting review" tone={(m.pending ?? 0) ? "text-accent" : "text-text"} />
+                <Stat label="Blocked" value={m.blocked ?? 0} hint="rejected posts" tone={(m.blocked ?? 0) ? "text-down" : "text-text"} />
+                <Stat label="Flagged (24h)" value={ov.flagged_24h} hint="held/blocked in last 24h" />
               </div>
 
               <div className="rounded-2xl border border-border bg-card px-4 py-3 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

@@ -54,10 +54,13 @@ export interface AdminOverview {
   tenant: string;
   market: string;
   generated_at: string;
-  users: number;
+  users_people: number;
+  users_desks: number;
   posts_total: number;
-  posts_today: number;
+  user_posts: number;
   agent_notes: number;
+  people_posts_today: number;
+  agent_notes_today: number;
   reactions_7d: number;
   moderation: Record<string, number>;
   review_pending: number;

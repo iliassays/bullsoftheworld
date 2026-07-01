@@ -8,6 +8,7 @@ Read-only aggregates across content, moderation, and data-pipeline health — th
 from __future__ import annotations
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -61,11 +62,15 @@ class OverviewOut(BaseModel):
     tenant: str
     market: str
     generated_at: dt.datetime
-    # content + people
-    users: int
+    # people — split real accounts from the automated desks (both are User rows)
+    users_people: int  # is_official = false (humans)
+    users_desks: int  # is_official = true (agent desks)
+    # posts — split human posts from agent desk-notes
     posts_total: int
-    posts_today: int
-    agent_notes: int
+    user_posts: int  # kind = 'user'
+    agent_notes: int  # kind = 'note'
+    people_posts_today: int  # human posts published today (tenant local day)
+    agent_notes_today: int  # agent notes published today (tenant local day)
     reactions_7d: int
     # moderation
     moderation: dict[str, int]  # status -> count
@@ -95,11 +100,25 @@ async def overview(
         raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
     name, market = t.name, t.market
     now = dt.datetime.now(dt.UTC)
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # "today" in the tenant's own market timezone (Dhaka is UTC+6), not UTC — so the day boundary
+    # matches what the operator experiences locally.
+    try:
+        local_now = now.astimezone(ZoneInfo(t.timezone))
+    except Exception:
+        local_now = now
+    day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
     since_24h = now - dt.timedelta(hours=24)
     since_7d = now - dt.timedelta(days=7)
 
-    users = await _count(session, select(func.count()).select_from(User).where(User.tenant_id == name))
+    # people vs agent desks (both are User rows; desks carry is_official=true)
+    users_desks = await _count(
+        session,
+        select(func.count()).select_from(User).where(User.tenant_id == name, User.is_official.is_(True)),
+    )
+    users_total = await _count(
+        session, select(func.count()).select_from(User).where(User.tenant_id == name)
+    )
+    users_people = users_total - users_desks
 
     # posts by moderation_status
     moderation: dict[str, int] = {"published": 0, "pending": 0, "held": 0, "blocked": 0}
@@ -113,19 +132,23 @@ async def overview(
         moderation[status] = n
     posts_total = sum(moderation.values())
 
-    posts_today = await _count(
-        session,
-        select(func.count())
-        .select_from(Post)
-        .where(
-            Post.tenant_id == name,
-            Post.moderation_status == "published",
-            Post.created_at >= day_start,
-        ),
-    )
     agent_notes = await _count(
         session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "note")
     )
+    user_posts = await _count(
+        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "user")
+    )
+
+    def _today(kind: str):
+        return select(func.count()).select_from(Post).where(
+            Post.tenant_id == name,
+            Post.kind == kind,
+            Post.moderation_status == "published",
+            Post.created_at >= day_start,
+        )
+
+    people_posts_today = await _count(session, _today("user"))
+    agent_notes_today = await _count(session, _today("note"))
     reactions_7d = await _count(
         session,
         select(func.count())
@@ -199,10 +222,13 @@ async def overview(
         tenant=name,
         market=market,
         generated_at=now,
-        users=users,
+        users_people=users_people,
+        users_desks=users_desks,
         posts_total=posts_total,
-        posts_today=posts_today,
+        user_posts=user_posts,
         agent_notes=agent_notes,
+        people_posts_today=people_posts_today,
+        agent_notes_today=agent_notes_today,
         reactions_7d=reactions_7d,
         moderation=moderation,
         review_pending=moderation["pending"] + moderation["held"],

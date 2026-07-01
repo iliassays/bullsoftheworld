@@ -58,6 +58,7 @@ const STRINGS: Record<string, Entry> = {
   },
   // Symbol page — tabs
   "tab.overview": { en: "Overview", bn: "সারসংক্ষেপ" },
+  "tab.investorLens": { en: "Investor Lens", bn: "ইনভেস্টর লেন্স" },
   "tab.feed": { en: "Feed", bn: "ফিড" },
   "tab.bulls": { en: "Bulls", bn: "বুলস" },
   "tab.news": { en: "News", bn: "খবর" },
