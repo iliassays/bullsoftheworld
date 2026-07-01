@@ -2,8 +2,8 @@
 
 A market's trading hours and timezone are configuration, not hardcoded: every function takes an
 explicit `tz` (surfaced through tenant config), so the same logic serves any exchange. DSE's
-Asia/Dhaka is the default. DSE trades Sunday to Thursday, 10:00-14:30, closed Friday/Saturday.
-Public holidays are not yet modeled.
+Asia/Dhaka is the default. DSE trades Sunday to Thursday, 10:00-14:30, closed Friday/Saturday and
+on public holidays (see MARKET_HOLIDAYS).
 
 Inputs must be timezone-AWARE datetimes (e.g. datetime.now(dt.UTC)); they're converted to `tz`.
 """
@@ -21,6 +21,16 @@ MARKET_CLOSE = dt.time(14, 30)
 # isoweekday(): Mon=1 .. Sun=7. DSE trades Sun, Mon, Tue, Wed, Thu.
 _TRADING_ISOWEEKDAYS = frozenset({7, 1, 2, 3, 4})
 
+# DSE public holidays — the market is closed even though it's a weekday. Maintain from DSE's
+# official annual holiday calendar (dates are Dhaka-local). Under-listing only costs a benign
+# watchdog false-alarm that day; over-listing would make the worker skip a REAL trading day, so
+# add only confirmed dates.
+MARKET_HOLIDAYS: frozenset[dt.date] = frozenset(
+    {
+        dt.date(2026, 7, 1),  # confirmed closed — extend with the official DSE 2026 calendar
+    }
+)
+
 
 class Session(StrEnum):
     PRE_OPEN = "pre_open"  # trading day, before open
@@ -37,8 +47,8 @@ def to_market_tz(when: dt.datetime, tz: ZoneInfo = DHAKA) -> dt.datetime:
 
 
 def is_trading_day(d: dt.date) -> bool:
-    """True for Sun-Thu (holidays not yet modeled)."""
-    return d.isoweekday() in _TRADING_ISOWEEKDAYS
+    """True on Sun-Thu that aren't public holidays."""
+    return d.isoweekday() in _TRADING_ISOWEEKDAYS and d not in MARKET_HOLIDAYS
 
 
 def is_trading_hours(when: dt.datetime, tz: ZoneInfo = DHAKA) -> bool:

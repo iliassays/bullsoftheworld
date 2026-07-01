@@ -29,6 +29,7 @@ def test_is_trading_day():
     assert is_trading_day(dt.date(2026, 6, 25))  # Thursday
     assert not is_trading_day(dt.date(2026, 6, 26))  # Friday
     assert not is_trading_day(dt.date(2026, 6, 27))  # Saturday
+    assert not is_trading_day(dt.date(2026, 7, 1))  # public holiday (weekday, but market closed)
 
 
 def test_is_trading_hours_boundaries():
