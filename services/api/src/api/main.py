@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from api.queue import close_pool
 from api.routers import (
     admin,
+    admin_overview,
     auth,
     buzz,
     company,
@@ -87,6 +88,7 @@ app.mount("/cards", StaticFiles(directory=_card_dir), name="cards")
 
 app.include_router(health.router)
 app.include_router(admin.router)
+app.include_router(admin_overview.router)
 app.include_router(auth.router)
 app.include_router(buzz.router)
 app.include_router(company.router)

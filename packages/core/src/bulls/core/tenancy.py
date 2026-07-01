@@ -57,3 +57,11 @@ class TenantRegistry:
             if hostname in self._by_domain:
                 return self._by_domain[hostname]
         return self._by_name[self._default]
+
+    def get(self, name: str) -> Tenant | None:
+        """Look up a tenant by name (for admin tooling that selects a tenant explicitly)."""
+        return self._by_name.get(name)
+
+    def all(self) -> list[Tenant]:
+        """Every configured tenant (for the admin tenant selector)."""
+        return list(self._by_name.values())

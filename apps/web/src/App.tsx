@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 import { About } from "./pages/About";
+import { Admin } from "./pages/Admin";
 import { Shell } from "./components/Shell";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AuthFlows";
 import { BullsFeed } from "./pages/BullsFeed";
@@ -30,6 +31,8 @@ export function App() {
         <Route path="reset" element={<ResetPassword />} />
         <Route path="verify" element={<VerifyEmail />} />
       </Route>
+      {/* Admin console sits outside the Shell — no consumer nav/chrome, token-gated. */}
+      <Route path="/admin" element={<Admin />} />
     </Routes>
   );
 }

@@ -13,6 +13,18 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+// Admin (ops) token — separate from the user login; sent as X-Admin-Token on /admin & /moderation.
+const ADMIN_TOKEN_KEY = "bulls.admintoken";
+export const adminTokenStore = {
+  get: () => localStorage.getItem(ADMIN_TOKEN_KEY),
+  set: (t: string) => localStorage.setItem(ADMIN_TOKEN_KEY, t),
+  clear: () => localStorage.removeItem(ADMIN_TOKEN_KEY),
+};
+function adminHeaders(): Record<string, string> {
+  const t = adminTokenStore.get();
+  return t ? { "X-Admin-Token": t } : {};
+}
+
 // Stable anonymous client id so page views can be de-duped without a login.
 const CID_KEY = "bulls.cid";
 function clientId(): string {
@@ -636,4 +648,75 @@ export const api = {
     }),
   watchRemove: (code: string) =>
     request<void>(`/watchlist/${code}`, { method: "DELETE" }),
+
+  // --- admin portal (X-Admin-Token) ---
+  adminTenants: () =>
+    request<AdminTenant[]>("/admin/tenants", { headers: adminHeaders() }),
+  adminOverview: (tenant: string) =>
+    request<AdminOverview>(`/admin/overview?tenant=${encodeURIComponent(tenant)}`, {
+      headers: adminHeaders(),
+    }),
+  modQueue: (status: "pending" | "held") =>
+    request<{ count: number; items: ModQueueItem[] }>(`/moderation/queue?status=${status}`, {
+      headers: adminHeaders(),
+    }),
+  modApprove: (postId: number) =>
+    request<{ status: string }>(`/moderation/${postId}/approve`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: "{}",
+    }),
+  modBlock: (postId: number) =>
+    request<{ status: string }>(`/moderation/${postId}/block`, {
+      method: "POST",
+      headers: adminHeaders(),
+      body: "{}",
+    }),
 };
+
+export interface AdminTenant {
+  name: string;
+  display_name: string;
+  market: string;
+}
+export interface AdminRecentEvent {
+  post_id: number;
+  decision: string;
+  categories: string[];
+  reason_code: string | null;
+  layer: number;
+  created_at: string;
+}
+export interface AdminOverview {
+  tenant: string;
+  market: string;
+  generated_at: string;
+  users: number;
+  posts_total: number;
+  posts_today: number;
+  agent_notes: number;
+  reactions_7d: number;
+  moderation: Record<string, number>;
+  review_pending: number;
+  flagged_24h: number;
+  recent_events: AdminRecentEvent[];
+  top_cashtags: { code: string; posts: number }[];
+  last_eod_date: string | null;
+  latest_quote_as_of: string | null;
+  symbols_active: number;
+  symbols_hidden: number;
+}
+export interface ModQueueItem {
+  post_id: number;
+  author_handle: string;
+  author_name: string;
+  account_age_days: number | null;
+  body: string;
+  cashtags: string[];
+  status: string;
+  reason: string | null;
+  categories: string[];
+  risk_score: number | null;
+  rule_ids: string[];
+  created_at: string;
+}
