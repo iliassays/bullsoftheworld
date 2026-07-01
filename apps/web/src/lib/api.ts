@@ -436,6 +436,8 @@ export interface Desk {
   bio: string;
   joined: string;
   posts: number;
+  followers: number;
+  following: boolean;
   verified: boolean;
 }
 export type ReactionKind = "agree" | "disagree";
@@ -579,6 +581,10 @@ export const api = {
   },
   noteBeats: () => request<NoteBeat[]>("/posts/note-beats"),
   desk: (handle: string) => request<Desk>(`/desks/${handle}`),
+  followDesk: (handle: string) =>
+    request<{ status: string }>(`/desks/${handle}/follow`, { method: "POST" }),
+  unfollowDesk: (handle: string) =>
+    request<{ status: string }>(`/desks/${handle}/follow`, { method: "DELETE" }),
   createPost: (b: {
     body: string;
     sentiment: "bull" | "bear" | null;

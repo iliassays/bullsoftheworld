@@ -12,12 +12,13 @@ import re
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
 from api.queue import enqueue_sentiment
 from bulls.core.models import (
     Cashtag,
+    Follow,
     Post,
     PostReaction,
     QuoteSnapshot,
@@ -221,14 +222,19 @@ async def feed(
             )
         )
     if watched and viewer is not None:
+        # Personalized Home = posts from desks you follow OR tagging companies you watch.
         watched_codes = select(WatchlistItem.code).where(
             WatchlistItem.user_id == viewer.id, WatchlistItem.market == tenant.market
         )
+        followed = select(Follow.followee_id).where(Follow.follower_id == viewer.id)
         stmt = stmt.where(
-            Post.id.in_(
-                select(Cashtag.post_id).where(
-                    Cashtag.market == tenant.market, Cashtag.code.in_(watched_codes)
-                )
+            or_(
+                Post.author_id.in_(followed),
+                Post.id.in_(
+                    select(Cashtag.post_id).where(
+                        Cashtag.market == tenant.market, Cashtag.code.in_(watched_codes)
+                    )
+                ),
             )
         )
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)

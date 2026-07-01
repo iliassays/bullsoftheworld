@@ -8,6 +8,7 @@ from bulls.core.models.company import (
     SectorPE,
     ShareholdingSnapshot,
 )
+from bulls.core.models.follow import Follow
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.page_view_event import PageViewEvent
 from bulls.core.models.post import Cashtag, Post, PostReaction
@@ -27,6 +28,7 @@ __all__ = [
     "CompanyProfile",
     "DailyBar",
     "DividendRecord",
+    "Follow",
     "MarketSummary",
     "PageViewEvent",
     "Post",

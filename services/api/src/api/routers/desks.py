@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
-from bulls.core.models import Post, User
+from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
+from bulls.core.models import Follow, Post, User
 
 router = APIRouter(tags=["desks"])
 
@@ -104,13 +105,12 @@ class DeskOut(BaseModel):
     bio: str
     joined: str  # "Jan 2025"
     posts: int
+    followers: int
+    following: bool  # does the signed-in viewer follow this desk?
     verified: bool = True
 
 
-@router.get("/desks/{handle}")
-async def desk(
-    handle: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
-) -> DeskOut:
+async def _resolve_desk(session, tenant, handle: str) -> User:
     if not _is_desk(handle):
         raise HTTPException(status_code=404, detail=f"Unknown desk {handle!r}")
     u = await session.scalar(
@@ -118,9 +118,33 @@ async def desk(
     )
     if u is None:
         raise HTTPException(status_code=404, detail=f"Unknown desk {handle!r}")
+    return u
+
+
+@router.get("/desks/{handle}")
+async def desk(
+    handle: str,
+    tenant: CurrentTenant,
+    session: DbSession,
+    locale: CurrentLocale,
+    viewer: OptionalUser,
+) -> DeskOut:
+    u = await _resolve_desk(session, tenant, handle)
     posts = await session.scalar(
         select(func.count(Post.id)).where(Post.author_id == u.id, Post.parent_id.is_(None))
     )
+    followers = await session.scalar(
+        select(func.count()).select_from(Follow).where(Follow.followee_id == u.id)
+    )
+    following = False
+    if viewer is not None:
+        following = (
+            await session.scalar(
+                select(Follow.follower_id).where(
+                    Follow.follower_id == viewer.id, Follow.followee_id == u.id
+                )
+            )
+        ) is not None
     bio_en, bio_bn = _DESK_BIOS.get(_beat_token(handle, tenant.name), _FALLBACK_BIO)
     return DeskOut(
         handle=handle,
@@ -128,4 +152,33 @@ async def desk(
         bio=bio_bn if locale == "bn" else bio_en,
         joined=u.created_at.strftime("%b %Y"),
         posts=int(posts or 0),
+        followers=int(followers or 0),
+        following=following,
     )
+
+
+@router.post("/desks/{handle}/follow")
+async def follow_desk(
+    handle: str, tenant: CurrentTenant, session: DbSession, user: CurrentUser
+) -> dict:
+    u = await _resolve_desk(session, tenant, handle)
+    # Idempotent — following twice is a no-op, not an error.
+    await session.execute(
+        pg_insert(Follow)
+        .values(follower_id=user.id, followee_id=u.id)
+        .on_conflict_do_nothing()
+    )
+    await session.commit()
+    return {"status": "following"}
+
+
+@router.delete("/desks/{handle}/follow")
+async def unfollow_desk(
+    handle: str, tenant: CurrentTenant, session: DbSession, user: CurrentUser
+) -> dict:
+    u = await _resolve_desk(session, tenant, handle)
+    await session.execute(
+        delete(Follow).where(Follow.follower_id == user.id, Follow.followee_id == u.id)
+    )
+    await session.commit()
+    return {"status": "not_following"}
