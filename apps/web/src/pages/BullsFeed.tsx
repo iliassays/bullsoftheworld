@@ -47,7 +47,7 @@ export function BullsFeed() {
       </div>
 
       {beats.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
+        <div className="flex flex-wrap gap-2">
           {chip(t("bulls.all"), active === null, () => setActive(null))}
           {beats.map((b) =>
             chip(b.name, active === b.handle, () => setActive(b.handle)),
