@@ -512,6 +512,7 @@ const STRINGS: Record<string, Entry> = {
   "desk.follow": { en: "Follow", bn: "ফলো" },
   "desk.following": { en: "Following", bn: "ফলো করছেন" },
   "desk.joined": { en: "Joined", bn: "যোগ দিয়েছে" },
+  "desk.postsHeading": { en: "Posts", bn: "পোস্ট" },
   "desk.noPosts": { en: "No posts yet.", bn: "এখনো কোনো পোস্ট নেই।" },
   "desk.notFound": { en: "Desk not found.", bn: "ডেস্ক পাওয়া যায়নি।" },
   "post.agreeBtn": { en: "Agree", bn: "একমত" },
