@@ -142,10 +142,10 @@ _T = {
         "সস্তায় মান। 'সস্তা' বাজারের কোনো সমস্যাও বোঝাতে পারে, তাই কারণ যাচাই করুন। পরামর্শ নয়।",
     ),
     "smartmoney": (
-        "Both institutions and foreign investors raised their stake in {code} (+{pp} pp combined) at "
-        "the latest disclosure — broad 'smart money' accumulation. History, not a forecast.",
-        "সর্বশেষ প্রকাশে প্রতিষ্ঠান ও বিদেশি উভয় বিনিয়োগকারী {code}-এ অংশ বাড়িয়েছে (সম্মিলিত +{pp} pp) — "
-        "বিস্তৃত 'স্মার্ট মানি' সঞ্চয়। ইতিহাস, পূর্বাভাস নয়।",
+        "Both institutions and foreign investors raised their stake in {code} (+{pp} percentage points "
+        "combined) at the latest disclosure — broad 'smart money' accumulation. History, not a forecast.",
+        "সর্বশেষ প্রকাশে প্রতিষ্ঠান ও বিদেশি উভয় বিনিয়োগকারী {code}-এ অংশ বাড়িয়েছে (সম্মিলিত +{pp} শতাংশ "
+        "পয়েন্ট) — বিস্তৃত 'স্মার্ট মানি' সঞ্চয়। ইতিহাস, পূর্বাভাস নয়।",
     ),
     "strength": (
         "{code} rose {chg}% while the market (DSEX) fell {idx_abs}% — relative strength. "
@@ -155,19 +155,19 @@ _T = {
     "accumulation": (
         "{code} is drawing steady money inflow while its price stays flat in its base — a quiet "
         "accumulation pattern (money in, price not yet moved). A divergence, not a promise. Not advice.",
-        "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের প্যাটার্ন "
-        "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। এটি একটি ডাইভারজেন্স, নিশ্চয়তা নয়। পরামর্শ নয়।",
+        "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের ধরন "
+        "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। দাম ও অর্থপ্রবাহে অমিল, নিশ্চয়তা নয়। পরামর্শ নয়।",
     ),
     "circuit_up": (
         "{code} hit today's upper price limit (+{chg}%) — buyers locked it at the ceiling. A strong "
         "demand signal, but limit moves can reverse. Descriptive, not advice.",
-        "{code} আজ দিনের সর্বোচ্চ দামসীমা ছুঁয়েছে (+{chg}%) — ক্রেতারা সিলিংয়ে আটকে দিয়েছে। শক্তিশালী "
+        "{code} আজ দিনের সর্বোচ্চ দামসীমা ছুঁয়েছে (+{chg}%) — ক্রেতারা ঊর্ধ্বসীমায় আটকে দিয়েছে। শক্তিশালী "
         "চাহিদার ইঙ্গিত, তবে সীমা-ছোঁয়া দাম উল্টেও যেতে পারে। তথ্যমূলক, পরামর্শ নয়।",
     ),
     "circuit_down": (
         "{code} hit today's lower price limit ({chg}%) — sellers pinned it at the floor. Descriptive, "
         "not advice.",
-        "{code} আজ দিনের সর্বনিম্ন দামসীমা ছুঁয়েছে ({chg}%) — বিক্রেতারা মেঝেতে আটকে দিয়েছে। তথ্যমূলক, "
+        "{code} আজ দিনের সর্বনিম্ন দামসীমা ছুঁয়েছে ({chg}%) — বিক্রেতারা নিম্নসীমায় আটকে দিয়েছে। তথ্যমূলক, "
         "পরামর্শ নয়।",
     ),
     "breakout": (
@@ -186,8 +186,8 @@ _VARIANTS: dict[str, list[tuple[str, str]]] = {
         (
             "{code} is drawing steady money inflow while its price stays flat in its base — a quiet "
             "accumulation pattern (money in, price not yet moved). A divergence, not a promise. Not advice.",
-            "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের প্যাটার্ন "
-            "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। এটি একটি ডাইভারজেন্স, নিশ্চয়তা নয়। পরামর্শ নয়।",
+            "{code}-তে ধারাবাহিক অর্থপ্রবাহ আসছে অথচ দাম এখনও তার ভিত্তিতে স্থির — একটি নীরব সঞ্চয়ের ধরন "
+            "(অর্থ ঢুকছে, দাম এখনও বাড়েনি)। দাম ও অর্থপ্রবাহে অমিল, নিশ্চয়তা নয়। পরামর্শ নয়।",
         ),
         (
             "Money is quietly building in {code} while the price holds flat — the kind of base "
@@ -199,7 +199,7 @@ _VARIANTS: dict[str, list[tuple[str, str]]] = {
             "{code}: buyers are absorbing supply (positive money flow) but the price hasn't moved yet — "
             "a quiet accumulation signature. A divergence, not a forecast. Not advice.",
             "{code}: ক্রেতারা সরবরাহ শুষে নিচ্ছে (ইতিবাচক অর্থপ্রবাহ) অথচ দাম এখনও নড়েনি — নীরব সঞ্চয়ের "
-            "ছাপ। এটি ডাইভারজেন্স, পূর্বাভাস নয়। পরামর্শ নয়।",
+            "ছাপ। এটি দাম ও অর্থপ্রবাহে অমিল, পূর্বাভাস নয়। পরামর্শ নয়।",
         ),
     ],
 }

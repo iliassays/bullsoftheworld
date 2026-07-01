@@ -32,7 +32,7 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
     "earnings": (
         "Results update — {headline}. Earnings drive valuation over time; see the Fundamentals tab. "
         "Descriptive, not advice.",
-        "ফলাফল আপডেট — {headline}. আয় দীর্ঘমেয়াদে মূল্যায়ন নির্ধারণ করে; Fundamentals ট্যাব দেখুন। "
+        "ফলাফল আপডেট — {headline}. আয় দীর্ঘমেয়াদে মূল্যায়ন নির্ধারণ করে; ফান্ডামেন্টাল ট্যাব দেখুন। "
         "তথ্যমূলক, পরামর্শ নয়।",
     ),
     "rating": (

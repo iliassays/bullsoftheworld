@@ -52,7 +52,7 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
         "Foreign holders {dir} their stake to {now}% (from {prev}%) as of {as_of}. "
         "A shift in foreign ownership is often read as longer-term interest — one input, not advice.",
         "বিদেশি বিনিয়োগকারীরা তাদের অংশীদারিত্ব {now}% এ {dir_bn} ({prev}% থেকে), {as_of} অনুযায়ী। "
-        "বিদেশি মালিকানার পরিবর্তন প্রায়ই দীর্ঘমেয়াদি আগ্রহ হিসেবে দেখা হয় — একটি ইনপুট, পরামর্শ নয়।",
+        "বিদেশি মালিকানার পরিবর্তন প্রায়ই দীর্ঘমেয়াদি আগ্রহ হিসেবে দেখা হয় — একটি সূচক, পরামর্শ নয়।",
     ),
     "institution_change": (
         "Institutions {dir} their holding to {now}% (from {prev}%) as of {as_of}. "

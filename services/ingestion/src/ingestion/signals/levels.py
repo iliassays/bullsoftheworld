@@ -87,13 +87,13 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
     "ma200_cross_up": (
         "{code} closed back above its 200-day average — often read as a longer-term trend turning "
         "up. A concept, not a forecast.",
-        "{code} ২০০-দিনের গড়ের উপরে ফিরে ক্লোজ করেছে — প্রায়ই দীর্ঘমেয়াদি ট্রেন্ড ঊর্ধ্বমুখী হওয়া হিসেবে "
+        "{code} ২০০-দিনের গড়ের উপরে ফিরে ক্লোজ করেছে — প্রায়ই দীর্ঘমেয়াদি প্রবণতা ঊর্ধ্বমুখী হওয়া হিসেবে "
         "দেখা হয়। একটি ধারণা, ভবিষ্যদ্বাণী নয়।",
     ),
     "ma200_cross_down": (
         "{code} closed below its 200-day average — often read as a longer-term trend weakening. "
         "A concept, not a forecast.",
-        "{code} ২০০-দিনের গড়ের নিচে ক্লোজ করেছে — প্রায়ই দীর্ঘমেয়াদি ট্রেন্ড দুর্বল হওয়া হিসেবে দেখা হয়। "
+        "{code} ২০০-দিনের গড়ের নিচে ক্লোজ করেছে — প্রায়ই দীর্ঘমেয়াদি প্রবণতা দুর্বল হওয়া হিসেবে দেখা হয়। "
         "একটি ধারণা, ভবিষ্যদ্বাণী নয়।",
     ),
     "rsi_overbought": (
