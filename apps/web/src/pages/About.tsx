@@ -1,23 +1,22 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { api, type NoteBeat } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { DeskIcon } from "../lib/deskIcons";
 import { VerifiedBadge } from "../components/ui";
 
 const FB_URL = "https://www.facebook.com/1214682241723822";
 
-// A few desk handles to showcase "meet the desks".
-const SHOWCASE = [
-  "BullsOfDhakaVolume",
-  "BullsOfDhakaCircuit",
-  "BullsOfDhakaBreakout",
-  "BullsOfDhakaSmartMoney",
-  "BullsOfDhakaDividend",
-  "BullsOfDhakaAccumulation",
-];
-
 export function About() {
   const { lang } = useLang();
   const bn = lang === "bn";
+  const [desks, setDesks] = useState<NoteBeat[]>([]);
+  useEffect(() => {
+    api
+      .noteBeats()
+      .then(setDesks)
+      .catch(() => setDesks([]));
+  }, []);
 
   const principles = bn
     ? [
@@ -78,14 +77,18 @@ export function About() {
             ? "প্রতিটি ডেস্ক একটি বিষয়ে নজর রাখে এবং উল্লেখযোগ্য কিছু ঘটলেই শুধু তথ্য পোস্ট করে। ফলো করুন — তাদের পোস্ট আপনার ফিডে আসবে।"
             : "Each desk watches one beat and posts a fact only when something notable happens. Follow the ones you care about — their posts flow into your feed."}
         </p>
-        <div className="flex flex-wrap gap-2.5 mt-3 text-accent">
-          {SHOWCASE.map((h) => (
-            <div
-              key={h}
-              className="w-10 h-10 rounded-full grid place-items-center bg-card border border-accent/40"
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          {desks.map((d) => (
+            <Link
+              key={d.handle}
+              to={`/desk/${d.handle}`}
+              className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 hover:border-accent transition"
             >
-              <DeskIcon handle={h} size={20} />
-            </div>
+              <span className="w-8 h-8 shrink-0 rounded-full grid place-items-center bg-surface border border-accent/40 text-accent">
+                <DeskIcon handle={d.handle} size={17} />
+              </span>
+              <span className="text-[13px] font-semibold truncate">{d.name}</span>
+            </Link>
           ))}
         </div>
       </div>
