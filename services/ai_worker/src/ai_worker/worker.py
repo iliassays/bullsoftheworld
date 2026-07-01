@@ -58,8 +58,10 @@ async def screen_post_safety(ctx, post_id: int) -> str:
     post to the human review queue (status 'held'). It NEVER auto-deletes — over-flagging is the fear,
     so a reviewer confirms. When enforcement is off (shadow), the verdict is logged but status is left
     published. Every flag is audited in moderation_events (layer 4)."""
-    sm = get_sessionmaker()
     s = get_settings()
+    if not s.moderation_l4_enabled:
+        return "l4-disabled"  # the LLM layer is off (e.g. resource-limited server)
+    sm = get_sessionmaker()
     async with sm() as session:
         post = await session.get(Post, post_id)
         if post is None:

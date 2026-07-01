@@ -230,7 +230,8 @@ async def create_post(
         # published user posts: auto-sentiment (if untagged) + the async L4 safety/relevance screen.
         if body.sentiment is None:
             await enqueue_sentiment(post.id)
-        await enqueue_moderation(post.id)
+        if get_settings().moderation_l4_enabled:  # LLM layer — off on resource-limited servers
+            await enqueue_moderation(post.id)
 
     return PostOut(
         id=post.id,

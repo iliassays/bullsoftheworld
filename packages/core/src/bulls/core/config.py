@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # gray-zone posts are held for review, and every decision is logged to moderation_events. Set
     # MODERATION_ENFORCE=false only for a deliberate shadow rollout where posts still publish.
     moderation_enforce: bool = True
+    # L4 async safety+relevance screen (the LLM layer). OFF by default — it's the only piece that
+    # needs an LLM (local Ollama or the Claude API), so it stays disabled on resource-limited servers.
+    # L1/L2 deterministic moderation + the review queue run fully without it. Enable when you have
+    # capacity, or after switching AI_PROVIDER to the hosted Claude API.
+    moderation_l4_enabled: bool = False
 
     default_tenant: str = "bullsofdhaka"
 
