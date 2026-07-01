@@ -4,7 +4,7 @@ import { api, type Post, type ReactionKind } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Composer } from "./Composer";
-import { Avatar, SentimentTag } from "./ui";
+import { Avatar, SentimentTag, VerifiedBadge } from "./ui";
 
 const ago = (iso: string) => {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -116,10 +116,18 @@ export function PostCard({
       <header className="flex items-center gap-2.5">
         <Avatar name={post.author.name} />
         <div className="leading-tight">
-          <b className="text-sm">{post.author.name}</b>
+          <b className="text-sm">
+            {post.author.name}
+            {isNote && (
+              <>
+                {" "}
+                <VerifiedBadge />
+              </>
+            )}
+          </b>
           <span className="block text-xs text-muted">
             {isNote ? (
-              <span className="text-muted">🤖 {t("post.dataNote")}</span>
+              <span className="text-muted">🏛️ {t("post.officialDesk")}</span>
             ) : (
               `@${post.author.handle}`
             )}{" "}
