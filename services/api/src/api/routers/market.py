@@ -26,13 +26,29 @@ from bulls.core.models import (
     TrendingScore,
 )
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
-from bulls.market_data.calendar import MARKET_CLOSE
+from bulls.market_data.calendar import MARKET_CLOSE, session_phase
 
 _MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
 
 router = APIRouter(tags=["market"])
 
 _MIN_ADTV_MN = 5.0
+
+
+class MarketStatusOut(BaseModel):
+    """Where the session is right now (holiday-aware) + the latest quote timestamp, for the header."""
+
+    phase: str  # open | pre_open | post_close | weekend (weekend covers public holidays too)
+    as_of: str | None
+
+
+@router.get("/market/status")
+async def market_status(tenant: CurrentTenant, session: DbSession) -> MarketStatusOut:
+    phase = session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone))
+    quote_ts = await session.scalar(
+        select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == tenant.market)
+    )
+    return MarketStatusOut(phase=str(phase), as_of=quote_ts.isoformat() if quote_ts else None)
 
 
 def _liquidity_label(adtv_mn: float | None, category: str | None) -> str | None:

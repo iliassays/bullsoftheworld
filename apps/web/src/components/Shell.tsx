@@ -1,6 +1,51 @@
+import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { api, type MarketStatus } from "../lib/api";
 import { type Lang, useLang } from "../lib/i18n";
 import { SearchBar } from "./SearchBar";
+
+// Bulls of Dhaka's Facebook page (numeric id works even without a vanity URL).
+const FB_URL = "https://www.facebook.com/1214682241723822";
+
+function FbIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden>
+      <path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.4h-1.3c-1.2 0-1.6.77-1.6 1.55V12h2.8l-.45 2.9h-2.35v7A10 10 0 0 0 22 12z" />
+    </svg>
+  );
+}
+
+// Live, holiday-aware market status + the delay note — a pulsing green dot while open.
+function MarketStatusPill() {
+  const { t } = useLang();
+  const [st, setSt] = useState<MarketStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api
+        .marketStatus()
+        .then((s) => live && setSt(s))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 60000); // flip open↔closed across the session boundary
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
+  const phase = st?.phase;
+  const open = phase === "open";
+  const preopen = phase === "pre_open";
+  const dot = open ? "bg-up" : preopen ? "bg-accent" : "bg-muted";
+  const label = open ? t("mkt.open") : preopen ? t("mkt.preOpen") : t("mkt.closed");
+  return (
+    <span className="flex items-center gap-1.5 text-[10px] text-muted border border-border px-2 py-1 rounded-full">
+      <span className={`w-1.5 h-1.5 rounded-full ${dot} ${open ? "animate-pulse" : ""}`} />
+      {label}
+      {open || preopen ? ` · ${t("delayed")}` : ""}
+    </span>
+  );
+}
 
 const tabs = [
   { to: "/", icon: "🏠", key: "nav.feed", end: true },
@@ -47,11 +92,26 @@ export function Shell() {
               </div>
             </div>
           </Link>
-          <div className="ml-auto flex items-center gap-2 shrink-0">
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            <MarketStatusPill />
+            <a
+              href={FB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Bulls of Dhaka on Facebook"
+              className="text-muted hover:text-accent transition p-1"
+            >
+              <FbIcon />
+            </a>
+            <Link
+              to="/about"
+              aria-label={t("nav.about")}
+              title={t("nav.about")}
+              className="text-muted hover:text-accent transition text-lg leading-none px-0.5"
+            >
+              ⓘ
+            </Link>
             <LangToggle />
-            <span className="text-[10px] text-muted border border-border px-2 py-1 rounded-full">
-              ⏱ {t("delayed")}
-            </span>
           </div>
         </div>
         <SearchBar />

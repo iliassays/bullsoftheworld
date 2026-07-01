@@ -384,6 +384,10 @@ export interface Pulse {
   message_volume: Gauge;
   participation: Gauge;
 }
+export interface MarketStatus {
+  phase: "open" | "pre_open" | "post_close" | "weekend";
+  as_of: string | null;
+}
 export interface MoodComponent {
   key: string;
   label: string;
@@ -510,6 +514,7 @@ export const api = {
   screens: () => request<ScreensResponse>("/screens"),
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),
+  marketStatus: () => request<MarketStatus>("/market/status"),
   sectors: () => request<Sector[]>("/sectors"),
   screen: (
     key: string,

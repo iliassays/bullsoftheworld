@@ -1,4 +1,5 @@
 import { Route, Routes } from "react-router-dom";
+import { About } from "./pages/About";
 import { Shell } from "./components/Shell";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AuthFlows";
 import { BullsFeed } from "./pages/BullsFeed";
@@ -22,6 +23,7 @@ export function App() {
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
         <Route path="me" element={<Profile />} />
+        <Route path="about" element={<About />} />
         <Route path="forgot" element={<ForgotPassword />} />
         <Route path="reset" element={<ResetPassword />} />
         <Route path="verify" element={<VerifyEmail />} />

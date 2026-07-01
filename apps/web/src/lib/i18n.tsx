@@ -35,6 +35,7 @@ const STRINGS: Record<string, Entry> = {
   "nav.markets": { en: "Markets", bn: "মার্কেট" },
   "nav.bulls": { en: "Bulls", bn: "বুলস" },
   "nav.watch": { en: "Watch", bn: "ওয়াচ" },
+  "nav.about": { en: "About", bn: "সম্পর্কে" },
   "nav.me": { en: "Me", bn: "আমি" },
   "search.placeholder": {
     en: "Search ticker… e.g. GP, Grameenphone",
@@ -140,6 +141,9 @@ const STRINGS: Record<string, Entry> = {
   asOf: { en: "as of", bn: "সর্বশেষ" },
   close: { en: "close", bn: "ক্লোজ" },
   "mkt.live": { en: "Live", bn: "লাইভ" },
+  "mkt.open": { en: "Open", bn: "খোলা" },
+  "mkt.closed": { en: "Closed", bn: "বন্ধ" },
+  "mkt.preOpen": { en: "Pre-open", bn: "খোলার আগে" },
   "mkt.updated": { en: "updated", bn: "আপডেট" },
   "mktIntro.title": { en: "New here? How to read this page", bn: "নতুন? এই পেজ কীভাবে পড়বেন" },
   "mktIntro.p1": {
