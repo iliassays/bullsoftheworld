@@ -65,13 +65,15 @@ async def register(
     else:
         phone = normalize_phone(contact)
         if phone is None:
-            raise HTTPException(
-                status_code=400, detail="Enter a valid email or phone number"
-            )
+            raise HTTPException(status_code=400, detail="Enter a valid email or phone number")
     if email and await session.scalar(select(User.id).where(User.email == email)):
-        raise HTTPException(status_code=409, detail="This email is already registered — please log in")
+        raise HTTPException(
+            status_code=409, detail="This email is already registered — please log in"
+        )
     if phone and await session.scalar(select(User.id).where(User.phone == phone)):
-        raise HTTPException(status_code=409, detail="This phone is already registered — please log in")
+        raise HTTPException(
+            status_code=409, detail="This phone is already registered — please log in"
+        )
 
     user = User(
         tenant_id=tenant.name,
@@ -184,9 +186,7 @@ async def _send_verify(user: User) -> None:
 
 
 @router.patch("/me")
-async def update_contact(
-    body: ContactUpdateIn, user: CurrentUser, session: DbSession
-) -> UserOut:
+async def update_contact(body: ContactUpdateIn, user: CurrentUser, session: DbSession) -> UserOut:
     """Add or change email / phone after signup. Changing a contact resets its verified flag."""
     if body.email is not None:
         email = body.email.strip().lower()

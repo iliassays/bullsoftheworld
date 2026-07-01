@@ -18,9 +18,7 @@ class Follow(Base):
     __tablename__ = "follows"
 
     follower_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
-    followee_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"), primary_key=True, index=True
-    )
+    followee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

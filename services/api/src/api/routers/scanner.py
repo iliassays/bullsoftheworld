@@ -191,7 +191,9 @@ async def _trending_board(session, market: str, limit: int) -> ScreenOut:
     quotes = {
         q.code: q
         for q in await session.scalars(
-            select(QuoteSnapshot).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+            select(QuoteSnapshot).where(
+                QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes)
+            )
         )
     }
     analytics = {
@@ -366,20 +368,27 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
                     "Start here to see where attention and money are moving today, then check the "
                     "reason before acting."
                 )
-                item.risk_note = "Activity can be buying or selling pressure; it does not predict direction."
+                item.risk_note = (
+                    "Activity can be buying or selling pressure; it does not predict direction."
+                )
                 item.check_next = ["News", "Price direction", "ADTV/order guide", "Sector move"]
             elif board.key == "most_active":
                 item.scanner_label = "High turnover"
-                item.why = (
-                    "Today's traded value is high"
-                    + (f" ({item.turnover_mn:.1f} mn Tk)." if item.turnover_mn is not None else ".")
+                item.why = "Today's traded value is high" + (
+                    f" ({item.turnover_mn:.1f} mn Tk)." if item.turnover_mn is not None else "."
                 )
-                item.how_to_read = "High turnover helps execution, but still check why the stock is active."
-                item.risk_note = "Turnover alone is not strength; heavy selling can also create turnover."
+                item.how_to_read = (
+                    "High turnover helps execution, but still check why the stock is active."
+                )
+                item.risk_note = (
+                    "Turnover alone is not strength; heavy selling can also create turnover."
+                )
                 item.check_next = ["News", "1D price move", "ADTV/order guide", "Category"]
             elif board.key == "value_quality":
                 item.scanner_label = "Value + quality"
-                item.why = f"Cheaper than sector peers ({item.value:.2f}x) with profitability support."
+                item.why = (
+                    f"Cheaper than sector peers ({item.value:.2f}x) with profitability support."
+                )
                 item.how_to_read = (
                     "Use it as a value shortlist; confirm EPS trend, debt, news and whether price has "
                     "already rerated."

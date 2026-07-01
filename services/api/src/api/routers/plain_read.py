@@ -42,11 +42,7 @@ async def get_plain_read(
     if ta is None:
         raise HTTPException(status_code=404, detail=f"No analytics for {code!r} yet")
 
-    adtv_mn = (
-        ta.avg_volume_20 * ta.last_close / 1e6
-        if ta.avg_volume_20 and ta.last_close
-        else None
-    )
+    adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 and ta.last_close else None
     read = build_plain_read(
         code=code,
         as_of_date=str(ta.as_of_date),

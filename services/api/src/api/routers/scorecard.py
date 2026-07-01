@@ -35,9 +35,7 @@ async def get_scorecard(
     if ta is None:
         raise HTTPException(status_code=404, detail=f"No analytics for {code!r} yet")
 
-    adtv_mn = (
-        ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 and ta.last_close else None
-    )
+    adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 and ta.last_close else None
     today_change_pct = await session.scalar(
         select(QuoteSnapshot.change_pct).where(
             QuoteSnapshot.market == tenant.market, QuoteSnapshot.code == code

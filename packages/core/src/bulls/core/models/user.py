@@ -27,9 +27,7 @@ class User(Base):
     locale: Mapped[str] = mapped_column(String(8), default="bn")
     # Official verified account — an automated desk (or a vetted analyst). Drives the verified badge
     # and the desk profile; independent of the handle so renames don't affect detection.
-    is_official: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    is_official: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

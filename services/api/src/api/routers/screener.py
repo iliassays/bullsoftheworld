@@ -354,7 +354,9 @@ class MarketMethodology(BaseModel):
 
 class ScreensResponse(BaseModel):
     as_of: str | None  # EOD analytics date — the screen RANKINGS are as-of this close
-    quote_as_of: str | None = None  # latest 15-min quote snapshot — prices / "today's move" freshness
+    quote_as_of: str | None = (
+        None  # latest 15-min quote snapshot — prices / "today's move" freshness
+    )
     methodology: MarketMethodology
     screens: list[ScreenOut]
 
@@ -772,17 +774,21 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
         or (item.adtv_mn is not None and item.adtv_mn < _MIN_ADTV_MN)
     ):
         return "High-risk read"
-    if item.adtv_mn is not None and item.adtv_mn >= 20 and (
-        item.catalyst
-        or screen.key
-        in {
-            "institutional_buying",
-            "foreign_buying",
-            "quality_roe",
-            "dividend_yield",
-            "beating_market",
-            "quiet_accumulation",
-        }
+    if (
+        item.adtv_mn is not None
+        and item.adtv_mn >= 20
+        and (
+            item.catalyst
+            or screen.key
+            in {
+                "institutional_buying",
+                "foreign_buying",
+                "quality_roe",
+                "dividend_yield",
+                "beating_market",
+                "quiet_accumulation",
+            }
+        )
     ):
         return "Clean read"
     return "Mixed read"
@@ -803,14 +809,17 @@ def _why_text(screen: ScreenOut, item: ScreenItem) -> str:
     return " · ".join(parts)
 
 
-async def _execution_context(session, market: str, codes: list[str]) -> dict[str, dict[str, float | str | None]]:
+async def _execution_context(
+    session, market: str, codes: list[str]
+) -> dict[str, dict[str, float | str | None]]:
     if not codes:
         return {}
     out: dict[str, dict[str, float | str | None]] = {c: {} for c in codes}
     ta_rows = (
         await session.execute(
-            select(T.code, T.last_close, T.avg_volume_20, T.market_cap_mn, T.free_float_cap_mn)
-            .where(T.market == market, T.code.in_(codes))
+            select(
+                T.code, T.last_close, T.avg_volume_20, T.market_cap_mn, T.free_float_cap_mn
+            ).where(T.market == market, T.code.in_(codes))
         )
     ).all()
     for code, last_close, avg_vol_20, market_cap_mn, free_float_cap_mn in ta_rows:
@@ -820,21 +829,28 @@ async def _execution_context(session, market: str, codes: list[str]) -> dict[str
                 "adtv_mn": round(adtv_mn, 2) if adtv_mn is not None else None,
                 "safe_order_mn": round(adtv_mn * 0.05, 2) if adtv_mn is not None else None,
                 "market_cap_mn": round(market_cap_mn, 2) if market_cap_mn is not None else None,
-                "free_float_cap_mn": round(free_float_cap_mn, 2) if free_float_cap_mn is not None else None,
+                "free_float_cap_mn": round(free_float_cap_mn, 2)
+                if free_float_cap_mn is not None
+                else None,
             }
         )
     q_rows = (
         await session.execute(
-            select(QuoteSnapshot.code, QuoteSnapshot.volume, QuoteSnapshot.ltp)
-            .where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+            select(QuoteSnapshot.code, QuoteSnapshot.volume, QuoteSnapshot.ltp).where(
+                QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes)
+            )
         )
     ).all()
     for code, volume, ltp in q_rows:
         turnover_mn = volume * ltp / 1e6 if volume is not None and ltp is not None else None
-        out.setdefault(code, {})["turnover_mn"] = round(turnover_mn, 2) if turnover_mn is not None else None
+        out.setdefault(code, {})["turnover_mn"] = (
+            round(turnover_mn, 2) if turnover_mn is not None else None
+        )
     s_rows = (
         await session.execute(
-            select(Symbol.code, Symbol.category).where(Symbol.market == market, Symbol.code.in_(codes))
+            select(Symbol.code, Symbol.category).where(
+                Symbol.market == market, Symbol.code.in_(codes)
+            )
         )
     ).all()
     for code, category in s_rows:
@@ -855,7 +871,9 @@ async def _recent_catalysts(session, market: str, codes: list[str]) -> dict[str,
                 Announcement.category.in_(_MATERIAL_ANNOUNCEMENT_CATEGORIES),
                 Announcement.published_at >= cutoff,
             )
-            .order_by(Announcement.code, Announcement.published_at.desc(), Announcement.strength.desc())
+            .order_by(
+                Announcement.code, Announcement.published_at.desc(), Announcement.strength.desc()
+            )
         )
     )
     out: dict[str, Announcement] = {}
@@ -949,7 +967,9 @@ async def _ownership_flow(session, market: str, codes: list[str], attr: str) -> 
         by_code.setdefault(r.code, []).append(r)  # newest-first per code
     out: dict[str, _Flow] = {}
     for code, snaps in by_code.items():
-        pairs = [(s.as_of_date, getattr(s, attr)) for s in snaps[:3] if getattr(s, attr) is not None]
+        pairs = [
+            (s.as_of_date, getattr(s, attr)) for s in snaps[:3] if getattr(s, attr) is not None
+        ]
         pairs.reverse()  # oldest→newest
         series = [round(v, 2) for _, v in pairs]
         dates = [d.isoformat() for d, _ in pairs]

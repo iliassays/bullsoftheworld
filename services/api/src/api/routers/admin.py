@@ -155,7 +155,11 @@ async def fb_publish(
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         if not force and (existing := await redis.get(key)):
-            return {"status": "already_posted", "post_id": existing.decode(), "ref_date": post.ref_date}
+            return {
+                "status": "already_posted",
+                "post_id": existing.decode(),
+                "ref_date": post.ref_date,
+            }
         try:
             post_id = await facebook.post_photo_bytes(post.png, post.caption)
         except facebook.FacebookError as e:

@@ -84,7 +84,9 @@ def _tri_up(cx: int, cy: int) -> str:
 
 
 def _tri_down(cx: int, cy: int) -> str:
-    return f'<polygon points="{cx - 13},{cy - 10} {cx + 13},{cy - 10} {cx},{cy + 12}" fill="{_RED}"/>'
+    return (
+        f'<polygon points="{cx - 13},{cy - 10} {cx + 13},{cy - 10} {cx},{cy + 12}" fill="{_RED}"/>'
+    )
 
 
 def _dot(cx: int, cy: int) -> str:
@@ -160,8 +162,8 @@ def _globe(cx: int, cy: int) -> str:
 def _shield(cx: int, cy: int) -> str:
     return (
         f'<path d="M{cx},{cy - 14} L{cx + 12},{cy - 8} L{cx + 12},{cy + 1} '
-        f'C{cx + 12},{cy + 10} {cx},{cy + 15} {cx},{cy + 15} '
-        f'C{cx},{cy + 15} {cx - 12},{cy + 10} {cx - 12},{cy + 1} '
+        f"C{cx + 12},{cy + 10} {cx},{cy + 15} {cx},{cy + 15} "
+        f"C{cx},{cy + 15} {cx - 12},{cy + 10} {cx - 12},{cy + 1} "
         f'L{cx - 12},{cy - 8} Z" stroke="{_GREY}" stroke-width="2.2" fill="none"/>'
         f'<path d="M{cx - 5},{cy} L{cx - 1},{cy + 5} L{cx + 6},{cy - 5}" '
         f'stroke="{_GREY}" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'

@@ -70,7 +70,11 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
     posts = list(
         await session.scalars(
             select(Post)
-            .where(Post.id.in_(tagged), Post.created_at >= since)
+            .where(
+                Post.id.in_(tagged),
+                Post.created_at >= since,
+                Post.moderation_status == "published",
+            )
             .order_by(Post.created_at.desc())
             .limit(40)
         )

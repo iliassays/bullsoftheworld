@@ -83,7 +83,12 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
     posts_24h = await session.scalar(
         select(func.count(func.distinct(Post.id)))
         .join(Cashtag, Cashtag.post_id == Post.id)
-        .where(Cashtag.market == market, Cashtag.code == code, Post.created_at >= since)
+        .where(
+            Cashtag.market == market,
+            Cashtag.code == code,
+            Post.created_at >= since,
+            Post.moderation_status == "published",
+        )
     )
     reactions_24h = await session.scalar(
         select(func.count()).where(
@@ -92,7 +97,10 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
     )
     replies_24h = await session.scalar(
         select(func.count()).where(
-            Post.id.in_(tagged), Post.parent_id.is_not(None), Post.created_at >= since
+            Post.id.in_(tagged),
+            Post.parent_id.is_not(None),
+            Post.created_at >= since,
+            Post.moderation_status == "published",
         )
     )
 

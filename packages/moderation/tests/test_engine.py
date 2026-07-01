@@ -11,7 +11,7 @@ import pytest
 
 from bulls.moderation import Action, Category, Context, decide, load_policy, normalize
 
-CONFIG_DIR = Path(__file__).resolve().parents[3] / "tenants" / "dhaka" / "moderation"
+CONFIG_DIR = Path(__file__).resolve().parents[3] / "tenants" / "bullsofdhaka" / "moderation"
 
 
 @pytest.fixture(scope="module")

@@ -15,7 +15,14 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
+from api.moderation import (
+    moderate_new_post,
+    normalized_hash,
+    record_event,
+    status_for,
+)
 from api.queue import enqueue_sentiment
+from bulls.core.config import get_settings
 from bulls.core.models import (
     Cashtag,
     Follow,
@@ -27,6 +34,7 @@ from bulls.core.models import (
     WatchlistItem,
 )
 from bulls.core.schemas.social import AuthorOut, PostCreate, PostOut, ReactionIn
+from bulls.moderation import Action
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -144,6 +152,8 @@ async def _decorate(
                 agree=agree.get(p.id, 0),
                 disagree=disagree.get(p.id, 0),
                 my_reaction=mine.get(p.id),
+                moderation_status=p.moderation_status,
+                moderation_reason=p.moderation_reason,
             )
         )
     return out
@@ -158,23 +168,63 @@ async def create_post(
         if parent is None or parent.tenant_id != tenant.name:
             raise HTTPException(status_code=404, detail="Parent post not found")
 
+    codes = await _valid_codes(session, tenant.market, parse_cashtags(body.body))
+
+    # Synchronous L0-L2 moderation (local, no AI). Clear violations block at write; the gray zone is
+    # saved 'pending' (author-only, not public); clean posts publish. See docs/specs/feed-moderation.md.
+    decision = await moderate_new_post(
+        session,
+        body=body.body,
+        user=user,
+        tenant_name=tenant.name,
+        market=tenant.market,
+        cashtags=codes,
+        is_reply=body.parent_id is not None,
+    )
+    # Shadow rollout: when enforcement is off, the decision is still logged (below) but nothing is
+    # blocked/held/masked — everything publishes. Flip MODERATION_ENFORCE=true to act on decisions.
+    enforce = get_settings().moderation_enforce
+    status = status_for(decision) if enforce else "published"
+    stored_body = (
+        decision.masked_body if (enforce and decision.action == Action.MASK) else body.body
+    )
+
     post = Post(
         tenant_id=tenant.name,
         author_id=user.id,
-        body=body.body,
+        body=stored_body,
         sentiment=body.sentiment,
         parent_id=body.parent_id,
+        moderation_status=status,
+        moderation_reason=decision.reason_code,
+        normalized_hash=normalized_hash(body.body),
     )
     session.add(post)
     await session.flush()
 
-    codes = await _valid_codes(session, tenant.market, parse_cashtags(body.body))
-    for code in codes:
-        session.add(Cashtag(post_id=post.id, market=tenant.market, code=code))
+    # Blocked posts don't get cashtag rows — they must never reach a symbol feed or any tag aggregate.
+    if status != "blocked":
+        for code in codes:
+            session.add(Cashtag(post_id=post.id, market=tenant.market, code=code))
 
+    await record_event(session, post_id=post.id, tenant_name=tenant.name, decision=decision)
     await session.refresh(post)  # populate server-side created_at
-    # commit before enqueuing so the worker can read the post; AI runs async, never blocks.
-    if body.sentiment is None:
+
+    if enforce and decision.is_blocking:
+        # Persist the blocked post + audit trail before rejecting (the dependency rolls back on raise).
+        await session.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "blocked",
+                "reason": decision.reason_code,
+                "categories": [c.value for c in decision.categories],
+            },
+        )
+
+    # commit before enqueuing so the worker can read the post; AI runs async, never blocks. Only
+    # published posts get auto-sentiment — a pending post isn't public yet.
+    if body.sentiment is None and status == "published":
         await session.commit()
         await enqueue_sentiment(post.id)
 
@@ -183,9 +233,11 @@ async def create_post(
         author=AuthorOut(handle=user.handle, name=user.name),
         body=post.body,
         sentiment=post.sentiment,
-        cashtags=codes,
+        cashtags=codes if status != "blocked" else [],
         created_at=post.created_at,
         parent_id=post.parent_id,
+        moderation_status=post.moderation_status,
+        moderation_reason=post.moderation_reason,
     )
 
 
@@ -206,8 +258,13 @@ async def feed(
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[PostOut]:
-    # Top-level feed shows roots only; replies are fetched per-thread.
-    stmt = select(Post).where(Post.tenant_id == tenant.name, Post.parent_id.is_(None))
+    # Top-level feed shows roots only; replies are fetched per-thread. Only published posts are public
+    # (pending/blocked never surface — see docs/specs/feed-moderation.md).
+    stmt = select(Post).where(
+        Post.tenant_id == tenant.name,
+        Post.parent_id.is_(None),
+        Post.moderation_status == "published",
+    )
     if code:
         tagged = select(Cashtag.post_id).where(
             Cashtag.market == tenant.market, Cashtag.code == code.upper()
@@ -291,6 +348,7 @@ async def top_post(
                 Post.parent_id.is_(None),
                 Post.id.in_(tagged),
                 Post.created_at >= since,
+                Post.moderation_status == "published",
             )
             .order_by(Post.created_at.desc())
             .limit(100)
@@ -316,7 +374,11 @@ async def replies(
     children = list(
         await session.scalars(
             select(Post)
-            .where(Post.tenant_id == tenant.name, Post.parent_id == post_id)
+            .where(
+                Post.tenant_id == tenant.name,
+                Post.parent_id == post_id,
+                Post.moderation_status == "published",
+            )
             .order_by(Post.created_at.asc())
         )
     )

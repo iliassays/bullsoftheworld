@@ -97,6 +97,10 @@ class PostOut(BaseModel):
     agree: int = 0
     disagree: int = 0
     my_reaction: ReactionKind | None = None
+    # Feed moderation: 'published' for everything the feed serves; the create response returns
+    # 'pending' (under review) so the author knows, and 'blocked' surfaces via a 422 instead.
+    moderation_status: str = "published"
+    moderation_reason: str | None = None
 
 
 # --- watchlist ---

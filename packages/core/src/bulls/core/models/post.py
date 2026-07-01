@@ -30,6 +30,15 @@ class Post(Base):
     # Optional image (agent-generated cards only, e.g. the Evening Wrap). Never user uploads.
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     kind: Mapped[str] = mapped_column(String(8), server_default="user")  # 'user' | 'note' (agent)
+    # Feed moderation (see docs/specs/feed-moderation.md). Default 'published' so the fast path and
+    # agent notes are unaffected; the write-path gate sets 'pending'/'blocked' when a post is caught.
+    # Feed reads must filter to 'published'. 'held' = a reviewer parked it; 'blocked' = rejected.
+    moderation_status: Mapped[str] = mapped_column(
+        String(10), server_default="published", index=True
+    )  # 'published' | 'pending' | 'held' | 'blocked'
+    moderation_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Hash of the L0-normalized body — repost/duplicate detection + de-dupe of blocked text.
+    normalized_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

@@ -46,6 +46,7 @@ def _market_cta(campaign: str) -> str:
         f"👉 {link}"
     )
 
+
 # Keep public Facebook radar posts on the same investable universe as the Market page.
 _MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, Tk millions
 _MIN_MCAP_MN = 500.0  # market capitalisation, Tk millions
@@ -254,12 +255,17 @@ async def compose_morning_watch(session, market: str) -> ComposedPost:
         .limit(1)
     )
     near = await _top_codes(
-        session, market, TickerAnalytics.pct_from_52w_high,
+        session,
+        market,
+        TickerAnalytics.pct_from_52w_high,
         where=TickerAnalytics.pct_from_52w_high >= -5,
     )
     low = await _top_codes(
-        session, market, TickerAnalytics.pct_from_52w_low,
-        where=TickerAnalytics.pct_from_52w_low <= 5, asc=True,
+        session,
+        market,
+        TickerAnalytics.pct_from_52w_low,
+        where=TickerAnalytics.pct_from_52w_low <= 5,
+        asc=True,
     )
     mom = await _top_codes(
         session, market, TickerAnalytics.mom_3_1, where=TickerAnalytics.mom_3_1 > 0
@@ -326,9 +332,7 @@ async def compose_morning_watch(session, market: str) -> ComposedPost:
 
 # --- Weekly Recap (FB only) --------------------------------------------------
 async def compose_weekly_recap(session, market: str) -> ComposedPost:
-    latest = await session.scalar(
-        select(func.max(DailyBar.date)).where(DailyBar.market == market)
-    )
+    latest = await session.scalar(select(func.max(DailyBar.date)).where(DailyBar.market == market))
     if latest is None:
         raise cards.CardError("no daily bars available")
     cutoff = latest - dt.timedelta(days=8)
@@ -350,28 +354,32 @@ async def compose_weekly_recap(session, market: str) -> ComposedPost:
             first[code] = close
         last[code] = close
         first_date = min(first_date, d)
-    pcts = {
-        c: (last[c] - first[c]) / first[c] * 100 for c in first if c in last and first[c] > 0
-    }
+    pcts = {c: (last[c] - first[c]) / first[c] * 100 for c in first if c in last and first[c] > 0}
     ranked = sorted(pcts.items(), key=lambda kv: kv[1], reverse=True)
     gainers = [cards.Mover(c, p) for c, p in ranked[:3]]
     losers = [cards.Mover(c, p) for c, p in ranked[-3:][::-1]]
 
     # DSEX week change
     dsex_rows = (
-        await session.execute(
-            select(MarketSummary.dsex)
-            .where(MarketSummary.market == market, MarketSummary.date >= cutoff)
-            .order_by(MarketSummary.date)
+        (
+            await session.execute(
+                select(MarketSummary.dsex)
+                .where(MarketSummary.market == market, MarketSummary.date >= cutoff)
+                .order_by(MarketSummary.date)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     week_pct = None
     if len(dsex_rows) >= 2 and dsex_rows[0]:
         week_pct = (dsex_rows[-1] - dsex_rows[0]) / dsex_rows[0] * 100
 
     # leading / lagging sector (>= 3 names)
     sectors = dict(
-        (await session.execute(select(Symbol.code, Symbol.sector).where(Symbol.market == market))).all()
+        (
+            await session.execute(select(Symbol.code, Symbol.sector).where(Symbol.market == market))
+        ).all()
     )
     by_sector: dict[str, list[float]] = {}
     for c, p in pcts.items():
@@ -382,7 +390,7 @@ async def compose_weekly_recap(session, market: str) -> ComposedPost:
     lead = max(sec_avg, key=sec_avg.get) if sec_avg else None
     lag = min(sec_avg, key=sec_avg.get) if sec_avg else None
 
-    range_label = f"{first_date.strftime("%d")}-{latest.strftime('%d %b %Y')}"
+    range_label = f"{first_date.strftime('%d')}-{latest.strftime('%d %b %Y')}"
     data = cards.WeeklyRecapData(range_label, week_pct, gainers, losers, lead, lag)
     g = ", ".join(f"${m.code} {m.change_pct:+.0f}%" for m in gainers)
     li = ", ".join(f"${m.code} {m.change_pct:+.0f}%" for m in losers)

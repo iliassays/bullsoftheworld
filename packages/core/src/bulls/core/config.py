@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Shared token guarding /admin routes (sent as X-Admin-Token). Empty = admin locked.
     admin_token: str = ""
 
+    # Feed moderation (docs/specs/feed-moderation.md). When False (default), the engine still runs and
+    # every decision is logged to moderation_events, but nothing is blocked/held — posts all publish.
+    # This is the safe "shadow" rollout: observe what WOULD be caught on real traffic and tune the
+    # lexicon before flipping to enforce=True.
+    moderation_enforce: bool = False
+
     default_tenant: str = "bullsofdhaka"
 
     # CORS origins for the web client (comma-separated in env).

@@ -10,6 +10,7 @@ from bulls.core.models.company import (
 )
 from bulls.core.models.follow import Follow
 from bulls.core.models.market_summary import MarketSummary
+from bulls.core.models.moderation_event import ModerationEvent
 from bulls.core.models.page_view_event import PageViewEvent
 from bulls.core.models.post import Cashtag, Post, PostReaction
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
@@ -30,6 +31,7 @@ __all__ = [
     "DividendRecord",
     "Follow",
     "MarketSummary",
+    "ModerationEvent",
     "PageViewEvent",
     "Post",
     "PostReaction",

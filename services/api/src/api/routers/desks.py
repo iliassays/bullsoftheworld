@@ -121,7 +121,11 @@ async def desk(
 ) -> DeskOut:
     u = await _resolve_desk(session, tenant, handle)
     posts = await session.scalar(
-        select(func.count(Post.id)).where(Post.author_id == u.id, Post.parent_id.is_(None))
+        select(func.count(Post.id)).where(
+            Post.author_id == u.id,
+            Post.parent_id.is_(None),
+            Post.moderation_status == "published",
+        )
     )
     followers = await session.scalar(
         select(func.count()).select_from(Follow).where(Follow.followee_id == u.id)
@@ -154,9 +158,7 @@ async def follow_desk(
     u = await _resolve_desk(session, tenant, handle)
     # Idempotent — following twice is a no-op, not an error.
     await session.execute(
-        pg_insert(Follow)
-        .values(follower_id=user.id, followee_id=u.id)
-        .on_conflict_do_nothing()
+        pg_insert(Follow).values(follower_id=user.id, followee_id=u.id).on_conflict_do_nothing()
     )
     await session.commit()
     return {"status": "following"}

@@ -28,6 +28,7 @@ from api.routers import (
     health,
     levels,
     market,
+    moderation,
     news,
     plain_read,
     posts,
@@ -94,6 +95,7 @@ app.include_router(digest.router)
 app.include_router(explainer.router)
 app.include_router(levels.router)
 app.include_router(market.router)
+app.include_router(moderation.router)
 app.include_router(news.router)
 app.include_router(plain_read.router)
 app.include_router(posts.router)

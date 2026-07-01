@@ -157,6 +157,7 @@ async def trending_stocks(
         )
     return out
 
+
 # Enough history for the longest indicator (200-day SMA) plus headroom.
 _ANALYTICS_LOOKBACK = 260
 
