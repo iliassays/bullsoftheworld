@@ -433,8 +433,8 @@ const STRINGS: Record<string, Entry> = {
     bn: "এখনো কোনো পোস্ট নেই — প্রথম মতামত দিন। স্বয়ংক্রিয় মার্কেট নোট আছে 🐂 বুলস-এ।",
   },
   "feed.emptyWatched": {
-    en: "Nothing yet from your watchlist. Add more companies, or see everything in 🐂 Bulls.",
-    bn: "আপনার ওয়াচলিস্টে এখনো কিছু নেই। আরও কোম্পানি যোগ করুন, বা সব দেখুন 🐂 বুলস-এ।",
+    en: "Watch companies to build your feed — their notes and discussion show up here. Tap ☆ Watch on any stock, or see everything in 🐂 Bulls.",
+    bn: "আপনার ফিড সাজাতে কোম্পানি ওয়াচ করুন — তাদের নোট ও আলোচনা এখানে আসবে। যেকোনো শেয়ারে ☆ Watch চাপুন, বা সব দেখুন 🐂 বুলস-এ।",
   },
   "home.today": { en: "Today", bn: "আজ" },
   "home.discussion": { en: "Discussion", bn: "আলোচনা" },

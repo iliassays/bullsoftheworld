@@ -181,20 +181,16 @@ export function SymbolPage() {
   return (
     <div className="flex flex-col gap-3">
       <div className="bg-surface border border-border rounded-2xl p-4">
-        <div className="flex items-start justify-between gap-2">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <div className="text-xl font-bold">${sym}</div>
-            <div className="text-xs text-muted">{detail.symbol.name_en}</div>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
+            <div className="text-xs text-muted truncate">{detail.symbol.name_en}</div>
             {buzz && (
-              <div className="text-xs text-muted">
+              <div className="text-xs text-muted mt-1.5">
                 👁 {buzz.watchers.toLocaleString()} {t("watching")}
                 {buzz.watchers_delta_7d != null && (
                   <span
-                    className={
-                      buzz.watchers_delta_7d >= 0 ? "text-up" : "text-down"
-                    }
+                    className={buzz.watchers_delta_7d >= 0 ? "text-up" : "text-down"}
                   >
                     {" "}
                     ({buzz.watchers_delta_7d >= 0 ? "+" : ""}
@@ -203,28 +199,29 @@ export function SymbolPage() {
                 )}
               </div>
             )}
-            {user ? (
-              <button
-                onClick={toggleWatch}
-                className={`text-sm px-3 py-1.5 rounded-full border ${
-                  watched
-                    ? "text-accent border-accent bg-accent/10"
-                    : "text-muted border-border"
-                }`}
-              >
-                {watched ? t("btn.watching") : t("btn.watch")}
-              </button>
-            ) : (
-              // Logged out: still show Watch; tapping routes to login (like post reactions).
-              <Link
-                to="/me"
-                title={t("btn.watchLogin")}
-                className="text-sm px-3 py-1.5 rounded-full border text-muted border-border"
-              >
-                {t("btn.watch")}
-              </Link>
-            )}
           </div>
+          {/* Watch CTA — solid when not watching (an inviting action), a clear ✓ pill once watching. */}
+          {user ? (
+            <button
+              onClick={toggleWatch}
+              className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition ${
+                watched
+                  ? "bg-accent/10 text-accent border border-accent"
+                  : "bg-accent text-bg hover:opacity-90"
+              }`}
+            >
+              {watched ? `✓ ${t("btn.watching")}` : `☆ ${t("btn.watch")}`}
+            </button>
+          ) : (
+            // Logged out: tapping routes to login (like post reactions).
+            <Link
+              to="/me"
+              title={t("btn.watchLogin")}
+              className="shrink-0 rounded-full px-4 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
+            >
+              ☆ {t("btn.watch")}
+            </Link>
+          )}
         </div>
         {q ? (
           <div className="mt-3 flex items-end gap-3">

@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -15,31 +14,12 @@ import { Empty, Spinner } from "../components/ui";
 export function Feed() {
   const { user } = useAuth();
   const { t } = useLang();
-  // Home is personalized: a signed-in user with a watchlist sees only their watched companies'
-  // activity (lightweight). Logged-out / empty watchlist falls back to the full stream so Home is
-  // never bare. 🐂 Bulls stays the full firehose. `watched`: null = still resolving.
-  const [watched, setWatched] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!user) {
-      setWatched(false);
-      return;
-    }
-    let live = true;
-    api
-      .watchlist()
-      .then((w) => live && setWatched(w.length > 0))
-      .catch(() => live && setWatched(false));
-    return () => {
-      live = false;
-    };
-  }, [user]);
-
+  // Signed in → Home shows only your watchlist's activity (empty until you follow companies).
+  // Logged out → the full stream (can't personalize). 🐂 Bulls stays the full firehose either way.
+  const watched = !!user;
   const { items, setItems, loading, sentinelRef } = useInfiniteFeed(
     `home:${watched}`,
-    (l, o) =>
-      watched === null
-        ? Promise.resolve([])
-        : api.feed(undefined, undefined, l, o, undefined, watched),
+    (l, o) => api.feed(undefined, undefined, l, o, undefined, watched),
   );
 
   const sectionLabel = (text: string) => (
@@ -73,8 +53,8 @@ export function Feed() {
       {items.map((p) => (
         <PostCard key={p.id} post={p} />
       ))}
-      {(loading || watched === null) && <Spinner />}
-      {!loading && watched !== null && items.length === 0 && (
+      {loading && <Spinner />}
+      {!loading && items.length === 0 && (
         <Empty>{watched ? t("feed.emptyWatched") : t("feed.empty")}</Empty>
       )}
       <div ref={sentinelRef} />
