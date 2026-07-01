@@ -25,7 +25,8 @@ export function SentimentTag({ s }: { s: "bull" | "bear" | null }) {
   );
 }
 
-export function Avatar({ name }: { name: string }) {
+// `emoji` (used by official desks) renders in place of the initials.
+export function Avatar({ name, emoji }: { name: string; emoji?: string }) {
   const initials = name
     .split(" ")
     .map((w) => w[0])
@@ -34,7 +35,7 @@ export function Avatar({ name }: { name: string }) {
     .toUpperCase();
   return (
     <div className="w-9 h-9 rounded-full grid place-items-center font-bold text-sm text-accent bg-card shrink-0">
-      {initials}
+      {emoji ? <span className="text-lg leading-none">{emoji}</span> : initials}
     </div>
   );
 }
