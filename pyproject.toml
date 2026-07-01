@@ -9,6 +9,7 @@ dependencies = [
     "bulls-core",
     "bulls-market-data",
     "bulls-analytics",
+    "bulls-moderation",
     "bulls-ai",
     "bulls-api",
     "bulls-ingestion",
@@ -37,6 +38,7 @@ members = ["packages/*", "services/*"]
 bulls-core = { workspace = true }
 bulls-market-data = { workspace = true }
 bulls-analytics = { workspace = true }
+bulls-moderation = { workspace = true }
 bulls-ai = { workspace = true }
 bulls-api = { workspace = true }
 bulls-ingestion = { workspace = true }

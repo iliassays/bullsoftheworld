@@ -1,0 +1,8 @@
+# Mild profanity -> MASK (post still publishes, word replaced with ****).
+# SEED ONLY. The real curated Bangla + Banglish + English list is a maintained asset (spec §10.3).
+# One entry per line; matched obfuscation-proof (compact view) + as a whole word (folded view).
+damn
+crap
+bullshit
+faltu
+baje

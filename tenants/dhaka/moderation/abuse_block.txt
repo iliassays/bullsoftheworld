@@ -1,0 +1,7 @@
+# Slurs / threats -> BLOCK. SEED ONLY — curated Bangla/Banglish/English list is a maintained asset
+# (spec §10.3). One entry per line; matched obfuscation-proof (compact) + as a whole word (folded).
+# Kept deliberately small and non-graphic here; threats are the clearest safe example.
+kill you
+mere felbo
+mere felbo tomake
+jaan niye nibo

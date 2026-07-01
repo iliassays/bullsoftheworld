@@ -1,0 +1,66 @@
+# Bulls of Dhaka — regulatory pattern rules (L1) + L2 thresholds.
+# Matched case-insensitively against the normalized `folded` view (or `compact` for obfuscation-proof
+# single tokens). Categories/actions follow docs/specs/feed-moderation.md §3. This is a SEED — the
+# Bangla/Banglish lexicon is a curated, growing asset (spec §10.3), not a finished list.
+#
+# Each rule: id | category | action | pattern (regex) | target(folded|compact) | reason_code
+
+thresholds:
+  gray_low: 0.35   # risk >= this -> HOLD (gray zone)
+  gray_high: 0.80  # risk >= this -> BLOCK
+
+rules:
+  # --- C2 guaranteed return -> BLOCK -------------------------------------------------
+  - id: guarantee
+    category: C2
+    action: block
+    reason_code: guarantee
+    pattern: '\b(guaranteed?|100\s*%\s*(profit|return|sure)|sure\s*(profit|return|shot|money)|no\s*loss|profit\s*confirmed|confirm(ed)?\s*profit|nishchit\s*(labh|profit)|loss\s*hobe\s*na|labh\s*e\s*labh)\b'
+
+  # --- C1 investment advice ----------------------------------------------------------
+  # Explicit price target = severe -> BLOCK.
+  - id: advice_target
+    category: C1
+    action: block
+    reason_code: advice_target
+    pattern: '\b(target|tgt|tp|sell\s*target|buy\s*target)\b\s*[:=]?\s*(৳|tk|taka|rs)?\s*\d{2,}'
+  # Directional verb + an actual $cashtag = recommendation -> HOLD (softer; can be legit discussion).
+  # Requires the $ so generic wisdom ("buy low sell high") is NOT held (over-block is the worst failure).
+  - id: advice_cashtag
+    category: C1
+    action: hold
+    reason_code: advice
+    pattern: '\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor)\b\s*\$[a-z0-9]{2,}'
+
+  # --- C3 pump / coordinated manipulation -------------------------------------------
+  - id: pump_call
+    category: C3
+    action: block
+    reason_code: pump
+    pattern: '\b((everyone|sobai|all)\s+(buy|kinen|kine|kino|dhuke?\s*poro)|load\s*(koro|kori|up|maro)|circuit\s*(lagbe|lagbei|hobe|marbo)|syndicate|boro\s*khel|hit\s*kor(bo|be))\b'
+
+  # --- C4 rumour as fact (price-sensitive) -> HOLD until verified --------------------
+  - id: rumour_claim
+    category: C4
+    action: hold
+    reason_code: rumor_unverified
+    pattern: '\b(dividend|bonus|rights|merger|acquisition|eps|record\s*date|price\s*sensitive)\b.{0,24}\b(confirmed?|pakka|nishchit|coming|kalke|leak(ed)?|declared)\b'
+  - id: rumour_claim_rev
+    category: C4
+    action: hold
+    reason_code: rumor_unverified
+    pattern: '\b(confirmed?|pakka|nishchit|leak(ed)?)\b.{0,24}\b(dividend|bonus|rights|merger|eps)\b'
+
+  # --- C5 off-platform solicitation / paid tips -> BLOCK ----------------------------
+  - id: solicitation
+    category: C5
+    action: block
+    reason_code: solicitation
+    pattern: '\b(telegram|whats\s*app|imo|signal\s*group|tips?\s*group|paid\s*group|premium\s*group|join\s*my|dm\s*(me\s*)?for|inbox\s*(me\s*)?for)\b|t\.me/|wa\.me/'
+
+  # --- C7 insider information claim -> HOLD -----------------------------------------
+  - id: insider
+    category: C7
+    action: hold
+    reason_code: insider
+    pattern: '\b(insider|inside\s*(info|news|khobor)|my\s*source|amar\s*source|vitor(er)?\s*(khobor|theke)|sure\s*news\s*from)\b'
