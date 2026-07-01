@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
 from api.queue import enqueue_sentiment
-from bulls.core.models import Cashtag, Post, PostReaction, Symbol, User
+from bulls.core.models import Cashtag, Post, PostReaction, QuoteSnapshot, Symbol, User
 from bulls.core.schemas.social import AuthorOut, PostCreate, PostOut, ReactionIn
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -70,6 +70,20 @@ async def _decorate(
     for ct in await session.scalars(select(Cashtag).where(Cashtag.post_id.in_(ids))):
         tags[ct.post_id].append(ct.code)
 
+    # Latest price move per tagged code, so the cashtag chip can show +/- change (batched, no N+1).
+    all_codes = {c for cs in tags.values() for c in cs}
+    changes: dict[str, float] = {}
+    if all_codes:
+        for code, chg in (
+            await session.execute(
+                select(QuoteSnapshot.code, QuoteSnapshot.change_pct).where(
+                    QuoteSnapshot.code.in_(all_codes)
+                )
+            )
+        ).all():
+            if chg is not None:
+                changes[code] = round(chg, 2)
+
     reply_counts: dict[int, int] = {pid: 0 for pid in ids}
     for parent_id, n in (
         await session.execute(
@@ -112,6 +126,7 @@ async def _decorate(
                 body=_localized_body(p, locale),
                 sentiment=p.sentiment,
                 cashtags=tags.get(p.id, []),
+                cashtag_changes={c: changes[c] for c in tags.get(p.id, []) if c in changes},
                 image_url=p.image_url,
                 created_at=p.created_at,
                 kind=p.kind,

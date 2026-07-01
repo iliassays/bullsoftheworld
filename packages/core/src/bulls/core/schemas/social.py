@@ -87,6 +87,7 @@ class PostOut(BaseModel):
     body: str
     sentiment: Sentiment | None = None
     cashtags: list[str] = []
+    cashtag_changes: dict[str, float] = {}  # code -> latest % change, for the chip's +/- tag
     image_url: str | None = None  # agent-generated card (e.g. Evening Wrap); never user uploads
     created_at: dt.datetime
     kind: str = "user"  # 'user' | 'note' (automated agent desk-note)

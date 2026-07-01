@@ -437,6 +437,7 @@ export interface Post {
   body: string;
   sentiment: "bull" | "bear" | null;
   cashtags: string[];
+  cashtag_changes?: Record<string, number>;
   image_url: string | null;
   created_at: string;
   kind: "user" | "note";

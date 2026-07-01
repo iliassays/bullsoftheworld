@@ -141,15 +141,26 @@ export function PostCard({
       )}
       {post.cashtags.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
-          {post.cashtags.map((c) => (
-            <Link
-              key={c}
-              to={`/s/${c}`}
-              className="text-xs text-accent border border-border px-2 py-0.5 rounded-full"
-            >
-              ${c}
-            </Link>
-          ))}
+          {post.cashtags.map((c) => {
+            const chg = post.cashtag_changes?.[c];
+            return (
+              <Link
+                key={c}
+                to={`/s/${c}`}
+                className="text-xs bg-card border border-border rounded-full px-2.5 py-1"
+              >
+                ${c}
+                {chg != null && (
+                  <span
+                    className={`tnum ml-1 ${chg >= 0 ? "text-up" : "text-down"}`}
+                  >
+                    {chg >= 0 ? "+" : ""}
+                    {chg.toFixed(1)}%
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
 
