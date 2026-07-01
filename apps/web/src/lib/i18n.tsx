@@ -440,6 +440,27 @@ const STRINGS: Record<string, Entry> = {
   "home.discussion": { en: "Discussion", bn: "আলোচনা" },
   "home.latest": { en: "Latest", bn: "সর্বশেষ" },
   "home.watchlistFeed": { en: "From your watchlist", bn: "আপনার ওয়াচলিস্ট থেকে" },
+  "home.myFeed": { en: "Your feed", bn: "আপনার ফিড" },
+  "home.signedOutTitle": {
+    en: "Your market, your feed",
+    bn: "আপনার বাজার, আপনার ফিড",
+  },
+  "home.signedOutBody": {
+    en: "Sign in to follow official desks and watch companies — their posts and alerts land right here, just the signals you care about.",
+    bn: "সাইন ইন করুন — অফিসিয়াল ডেস্ক ফলো করুন ও কোম্পানি ওয়াচ করুন, তাদের পোস্ট ও অ্যালার্ট ঠিক এখানে আসবে, শুধু আপনার পছন্দের সংকেত।",
+  },
+  "home.signInCta": { en: "Sign in / Create account", bn: "সাইন ইন / অ্যাকাউন্ট খুলুন" },
+  "home.browseBulls": {
+    en: "Or browse everything in 🐂 Bulls →",
+    bn: "অথবা সব দেখুন 🐂 বুলস-এ →",
+  },
+  "home.emptyTitle": { en: "This is your feed", bn: "এটি আপনার ফিড" },
+  "home.emptyBody": {
+    en: "It fills with posts from the official desks you follow and the companies you watch. Follow a few to get started.",
+    bn: "আপনি যে অফিসিয়াল ডেস্ক ফলো করেন ও যে কোম্পানি ওয়াচ করেন, তাদের পোস্টে এটি ভরে ওঠে। শুরু করতে কয়েকটি ফলো করুন।",
+  },
+  "home.followDesks": { en: "Follow desks", bn: "ডেস্ক ফলো করুন" },
+  "home.watchStocks": { en: "Watch stocks", bn: "শেয়ার ওয়াচ করুন" },
   "bulls.all": { en: "All", bn: "সব" },
   // Bulls feed
   "bulls.feedTitle": { en: "Bulls Feed", bn: "বুলস ফিড" },
