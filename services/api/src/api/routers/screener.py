@@ -499,6 +499,7 @@ async def _most_discussed(
                 Cashtag.market == market,
                 Post.tenant_id == tenant_id,
                 Post.created_at >= since,
+                Post.moderation_status == "published",
                 Cashtag.code.in_(visible_codes(market)),
             )
             .group_by(Cashtag.code)

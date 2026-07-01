@@ -70,6 +70,7 @@ class PostCreate(BaseModel):
     body: str = Field(min_length=1, max_length=2000)
     sentiment: Sentiment | None = None
     parent_id: int | None = None  # set to reply to another post
+    route_code: str | None = Field(default=None, max_length=16, pattern=r"^[A-Za-z0-9]{2,16}$")
 
 
 class ReactionIn(BaseModel):

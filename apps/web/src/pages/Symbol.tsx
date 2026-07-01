@@ -316,6 +316,7 @@ export function SymbolPage() {
           {user ? (
             <Composer
               initial={`$${sym} `}
+              routeCode={sym}
               onPosted={(p) => discussion.setItems((c) => [p, ...c])}
             />
           ) : (

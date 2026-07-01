@@ -27,12 +27,14 @@ export function Composer({
   onPosted,
   initial = "",
   parentId,
+  routeCode,
   compact = false,
   placeholder,
 }: {
   onPosted: (p: Post) => void;
   initial?: string;
   parentId?: number;
+  routeCode?: string;
   compact?: boolean; // replies hide the bull/bear selector
   placeholder?: string;
 }) {
@@ -43,6 +45,7 @@ export function Composer({
   const [sentiment, setSentiment] = useState<"bull" | "bear" | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
 
   // Ticker autocomplete
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -97,16 +100,22 @@ export function Composer({
     if (!body.trim()) return;
     setBusy(true);
     setErr("");
+    setNotice("");
     try {
       const post = await api.createPost({
         body: body.trim(),
         sentiment,
         parent_id: parentId,
+        route_code: routeCode,
       });
-      onPosted(post);
       setBody("");
       setSentiment(null);
       setSuggest(null);
+      if (post.moderation_status === "pending") {
+        setNotice(t("composer.pending"));
+      } else {
+        onPosted(post);
+      }
     } catch (e) {
       setErr(e instanceof ApiError ? e.detail : t("composer.failed"));
     } finally {
@@ -224,6 +233,7 @@ export function Composer({
       <p className="text-[11px] text-muted mt-1.5">
         {t("composer.tickerHint")}
       </p>
+      {notice && <p className="text-accent text-xs mt-2">{notice}</p>}
       {err && <p className="text-down text-xs mt-2">{err}</p>}
     </div>
   );

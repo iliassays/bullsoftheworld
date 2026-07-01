@@ -82,7 +82,11 @@ async def get_pulse(code: str, tenant: CurrentTenant, session: DbSession) -> Pul
                 func.count(func.distinct(Post.author_id)),
                 func.count(func.distinct(Post.id)).filter(Post.sentiment == "bull"),
                 func.count(func.distinct(Post.id)).filter(Post.sentiment == "bear"),
-            ).where(Post.id.in_(tagged), Post.created_at >= since)
+            ).where(
+                Post.id.in_(tagged),
+                Post.created_at >= since,
+                Post.moderation_status == "published",
+            )
         )
     ).one()
     total, authors, bull, bear = (int(x) for x in row)

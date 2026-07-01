@@ -501,6 +501,10 @@ const STRINGS: Record<string, Entry> = {
     bn: "আপনার মতামত কী? স্টক ট্যাগ করতে $GP লিখুন…",
   },
   "composer.failed": { en: "Failed to post", bn: "পোস্ট করা যায়নি" },
+  "composer.pending": {
+    en: "Sent for review. It will appear after approval.",
+    bn: "রিভিউতে পাঠানো হয়েছে। অনুমোদনের পর দেখা যাবে।",
+  },
   "composer.tickerHint": {
     en: "Tip: type $ (or @) then a few letters to tag a ticker.",
     bn: "টিপস: টিকার ট্যাগ করতে $ (বা @) লিখে কয়েকটি অক্ষর টাইপ করুন।",

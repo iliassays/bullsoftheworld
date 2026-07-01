@@ -105,7 +105,7 @@ async def _decorate(
     for parent_id, n in (
         await session.execute(
             select(Post.parent_id, func.count())
-            .where(Post.parent_id.in_(ids))
+            .where(Post.parent_id.in_(ids), Post.moderation_status == "published")
             .group_by(Post.parent_id)
         )
     ).all():
@@ -169,6 +169,7 @@ async def create_post(
             raise HTTPException(status_code=404, detail="Parent post not found")
 
     codes = await _valid_codes(session, tenant.market, parse_cashtags(body.body))
+    route_code = body.route_code.upper() if body.route_code else None
 
     # Synchronous L0-L2 moderation (local, no AI). Clear violations block at write; the gray zone is
     # saved 'pending' (author-only, not public); clean posts publish. See docs/specs/feed-moderation.md.
@@ -180,6 +181,7 @@ async def create_post(
         market=tenant.market,
         cashtags=codes,
         is_reply=body.parent_id is not None,
+        route_code=route_code,
     )
     # Shadow rollout: when enforcement is off, the decision is still logged (below) but nothing is
     # blocked/held/masked — everything publishes. Flip MODERATION_ENFORCE=true to act on decisions.
@@ -319,6 +321,7 @@ async def note_beats(tenant: CurrentTenant, session: DbSession) -> list[NoteBeat
             Post.tenant_id == tenant.name,
             Post.kind == "note",
             Post.parent_id.is_(None),
+            Post.moderation_status == "published",
         )
         .group_by(User.handle, User.name)
         .order_by(func.count(Post.id).desc())
@@ -396,7 +399,7 @@ async def react(
     session: DbSession,
 ) -> dict[str, str]:
     post = await session.get(Post, post_id)
-    if post is None or post.tenant_id != tenant.name:
+    if post is None or post.tenant_id != tenant.name or post.moderation_status != "published":
         raise HTTPException(status_code=404, detail="Post not found")
     existing = await session.get(PostReaction, (post_id, user.id))
     if existing is None:

@@ -63,7 +63,11 @@ async def _trending(session, market: str, *, days: int, limit: int) -> list[Watc
     stmt = (
         select(Cashtag.code, func.count(Post.id), bull, bear)
         .join(Post, Cashtag.post_id == Post.id)
-        .where(Cashtag.market == market, Post.created_at >= since)
+        .where(
+            Cashtag.market == market,
+            Post.created_at >= since,
+            Post.moderation_status == "published",
+        )
         .group_by(Cashtag.code)
         .order_by(func.count(Post.id).desc())
         .limit(limit)

@@ -40,11 +40,10 @@ class Settings(BaseSettings):
     # Shared token guarding /admin routes (sent as X-Admin-Token). Empty = admin locked.
     admin_token: str = ""
 
-    # Feed moderation (docs/specs/feed-moderation.md). When False (default), the engine still runs and
-    # every decision is logged to moderation_events, but nothing is blocked/held — posts all publish.
-    # This is the safe "shadow" rollout: observe what WOULD be caught on real traffic and tune the
-    # lexicon before flipping to enforce=True.
-    moderation_enforce: bool = False
+    # Feed moderation (docs/specs/feed-moderation.md). Default-on: clear violations are blocked,
+    # gray-zone posts are held for review, and every decision is logged to moderation_events. Set
+    # MODERATION_ENFORCE=false only for a deliberate shadow rollout where posts still publish.
+    moderation_enforce: bool = True
 
     default_tenant: str = "bullsofdhaka"
 

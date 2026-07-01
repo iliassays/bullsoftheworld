@@ -236,6 +236,7 @@ export function PostCard({
           {user ? (
             <Composer
               parentId={post.id}
+              routeCode={post.cashtags[0]}
               compact
               placeholder={t("post.replyPlaceholder")}
               onPosted={onReplied}

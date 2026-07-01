@@ -12,6 +12,15 @@ from .normalize import NormalizedPost
 from .types import Action, Category
 
 _MASK = "****"
+_OBFUSCATED_LATIN = {
+    "a": "a@",
+    "b": "b8",
+    "e": "e3",
+    "i": "i1",
+    "o": "o0",
+    "s": "s5",
+    "t": "t7",
+}
 
 
 @dataclass(frozen=True)
@@ -57,5 +66,13 @@ def mask_body(text: str, policy: Policy) -> str:
     spelling (detection already happened on the obfuscation-proof compact view)."""
     masked = text
     for w in policy.mask_words:
+        before = masked
         masked = re.sub(rf"(?<![\w]){re.escape(w)}(?![\w])", _MASK, masked, flags=re.I)
+        if masked == before and re.fullmatch(r"[a-z0-9@]+", w, re.I):
+            chars = []
+            for ch in w.lower():
+                alts = _OBFUSCATED_LATIN.get(ch, re.escape(ch))
+                chars.append(f"[{alts}]+")
+            pattern = r"(?<![A-Za-z0-9])" + r"[\W_]*".join(chars) + r"(?![A-Za-z0-9])"
+            masked = re.sub(pattern, _MASK, masked, flags=re.I)
     return masked

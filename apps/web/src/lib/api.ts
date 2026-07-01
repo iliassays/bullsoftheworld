@@ -56,6 +56,11 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 // Always reduce it to a readable string so the UI never tries to render an object (React #31).
 function errorMessage(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    const o = detail as { reason?: string; error?: string; categories?: string[] };
+    if (o.reason) return o.reason.replace(/_/g, " ");
+    if (o.error) return o.error;
+  }
   if (Array.isArray(detail)) {
     const parts = detail.map((d) => {
       const o = (d ?? {}) as { loc?: unknown[]; msg?: string; type?: string };
@@ -470,6 +475,8 @@ export interface Post {
   agree: number;
   disagree: number;
   my_reaction: ReactionKind | null;
+  moderation_status?: string;
+  moderation_reason?: string | null;
 }
 export interface User {
   id: number;
@@ -608,6 +615,7 @@ export const api = {
     body: string;
     sentiment: "bull" | "bear" | null;
     parent_id?: number;
+    route_code?: string;
   }) => request<Post>("/posts", { method: "POST", body: JSON.stringify(b) }),
   topPost: (code: string) => request<Post | null>(`/posts/top?code=${code}`),
   replies: (id: number) => request<Post[]>(`/posts/${id}/replies`),

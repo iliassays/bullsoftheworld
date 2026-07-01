@@ -91,8 +91,13 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
         )
     )
     reactions_24h = await session.scalar(
-        select(func.count()).where(
-            PostReaction.post_id.in_(tagged), PostReaction.created_at >= since
+        select(func.count())
+        .select_from(PostReaction)
+        .join(Post, Post.id == PostReaction.post_id)
+        .where(
+            PostReaction.post_id.in_(tagged),
+            PostReaction.created_at >= since,
+            Post.moderation_status == "published",
         )
     )
     replies_24h = await session.scalar(

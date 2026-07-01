@@ -30,7 +30,12 @@ rules:
     category: C1
     action: hold
     reason_code: advice
-    pattern: '\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor)\b\s*\$[a-z0-9]{2,}'
+    pattern: '\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor)\b.{0,24}\$[a-z0-9]{2,}'
+  - id: advice_cashtag_rev
+    category: C1
+    action: hold
+    reason_code: advice
+    pattern: '\$[a-z0-9]{2,}.{0,24}\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor)\b'
 
   # --- C3 pump / coordinated manipulation -------------------------------------------
   - id: pump_call

@@ -45,6 +45,8 @@ def test_normalize_extracts_contact():
         ("Guaranteed 20% profit on $XYZ this week", Action.BLOCK, Category.GUARANTEE),
         ("$GP target 145 by next month", Action.BLOCK, Category.ADVICE),
         ("buy $GP now before it flies", Action.HOLD, Category.ADVICE),
+        ("$GP buy now before it flies", Action.HOLD, Category.ADVICE),
+        ("$GP kinen akhon", Action.HOLD, Category.ADVICE),
         ("Everyone buy $ABC at open, circuit lagbe kalke", Action.BLOCK, Category.PUMP),
         ("$GP dividend confirmed next week, pakka", Action.HOLD, Category.RUMOUR),
         ("Join my telegram for daily tips t.me/xyz", Action.BLOCK, Category.SOLICITATION),
@@ -67,6 +69,13 @@ def test_profanity_masks(policy):
     assert d.action == Action.MASK
     assert "****" in d.masked_body
     assert "crap" not in d.masked_body
+
+
+def test_obfuscated_profanity_masks(policy):
+    d = decide("this analysis is cr@p honestly", policy)
+    assert d.action == Action.MASK
+    assert "****" in d.masked_body
+    assert "cr@p" not in d.masked_body
 
 
 def test_threat_blocks(policy):
