@@ -1,14 +1,13 @@
 """Scanner — the "hunt with the data" surface that replaces the passive Watchlist tab.
 
 Two retail-facing tabs, assembled from boards:
-- **Today** — Quality Reversal (the research flagship), Active Today (validated EOD trending), and
-  Top Turnover.
+- **Today** — Quality Reversal (the research flagship) and Active Today (validated EOD trending).
 - **Value** — Value + Quality and Dividend.
 
-Most boards reuse the Market screener's `build_screen` / the persisted `trending_scores`; the only
-new logic here is **Quality Reversal** (docs/specs/scanner.md §0.1) — deep-washout x quality x a
-5-day-high break, the backtested winner (Scheme-3). `?watched=true` scopes every board to the
-caller's watchlist. Descriptive, liquidity-gated, freshness-stamped — never advice.
+The Scanner is intentionally narrower than the Market page: it keeps setup boards visible even when
+empty, adds verification context, and avoids generic dashboard lists as primary boards. `?watched=true`
+scopes every board to the caller's watchlist. Descriptive, liquidity-gated, freshness-stamped — never
+advice.
 """
 
 from __future__ import annotations
@@ -17,8 +16,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
-from api.deps import CurrentTenant, DbSession, OptionalUser, visible_codes
-from api.routers.screener import ScreenItem, ScreenOut, _enrich, build_screen
+from api.deps import CurrentTenant, DbSession, OptionalUser
+from api.routers.screener import ScreenItem, ScreenOut, _enrich
 from bulls.core.models import (
     DailyBar,
     QuoteSnapshot,
@@ -89,7 +88,14 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
     )
     if not rows:
         return ScreenOut(
-            key="quality_reversal", title="", description="", value_label="", group="technical",
+            key="quality_reversal",
+            title="Quality Reversal",
+            description=(
+                "Deeply beaten-down but profitable, reasonably-priced names that just broke their "
+                "5-day high. Empty is useful too: no clean turn setup today."
+            ),
+            value_label="% from 52w high",
+            group="technical",
             items=[],
         )
     cand = {r.code: r for r in rows}
@@ -160,10 +166,17 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
 
 async def _trending_board(session, market: str, limit: int) -> ScreenOut:
     """Active Today — the validated EOD self-normalised volume+turnover surge (trending_scores)."""
+    T = TickerAnalytics
+    investable = select(T.code).where(
+        T.market == market,
+        T.code.in_(_clean_codes(market)),
+        _adtv_mn(T) >= _MIN_ADTV_MN,
+        T.market_cap_mn >= _MIN_MCAP_MN,
+    )
     rows = list(
         await session.scalars(
             select(TrendingScore)
-            .where(TrendingScore.market == market)
+            .where(TrendingScore.market == market, TrendingScore.code.in_(investable))
             .order_by(TrendingScore.rank)
             .limit(limit)
         )
@@ -298,16 +311,33 @@ async def _dividend_quality(session, market: str, limit: int) -> ScreenOut:
 
 
 _TABS: dict[str, list[str]] = {
-    "today": ["quality_reversal", "active_today", "most_active"],
+    "today": ["quality_reversal", "active_today"],
     "value": ["value_quality", "dividend_quality"],
 }
 
 
 def _apply_scanner_context(boards: list[ScreenOut]) -> None:
     for board in boards:
-        if board.key == "most_active":
+        if board.key == "quality_reversal":
+            board.title = "Quality Reversal"
+            board.description = (
+                "Beaten-down, profitable names trying to reclaim a short-term level. A study list, "
+                "not a buy list."
+            )
+        elif board.key == "active_today":
+            board.title = "Active Today"
+            board.description = (
+                "Clean, liquid names trading unusually heavily versus their own normal pace."
+            )
+        elif board.key == "most_active":
             board.title = "Top Turnover"
             board.description = "Where money is trading today. Useful for liquidity, not a call."
+        elif board.key == "value_quality":
+            board.title = "Value + Quality"
+            board.description = "Cheaper than sector peers with profitability support."
+        elif board.key == "dividend_quality":
+            board.title = "Dividend Quality"
+            board.description = "Cash-yield names with positive earnings context."
         for item in board.items:
             if board.key == "quality_reversal":
                 item.scanner_label = "Turn attempt"
@@ -386,9 +416,8 @@ async def radar(
         elif key == "dividend_quality":
             b = await _dividend_quality(session, market, limit)
         else:
-            b = await build_screen(session, market, key, limit, tenant_id=tenant.name)
-        if b is not None:
-            boards.append(b)
+            continue
+        boards.append(b)
 
     await _enrich(session, market, boards)
 
@@ -403,8 +432,9 @@ async def radar(
         for b in boards:
             b.items = [i for i in b.items if i.code in watched_codes]
 
-    boards = [b for b in boards if b.items]  # hide empty boards
     _apply_scanner_context(boards)
+    if watched:
+        boards = [b for b in boards if b.items]
 
     as_of = await session.scalar(
         select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == market)
