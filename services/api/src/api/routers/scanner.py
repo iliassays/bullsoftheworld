@@ -15,10 +15,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from api.deps import CurrentTenant, DbSession, OptionalUser, visible_codes
-from api.routers.screener import ScreenItem, ScreenOut, build_screen
+from api.routers.screener import ScreenItem, ScreenOut, _enrich, build_screen
 from bulls.core.models import (
     DailyBar,
     QuoteSnapshot,
@@ -41,6 +41,20 @@ _MAX_PE = 25.0  # reasonably priced
 _5D = 5  # prior-day window for the breakout trigger
 
 
+def _clean_codes(market: str):
+    """Visible, active, non-Z symbols for clean scanner boards."""
+    return select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        or_(Symbol.category.is_(None), Symbol.category != "Z"),
+    )
+
+
+def _adtv_mn(T) -> object:
+    return T.avg_volume_20 * T.last_close / 1e6
+
+
 class ScannerResponse(BaseModel):
     as_of: str | None
     quote_as_of: str | None = None
@@ -54,22 +68,22 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
     Washed-out (>=40% off the high, still near the low) BUT profitable and reasonably priced, that just
     broke their prior 5-day high. Descriptive; carries a regime caveat (the edge is strongest in a
     recovering market — deepest can be a falling knife in a sustained downtrend)."""
-    codes = visible_codes(market)
     T = TickerAnalytics
     rows = list(
         await session.scalars(
             select(T)
             .where(
                 T.market == market,
-                T.code.in_(codes),
+                T.code.in_(_clean_codes(market)),
                 T.pct_from_52w_high <= _WASHOUT_FROM_HIGH,
                 T.pct_from_52w_low <= _NEAR_LOW,
                 T.roe > 0,  # profitable
                 T.pe_ratio > 0,
                 T.pe_ratio <= _MAX_PE,
-                (T.avg_volume_20 * T.last_close / 1e6) >= _MIN_ADTV_MN,  # liquidity
+                _adtv_mn(T) >= _MIN_ADTV_MN,  # liquidity
                 T.market_cap_mn >= _MIN_MCAP_MN,
             )
+            .order_by(T.pct_from_52w_high.asc(), T.roe.desc())
             .limit(60)  # small candidate set; the 5d-high filter narrows it further
         )
     )
@@ -108,6 +122,8 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
             continue  # no fresh 5-day-high break
         ta = cand[code]
         s = names.get(code)
+        if s and s.category == "Z":
+            continue
         adtv_mn = (ta.avg_volume_20 * ta.last_close / 1e6) if ta.avg_volume_20 else None
         items.append(
             ScreenItem(
@@ -119,6 +135,7 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
                 category=s.category if s else None,
                 adtv_mn=round(adtv_mn, 2) if adtv_mn else None,
                 market_cap_mn=ta.market_cap_mn,
+                note=f"ROE {ta.roe:.0f}% · P/E {ta.pe_ratio:.0f}",
                 why=(
                     f"{ta.pct_from_52w_high:.0f}% off its 52-week high yet profitable "
                     f"(ROE {ta.roe:.0f}%, P/E {ta.pe_ratio:.0f}) — just broke its 5-day high."
@@ -151,20 +168,42 @@ async def _trending_board(session, market: str, limit: int) -> ScreenOut:
             .limit(limit)
         )
     )
+    codes = [r.code for r in rows]
     names = {
         s.code: s
         for s in await session.scalars(
-            select(Symbol).where(Symbol.market == market, Symbol.code.in_([r.code for r in rows]))
+            select(Symbol).where(Symbol.market == market, Symbol.code.in_(codes))
+        )
+    }
+    quotes = {
+        q.code: q
+        for q in await session.scalars(
+            select(QuoteSnapshot).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+        )
+    }
+    analytics = {
+        a.code: a
+        for a in await session.scalars(
+            select(TickerAnalytics).where(
+                TickerAnalytics.market == market, TickerAnalytics.code.in_(codes)
+            )
         )
     }
     items = [
         ScreenItem(
             code=r.code,
             name=(names[r.code].name_en if r.code in names else "") or "",
-            last_close=0.0,
-            value=round(r.change_pct, 1),
+            last_close=(
+                quotes[r.code].ltp
+                if r.code in quotes
+                else analytics[r.code].last_close
+                if r.code in analytics
+                else 0.0
+            ),
+            value=round(r.score, 1),
             change_1d=round(r.change_pct, 1),
             category=names[r.code].category if r.code in names else None,
+            note="heating_up" if r.heating_up else None,
             why="Unusually active today vs its own normal trading — heating up."
             if r.heating_up
             else "More active than usual today.",
@@ -175,16 +214,153 @@ async def _trending_board(session, market: str, limit: int) -> ScreenOut:
         key="active_today",
         title="Active Today",
         description="Stocks trading unusually heavily versus their own normal — activity, not a call.",
-        value_label="% today",
+        value_label="activity",
         group="movers",
         items=items,
     )
 
 
+async def _value_quality(session, market: str, limit: int) -> ScreenOut:
+    T = TickerAnalytics
+    rows = (
+        await session.execute(
+            select(T.code, T.last_close, T.pe_vs_sector, T.roe, T.pe_ratio)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                T.pe_vs_sector.isnot(None),
+                T.pe_vs_sector < 0.8,
+                T.pe_ratio > 0,
+                T.roe >= 15,
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .order_by(T.pe_vs_sector.asc(), T.roe.desc())
+            .limit(limit)
+        )
+    ).all()
+    return ScreenOut(
+        key="value_quality",
+        title="Value + Quality",
+        description="Cheaper than sector peers, but still profitable. A value shortlist, not a buy list.",
+        value_label="x sector",
+        group="value",
+        items=[
+            ScreenItem(
+                code=c,
+                last_close=lc,
+                value=round(pe_vs, 2),
+                note=f"ROE {roe:.0f}% · P/E {pe:.0f}",
+                why=f"P/E is {pe_vs:.2f}x of sector median with ROE {roe:.0f}%.",
+            )
+            for c, lc, pe_vs, roe, pe in rows
+            if pe_vs is not None and roe is not None and pe is not None
+        ],
+    )
+
+
+async def _dividend_quality(session, market: str, limit: int) -> ScreenOut:
+    T = TickerAnalytics
+    rows = (
+        await session.execute(
+            select(T.code, T.last_close, T.dividend_yield, T.roe, T.pe_ratio)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                T.dividend_yield.isnot(None),
+                T.dividend_yield > 0,
+                T.pe_ratio > 0,  # positive EPS; avoids pure yield traps from lossmaking names
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .order_by(T.dividend_yield.desc())
+            .limit(limit)
+        )
+    ).all()
+    return ScreenOut(
+        key="dividend_quality",
+        title="Dividend Quality",
+        description="Cash-yield names with positive earnings context. Past payout, not a forecast.",
+        value_label="yield",
+        group="value",
+        items=[
+            ScreenItem(
+                code=c,
+                last_close=lc,
+                value=round(y, 2),
+                note=f"ROE {roe:.0f}%" if roe is not None else "Positive EPS",
+                why=f"Trailing cash dividend yield {y:.1f}% with positive EPS.",
+            )
+            for c, lc, y, roe, _pe in rows
+            if y is not None
+        ],
+    )
+
+
 _TABS: dict[str, list[str]] = {
     "today": ["quality_reversal", "active_today", "most_active"],
-    "value": ["value_vs_sector", "dividend_yield"],
+    "value": ["value_quality", "dividend_quality"],
 }
+
+
+def _apply_scanner_context(boards: list[ScreenOut]) -> None:
+    for board in boards:
+        if board.key == "most_active":
+            board.title = "Top Turnover"
+            board.description = "Where money is trading today. Useful for liquidity, not a call."
+        for item in board.items:
+            if board.key == "quality_reversal":
+                item.scanner_label = "Turn attempt"
+                item.why = (
+                    f"Deep washout: {abs(item.value):.0f}% below 52W high, "
+                    f"but profitable and just broke its 5-day high."
+                )
+                item.how_to_read = (
+                    "Use it as a study list for possible turn attempts; confirm volume, news and "
+                    "whether support holds."
+                )
+                item.risk_note = "A deeply fallen stock can keep falling. This is not a buy signal."
+                item.check_next = ["News", "Volume holds", "Support level", "Order size"]
+            elif board.key == "active_today":
+                item.scanner_label = "Unusual activity"
+                item.why = (
+                    "Trading activity is above its own normal pace."
+                    if item.note != "heating_up"
+                    else "Volume and turnover are both unusually strong versus its own normal pace."
+                )
+                item.how_to_read = (
+                    "Start here to see where attention and money are moving today, then check the "
+                    "reason before acting."
+                )
+                item.risk_note = "Activity can be buying or selling pressure; it does not predict direction."
+                item.check_next = ["News", "Price direction", "ADTV/order guide", "Sector move"]
+            elif board.key == "most_active":
+                item.scanner_label = "High turnover"
+                item.why = (
+                    f"Today's traded value is high"
+                    + (f" ({item.turnover_mn:.1f} mn Tk)." if item.turnover_mn is not None else ".")
+                )
+                item.how_to_read = "High turnover helps execution, but still check why the stock is active."
+                item.risk_note = "Turnover alone is not strength; heavy selling can also create turnover."
+                item.check_next = ["News", "1D price move", "ADTV/order guide", "Category"]
+            elif board.key == "value_quality":
+                item.scanner_label = "Value + quality"
+                item.why = f"Cheaper than sector peers ({item.value:.2f}x) with profitability support."
+                item.how_to_read = (
+                    "Use it as a value shortlist; confirm EPS trend, debt, news and whether price has "
+                    "already rerated."
+                )
+                item.risk_note = "Cheap can be a value trap if earnings are weakening."
+                item.check_next = ["EPS trend", "Debt/NAV", "Recent news", "Sector comparison"]
+            elif board.key == "dividend_quality":
+                item.scanner_label = "Dividend check"
+                item.why = f"Trailing cash dividend yield is {item.value:.1f}% with positive earnings context."
+                item.how_to_read = (
+                    "Useful for income/value study; check record date, payout history and whether EPS "
+                    "covers the dividend."
+                )
+                item.risk_note = "Past dividend does not guarantee future dividend; price adjusts around record date."
+                item.check_next = ["Record date", "EPS cover", "Payout history", "Price adjustment"]
 
 
 @router.get("/scanner/radar")
@@ -205,10 +381,16 @@ async def radar(
             b = await _quality_reversal(session, market, limit)
         elif key == "active_today":
             b = await _trending_board(session, market, limit)
+        elif key == "value_quality":
+            b = await _value_quality(session, market, limit)
+        elif key == "dividend_quality":
+            b = await _dividend_quality(session, market, limit)
         else:
             b = await build_screen(session, market, key, limit, tenant_id=tenant.name)
         if b is not None:
             boards.append(b)
+
+    await _enrich(session, market, boards)
 
     if watched and viewer is not None:
         watched_codes = set(
@@ -222,8 +404,11 @@ async def radar(
             b.items = [i for i in b.items if i.code in watched_codes]
 
     boards = [b for b in boards if b.items]  # hide empty boards
+    _apply_scanner_context(boards)
 
-    as_of = await session.scalar(select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == market))
+    as_of = await session.scalar(
+        select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == market)
+    )
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )

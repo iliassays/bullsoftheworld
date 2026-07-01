@@ -198,6 +198,10 @@ export interface ScreenItem {
   catalyst?: string | null;
   catalyst_date?: string | null;
   catalyst_category?: string | null;
+  scanner_label?: string | null;
+  how_to_read?: string | null;
+  risk_note?: string | null;
+  check_next?: string[];
 }
 export interface Screen {
   key: string;

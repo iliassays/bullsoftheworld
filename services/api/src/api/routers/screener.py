@@ -327,6 +327,10 @@ class ScreenItem(BaseModel):
     catalyst: str | None = None  # latest material DSE announcement, if any
     catalyst_date: str | None = None
     catalyst_category: str | None = None
+    scanner_label: str | None = None  # short board-specific label for Scanner rows/sheets
+    how_to_read: str | None = None  # Scanner: plain-language read, not advice
+    risk_note: str | None = None  # Scanner: what this pattern does not prove
+    check_next: list[str] = []  # Scanner: concrete verification checklist
 
 
 class ScreenOut(BaseModel):
