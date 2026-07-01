@@ -141,7 +141,7 @@ export function PostCard({
           </b>
           <span className="block text-xs text-muted">
             {isNote ? (
-              <span className="text-muted">🏛️ {t("post.officialDesk")}</span>
+              <span className="text-muted">{t("post.officialDesk")}</span>
             ) : (
               `@${post.author.handle}`
             )}{" "}
