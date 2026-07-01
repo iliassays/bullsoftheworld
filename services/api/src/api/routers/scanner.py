@@ -32,6 +32,7 @@ router = APIRouter(tags=["scanner"])
 # Reuse the screener's liquidity gate (see spec §0.9 — this constant should eventually be shared).
 _MIN_ADTV_MN = 5.0
 _MIN_MCAP_MN = 500.0
+_MIN_FREE_FLOAT_CAP_MN = 100.0
 
 # Quality Reversal thresholds (from dse-trading-research.md Scheme-3).
 _WASHOUT_FROM_HIGH = -40.0  # >=40% off the 52-week high
