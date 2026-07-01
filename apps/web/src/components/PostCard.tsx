@@ -117,7 +117,13 @@ export function PostCard({
         <Avatar name={post.author.name} />
         <div className="leading-tight">
           <b className="text-sm">
-            {post.author.name}
+            {isNote ? (
+              <Link to={`/desk/${post.author.handle}`} className="hover:underline">
+                {post.author.name}
+              </Link>
+            ) : (
+              post.author.name
+            )}
             {isNote && (
               <>
                 {" "}

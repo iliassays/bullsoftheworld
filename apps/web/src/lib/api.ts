@@ -430,6 +430,14 @@ export interface NoteBeat {
   name: string;
   count: number;
 }
+export interface Desk {
+  handle: string;
+  name: string;
+  bio: string;
+  joined: string;
+  posts: number;
+  verified: boolean;
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -570,6 +578,7 @@ export const api = {
     return request<Post[]>(`/posts${s ? `?${s}` : ""}`);
   },
   noteBeats: () => request<NoteBeat[]>("/posts/note-beats"),
+  desk: (handle: string) => request<Desk>(`/desks/${handle}`),
   createPost: (b: {
     body: string;
     sentiment: "bull" | "bear" | null;

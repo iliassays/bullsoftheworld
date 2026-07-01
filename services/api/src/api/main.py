@@ -22,6 +22,7 @@ from api.routers import (
     auth,
     buzz,
     company,
+    desks,
     digest,
     explainer,
     health,
@@ -87,6 +88,7 @@ app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(buzz.router)
 app.include_router(company.router)
+app.include_router(desks.router)
 app.include_router(digest.router)
 app.include_router(explainer.router)
 app.include_router(levels.router)

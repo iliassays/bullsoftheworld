@@ -485,6 +485,11 @@ const STRINGS: Record<string, Entry> = {
     en: "Official desk · facts only",
     bn: "অফিসিয়াল ডেস্ক · শুধু তথ্য",
   },
+  "desk.official": { en: "Official Bulls of Dhaka Desk", bn: "অফিসিয়াল বুলস অব ঢাকা ডেস্ক" },
+  "desk.posts": { en: "posts", bn: "পোস্ট" },
+  "desk.joined": { en: "Joined", bn: "যোগ দিয়েছে" },
+  "desk.noPosts": { en: "No posts yet.", bn: "এখনো কোনো পোস্ট নেই।" },
+  "desk.notFound": { en: "Desk not found.", bn: "ডেস্ক পাওয়া যায়নি।" },
   "post.agreeBtn": { en: "Agree", bn: "একমত" },
   "post.disagreeBtn": { en: "Disagree", bn: "দ্বিমত" },
   "post.loginReply": {
