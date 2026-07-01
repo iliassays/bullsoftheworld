@@ -54,6 +54,22 @@ def _adtv_mn(T) -> object:
     return T.avg_volume_20 * T.last_close / 1e6
 
 
+def _clamp10(value: float) -> int:
+    return int(max(0, min(10, round(value))))
+
+
+def _fmt_pct(value: float | None, suffix: str = "%") -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:+.1f}{suffix}"
+
+
+def _fmt_x(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.1f}x"
+
+
 class ScannerResponse(BaseModel):
     as_of: str | None
     quote_as_of: str | None = None
@@ -312,9 +328,266 @@ async def _dividend_quality(session, market: str, limit: int) -> ScreenOut:
     )
 
 
+def _quality_score(row: TickerAnalytics) -> int:
+    score = 5.0
+    if row.roe is not None:
+        score += 3 if row.roe >= 20 else 2 if row.roe >= 15 else 1 if row.roe >= 10 else -2
+    if row.eps_growth_yoy is not None:
+        score += 2 if row.eps_growth_yoy >= 15 else 1 if row.eps_growth_yoy >= 0 else -2
+    if row.dividend_yield is not None and row.dividend_yield > 0:
+        score += 1
+    if row.above_sma_200 is False:
+        score -= 1
+    return _clamp10(score)
+
+
+async def _lens_buffett_quality(session, market: str, limit: int) -> ScreenOut:
+    """Buffett/Munger-style quality screen.
+
+    This is stricter than the one-symbol Investor Lens card: scanner rows must be liquid, profitable,
+    high-ROE names, with no obviously weak latest EPS trend when that data is available.
+    """
+    T = TickerAnalytics
+    rows = list(
+        await session.scalars(
+            select(T)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                T.pe_ratio > 0,
+                T.roe >= 15,
+                or_(T.eps_growth_yoy.is_(None), T.eps_growth_yoy >= 0),
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .order_by(T.roe.desc())
+            .limit(120)
+        )
+    )
+    items: list[ScreenItem] = []
+    for row in rows:
+        score = _quality_score(row)
+        if score < 7:
+            continue
+        items.append(
+            ScreenItem(
+                code=row.code,
+                last_close=row.last_close,
+                value=float(score),
+                note=(
+                    f"ROE {_fmt_pct(row.roe)} · EPS {_fmt_pct(row.eps_growth_yoy)} · "
+                    f"P/E {_fmt_x(row.pe_ratio)}"
+                ),
+            )
+        )
+    items.sort(key=lambda item: (-item.value, item.code))
+    return ScreenOut(
+        key="lens_buffett_quality",
+        title="Quality Lens",
+        description=(
+            "Buffett/Munger-style screen: strong profitability, positive earnings context and "
+            "enough liquidity for research."
+        ),
+        value_label="score",
+        group="value",
+        items=items[:limit],
+    )
+
+
+def _graham_score(row: TickerAnalytics) -> int:
+    score = 5.0
+    if row.pe_vs_sector is not None:
+        score += 2 if row.pe_vs_sector <= 0.65 else 1 if row.pe_vs_sector <= 0.8 else 0
+    if row.pe_ratio is not None:
+        score += 1 if row.pe_ratio <= 12 else -1 if row.pe_ratio > 20 else 0
+    if row.pb_ratio is not None:
+        score += 1 if row.pb_ratio <= 1.5 else -1 if row.pb_ratio > 3 else 0
+    if row.roe is not None:
+        score += 1 if row.roe >= 10 else -2 if row.roe <= 0 else 0
+    if row.dividend_yield is not None and row.dividend_yield >= 3:
+        score += 1
+    return _clamp10(score)
+
+
+async def _lens_graham_value(session, market: str, limit: int) -> ScreenOut:
+    T = TickerAnalytics
+    rows = list(
+        await session.scalars(
+            select(T)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                T.pe_vs_sector.isnot(None),
+                T.pe_vs_sector <= 0.8,
+                T.pe_ratio > 0,
+                or_(T.pb_ratio.is_(None), T.pb_ratio <= 3),
+                T.roe > 0,
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .order_by(T.pe_vs_sector.asc())
+            .limit(120)
+        )
+    )
+    items: list[ScreenItem] = []
+    for row in rows:
+        score = _graham_score(row)
+        if score < 7:
+            continue
+        items.append(
+            ScreenItem(
+                code=row.code,
+                last_close=row.last_close,
+                value=float(score),
+                note=(
+                    f"P/E {_fmt_x(row.pe_ratio)} · {_fmt_x(row.pe_vs_sector)} sector · "
+                    f"ROE {_fmt_pct(row.roe)}"
+                ),
+            )
+        )
+    items.sort(key=lambda item: (-item.value, item.code))
+    return ScreenOut(
+        key="lens_graham_value",
+        title="Graham Value Lens",
+        description=(
+            "Margin-of-safety screen: cheaper than sector peers, positive earnings and basic "
+            "profitability support."
+        ),
+        value_label="score",
+        group="value",
+        items=items[:limit],
+    )
+
+
+def _smart_money_score(row: TickerAnalytics) -> int:
+    total_delta = (row.institute_delta or 0) + (row.foreign_delta or 0)
+    score = 5.0
+    score += 3 if total_delta >= 2 else 2 if total_delta >= 1 else 0
+    if (row.institute_delta or 0) > 0 and (row.foreign_delta or 0) > 0:
+        score += 1
+    if row.cmf_20 is not None:
+        score += 1 if row.cmf_20 > 0.1 else -1 if row.cmf_20 < -0.1 else 0
+    return _clamp10(score)
+
+
+async def _lens_smart_money(session, market: str, limit: int) -> ScreenOut:
+    T = TickerAnalytics
+    ownership_delta = func.coalesce(T.institute_delta, 0) + func.coalesce(T.foreign_delta, 0)
+    rows = list(
+        await session.scalars(
+            select(T)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                ownership_delta >= 1.0,
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .order_by(ownership_delta.desc())
+            .limit(120)
+        )
+    )
+    items: list[ScreenItem] = []
+    for row in rows:
+        score = _smart_money_score(row)
+        if score < 7:
+            continue
+        total_delta = (row.institute_delta or 0) + (row.foreign_delta or 0)
+        items.append(
+            ScreenItem(
+                code=row.code,
+                last_close=row.last_close,
+                value=float(score),
+                note=(
+                    f"Institutions {_fmt_pct(row.institute_delta, ' pp')} · "
+                    f"foreign {_fmt_pct(row.foreign_delta, ' pp')} · total {_fmt_pct(total_delta, ' pp')}"
+                ),
+            )
+        )
+    items.sort(key=lambda item: (-item.value, item.code))
+    return ScreenOut(
+        key="lens_smart_money",
+        title="Smart Money Lens",
+        description=(
+            "Ownership-flow screen: institutions and/or foreign investors increased disclosed stakes, "
+            "with liquidity checks."
+        ),
+        value_label="score",
+        group="value",
+        items=items[:limit],
+    )
+
+
+def _risk_control_score(row: TickerAnalytics) -> int:
+    adtv_mn = (row.avg_volume_20 * row.last_close / 1e6) if row.avg_volume_20 else None
+    score = 5.0
+    if adtv_mn is not None:
+        score += 3 if adtv_mn >= 50 else 2 if adtv_mn >= 20 else 1 if adtv_mn >= 10 else -2
+    if row.free_float_cap_mn is not None and row.free_float_cap_mn >= _MIN_FREE_FLOAT_CAP_MN:
+        score += 1
+    if row.volatility is not None:
+        score += 1 if row.volatility <= 35 else -1 if row.volatility >= 60 else 0
+    return _clamp10(score)
+
+
+async def _lens_risk_control(session, market: str, limit: int) -> ScreenOut:
+    T = TickerAnalytics
+    rows = list(
+        await session.scalars(
+            select(T)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                _adtv_mn(T) >= 10.0,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+                or_(T.free_float_cap_mn.is_(None), T.free_float_cap_mn >= _MIN_FREE_FLOAT_CAP_MN),
+                or_(T.volatility.is_(None), T.volatility <= 60),
+            )
+            .order_by((_adtv_mn(T)).desc())
+            .limit(120)
+        )
+    )
+    items: list[ScreenItem] = []
+    for row in rows:
+        score = _risk_control_score(row)
+        if score < 7:
+            continue
+        adtv_mn = (row.avg_volume_20 * row.last_close / 1e6) if row.avg_volume_20 else None
+        items.append(
+            ScreenItem(
+                code=row.code,
+                last_close=row.last_close,
+                value=float(score),
+                note=(
+                    f"ADTV ৳{adtv_mn:.1f}mn · volatility {_fmt_pct(row.volatility)}"
+                    if adtv_mn is not None
+                    else f"Volatility {_fmt_pct(row.volatility)}"
+                ),
+            )
+        )
+    items.sort(key=lambda item: (-item.value, item.code))
+    return ScreenOut(
+        key="lens_risk_control",
+        title="Risk-Controlled Lens",
+        description=(
+            "Taleb-style risk filter: names with better liquidity, free-float support and lower "
+            "fragility. This is about tradability, not upside."
+        ),
+        value_label="score",
+        group="value",
+        items=items[:limit],
+    )
+
+
 _TABS: dict[str, list[str]] = {
     "today": ["quality_reversal", "active_today"],
     "value": ["value_quality", "dividend_quality"],
+    "lens": [
+        "lens_buffett_quality",
+        "lens_graham_value",
+        "lens_smart_money",
+        "lens_risk_control",
+    ],
 }
 
 
@@ -340,6 +613,28 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
         elif board.key == "dividend_quality":
             board.title = "Dividend Quality"
             board.description = "Cash-yield names with positive earnings context."
+        elif board.key == "lens_buffett_quality":
+            board.title = "Quality Lens"
+            board.description = (
+                "Buffett/Munger-style quality screen: stronger profitability, positive earnings "
+                "context and enough liquidity to study."
+            )
+        elif board.key == "lens_graham_value":
+            board.title = "Graham Value Lens"
+            board.description = (
+                "Margin-of-safety screen: cheaper than sector peers with positive earnings and "
+                "basic profitability support."
+            )
+        elif board.key == "lens_smart_money":
+            board.title = "Smart Money Lens"
+            board.description = (
+                "Tracks disclosed institutional/foreign accumulation with liquidity context."
+            )
+        elif board.key == "lens_risk_control":
+            board.title = "Risk-Controlled Lens"
+            board.description = (
+                "Filters for better tradability: liquidity, free-float support and lower fragility."
+            )
         for item in board.items:
             if board.key == "quality_reversal":
                 item.scanner_label = "Broke 5-day high"
@@ -404,6 +699,55 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
                 )
                 item.risk_note = "Past dividend does not guarantee future dividend; price adjusts around record date."
                 item.check_next = ["Record date", "EPS cover", "Payout history", "Price adjustment"]
+            elif board.key == "lens_buffett_quality":
+                item.scanner_label = "Quality pass"
+                item.why = f"Quality score {item.value:.0f}/10. {item.note or 'Profitability and earnings context support the screen.'}"
+                item.how_to_read = (
+                    "This is a study list for durable-business candidates. It looks for stronger "
+                    "profitability and earnings support, then asks you to verify whether the quality "
+                    "is repeatable."
+                )
+                item.risk_note = (
+                    "High quality can still be overpriced or already crowded. Check valuation, debt, "
+                    "recent news and whether earnings are one-off."
+                )
+                item.check_next = ["5Y EPS trend", "Debt/NAV", "Dividend history", "Valuation"]
+            elif board.key == "lens_graham_value":
+                item.scanner_label = "Value pass"
+                item.why = f"Value score {item.value:.0f}/10. {item.note or 'Valuation is cheaper than sector with earnings support.'}"
+                item.how_to_read = (
+                    "This is a margin-of-safety shortlist. Start here when you want cheaper names, "
+                    "then confirm the company is not cheap because the business is deteriorating."
+                )
+                item.risk_note = (
+                    "Cheap can be a value trap. Falling EPS, weak governance, debt or bad news can "
+                    "make a low P/E deserve to stay low."
+                )
+                item.check_next = ["EPS trend", "Debt/NAV", "Latest news", "Sector median"]
+            elif board.key == "lens_smart_money":
+                item.scanner_label = "Flow pass"
+                item.why = f"Ownership-flow score {item.value:.0f}/10. {item.note or 'Disclosed ownership moved in a supportive direction.'}"
+                item.how_to_read = (
+                    "This shows disclosed institutional/foreign stake changes. Treat it as a clue "
+                    "about participation, not proof that price must rise."
+                )
+                item.risk_note = (
+                    "Disclosure is delayed and can be noisy. Institutions can also buy early, sell "
+                    "later, or be wrong."
+                )
+                item.check_next = ["Disclosure date", "CMF/OBV", "Price reaction", "Volume quality"]
+            elif board.key == "lens_risk_control":
+                item.scanner_label = "Tradable"
+                item.why = f"Risk-control score {item.value:.0f}/10. {item.note or 'Liquidity and fragility filters look cleaner.'}"
+                item.how_to_read = (
+                    "Use this to find names where entry and exit may be less painful. It does not say "
+                    "the stock is cheap or ready to move."
+                )
+                item.risk_note = (
+                    "Even liquid stocks can gap, hit circuit limits, or move against you. Keep order "
+                    "size and stop discipline separate from the screen."
+                )
+                item.check_next = ["ADTV/order size", "Bid-ask spread", "Volatility", "Support level"]
 
 
 @router.get("/scanner/radar")
@@ -428,6 +772,14 @@ async def radar(
             b = await _value_quality(session, market, limit)
         elif key == "dividend_quality":
             b = await _dividend_quality(session, market, limit)
+        elif key == "lens_buffett_quality":
+            b = await _lens_buffett_quality(session, market, limit)
+        elif key == "lens_graham_value":
+            b = await _lens_graham_value(session, market, limit)
+        elif key == "lens_smart_money":
+            b = await _lens_smart_money(session, market, limit)
+        elif key == "lens_risk_control":
+            b = await _lens_risk_control(session, market, limit)
         else:
             continue
         boards.append(b)

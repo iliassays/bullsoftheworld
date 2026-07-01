@@ -39,6 +39,7 @@ const STRINGS: Record<string, Entry> = {
   "nav.scanner": { en: "Scanner", bn: "স্ক্যানার" },
   "scanner.today": { en: "Today", bn: "আজ" },
   "scanner.value": { en: "Value", bn: "ভ্যালু" },
+  "scanner.lens": { en: "Lens", bn: "লেন্স" },
   "scanner.watchlist": { en: "Watchlist", bn: "ওয়াচলিস্ট" },
   "scanner.scope": { en: "Scan", bn: "স্ক্যান" },
   "scanner.market": { en: "Whole market", bn: "পুরো বাজার" },

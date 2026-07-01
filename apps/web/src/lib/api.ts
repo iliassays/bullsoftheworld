@@ -550,9 +550,9 @@ export const api = {
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketStatus: () => request<MarketStatus>("/market/status"),
-  scannerRadar: (tab: "today" | "value", watched: boolean) =>
+  scannerRadar: (tab: "today" | "value" | "lens", watched: boolean, limit?: number) =>
     request<ScannerResponse>(
-      `/scanner/radar?tab=${tab}${watched ? "&watched=true" : ""}`,
+      `/scanner/radar?tab=${tab}${watched ? "&watched=true" : ""}${limit ? `&limit=${limit}` : ""}`,
     ),
   sectors: () => request<Sector[]>("/sectors"),
   screen: (

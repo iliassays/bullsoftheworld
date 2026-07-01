@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import desc, func, select
+from sqlalchemy import Date, cast, desc, distinct, func, select
 
 from api.deps import DbSession, require_admin
 from bulls.core.models import (
@@ -239,4 +239,196 @@ async def overview(
         latest_quote_as_of=latest_quote_as_of,
         symbols_active=symbols_active,
         symbols_hidden=symbols_hidden,
+    )
+
+
+# --- Analytics (time series + KPIs) ------------------------------------------------
+
+
+class DailyPoint(BaseModel):
+    date: str  # YYYY-MM-DD (tenant-local day)
+    signups: int  # new real people that day
+    public_posts: int  # published posts by people
+    agent_notes: int  # published posts by desks
+    reactions: int  # agree/disagree that day
+
+
+class AnalyticsKpis(BaseModel):
+    people_total: int
+    desks_total: int
+    new_people_7d: int
+    new_people_30d: int
+    active_people_7d: int  # distinct people who posted or reacted in the last 7 days
+    public_posts_total: int
+    agent_notes_total: int
+    human_share_pct: float  # public posts / all published posts * 100
+    reactions_7d: int
+
+
+class AnalyticsOut(BaseModel):
+    tenant: str
+    market: str
+    tz: str
+    days: int
+    generated_at: dt.datetime
+    kpis: AnalyticsKpis
+    series: list[DailyPoint]
+
+
+def _local_day(col, tz: str):
+    """A timestamptz column bucketed to the tenant-local calendar day (Postgres `AT TIME ZONE`)."""
+    return cast(func.timezone(tz, col), Date)
+
+
+async def _daily_counts(session, day_col, where) -> dict[str, int]:
+    """Return {ISO date -> count} grouped by tenant-local day."""
+    rows = await session.execute(select(day_col, func.count()).where(*where).group_by(day_col))
+    return {str(d): int(n) for d, n in rows.all() if d is not None}
+
+
+@router.get("/analytics")
+async def analytics(
+    request: Request,
+    session: DbSession,
+    tenant: str = Query(..., description="Tenant name (from /admin/tenants)"),
+    days: int = Query(30, ge=7, le=180),
+) -> AnalyticsOut:
+    t = request.app.state.tenants.get(tenant)
+    if t is None:
+        raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
+    name, market, tz = t.name, t.market, t.timezone
+    try:
+        zone = ZoneInfo(tz)
+    except Exception:
+        zone, tz = ZoneInfo("UTC"), "UTC"
+
+    now = dt.datetime.now(dt.UTC)
+    today_local = now.astimezone(zone).date()
+    start_local = today_local - dt.timedelta(days=days - 1)
+    # UTC instant of local-window start, for the range filter.
+    since = dt.datetime.combine(start_local, dt.time.min, tzinfo=zone).astimezone(dt.UTC)
+    since_7d = now - dt.timedelta(days=7)
+    since_30d = now - dt.timedelta(days=30)
+
+    signup_day = _local_day(User.created_at, tz)
+    post_day = _local_day(Post.created_at, tz)
+    react_day = _local_day(PostReaction.created_at, tz)
+
+    signups = await _daily_counts(
+        session,
+        signup_day,
+        [User.tenant_id == name, User.is_official.is_(False), User.created_at >= since],
+    )
+    public_posts = await _daily_counts(
+        session,
+        post_day,
+        [
+            Post.tenant_id == name,
+            Post.kind == "user",
+            Post.moderation_status == "published",
+            Post.created_at >= since,
+        ],
+    )
+    agent_notes = await _daily_counts(
+        session,
+        post_day,
+        [
+            Post.tenant_id == name,
+            Post.kind == "note",
+            Post.moderation_status == "published",
+            Post.created_at >= since,
+        ],
+    )
+    # reactions need a join to scope by tenant; group by the reaction's local day.
+    react_rows = await session.execute(
+        select(react_day, func.count())
+        .select_from(PostReaction)
+        .join(Post, Post.id == PostReaction.post_id)
+        .where(Post.tenant_id == name, PostReaction.created_at >= since)
+        .group_by(react_day)
+    )
+    reactions = {str(d): int(n) for d, n in react_rows.all() if d is not None}
+
+    series = []
+    for i in range(days):
+        d = str(start_local + dt.timedelta(days=i))
+        series.append(
+            DailyPoint(
+                date=d,
+                signups=signups.get(d, 0),
+                public_posts=public_posts.get(d, 0),
+                agent_notes=agent_notes.get(d, 0),
+                reactions=reactions.get(d, 0),
+            )
+        )
+
+    # KPIs
+    people_total = await _count(
+        session,
+        select(func.count()).select_from(User).where(User.tenant_id == name, User.is_official.is_(False)),
+    )
+    desks_total = await _count(
+        session,
+        select(func.count()).select_from(User).where(User.tenant_id == name, User.is_official.is_(True)),
+    )
+    new_people_7d = await _count(
+        session,
+        select(func.count()).select_from(User).where(
+            User.tenant_id == name, User.is_official.is_(False), User.created_at >= since_7d
+        ),
+    )
+    new_people_30d = await _count(
+        session,
+        select(func.count()).select_from(User).where(
+            User.tenant_id == name, User.is_official.is_(False), User.created_at >= since_30d
+        ),
+    )
+    posters_7d = set(
+        await session.scalars(
+            select(distinct(Post.author_id)).where(
+                Post.tenant_id == name, Post.kind == "user", Post.created_at >= since_7d
+            )
+        )
+    )
+    reactors_7d = set(
+        await session.scalars(
+            select(distinct(PostReaction.user_id))
+            .join(Post, Post.id == PostReaction.post_id)
+            .where(Post.tenant_id == name, PostReaction.created_at >= since_7d)
+        )
+    )
+    public_posts_total = await _count(
+        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "user")
+    )
+    agent_notes_total = await _count(
+        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "note")
+    )
+    reactions_7d = await _count(
+        session,
+        select(func.count())
+        .select_from(PostReaction)
+        .join(Post, Post.id == PostReaction.post_id)
+        .where(Post.tenant_id == name, PostReaction.created_at >= since_7d),
+    )
+    denom = public_posts_total + agent_notes_total
+    human_share = round(public_posts_total / denom * 100, 1) if denom else 0.0
+
+    return AnalyticsOut(
+        tenant=name,
+        market=market,
+        tz=tz,
+        days=days,
+        generated_at=now,
+        kpis=AnalyticsKpis(
+            people_total=people_total,
+            desks_total=desks_total,
+            new_people_7d=new_people_7d,
+            new_people_30d=new_people_30d,
+            active_people_7d=len(posters_7d | reactors_7d),
+            public_posts_total=public_posts_total,
+            agent_notes_total=agent_notes_total,
+            human_share_pct=human_share,
+            reactions_7d=reactions_7d,
+        ),
+        series=series,
     )

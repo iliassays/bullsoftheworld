@@ -87,10 +87,39 @@ export interface ModQueueItem {
   created_at: string;
 }
 
+export interface DailyPoint {
+  date: string;
+  signups: number;
+  public_posts: number;
+  agent_notes: number;
+  reactions: number;
+}
+export interface Analytics {
+  tenant: string;
+  market: string;
+  tz: string;
+  days: number;
+  generated_at: string;
+  kpis: {
+    people_total: number;
+    desks_total: number;
+    new_people_7d: number;
+    new_people_30d: number;
+    active_people_7d: number;
+    public_posts_total: number;
+    agent_notes_total: number;
+    human_share_pct: number;
+    reactions_7d: number;
+  };
+  series: DailyPoint[];
+}
+
 export const api = {
   tenants: () => request<AdminTenant[]>("/admin/tenants"),
   overview: (tenant: string) =>
     request<AdminOverview>(`/admin/overview?tenant=${encodeURIComponent(tenant)}`),
+  analytics: (tenant: string, days: number) =>
+    request<Analytics>(`/admin/analytics?tenant=${encodeURIComponent(tenant)}&days=${days}`),
   modQueue: (status: "pending" | "held") =>
     request<{ count: number; items: ModQueueItem[] }>(`/moderation/queue?status=${status}`),
   modApprove: (postId: number) =>

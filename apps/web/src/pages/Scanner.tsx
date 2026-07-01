@@ -6,7 +6,7 @@ import { useAuth } from "../lib/auth";
 import { type Lang, useLang } from "../lib/i18n";
 import { Watchlist } from "./Watchlist";
 
-type Tab = "today" | "value" | "watchlist";
+type Tab = "today" | "value" | "lens" | "watchlist";
 type Picked = { board: Screen; item: ScreenItem };
 
 const BOARD_ICON: Record<string, string> = {
@@ -15,6 +15,10 @@ const BOARD_ICON: Record<string, string> = {
   most_active: "💸",
   value_quality: "⭐",
   dividend_quality: "💵",
+  lens_buffett_quality: "🏛️",
+  lens_graham_value: "🧮",
+  lens_smart_money: "🏦",
+  lens_risk_control: "🛡️",
 };
 
 const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; label: string }>> = {
@@ -78,6 +82,54 @@ const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; lab
       label: "লভ্যাংশ চেক",
     },
   },
+  lens_buffett_quality: {
+    en: {
+      title: "Quality Lens",
+      desc: "Buffett/Munger-style screen: stronger profitability, positive earnings context and enough liquidity to study.",
+      label: "Quality pass",
+    },
+    bn: {
+      title: "কোয়ালিটি লেন্স",
+      desc: "Buffett/Munger-style স্ক্রিন: শক্ত লাভজনকতা, আয়ের সমর্থন এবং গবেষণার মতো লিকুইডিটি।",
+      label: "কোয়ালিটি পাস",
+    },
+  },
+  lens_graham_value: {
+    en: {
+      title: "Graham Value Lens",
+      desc: "Margin-of-safety screen: cheaper than sector peers with positive earnings and basic profitability support.",
+      label: "Value pass",
+    },
+    bn: {
+      title: "Graham ভ্যালু লেন্স",
+      desc: "Margin-of-safety স্ক্রিন: খাতের তুলনায় সস্তা, সাথে পজিটিভ আয় ও লাভজনকতার সমর্থন।",
+      label: "ভ্যালু পাস",
+    },
+  },
+  lens_smart_money: {
+    en: {
+      title: "Smart Money Lens",
+      desc: "Disclosed institutional/foreign accumulation with liquidity context.",
+      label: "Flow pass",
+    },
+    bn: {
+      title: "স্মার্ট মানি লেন্স",
+      desc: "প্রতিষ্ঠান/বিদেশি মালিকানার প্রকাশিত বৃদ্ধি, সাথে লিকুইডিটির প্রেক্ষাপট।",
+      label: "ফ্লো পাস",
+    },
+  },
+  lens_risk_control: {
+    en: {
+      title: "Risk-Controlled Lens",
+      desc: "Better tradability: liquidity, free-float support and lower fragility. This is not an upside screen.",
+      label: "Tradable",
+    },
+    bn: {
+      title: "রিস্ক-কন্ট্রোল লেন্স",
+      desc: "ভালোভাবে লেনদেন করা যায় কি না: লিকুইডিটি, free-float ও কম fragility। এটি upside screen নয়।",
+      label: "লেনদেনযোগ্য",
+    },
+  },
 };
 
 const BOARD_EMPTY_TEXT: Record<string, Record<Lang, string>> = {
@@ -97,6 +149,22 @@ const BOARD_EMPTY_TEXT: Record<string, Record<Lang, string>> = {
     en: "No clean dividend-quality match right now.",
     bn: "এই মুহূর্তে পরিষ্কার লভ্যাংশ + কভারেজ ম্যাচ নেই।",
   },
+  lens_buffett_quality: {
+    en: "No stock passes the Quality Lens right now. That is better than forcing weak quality into the list.",
+    bn: "এই মুহূর্তে কোনো শেয়ার কোয়ালিটি লেন্স পাস করছে না। দুর্বল মান জোর করে তালিকায় আনার চেয়ে এটিই ভালো।",
+  },
+  lens_graham_value: {
+    en: "No clean Graham Value match right now.",
+    bn: "এই মুহূর্তে পরিষ্কার Graham ভ্যালু ম্যাচ নেই।",
+  },
+  lens_smart_money: {
+    en: "No clean ownership-flow match right now.",
+    bn: "এই মুহূর্তে পরিষ্কার ownership-flow ম্যাচ নেই।",
+  },
+  lens_risk_control: {
+    en: "No clean risk-controlled match right now.",
+    bn: "এই মুহূর্তে পরিষ্কার risk-controlled ম্যাচ নেই।",
+  },
 };
 
 function boardText(board: Screen, lang: Lang) {
@@ -111,6 +179,7 @@ function metricText(board: Screen, item: ScreenItem, lang: Lang): string {
   if (board.key === "most_active") return lang === "bn" ? `৳${item.value.toFixed(1)}cr` : `Tk ${item.value.toFixed(1)}cr`;
   if (board.value_label === "yield") return `${item.value.toFixed(1)}%`;
   if (board.value_label === "x sector") return `${item.value.toFixed(2)}x`;
+  if (board.value_label === "score") return `${item.value.toFixed(0)}/10`;
   if (board.value_label.includes("%")) return `${item.value.toFixed(0)}%`;
   if (board.value_label === "activity") return lang === "bn" ? "সক্রিয়" : "Active";
   return item.value.toFixed(1);
@@ -130,12 +199,20 @@ function liquidityText(item: ScreenItem, lang: Lang): string | null {
 
 function defaultHow(board: Screen, lang: Lang): string {
   if (lang === "bn") {
+    if (board.key === "lens_buffett_quality") return "দীর্ঘমেয়াদি ব্যবসার মান খুঁজতে ব্যবহার করুন। ROE ভালো হলেও EPS ধারাবাহিকতা, ঋণ ও valuation যাচাই করুন।";
+    if (board.key === "lens_graham_value") return "সস্তা মনে হওয়া শেয়ারের shortlist হিসেবে দেখুন। কেন সস্তা, ব্যবসা দুর্বল হচ্ছে কি না, তা যাচাই করুন।";
+    if (board.key === "lens_smart_money") return "প্রকাশিত institution/foreign ownership পরিবর্তনকে clue হিসেবে নিন। এটি price direction guarantee করে না।";
+    if (board.key === "lens_risk_control") return "এটি upside screen নয়; ঢোকা-বের হওয়া তুলনামূলক সহজ হতে পারে এমন নাম খুঁজতে ব্যবহার করুন।";
     if (board.key === "active_today") return "কোথায় লেনদেন অস্বাভাবিক হচ্ছে তা দেখুন, তারপর কারণ যাচাই করুন।";
     if (board.key === "most_active") return "লেনদেন বেশি হলে ঢোকা-বের হওয়া সহজ হতে পারে, কিন্তু দামের দিক দেখুন।";
     if (board.key === "value_quality") return "ভ্যালু shortlist হিসেবে দেখুন; EPS, ঋণ ও খবর যাচাই করুন।";
     if (board.key === "dividend_quality") return "লভ্যাংশের আগে EPS কভারেজ, রেকর্ড ডেট ও পেআউট ইতিহাস দেখুন।";
     return "এটি একটি পর্যবেক্ষণ তালিকা, buy signal নয়। এই প্যাটার্নের এজ সাধারণত রিকভারি মার্কেটে বেশি; ডাউনট্রেন্ডে সবচেয়ে বেশি পড়া শেয়ার falling knife হতে পারে। ভলিউম, খবর ও সাপোর্ট যাচাই করুন।";
   }
+  if (board.key === "lens_buffett_quality") return "Use it to study durable-business candidates. Strong ROE still needs EPS consistency, debt and valuation checks.";
+  if (board.key === "lens_graham_value") return "Use it as a cheaper-stock shortlist; verify why it is cheap and whether the business is weakening.";
+  if (board.key === "lens_smart_money") return "Treat disclosed institution/foreign ownership change as a clue, not a guarantee of price direction.";
+  if (board.key === "lens_risk_control") return "This is not an upside screen; use it to find names where entry and exit may be less painful.";
   if (board.key === "active_today") return "Use it to see where activity is unusual, then verify the reason.";
   if (board.key === "most_active") return "High turnover may help entry/exit, but check price direction.";
   if (board.key === "value_quality") return "Use it as a value shortlist; verify EPS, debt and news.";
@@ -145,11 +222,19 @@ function defaultHow(board: Screen, lang: Lang): string {
 
 function defaultRisk(board: Screen, lang: Lang): string {
   if (lang === "bn") {
+    if (board.key === "lens_buffett_quality") return "ভালো কোম্পানিও দামে বেশি হলে রিটার্ন খারাপ হতে পারে। one-off EPS বা অতিরিক্ত ঋণ দেখুন।";
+    if (board.key === "lens_graham_value") return "সস্তা শেয়ার value trap হতে পারে, বিশেষ করে EPS কমছে বা governance/news দুর্বল হলে।";
+    if (board.key === "lens_smart_money") return "Disclosure delayed; বড় investor-রাও ভুল করতে পারে বা পরে বিক্রি করতে পারে।";
+    if (board.key === "lens_risk_control") return "লিকুইড নামেও gap, circuit বা ভুল order size ক্ষতি করতে পারে।";
     if (board.key === "value_quality") return "সস্তা মানেই ভালো নয়; দুর্বল ব্যবসা হলে value trap হতে পারে।";
     if (board.key === "dividend_quality") return "অতীত লভ্যাংশ ভবিষ্যৎ লভ্যাংশের নিশ্চয়তা নয়।";
     if (board.key === "active_today" || board.key === "most_active") return "অ্যাক্টিভ মানেই দাম বাড়বে নয়; heavy selling-ও হতে পারে।";
     return "অনেক পড়া শেয়ার আরও পড়তে পারে; বিস্তৃত ডাউনট্রেন্ডে এই প্যাটার্ন প্রায়ই falling knife, তলদেশ নয়। এটি buy signal নয়।";
   }
+  if (board.key === "lens_buffett_quality") return "A good business can still be a poor trade if price is stretched. Check one-off EPS, debt and valuation.";
+  if (board.key === "lens_graham_value") return "Cheap can be a value trap, especially if EPS is falling or governance/news is weak.";
+  if (board.key === "lens_smart_money") return "Disclosure is delayed; large investors can also be early, wrong, or sellers later.";
+  if (board.key === "lens_risk_control") return "Liquid names can still gap, hit circuit limits, or hurt if order size is too large.";
   if (board.key === "value_quality") return "Cheap can still be a value trap if earnings weaken.";
   if (board.key === "dividend_quality") return "Past dividend does not guarantee future dividend.";
   if (board.key === "active_today" || board.key === "most_active") return "Active does not mean bullish; heavy selling can also create activity.";
@@ -159,11 +244,19 @@ function defaultRisk(board: Screen, lang: Lang): string {
 function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
   if (lang === "en" && item.check_next?.length) return item.check_next;
   if (lang === "bn") {
+    if (board.key === "lens_buffett_quality") return ["৫ বছরের EPS", "ঋণ/NAV", "ডিভিডেন্ড", "valuation"];
+    if (board.key === "lens_graham_value") return ["EPS ট্রেন্ড", "ঋণ/NAV", "খবর", "সেক্টর P/E"];
+    if (board.key === "lens_smart_money") return ["Disclosure date", "CMF/OBV", "দামের reaction", "ভলিউম"];
+    if (board.key === "lens_risk_control") return ["ADTV/order size", "bid-ask spread", "ভোলাটিলিটি", "সাপোর্ট"];
     if (board.key === "value_quality") return ["EPS ট্রেন্ড", "ঋণ/NAV", "খবর", "সেক্টর তুলনা"];
     if (board.key === "dividend_quality") return ["রেকর্ড ডেট", "EPS কভার", "পেআউট ইতিহাস", "দাম সমন্বয়"];
     if (board.key === "active_today" || board.key === "most_active") return ["খবর", "দামের দিক", "ADTV", "খাত"];
     return ["খবর", "ভলিউম", "সাপোর্ট", "অর্ডার সাইজ"];
   }
+  if (board.key === "lens_buffett_quality") return ["5Y EPS", "Debt/NAV", "Dividend history", "Valuation"];
+  if (board.key === "lens_graham_value") return ["EPS trend", "Debt/NAV", "News", "Sector P/E"];
+  if (board.key === "lens_smart_money") return ["Disclosure date", "CMF/OBV", "Price reaction", "Volume"];
+  if (board.key === "lens_risk_control") return ["ADTV/order size", "Bid-ask spread", "Volatility", "Support"];
   if (board.key === "value_quality") return ["EPS trend", "Debt/NAV", "News", "Sector compare"];
   if (board.key === "dividend_quality") return ["Record date", "EPS cover", "Payout history", "Price adjustment"];
   if (board.key === "active_today" || board.key === "most_active") return ["News", "Price direction", "ADTV", "Sector"];
@@ -188,6 +281,18 @@ function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: strin
     }
     if (board.key === "most_active") {
       return "আজ টাকার লেনদেন বেশি; দামের দিক ও কারণ আলাদা করে যাচাই করুন।";
+    }
+    if (board.key === "lens_buffett_quality") {
+      return `কোয়ালিটি স্কোর ${item.value.toFixed(0)}/10। ${item.note || "লাভজনকতা ও আয়ের প্রেক্ষাপট স্ক্রিনকে সমর্থন করছে।"}`;
+    }
+    if (board.key === "lens_graham_value") {
+      return `ভ্যালু স্কোর ${item.value.toFixed(0)}/10। ${item.note || "valuation খাতের তুলনায় কম এবং আয়ের সমর্থন আছে।"}`;
+    }
+    if (board.key === "lens_smart_money") {
+      return `ownership-flow স্কোর ${item.value.toFixed(0)}/10। ${item.note || "প্রকাশিত মালিকানায় সহায়ক পরিবর্তন দেখা যাচ্ছে।"}`;
+    }
+    if (board.key === "lens_risk_control") {
+      return `risk-control স্কোর ${item.value.toFixed(0)}/10। ${item.note || "লিকুইডিটি ও fragility ফিল্টার তুলনামূলক পরিষ্কার।"}`;
     }
   }
   return item.why || fallback;
@@ -488,7 +593,7 @@ function Boards({
   watched,
   onPick,
 }: {
-  tab: "today" | "value";
+  tab: "today" | "value" | "lens";
   watched: boolean;
   onPick: (picked: Picked) => void;
 }) {
@@ -498,7 +603,7 @@ function Boards({
     setData(null);
     let live = true;
     api
-      .scannerRadar(tab, watched)
+      .scannerRadar(tab, watched, tab === "lens" ? 25 : undefined)
       .then((d) => live && setData(d))
       .catch(() => live && setData(null));
     return () => {
@@ -553,6 +658,7 @@ export function Scanner() {
       <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
         {seg("today", t("scanner.today"))}
         {seg("value", t("scanner.value"))}
+        {seg("lens", t("scanner.lens"))}
         {seg("watchlist", t("scanner.watchlist"))}
       </div>
 
