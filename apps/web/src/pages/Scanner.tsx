@@ -20,14 +20,14 @@ const BOARD_ICON: Record<string, string> = {
 const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; label: string }>> = {
   quality_reversal: {
     en: {
-      title: "Turnaround Setup",
-      desc: "Beaten-down but profitable names trying to reclaim a short-term level.",
-      label: "Turn attempt",
+      title: "Beaten-Down, Profitable",
+      desc: "Deeply below their 52-week high but still profitable — and just crossed back above their recent 5-day high.",
+      label: "Broke 5-day high",
     },
     bn: {
-      title: "টার্নারাউন্ড সেটআপ",
-      desc: "অনেক পড়েছে, কিন্তু লাভজনক এবং ছোট সময়ের লেভেল ফেরত নেওয়ার চেষ্টা করছে।",
-      label: "টার্ন চেষ্টা",
+      title: "অনেক পড়েছে, তবু লাভজনক",
+      desc: "৫২-সপ্তাহের উচ্চতা থেকে অনেক নিচে, কিন্তু লাভজনক — এবং সদ্য নিজের ৫ দিনের উচ্চতা ছাড়িয়ে গেছে।",
+      label: "৫ দিনের high ভাঙল",
     },
   },
   active_today: {
@@ -134,13 +134,13 @@ function defaultHow(board: Screen, lang: Lang): string {
     if (board.key === "most_active") return "লেনদেন বেশি হলে ঢোকা-বের হওয়া সহজ হতে পারে, কিন্তু দামের দিক দেখুন।";
     if (board.key === "value_quality") return "ভ্যালু shortlist হিসেবে দেখুন; EPS, ঋণ ও খবর যাচাই করুন।";
     if (board.key === "dividend_quality") return "লভ্যাংশের আগে EPS কভারেজ, রেকর্ড ডেট ও পেআউট ইতিহাস দেখুন।";
-    return "সম্ভাব্য টার্ন চেষ্টা হিসেবে দেখুন; ভলিউম, খবর ও সাপোর্ট যাচাই করুন।";
+    return "এটি একটি পর্যবেক্ষণ তালিকা, buy signal নয়। এই প্যাটার্নের এজ সাধারণত রিকভারি মার্কেটে বেশি; ডাউনট্রেন্ডে সবচেয়ে বেশি পড়া শেয়ার falling knife হতে পারে। ভলিউম, খবর ও সাপোর্ট যাচাই করুন।";
   }
   if (board.key === "active_today") return "Use it to see where activity is unusual, then verify the reason.";
   if (board.key === "most_active") return "High turnover may help entry/exit, but check price direction.";
   if (board.key === "value_quality") return "Use it as a value shortlist; verify EPS, debt and news.";
   if (board.key === "dividend_quality") return "Check EPS cover, record date and payout history before trusting yield.";
-  return "Use it as a possible turn-attempt list; verify volume, news and support.";
+  return "It is an observation list, not a buy signal. This pattern's edge is usually strongest in a recovering market; in a downtrend the most-fallen names can keep falling. Verify volume, news and support.";
 }
 
 function defaultRisk(board: Screen, lang: Lang): string {
@@ -148,12 +148,12 @@ function defaultRisk(board: Screen, lang: Lang): string {
     if (board.key === "value_quality") return "সস্তা মানেই ভালো নয়; দুর্বল ব্যবসা হলে value trap হতে পারে।";
     if (board.key === "dividend_quality") return "অতীত লভ্যাংশ ভবিষ্যৎ লভ্যাংশের নিশ্চয়তা নয়।";
     if (board.key === "active_today" || board.key === "most_active") return "অ্যাক্টিভ মানেই দাম বাড়বে নয়; heavy selling-ও হতে পারে।";
-    return "অনেক পড়া শেয়ার আরও পড়তে পারে; এটি buy signal নয়।";
+    return "অনেক পড়া শেয়ার আরও পড়তে পারে; বিস্তৃত ডাউনট্রেন্ডে এই প্যাটার্ন প্রায়ই falling knife, তলদেশ নয়। এটি buy signal নয়।";
   }
   if (board.key === "value_quality") return "Cheap can still be a value trap if earnings weaken.";
   if (board.key === "dividend_quality") return "Past dividend does not guarantee future dividend.";
   if (board.key === "active_today" || board.key === "most_active") return "Active does not mean bullish; heavy selling can also create activity.";
-  return "Deeply fallen stocks can keep falling; this is not a buy signal.";
+  return "Deeply fallen stocks can keep falling — in a broad downtrend this pattern is often a falling knife, not a bottom. This is not a buy signal.";
 }
 
 function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
@@ -173,7 +173,7 @@ function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
 function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: string): string {
   if (lang === "bn") {
     if (board.key === "quality_reversal") {
-      return `৫২-সপ্তাহের উচ্চতা থেকে প্রায় ${Math.abs(item.value).toFixed(0)}% নিচে, তবে লাভজনক এবং সাম্প্রতিক লেভেল ফেরত নেওয়ার চেষ্টা করছে।`;
+      return `৫২-সপ্তাহের উচ্চতা থেকে প্রায় ${Math.abs(item.value).toFixed(0)}% নিচে, তবু লাভজনক এবং সদ্য নিজের ৫ দিনের উচ্চতা ছাড়িয়ে গেছে।`;
     }
     if (board.key === "active_today") {
       return item.note === "heating_up"

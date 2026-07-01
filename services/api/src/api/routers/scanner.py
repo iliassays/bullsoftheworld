@@ -321,8 +321,8 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
         if board.key == "quality_reversal":
             board.title = "Quality Reversal"
             board.description = (
-                "Beaten-down, profitable names trying to reclaim a short-term level. A study list, "
-                "not a buy list."
+                "Deeply beaten-down but profitable names that just crossed back above their recent "
+                "5-day high. A study list, not a buy list — and in a downtrend the deepest can keep falling."
             )
         elif board.key == "active_today":
             board.title = "Active Today"
@@ -340,16 +340,20 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
             board.description = "Cash-yield names with positive earnings context."
         for item in board.items:
             if board.key == "quality_reversal":
-                item.scanner_label = "Turn attempt"
+                item.scanner_label = "Broke 5-day high"
                 item.why = (
                     f"Deep washout: {abs(item.value):.0f}% below 52W high, "
                     f"but profitable and just broke its 5-day high."
                 )
                 item.how_to_read = (
-                    "Use it as a study list for possible turn attempts; confirm volume, news and "
-                    "whether support holds."
+                    "An observation list, not a buy signal. This pattern's edge is usually strongest in "
+                    "a recovering market; in a downtrend the most-fallen names can keep falling. Confirm "
+                    "volume, news and whether support holds."
                 )
-                item.risk_note = "A deeply fallen stock can keep falling. This is not a buy signal."
+                item.risk_note = (
+                    "A deeply fallen stock can keep falling — in a broad downtrend this pattern is often "
+                    "a falling knife, not a bottom. This is not a buy signal."
+                )
                 item.check_next = ["News", "Volume holds", "Support level", "Order size"]
             elif board.key == "active_today":
                 item.scanner_label = "Unusual activity"
@@ -367,7 +371,7 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
             elif board.key == "most_active":
                 item.scanner_label = "High turnover"
                 item.why = (
-                    f"Today's traded value is high"
+                    "Today's traded value is high"
                     + (f" ({item.turnover_mn:.1f} mn Tk)." if item.turnover_mn is not None else ".")
                 )
                 item.how_to_read = "High turnover helps execution, but still check why the stock is active."
