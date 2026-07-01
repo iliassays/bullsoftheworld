@@ -14,10 +14,11 @@ import { Empty, Spinner } from "../components/ui";
 export function Feed() {
   const { user } = useAuth();
   const { t } = useLang();
-  // Home shows the human community only ("user" posts); automated agent notes live in 🐂 Bulls.
+  // Home is the activity stream — human posts + labeled agent notes, newest first — so it stays
+  // alive pre-community. 🐂 Bulls is the same auto notes, filterable by category.
   const { items, setItems, loading, sentinelRef } = useInfiniteFeed(
     "home",
-    (l, o) => api.feed(undefined, "user", l, o),
+    (l, o) => api.feed(undefined, undefined, l, o),
   );
 
   const sectionLabel = (text: string) => (
@@ -35,8 +36,8 @@ export function Feed() {
       <WatchlistHome />
       <TodaysWatch />
 
-      {/* Discussion — the human community feed (auto notes are in Bulls). */}
-      {sectionLabel(t("home.discussion"))}
+      {/* Latest — the activity stream: human posts + labeled agent notes. */}
+      {sectionLabel(t("home.latest"))}
       {user ? (
         <Composer onPosted={(p) => setItems((cur) => [p, ...cur])} />
       ) : (

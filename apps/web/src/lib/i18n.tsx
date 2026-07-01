@@ -434,6 +434,7 @@ const STRINGS: Record<string, Entry> = {
   },
   "home.today": { en: "Today", bn: "আজ" },
   "home.discussion": { en: "Discussion", bn: "আলোচনা" },
+  "home.latest": { en: "Latest", bn: "সর্বশেষ" },
   "bulls.all": { en: "All", bn: "সব" },
   // Bulls feed
   "bulls.feedTitle": { en: "Bulls Feed", bn: "বুলস ফিড" },
