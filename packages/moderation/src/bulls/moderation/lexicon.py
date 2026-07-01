@@ -26,6 +26,9 @@ class PatternRule:
     regex: re.Pattern
     target: str = "folded"  # which normalized view to match: "folded" | "compact"
     reason_code: str | None = None
+    # When true, a match is suppressed if a negation sits next to it (e.g. "wouldn't buy $GP",
+    # "$GP kinen na") — so disclaimed/negated phrasing isn't held as advice. See rules.py.
+    guard_negation: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,7 @@ def load_policy(config_dir: str | Path) -> Policy:
                     regex=re.compile(raw["pattern"], re.I),
                     target=raw.get("target", "folded"),
                     reason_code=raw.get("reason_code"),
+                    guard_negation=bool(raw.get("guard_negation", False)),
                 )
             )
         t = doc.get("thresholds") or {}

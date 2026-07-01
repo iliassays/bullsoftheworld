@@ -31,6 +31,21 @@ class RuleHit:
     reason_code: str | None = None
 
 
+# Negation cues (EN precedes the verb; Banglish often follows it: "kinen na"). If one sits within
+# this window of an advice match, it's a disclaimer/negation, not a recommendation — don't hold it.
+_NEGATION = re.compile(
+    r"\b(not|never|no|dont|don't|didnt|didn't|wouldnt|wouldn't|wont|won't|"
+    r"cant|can't|cannot|avoid|na|nai|nah)\b",
+    re.I,
+)
+_NEG_WINDOW = 18
+
+
+def _negated(text: str, start: int, end: int) -> bool:
+    ctx = text[max(0, start - _NEG_WINDOW) : end + _NEG_WINDOW]
+    return _NEGATION.search(ctx) is not None
+
+
 def _word_present(word: str, post: NormalizedPost) -> bool:
     """A lexicon entry matches if it appears in the compact view (defeats obfuscation) or as a
     boundary-delimited token in the folded view. Compact match is substring — deliberate, so
@@ -46,8 +61,12 @@ def apply_rules(post: NormalizedPost, policy: Policy) -> list[RuleHit]:
 
     for r in policy.pattern_rules:
         text = post.compact if r.target == "compact" else post.folded
-        if r.regex.search(text):
-            hits.append(RuleHit(r.id, r.category, r.action, r.reason_code))
+        m = r.regex.search(text)
+        if m is None:
+            continue
+        if r.guard_negation and _negated(text, m.start(), m.end()):
+            continue  # disclaimed/negated phrasing — not a recommendation
+        hits.append(RuleHit(r.id, r.category, r.action, r.reason_code))
 
     for w in policy.block_words:
         if _word_present(w, post):

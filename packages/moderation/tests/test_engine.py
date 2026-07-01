@@ -48,9 +48,22 @@ def test_normalize_extracts_contact():
         ("$GP buy now before it flies", Action.HOLD, Category.ADVICE),
         ("$GP kinen akhon", Action.HOLD, Category.ADVICE),
         ("Everyone buy $ABC at open, circuit lagbe kalke", Action.BLOCK, Category.PUMP),
+        (
+            "sobai $XYZ te dhuke poro",
+            Action.BLOCK,
+            Category.PUMP,
+        ),  # cashtag between subject and verb
         ("$GP dividend confirmed next week, pakka", Action.HOLD, Category.RUMOUR),
         ("Join my telegram for daily tips t.me/xyz", Action.BLOCK, Category.SOLICITATION),
         ("amar source theke pelam, boro news ashche", Action.HOLD, Category.INSIDER),
+        # advice synonyms beyond buy/sell
+        ("accumulate $BEXIMCO here", Action.HOLD, Category.ADVICE),
+        ("add more $GP at this level", Action.HOLD, Category.ADVICE),
+        ("book profit on $GP now", Action.HOLD, Category.ADVICE),
+        ("exit $GP immediately", Action.HOLD, Category.ADVICE),
+        # guarantee with number / risk-free
+        ("guaranteed 30% return", Action.BLOCK, Category.GUARANTEE),
+        ("risk free double your money", Action.BLOCK, Category.GUARANTEE),
     ],
 )
 def test_violations(policy, text, action, category):
@@ -93,6 +106,15 @@ def test_threat_blocks(policy):
         "$GP vs $ROBI — which has the better margins?",  # legit comparison
         "I think $GP is a solid long-term hold for me",  # 'hold' is not an advice verb here
         "Turnover on $BEXIMCO was unusually high today",  # pure observation
+        "imo $GP looks fairly valued here",  # 'imo' != IMO the messaging app
+        "no loss no gain, flat market today",  # 'no loss' idiom, not a guarantee
+        "wouldn't buy at these levels, but $GP is ok",  # disclaimed advice (gap + negation)
+        "glad I didn't sell $GP last week",  # negated advice
+        "$GP kinen na, ekhon volatile",  # Banglish negation: don't buy
+        "the risk-free rate is about 8%",  # finance term, not a return promise
+        "no guaranteed winner in the stock market",  # disclaimer, not a guarantee
+        "target audience for $GP's new product is the youth",  # 'target' != price target
+        "my main source of market news is the DSE site",  # 'source' != insider source
     ],
 )
 def test_false_positive_traps_allow(policy, text):

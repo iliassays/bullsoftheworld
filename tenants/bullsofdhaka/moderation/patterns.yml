@@ -11,11 +11,20 @@ thresholds:
 
 rules:
   # --- C2 guaranteed return -> BLOCK -------------------------------------------------
+  # "guaranteed" must sit next to a profit/return/number so "not guaranteed" / "guaranteed to work"
+  # (disclaimers) don't block. Bare "no loss" dropped — it collided with "no loss no gain".
   - id: guarantee
     category: C2
     action: block
     reason_code: guarantee
-    pattern: '\b(guaranteed?|100\s*%\s*(profit|return|sure)|sure\s*(profit|return|shot|money)|no\s*loss|profit\s*confirmed|confirm(ed)?\s*profit|nishchit\s*(labh|profit)|loss\s*hobe\s*na|labh\s*e\s*labh)\b'
+    pattern: '\b(guaranteed?\s*(profit|return|money|gain|\d+|৳|tk)|100\s*%\s*(profit|return|sure)|sure\s*(profit|return|shot|money)|risk[\s-]*free\s*(profit|return|money|gain|double)|double\s+(your\s+)?(money|investment|capital)|profit\s*confirmed|confirm(ed)?\s*profit|nishchit\s*(labh|profit)|loss\s*hobe\s*na|labh\s*e\s*labh)\b'
+  # Obfuscation-proof variant on the compact view (g.u.a.r.a.n.t.e.e.d, sure profit spaced out).
+  - id: guarantee_compact
+    category: C2
+    action: block
+    target: compact
+    reason_code: guarantee
+    pattern: 'guaranteed(\d|profit|return|money|gain)|sureprofit|doubleyourmoney|riskfree(profit|return|money|double)'
 
   # --- C1 investment advice ----------------------------------------------------------
   # Explicit price target = severe -> BLOCK.
@@ -24,25 +33,30 @@ rules:
     action: block
     reason_code: advice_target
     pattern: '\b(target|tgt|tp|sell\s*target|buy\s*target)\b\s*[:=]?\s*(৳|tk|taka|rs)?\s*\d{2,}'
-  # Directional verb + an actual $cashtag = recommendation -> HOLD (softer; can be legit discussion).
-  # Requires the $ so generic wisdom ("buy low sell high") is NOT held (over-block is the worst failure).
+  # Directional verb near an actual $cashtag = recommendation -> HOLD. Requires the $ so generic
+  # wisdom ("buy low sell high") is NOT held; small gap + a negation guard so "wouldn't buy ... $GP"
+  # and "$GP kinen na" are NOT held (over-block is the worst failure).
   - id: advice_cashtag
     category: C1
     action: hold
     reason_code: advice
-    pattern: '\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor)\b.{0,24}\$[a-z0-9]{2,}'
+    guard_negation: true
+    pattern: '\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor|accumulate|book\s*profit|offload|dump|average\s*down|avg\s*down|top\s*up|add\s*more|exit)\b.{0,12}\$[a-z0-9]{2,}'
   - id: advice_cashtag_rev
     category: C1
     action: hold
     reason_code: advice
-    pattern: '\$[a-z0-9]{2,}.{0,24}\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor)\b'
+    guard_negation: true
+    pattern: '\$[a-z0-9]{2,}.{0,12}\b(buy|sell|kinen|kinun|kinbo|kinbe|kino|beche\s*den|bechen|bikri\s*kor|accumulate|book\s*profit|offload|dump|average\s*down|avg\s*down|top\s*up|add\s*more|exit)\b'
 
   # --- C3 pump / coordinated manipulation -------------------------------------------
+  # "sobai/everyone ... <verb>" allows a cashtag between the subject and the call ("sobai $XYZ te
+  # dhuke poro"); "all <verb>" stays adjacent to avoid "all in all ... good buy" false positives.
   - id: pump_call
     category: C3
     action: block
     reason_code: pump
-    pattern: '\b((everyone|sobai|all)\s+(buy|kinen|kine|kino|dhuke?\s*poro)|load\s*(koro|kori|up|maro)|circuit\s*(lagbe|lagbei|hobe|marbo)|syndicate|boro\s*khel|hit\s*kor(bo|be))\b'
+    pattern: '(everyone|sobai)\b.{0,15}?\b(buy|kinen|kine|kino|dhuke?\s*poro)\b|\ball\s+(buy|kinen|kine|kino)\b|\bload\s*(koro|kori|up|maro)\b|\bcircuit\s*(lagbe|lagbei|hobe|marbo)\b|\bsyndicate\b|\bboro\s*khel|\bhit\s*kor(bo|be)\b'
 
   # --- C4 rumour as fact (price-sensitive) -> HOLD until verified --------------------
   - id: rumour_claim
@@ -61,7 +75,8 @@ rules:
     category: C5
     action: block
     reason_code: solicitation
-    pattern: '\b(telegram|whats\s*app|imo|signal\s*group|tips?\s*group|paid\s*group|premium\s*group|join\s*my|dm\s*(me\s*)?for|inbox\s*(me\s*)?for)\b|t\.me/|wa\.me/'
+# NOTE: bare "imo" removed — it collided with "in my opinion". IMO-app links are caught via URLs.
+    pattern: '\b(telegram|whats\s*app|signal\s*group|tips?\s*group|paid\s*group|premium\s*group|join\s*my|dm\s*(me\s*)?for|inbox\s*(me\s*)?for)\b|t\.me/|wa\.me/'
 
   # --- C7 insider information claim -> HOLD -----------------------------------------
   - id: insider
