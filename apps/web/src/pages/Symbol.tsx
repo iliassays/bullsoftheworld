@@ -185,43 +185,51 @@ export function SymbolPage() {
           <div className="min-w-0">
             <div className="text-xl font-bold">${sym}</div>
             <div className="text-xs text-muted truncate">{detail.symbol.name_en}</div>
+          </div>
+          {/* StockTwits-style: compact watchers count + a small +/✓ follow toggle. */}
+          <div className="flex items-center gap-2 shrink-0">
             {buzz && (
-              <div className="text-xs text-muted mt-1.5">
-                👁 {buzz.watchers.toLocaleString()} {t("watching")}
-                {buzz.watchers_delta_7d != null && (
+              <span
+                className="flex items-center gap-1 text-sm text-muted tnum"
+                title={t("watching")}
+              >
+                <span aria-hidden>👥</span>
+                {buzz.watchers.toLocaleString()}
+                {buzz.watchers_delta_7d != null && buzz.watchers_delta_7d !== 0 && (
                   <span
-                    className={buzz.watchers_delta_7d >= 0 ? "text-up" : "text-down"}
+                    className={buzz.watchers_delta_7d > 0 ? "text-up" : "text-down"}
                   >
-                    {" "}
-                    ({buzz.watchers_delta_7d >= 0 ? "+" : ""}
-                    {buzz.watchers_delta_7d} {t("thisWeek")})
+                    {buzz.watchers_delta_7d > 0 ? "+" : ""}
+                    {buzz.watchers_delta_7d}
                   </span>
                 )}
-              </div>
+              </span>
+            )}
+            {user ? (
+              <button
+                onClick={toggleWatch}
+                aria-label={watched ? t("btn.watching") : t("btn.watch")}
+                title={watched ? t("btn.watching") : t("btn.watch")}
+                className={`grid h-8 w-8 place-items-center rounded-full border text-lg leading-none transition ${
+                  watched
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border text-muted hover:border-accent hover:text-accent"
+                }`}
+              >
+                {watched ? "✓" : "+"}
+              </button>
+            ) : (
+              // Logged out: tapping routes to login (like post reactions).
+              <Link
+                to="/me"
+                aria-label={t("btn.watch")}
+                title={t("btn.watchLogin")}
+                className="grid h-8 w-8 place-items-center rounded-full border border-border text-lg leading-none text-muted hover:border-accent hover:text-accent"
+              >
+                +
+              </Link>
             )}
           </div>
-          {/* Watch CTA — solid when not watching (an inviting action), a clear ✓ pill once watching. */}
-          {user ? (
-            <button
-              onClick={toggleWatch}
-              className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition ${
-                watched
-                  ? "bg-accent/10 text-accent border border-accent"
-                  : "bg-accent text-bg hover:opacity-90"
-              }`}
-            >
-              {watched ? `✓ ${t("btn.watching")}` : `☆ ${t("btn.watch")}`}
-            </button>
-          ) : (
-            // Logged out: tapping routes to login (like post reactions).
-            <Link
-              to="/me"
-              title={t("btn.watchLogin")}
-              className="shrink-0 rounded-full px-4 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
-            >
-              ☆ {t("btn.watch")}
-            </Link>
-          )}
         </div>
         {q ? (
           <div className="mt-3 flex items-end gap-3">
