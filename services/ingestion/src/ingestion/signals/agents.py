@@ -11,25 +11,26 @@ from sqlalchemy import select
 from bulls.core.models import User
 from bulls.core.security import hash_password
 
-# beat key -> (handle, display name). Phase 1 uses 'levels'; the rest seed ahead for later phases.
+# beat key -> (handle, display name). Handles follow the StockTwits convention (@BullsOfDhaka<Topic>);
+# migration b3c4d5e6f7a8's successor renamed the seeded rows to match. Display names stay descriptive.
 AGENTS: dict[str, tuple[str, str]] = {
-    "levels": ("bullsofdhaka-levels-agent", "Price Levels"),
-    "volume": ("bullsofdhaka-volume-agent", "Unusual Volume"),
-    "foreign": ("bullsofdhaka-foreign-agent", "Foreign Flow"),
-    "institution": ("bullsofdhaka-institution-agent", "Institutional Flow"),
-    "sponsor": ("bullsofdhaka-sponsor-agent", "Insider / Sponsor"),
-    "dividend": ("bullsofdhaka-dividend-agent", "Dividend"),
-    "earnings": ("bullsofdhaka-earnings-agent", "Earnings"),
-    "rating": ("bullsofdhaka-rating-agent", "Credit Rating"),
-    "market": ("bullsofdhaka-market-update-agent", "Market Update"),
+    "levels": ("BullsOfDhakaLevels", "Price Levels"),
+    "volume": ("BullsOfDhakaVolume", "Unusual Volume"),
+    "foreign": ("BullsOfDhakaForeign", "Foreign Flow"),
+    "institution": ("BullsOfDhakaInstitution", "Institutional Flow"),
+    "sponsor": ("BullsOfDhakaSponsor", "Insider / Sponsor"),
+    "dividend": ("BullsOfDhakaDividend", "Dividend"),
+    "earnings": ("BullsOfDhakaEarnings", "Earnings"),
+    "rating": ("BullsOfDhakaRating", "Credit Rating"),
+    "market": ("BullsOfDhakaMarket", "Market Update"),
     # Factor beats — descriptive notes from the institutional-grade analytics
-    "momentum": ("bullsofdhaka-momentum-agent", "Momentum"),
-    "strength": ("bullsofdhaka-strength-agent", "Relative Strength"),
-    "quality": ("bullsofdhaka-quality-agent", "Quality & Value"),
-    "smartmoney": ("bullsofdhaka-smartmoney-agent", "Smart Money"),
-    "accumulation": ("bullsofdhaka-accumulation-agent", "Accumulation"),
-    "circuit": ("bullsofdhaka-circuit-agent", "Circuit Limit"),
-    "breakout": ("bullsofdhaka-breakout-agent", "52-Week Breakout"),
+    "momentum": ("BullsOfDhakaMomentum", "Momentum"),
+    "strength": ("BullsOfDhakaStrength", "Relative Strength"),
+    "quality": ("BullsOfDhakaQuality", "Quality & Value"),
+    "smartmoney": ("BullsOfDhakaSmartMoney", "Smart Money"),
+    "accumulation": ("BullsOfDhakaAccumulation", "Accumulation"),
+    "circuit": ("BullsOfDhakaCircuit", "Circuit Limit"),
+    "breakout": ("BullsOfDhakaBreakout", "52-Week Breakout"),
 }
 
 # Agents never log in; an unusable hash keeps the account password-locked.
@@ -49,9 +50,16 @@ async def ensure_agents(session, tenant_id: str) -> dict[str, int]:
         user = existing.get(handle)
         if user is None:
             user = User(
-                tenant_id=tenant_id, handle=handle, name=name, password_hash=_LOCKED, locale="bn"
+                tenant_id=tenant_id,
+                handle=handle,
+                name=name,
+                password_hash=_LOCKED,
+                locale="bn",
+                is_official=True,
             )
             session.add(user)
             await session.flush()
+        elif not user.is_official:  # backfill for accounts seeded before the flag existed
+            user.is_official = True
         ids[beat] = user.id
     return ids

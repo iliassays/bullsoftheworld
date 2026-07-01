@@ -62,6 +62,7 @@ export function DeskProfile() {
                 {desk.name}
                 <VerifiedBadge size={17} />
               </div>
+              <div className="text-xs text-muted">@{desk.handle}</div>
               <span className="inline-block mt-1 text-[11px] font-semibold text-accent bg-accent/10 border border-accent/30 rounded-full px-2 py-0.5">
                 🏛️ {t("desk.official")}
               </span>

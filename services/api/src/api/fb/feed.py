@@ -17,7 +17,7 @@ from api.fb import cards, compose
 from bulls.core.config import get_settings
 from bulls.core.models import Post, SignalEvent, User
 
-_MARKET_AGENT = "bullsofdhaka-market-update-agent"
+_MARKET_AGENT = "BullsOfDhakaMarket"
 _MARKET_CODE = "MARKET"
 _EVENT = "market_wrap"
 
