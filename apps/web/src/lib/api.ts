@@ -453,6 +453,12 @@ export interface InvestorLensItem {
   score: number | null;
   summary: string;
   points: string[];
+  checks?: {
+    label: string;
+    expected: string;
+    actual: string;
+    status: "pass" | "watch" | "fail" | "na";
+  }[];
   watch_next: string[];
 }
 export interface InvestorLensResponse {
@@ -501,6 +507,7 @@ export interface User {
   handle: string;
   name: string;
   locale: string;
+  role: string; // 'user' | 'admin'
   email: string | null;
   email_verified: boolean;
   phone: string | null;
@@ -638,6 +645,7 @@ export const api = {
     route_code?: string;
   }) => request<Post>("/posts", { method: "POST", body: JSON.stringify(b) }),
   topPost: (code: string) => request<Post | null>(`/posts/top?code=${code}`),
+  deletePost: (id: number) => request<void>(`/posts/${id}`, { method: "DELETE" }),
   replies: (id: number) => request<Post[]>(`/posts/${id}/replies`),
   react: (id: number, kind: ReactionKind) =>
     request<{ status: string; kind: string }>(`/posts/${id}/react`, {

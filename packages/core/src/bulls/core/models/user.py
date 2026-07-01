@@ -28,6 +28,9 @@ class User(Base):
     # Official verified account — an automated desk (or a vetted analyst). Drives the verified badge
     # and the desk profile; independent of the handle so renames don't affect detection.
     is_official: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Access role. 'user' = normal member (default for every signup); 'admin' = ops/moderation
+    # (can delete any post or comment). Independent of is_official (the verified-desk badge).
+    role: Mapped[str] = mapped_column(String(16), default="user", server_default="user", index=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

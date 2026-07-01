@@ -26,6 +26,7 @@ from bulls.core.config import get_settings
 from bulls.core.models import (
     Cashtag,
     Follow,
+    ModerationEvent,
     Post,
     PostReaction,
     QuoteSnapshot,
@@ -419,3 +420,29 @@ async def unreact(
     existing = await session.get(PostReaction, (post_id, user.id))
     if existing is not None:
         await session.delete(existing)
+
+
+@router.delete("/{post_id}", status_code=204)
+async def delete_post(
+    post_id: int, user: CurrentUser, tenant: CurrentTenant, session: DbSession
+) -> None:
+    """Remove a post or comment. Admins can remove anyone's; authors can remove their own.
+    Soft-delete (status='deleted') so it leaves every feed but keeps an audit trail — reversible."""
+    post = await session.get(Post, post_id)
+    if post is None or post.tenant_id != tenant.name:
+        raise HTTPException(status_code=404, detail="Post not found")
+    is_admin = user.role == "admin"
+    if not is_admin and post.author_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to delete this post")
+    post.moderation_status = "deleted"
+    post.moderation_reason = "removed_by_admin" if is_admin else "removed_by_author"
+    session.add(
+        ModerationEvent(
+            post_id=post.id,
+            tenant_id=tenant.name,
+            decision="deleted",
+            layer=0,
+            reason_code=post.moderation_reason,
+            actor="admin" if is_admin else "author",
+        )
+    )

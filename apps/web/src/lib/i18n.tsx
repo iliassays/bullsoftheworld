@@ -526,6 +526,12 @@ const STRINGS: Record<string, Entry> = {
   },
   "post.replyPlaceholder": { en: "Reply…", bn: "রিপ্লাই…" },
   "post.noReplies": { en: "No replies yet.", bn: "এখনো কোনো রিপ্লাই নেই।" },
+  "post.delete": { en: "Delete", bn: "মুছুন" },
+  "post.deleteAdmin": { en: "Delete (admin)", bn: "মুছুন (অ্যাডমিন)" },
+  "post.confirmDelete": {
+    en: "Delete this post? It will be removed from the feed.",
+    bn: "এই পোস্টটি মুছবেন? এটি ফিড থেকে সরিয়ে ফেলা হবে।",
+  },
   "post.dataNote": { en: "Auto · facts only", bn: "স্বয়ংক্রিয় · শুধু তথ্য" },
   "post.officialDesk": {
     en: "Official desk · facts only",

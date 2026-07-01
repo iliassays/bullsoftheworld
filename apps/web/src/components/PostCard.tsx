@@ -58,6 +58,19 @@ export function PostCard({
   const [replies, setReplies] = useState<Post[] | null>(null);
   const [replyCount, setReplyCount] = useState(post.reply_count);
 
+  // moderation: admins can remove any post/comment; authors can remove their own.
+  const [deleted, setDeleted] = useState(false);
+  const canDelete = !!user && (user.role === "admin" || user.handle === post.author.handle);
+  const remove = async () => {
+    if (!window.confirm(t("post.confirmDelete"))) return;
+    setDeleted(true);
+    try {
+      await api.deletePost(post.id);
+    } catch {
+      setDeleted(false);
+    }
+  };
+
   const react = async (kind: ReactionKind) => {
     if (!user) return;
     const prev = { agree, disagree, mine };
@@ -99,6 +112,7 @@ export function PostCard({
   };
 
   const isNote = post.kind === "note";
+  if (deleted) return null;
 
   const pill = (active: boolean) =>
     `text-xs font-semibold px-2.5 py-1 rounded-full border transition ${
@@ -148,8 +162,18 @@ export function PostCard({
             · {ago(post.created_at)}
           </span>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <SentimentTag s={post.sentiment} />
+          {canDelete && (
+            <button
+              onClick={remove}
+              aria-label={t("post.delete")}
+              title={user?.role === "admin" ? t("post.deleteAdmin") : t("post.delete")}
+              className="text-muted hover:text-down transition text-sm leading-none px-1"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </header>
       <Body text={post.body} />

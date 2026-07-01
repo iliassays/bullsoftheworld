@@ -51,6 +51,7 @@ class UserOut(BaseModel):
     handle: str
     name: str
     locale: str
+    role: str = "user"  # 'user' | 'admin' — drives admin-only UI (e.g. delete controls)
     email: str | None = None
     email_verified: bool = False
     phone: str | None = None
