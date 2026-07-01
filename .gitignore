@@ -27,3 +27,6 @@ data/
 
 # Claude Code session artifacts
 .claude/projects/
+
+# admin cockpit build output (built fresh by deploy-cockpit.sh)
+apps/admin/dist/
