@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Desk } from "../lib/api";
-import { deskIcon } from "../lib/deskIcons";
+import { DeskIcon, hasDeskIcon } from "../lib/deskIcons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
@@ -52,7 +52,6 @@ export function DeskProfile() {
   if (failed) return <Empty>{t("desk.notFound")}</Empty>;
   if (!desk) return <Spinner />;
 
-  const icon = deskIcon(desk.handle);
   const initials = desk.name
     .split(/\s+/)
     .map((w) => w[0])
@@ -70,7 +69,11 @@ export function DeskProfile() {
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-4 min-w-0">
               <div className="w-16 h-16 shrink-0 rounded-full grid place-items-center bg-surface border-2 border-accent/60 text-accent font-extrabold text-xl">
-                {icon ? <span className="text-3xl leading-none">{icon}</span> : initials}
+                {hasDeskIcon(desk.handle) ? (
+                  <DeskIcon handle={desk.handle} size={32} />
+                ) : (
+                  initials
+                )}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 text-xl font-extrabold leading-tight">

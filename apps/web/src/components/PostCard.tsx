@@ -4,7 +4,7 @@ import { api, type Post, type ReactionKind } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Composer } from "./Composer";
-import { deskIcon } from "../lib/deskIcons";
+import { DeskIcon, hasDeskIcon } from "../lib/deskIcons";
 import { Avatar, SentimentTag, VerifiedBadge } from "./ui";
 
 const ago = (iso: string) => {
@@ -117,7 +117,11 @@ export function PostCard({
       <header className="flex items-center gap-2.5">
         <Avatar
           name={post.author.name}
-          emoji={isNote ? deskIcon(post.author.handle) : undefined}
+          icon={
+            isNote && hasDeskIcon(post.author.handle) ? (
+              <DeskIcon handle={post.author.handle} />
+            ) : undefined
+          }
         />
         <div className="leading-tight">
           <b className="text-sm">
