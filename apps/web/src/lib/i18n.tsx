@@ -432,9 +432,14 @@ const STRINGS: Record<string, Entry> = {
     en: "No posts yet — be the first. Automated market notes live in 🐂 Bulls.",
     bn: "এখনো কোনো পোস্ট নেই — প্রথম মতামত দিন। স্বয়ংক্রিয় মার্কেট নোট আছে 🐂 বুলস-এ।",
   },
+  "feed.emptyWatched": {
+    en: "Nothing yet from your watchlist. Add more companies, or see everything in 🐂 Bulls.",
+    bn: "আপনার ওয়াচলিস্টে এখনো কিছু নেই। আরও কোম্পানি যোগ করুন, বা সব দেখুন 🐂 বুলস-এ।",
+  },
   "home.today": { en: "Today", bn: "আজ" },
   "home.discussion": { en: "Discussion", bn: "আলোচনা" },
   "home.latest": { en: "Latest", bn: "সর্বশেষ" },
+  "home.watchlistFeed": { en: "From your watchlist", bn: "আপনার ওয়াচলিস্ট থেকে" },
   "bulls.all": { en: "All", bn: "সব" },
   // Bulls feed
   "bulls.feedTitle": { en: "Bulls Feed", bn: "বুলস ফিড" },

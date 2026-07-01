@@ -16,7 +16,15 @@ from sqlalchemy import func, select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
 from api.queue import enqueue_sentiment
-from bulls.core.models import Cashtag, Post, PostReaction, QuoteSnapshot, Symbol, User
+from bulls.core.models import (
+    Cashtag,
+    Post,
+    PostReaction,
+    QuoteSnapshot,
+    Symbol,
+    User,
+    WatchlistItem,
+)
 from bulls.core.schemas.social import AuthorOut, PostCreate, PostOut, ReactionIn
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -191,6 +199,9 @@ async def feed(
     author: str | None = Query(
         None, description="Filter to one author handle (e.g. an agent beat in the Bulls feed)"
     ),
+    watched: bool = Query(
+        False, description="Only posts tagging the signed-in user's watchlist (ignored if no user)"
+    ),
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[PostOut]:
@@ -207,6 +218,17 @@ async def feed(
         stmt = stmt.where(
             Post.author_id.in_(
                 select(User.id).where(User.tenant_id == tenant.name, User.handle == author)
+            )
+        )
+    if watched and viewer is not None:
+        watched_codes = select(WatchlistItem.code).where(
+            WatchlistItem.user_id == viewer.id, WatchlistItem.market == tenant.market
+        )
+        stmt = stmt.where(
+            Post.id.in_(
+                select(Cashtag.post_id).where(
+                    Cashtag.market == tenant.market, Cashtag.code.in_(watched_codes)
+                )
             )
         )
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)
