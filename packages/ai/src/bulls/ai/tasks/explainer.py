@@ -84,7 +84,9 @@ def _render(f: TechnicalsFacts) -> str:
     if f.pe_ratio is not None:
         lines.append(f"P/E ratio: {f.pe_ratio:.1f}")
     if f.pe_vs_sector is not None:
-        lines.append(f"P/E vs sector median: {f.pe_vs_sector:.2f}x (below 1.0 = cheaper than peers)")
+        lines.append(
+            f"P/E vs sector median: {f.pe_vs_sector:.2f}x (below 1.0 = cheaper than peers)"
+        )
     if f.roe is not None:
         lines.append(f"Return on equity: {f.roe:.0f}% (profit per taka of shareholder capital)")
     if f.eps_growth_yoy is not None:
@@ -111,7 +113,8 @@ def _safe_fallback(f: TechnicalsFacts) -> ExplainerOut:
     if f.nearest_support is not None and f.nearest_resistance is not None:
         points.append(
             ExplainPoint(
-                tag="chart", text=f"Support ~{f.nearest_support}, resistance ~{f.nearest_resistance}."
+                tag="chart",
+                text=f"Support ~{f.nearest_support}, resistance ~{f.nearest_resistance}.",
             )
         )
     return ExplainerOut(headline=f"${f.code} snapshot ({f.as_of_date})", points=points)

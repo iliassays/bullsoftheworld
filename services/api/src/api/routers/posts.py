@@ -21,7 +21,7 @@ from api.moderation import (
     record_event,
     status_for,
 )
-from api.queue import enqueue_sentiment
+from api.queue import enqueue_moderation, enqueue_sentiment
 from bulls.core.config import get_settings
 from bulls.core.models import (
     Cashtag,
@@ -224,11 +224,13 @@ async def create_post(
             },
         )
 
-    # commit before enqueuing so the worker can read the post; AI runs async, never blocks. Only
-    # published posts get auto-sentiment — a pending post isn't public yet.
-    if body.sentiment is None and status == "published":
-        await session.commit()
-        await enqueue_sentiment(post.id)
+    # commit before enqueuing so the worker can read the post; AI runs async, never blocks.
+    await session.commit()
+    if status == "published":
+        # published user posts: auto-sentiment (if untagged) + the async L4 safety/relevance screen.
+        if body.sentiment is None:
+            await enqueue_sentiment(post.id)
+        await enqueue_moderation(post.id)
 
     return PostOut(
         id=post.id,

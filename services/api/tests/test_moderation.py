@@ -45,7 +45,9 @@ def test_write_path_moderation_outcomes():
         auth = _register(c)
 
         # clean -> published, visible in the feed
-        clean = c.post("/posts", json={"body": "DSEX looked calm into the close today"}, headers=auth)
+        clean = c.post(
+            "/posts", json={"body": "DSEX looked calm into the close today"}, headers=auth
+        )
         assert clean.status_code == 201, clean.text
         assert clean.json()["moderation_status"] == "published"
         assert any(x["id"] == clean.json()["id"] for x in c.get("/posts").json())

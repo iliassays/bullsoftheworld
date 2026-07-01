@@ -32,6 +32,15 @@ async def enqueue_sentiment(post_id: int) -> None:
         log.warning("sentiment enqueue failed for post %s: %s", post_id, e)
 
 
+async def enqueue_moderation(post_id: int) -> None:
+    """L4 safety+relevance screen (async, never blocks the post). Best-effort like sentiment."""
+    try:
+        pool = await _get_pool()
+        await pool.enqueue_job("screen_post_safety", post_id)
+    except Exception as e:
+        log.warning("moderation enqueue failed for post %s: %s", post_id, e)
+
+
 async def close_pool() -> None:
     global _pool
     if _pool is not None:
