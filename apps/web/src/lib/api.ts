@@ -216,6 +216,12 @@ export interface MarketMethodology {
   min_mcap_mn: number;
   min_free_float_cap_mn: number;
 }
+export interface ScannerResponse {
+  as_of: string | null;
+  quote_as_of: string | null;
+  tab: string;
+  boards: Screen[];
+}
 export interface ScreensResponse {
   as_of: string | null; // EOD analytics date — screen rankings are as-of this close
   quote_as_of?: string | null; // latest 15-min quote snapshot — price/"today's move" freshness
@@ -515,6 +521,10 @@ export const api = {
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketStatus: () => request<MarketStatus>("/market/status"),
+  scannerRadar: (tab: "today" | "value", watched: boolean) =>
+    request<ScannerResponse>(
+      `/scanner/radar?tab=${tab}${watched ? "&watched=true" : ""}`,
+    ),
   sectors: () => request<Sector[]>("/sectors"),
   screen: (
     key: string,

@@ -51,7 +51,7 @@ const tabs = [
   { to: "/", icon: "🏠", key: "nav.feed", end: true },
   { to: "/markets", icon: "📊", key: "nav.markets" },
   { to: "/bulls", icon: "🐂", key: "nav.bulls" },
-  { to: "/watchlist", icon: "⭐", key: "nav.watch" },
+  { to: "/scanner", icon: "🛰️", key: "nav.scanner" },
   { to: "/me", icon: "👤", key: "nav.me" },
 ];
 

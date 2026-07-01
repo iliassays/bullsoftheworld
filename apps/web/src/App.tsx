@@ -6,6 +6,7 @@ import { BullsFeed } from "./pages/BullsFeed";
 import { DeskProfile } from "./pages/DeskProfile";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
+import { Scanner } from "./pages/Scanner";
 import { Profile } from "./pages/Profile";
 import { ScreenExplore } from "./pages/ScreenExplore";
 import { SymbolPage } from "./pages/Symbol";
@@ -20,6 +21,7 @@ export function App() {
         <Route path="markets/:key" element={<ScreenExplore />} />
         <Route path="bulls" element={<BullsFeed />} />
         <Route path="desk/:handle" element={<DeskProfile />} />
+        <Route path="scanner" element={<Scanner />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
         <Route path="me" element={<Profile />} />

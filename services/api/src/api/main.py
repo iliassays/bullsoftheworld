@@ -32,6 +32,7 @@ from api.routers import (
     plain_read,
     posts,
     pulse,
+    scanner,
     scorecard,
     screener,
     trending,
@@ -97,6 +98,7 @@ app.include_router(news.router)
 app.include_router(plain_read.router)
 app.include_router(posts.router)
 app.include_router(pulse.router)
+app.include_router(scanner.router)
 app.include_router(scorecard.router)
 app.include_router(screener.router)
 app.include_router(trending.router)

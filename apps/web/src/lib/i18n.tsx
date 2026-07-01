@@ -36,6 +36,21 @@ const STRINGS: Record<string, Entry> = {
   "nav.bulls": { en: "Bulls", bn: "বুলস" },
   "nav.watch": { en: "Watch", bn: "ওয়াচ" },
   "nav.about": { en: "About", bn: "সম্পর্কে" },
+  "nav.scanner": { en: "Scanner", bn: "স্ক্যানার" },
+  "scanner.today": { en: "Today", bn: "আজ" },
+  "scanner.value": { en: "Value", bn: "ভ্যালু" },
+  "scanner.watchlist": { en: "Watchlist", bn: "ওয়াচলিস্ট" },
+  "scanner.scope": { en: "Scan", bn: "স্ক্যান" },
+  "scanner.market": { en: "Whole market", bn: "পুরো বাজার" },
+  "scanner.watched": { en: "My watchlist", bn: "আমার ওয়াচলিস্ট" },
+  "scanner.empty": {
+    en: "Nothing meets these scans right now — check back during the session.",
+    bn: "এই মুহূর্তে কিছু মিলছে না — সেশনের সময় আবার দেখুন।",
+  },
+  "scanner.emptyWatched": {
+    en: "None of your watched stocks match these scans right now.",
+    bn: "আপনার ওয়াচলিস্টের কোনো শেয়ার এই মুহূর্তে মিলছে না।",
+  },
   "nav.me": { en: "Me", bn: "আমি" },
   "search.placeholder": {
     en: "Search ticker… e.g. GP, Grameenphone",
