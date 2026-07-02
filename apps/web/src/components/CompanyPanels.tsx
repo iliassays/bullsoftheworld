@@ -577,6 +577,23 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   const smartThen = first ? (first.institute ?? 0) + (first.foreign ?? 0) : null;
   const smartGrew = !stale && smartThen != null && smartNow - smartThen >= 0.5;
 
+  // Sponsor falling streak — same rule as the backend agent (≥3 consecutive declining
+  // disclosures, ≥1.0pp cumulative). Insiders steadily reducing is the one ownership story
+  // worth a warning banner; a single noisy month is not.
+  const sponsorSeries = hist
+    .map((p) => p.sponsor)
+    .filter((x): x is number => x != null);
+  let sponsorRun = 0;
+  for (let i = sponsorSeries.length - 1; i > 0; i--) {
+    if (sponsorSeries[i] < sponsorSeries[i - 1]) sponsorRun++;
+    else break;
+  }
+  const sponsorDrop =
+    sponsorRun >= 3
+      ? sponsorSeries[sponsorSeries.length - 1 - sponsorRun] - sponsorSeries[sponsorSeries.length - 1]
+      : 0;
+  const sponsorStreak = !stale && sponsorRun >= 3 && sponsorDrop >= 1.0;
+
   const stepDelta = (key: (typeof cats)[number]["key"]) => {
     const s = hist.map((p) => p[key]).filter((x): x is number => x != null);
     return s.length >= 2 ? s[s.length - 1] - s[s.length - 2] : null;
@@ -595,6 +612,21 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
         <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug text-muted">
           ⏳ Latest disclosure {o.as_of ? discMonth(o.as_of) : dash} — DSE hasn't filed a newer one
           for this stock, so the figures below may be out of date.
+        </div>
+      ) : sponsorStreak ? (
+        <div
+          className="rounded-xl p-3 mb-3"
+          style={{ backgroundColor: "rgba(240,86,74,0.08)", border: "1px solid rgba(240,86,74,0.35)" }}
+        >
+          <div className="text-[13px] leading-snug font-semibold text-down">
+            ⚠️ Sponsor stake falling {sponsorRun} disclosures straight
+          </div>
+          <div className="text-[12px] text-muted mt-0.5">
+            {(sponsorSeries[sponsorSeries.length - 1 - sponsorRun]).toFixed(1)}% →{" "}
+            <b className="text-fg">{sponsorSeries[sponsorSeries.length - 1].toFixed(1)}%</b>{" "}
+            (−{sponsorDrop.toFixed(1)}pp) — insiders reducing their own stake. Source: DSE
+            shareholding disclosures. Descriptive, not advice.
+          </div>
         </div>
       ) : smartGrew && smartThen != null && first ? (
         <div

@@ -51,35 +51,30 @@ NOTE_ALERT_TITLES: dict[str, dict[str, str]] = {
         "en": "${code} entered the oversold zone (RSI)",
         "bn": "${code} ওভারসোল্ড জোনে ঢুকেছে (RSI)",
     },
-    "sponsor_stake_down": {
-        "en": "${code} sponsor holding fell",
-        "bn": "${code} স্পনসরদের শেয়ার কমেছে",
+    # Ownership agent event types (direction lives in the note body the alert carries along).
+    "sponsor_change": {
+        "en": "${code} sponsor/director holding changed",
+        "bn": "${code} স্পনসর/পরিচালকদের শেয়ারে পরিবর্তন",
     },
-    "sponsor_stake_up": {
-        "en": "${code} sponsor holding rose",
-        "bn": "${code} স্পনসরদের শেয়ার বেড়েছে",
+    "institution_change": {
+        "en": "${code} institutional holding changed",
+        "bn": "${code} প্রাতিষ্ঠানিক শেয়ারে পরিবর্তন",
     },
-    "institute_stake_down": {
-        "en": "${code} institutional holding fell",
-        "bn": "${code} প্রাতিষ্ঠানিক শেয়ার কমেছে",
+    "foreign_change": {
+        "en": "${code} foreign holding changed",
+        "bn": "${code} বিদেশি শেয়ারে পরিবর্তন",
     },
-    "institute_stake_up": {
-        "en": "${code} institutional holding rose",
-        "bn": "${code} প্রাতিষ্ঠানিক শেয়ার বেড়েছে",
-    },
-    "foreign_stake_down": {
-        "en": "${code} foreign holding fell",
-        "bn": "${code} বিদেশি শেয়ার কমেছে",
-    },
-    "foreign_stake_up": {
-        "en": "${code} foreign holding rose",
-        "bn": "${code} বিদেশি শেয়ার বেড়েছে",
+    "sponsor_falling_streak": {
+        "en": "${code} sponsor holding falling for months",
+        "bn": "${code} স্পনসরদের শেয়ার মাসের পর মাস কমছে",
     },
 }
 _FALLBACK_TITLE = {"en": "New data note for ${code}", "bn": "${code} নিয়ে নতুন ডেটা নোট"}
 
 # Ownership events are alert kind "ownership"; everything else from agents is "signal".
-_OWNERSHIP_PREFIXES = ("sponsor_", "institute_", "foreign_")
+_OWNERSHIP_EVENTS = frozenset(
+    {"sponsor_change", "institution_change", "foreign_change", "sponsor_falling_streak"}
+)
 
 
 def note_alert_title(event_type: str, code: str) -> dict[str, str]:
@@ -88,7 +83,7 @@ def note_alert_title(event_type: str, code: str) -> dict[str, str]:
 
 
 def note_alert_kind(event_type: str) -> str:
-    return "ownership" if event_type.startswith(_OWNERSHIP_PREFIXES) else "signal"
+    return "ownership" if event_type in _OWNERSHIP_EVENTS else "signal"
 
 
 def should_trigger(direction: str, level: float, ltp: float) -> bool:

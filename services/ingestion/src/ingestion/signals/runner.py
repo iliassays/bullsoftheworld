@@ -122,13 +122,17 @@ async def run_ownership_agents(
                     select(ShareholdingSnapshot)
                     .where(ShareholdingSnapshot.market == market, ShareholdingSnapshot.code == code)
                     .order_by(ShareholdingSnapshot.as_of_date.desc())
-                    .limit(2)
+                    .limit(6)  # pairwise needs 2; the falling-streak detector reads the run
                 )
             )
             if len(snaps) < 2:
                 continue
             latest, prev = snaps[0], snaps[1]
-            for sig in ownership.detect(prev, latest):
+            sigs = ownership.detect(prev, latest)
+            streak = ownership.detect_sponsor_streak(snaps)
+            if streak is not None:
+                sigs.append(streak)
+            for sig in sigs:
                 if await already_fired(
                     session,
                     market,

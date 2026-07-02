@@ -7,6 +7,7 @@ high. Each beat is published by its own agent. Facts + a plain "what it means," 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from bulls.core.models import ShareholdingSnapshot
 
@@ -24,6 +25,49 @@ class OwnSignal:
     event_type: str
     occurrence_key: str
     payload: dict
+
+
+# A falling streak needs this many consecutive declining disclosures and at least this much
+# cumulative drop — insiders steadily walking out the door, not one noisy month.
+_STREAK_MIN_RUN = 3
+_STREAK_MIN_DROP_PP = 1.0
+
+
+def detect_sponsor_streak(snaps_desc: list[ShareholdingSnapshot]) -> OwnSignal | None:
+    """Sponsor/director stake falling across ≥3 consecutive disclosures (newest first input).
+
+    The pairwise detector above catches single big moves; this catches the slow bleed that never
+    trips the per-disclosure threshold but sums to a material exit. The strongest ownership story
+    a retail reader can get from public data — descriptive, source: DSE disclosures.
+    """
+    vals = [s.sponsor_director for s in snaps_desc]
+    if len(vals) < _STREAK_MIN_RUN + 1 or any(v is None for v in vals[: _STREAK_MIN_RUN + 1]):
+        return None
+    run = 0
+    for newer, older in pairwise(vals):
+        if newer is not None and older is not None and newer < older:
+            run += 1
+        else:
+            break
+    if run < _STREAK_MIN_RUN:
+        return None
+    top = vals[run]
+    drop = top - vals[0]
+    if drop < _STREAK_MIN_DROP_PP:
+        return None
+    return OwnSignal(
+        "sponsor",
+        "sponsor_falling_streak",
+        str(snaps_desc[0].as_of_date),
+        {
+            "now": round(vals[0], 2),
+            "prev": round(top, 2),
+            "as_of": str(snaps_desc[0].as_of_date),
+            "runs": run,
+            "drop": round(drop, 2),
+            "up": False,
+        },
+    )
 
 
 def detect(prev: ShareholdingSnapshot, latest: ShareholdingSnapshot) -> list[OwnSignal]:
@@ -66,6 +110,14 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
         "স্পনসর/পরিচালকরা তাদের অংশ {now}% এ {dir_bn} ({prev}% থেকে), {as_of} অনুযায়ী — "
         "অভ্যন্তরীণরা নিজেদের অংশীদারিত্ব পরিবর্তন করছেন। তথ্যমূলক, পরামর্শ নয়।",
     ),
+    "sponsor_falling_streak": (
+        "Sponsor/director holding has fallen {runs} disclosures in a row: {prev}% → {now}% "
+        "(-{drop} pp) as of {as_of}. A steady insider reduction over months — worth reading the "
+        "disclosures yourself. Source: DSE shareholding data. Descriptive, not advice.",
+        "স্পনসর/পরিচালকদের অংশ টানা {runs}টি ডিসক্লোজারে কমেছে: {prev}% → {now}% (-{drop} পিপি), "
+        "{as_of} অনুযায়ী। মাসের পর মাস অভ্যন্তরীণদের ধারাবাহিক হ্রাস — ডিসক্লোজারগুলো নিজে পড়ে দেখুন। "
+        "উৎস: DSE শেয়ারহোল্ডিং ডেটা। তথ্যমূলক, পরামর্শ নয়।",
+    ),
 }
 
 
@@ -73,10 +125,8 @@ def render(sig: OwnSignal, code: str, locale: str) -> str:
     en, bn = _TEMPLATES[sig.event_type]
     up = sig.payload["up"]
     fields = {
+        **sig.payload,  # now / prev / as_of (+ runs / drop for streaks)
         "code": code,
-        "now": sig.payload["now"],
-        "prev": sig.payload["prev"],
-        "as_of": sig.payload["as_of"],
         "dir": "raised" if up else "trimmed",
         "dir_bn": "বাড়িয়েছে" if up else "কমিয়েছে",
     }

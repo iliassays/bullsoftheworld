@@ -9,12 +9,19 @@ from ingestion.alerts import (
     should_trigger,
 )
 from ingestion.signals.levels import _TEMPLATES as LEVELS_TEMPLATES
+from ingestion.signals.ownership import _TEMPLATES as OWNERSHIP_TEMPLATES
 
 
 def test_every_levels_event_has_a_title() -> None:
     """Each event the levels agent can fire must render a real headline, not the fallback."""
     for event_type in LEVELS_TEMPLATES:
         assert event_type in NOTE_ALERT_TITLES, f"missing alert title for {event_type}"
+
+
+def test_every_ownership_event_has_a_title_and_kind() -> None:
+    for event_type in OWNERSHIP_TEMPLATES:
+        assert event_type in NOTE_ALERT_TITLES, f"missing alert title for {event_type}"
+        assert note_alert_kind(event_type) == "ownership"
 
 
 def test_title_renders_code_in_both_languages() -> None:
@@ -30,8 +37,8 @@ def test_unknown_event_falls_back_gracefully() -> None:
 
 
 def test_ownership_events_get_ownership_kind() -> None:
-    assert note_alert_kind("sponsor_stake_down") == "ownership"
-    assert note_alert_kind("foreign_stake_up") == "ownership"
+    assert note_alert_kind("sponsor_change") == "ownership"
+    assert note_alert_kind("sponsor_falling_streak") == "ownership"
     assert note_alert_kind("new_52w_high") == "signal"
 
 
