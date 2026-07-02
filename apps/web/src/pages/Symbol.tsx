@@ -354,8 +354,11 @@ export function SymbolPage() {
 
       {alertsOpen && <PriceAlertSheet code={sym} onClose={() => setAlertsOpen(false)} />}
 
-      {/* tab bar */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* tab bar — pinned below the app header so switching tabs never needs a scroll-up */}
+      <div
+        className="sticky z-10 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur flex gap-2 overflow-x-auto"
+        style={{ top: "var(--app-header-h, 96px)" }}
+      >
         {TABS.map((tb) => (
           <button
             key={tb.id}

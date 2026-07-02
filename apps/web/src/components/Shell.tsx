@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { api, type MarketStatus } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -111,9 +111,26 @@ function LangToggle() {
 
 export function Shell() {
   const { lang, t } = useLang();
+  // Publish the live header height as a CSS var so page-level tab bars can stick right below
+  // it (`top: var(--app-header-h)`). Measured, not hardcoded — the header wraps differently
+  // per language and viewport.
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const apply = () =>
+      document.documentElement.style.setProperty("--app-header-h", `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div className="min-h-full max-w-[480px] mx-auto flex flex-col bg-bg">
-      <header className="sticky top-0 z-20 bg-bg/85 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-20 bg-bg/85 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5"
+      >
         <div className="flex items-center gap-2.5">
           <Link to="/" aria-label="Bulls of Dhaka — home" className="flex items-center gap-2.5 min-w-0">
             <img src="/logo-mark-v2.png" alt="Bulls of Dhaka" className="w-9 h-9 shrink-0" />

@@ -653,11 +653,18 @@ export function Scanner() {
         </p>
       </div>
 
-      <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
-        {seg("today", t("scanner.today"))}
-        {seg("value", t("scanner.value"))}
-        {seg("lens", t("scanner.lens"))}
-        {seg("watchlist", t("scanner.watchlist"))}
+      {/* Pinned below the app header while boards scroll — switching tabs never needs a
+          scroll back to the top. -mx-3/px-3 stretches the backdrop across the page gutter. */}
+      <div
+        className="sticky z-10 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur"
+        style={{ top: "var(--app-header-h, 96px)" }}
+      >
+        <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
+          {seg("today", t("scanner.today"))}
+          {seg("value", t("scanner.value"))}
+          {seg("lens", t("scanner.lens"))}
+          {seg("watchlist", t("scanner.watchlist"))}
+        </div>
       </div>
 
       {tab === "watchlist" ? (

@@ -1300,7 +1300,11 @@ export function Markets() {
       <div className="text-[11px] uppercase tracking-wide text-muted px-1">
         {t("markets.lookingFor")}
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      {/* Pinned below the app header — same treatment as the Ideas/Symbol tab bars. */}
+      <div
+        className="sticky z-10 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur flex gap-2 overflow-x-auto"
+        style={{ top: "var(--app-header-h, 96px)" }}
+      >
         {[{ id: "focus", icon: "", labelKey: "lens.focus" }, ...LENSES, { id: "all", icon: "", labelKey: "lens.all" }].map((l) => (
           <button
             key={l.id}
