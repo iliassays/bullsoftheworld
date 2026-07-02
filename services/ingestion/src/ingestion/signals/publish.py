@@ -11,6 +11,7 @@ import datetime as dt
 from sqlalchemy import or_, select
 
 from bulls.core.models import Cashtag, Post, SignalEvent
+from ingestion.alerts import fan_out_note_alert
 
 
 async def already_fired(
@@ -76,3 +77,14 @@ async def publish_note(
             as_of_date=as_of,
         )
     )
+    if add_cashtag:
+        # Ticker events also land in the alert inbox of everyone watching/holding the stock.
+        # Market-wide notes (no cashtag) stay feed-only — the feed already reaches everyone.
+        await fan_out_note_alert(
+            session,
+            market=market,
+            code=code,
+            event_type=event_type,
+            body_i18n=body_i18n,
+            ref_post_id=post.id,
+        )

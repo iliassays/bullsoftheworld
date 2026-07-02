@@ -27,6 +27,9 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Same-basename test files exist across workspace packages (e.g. two test_digest.py);
+# importlib mode namespaces them by path instead of colliding in sys.modules.
+addopts = "--import-mode=importlib"
 
 [tool.uv]
 package = false

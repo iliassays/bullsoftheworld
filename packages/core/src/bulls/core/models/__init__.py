@@ -1,5 +1,6 @@
 """ORM models. Import all here so Alembic autogenerate sees them."""
 
+from bulls.core.models.alert import AlertEvent, PriceAlert
 from bulls.core.models.announcement import Announcement
 from bulls.core.models.company import (
     AnnualFinancial,
@@ -13,6 +14,7 @@ from bulls.core.models.follow import Follow
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
 from bulls.core.models.page_view_event import PageViewEvent
+from bulls.core.models.portfolio import PortfolioHolding
 from bulls.core.models.post import Cashtag, Post, PostReaction
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
 from bulls.core.models.signal_event import SignalEvent
@@ -24,6 +26,7 @@ from bulls.core.models.user import User
 from bulls.core.models.watchlist import WatchlistItem
 
 __all__ = [
+    "AlertEvent",
     "Announcement",
     "AnnualFinancial",
     "Cashtag",
@@ -35,7 +38,9 @@ __all__ = [
     "MarketSummary",
     "ModerationEvent",
     "PageViewEvent",
+    "PortfolioHolding",
     "Post",
+    "PriceAlert",
     "PostReaction",
     "QuoteSnapshot",
     "SectorPE",

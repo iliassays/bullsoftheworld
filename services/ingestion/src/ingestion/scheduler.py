@@ -18,6 +18,7 @@ from bulls.core.db import get_sessionmaker
 from bulls.core.models import QuoteSnapshot, Symbol
 from bulls.market_data import Quote, get_provider
 from bulls.market_data import Symbol as ProviderSymbol
+from ingestion.alerts import check_price_alerts
 
 
 async def _upsert_symbols(session, symbols: list[ProviderSymbol]) -> None:
@@ -57,6 +58,9 @@ async def poll_market(market: str) -> dict[str, int]:
     async with get_sessionmaker()() as session:
         await _upsert_symbols(session, symbols)
         await _upsert_quotes(session, quotes)
+        # User-set price alerts fire off the same poll that persisted the quotes — one-shot
+        # per alert, committed atomically with the snapshot they were judged against.
+        await check_price_alerts(session, market, {q.code: q.ltp for q in quotes})
         await session.commit()
 
     redis = aioredis.from_url(get_settings().redis_url)

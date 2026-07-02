@@ -20,6 +20,7 @@ from api.queue import close_pool
 from api.routers import (
     admin,
     admin_overview,
+    alerts,
     auth,
     buzz,
     company,
@@ -33,6 +34,7 @@ from api.routers import (
     moderation,
     news,
     plain_read,
+    portfolio,
     posts,
     pulse,
     scanner,
@@ -87,8 +89,10 @@ _card_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/cards", StaticFiles(directory=_card_dir), name="cards")
 
 
+app.include_router(alerts.router)
 app.include_router(health.router)
 app.include_router(investor_lens.router)
+app.include_router(portfolio.router)
 app.include_router(admin.router)
 app.include_router(admin_overview.router)
 app.include_router(auth.router)
