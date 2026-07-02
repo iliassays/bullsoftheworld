@@ -8,6 +8,7 @@ agents and the News tab can filter and rank cheaply.
 
     uv run python -m ingestion.news backfill   # one-shot history
     uv run python -m ingestion.news daily       # re-pull the last few days
+    uv run python -m ingestion.news retag       # re-apply rules to stored rows (no re-scrape)
 """
 
 from __future__ import annotations
@@ -40,7 +41,13 @@ _NOISE = (
     "odd lot",
     "renaming",
     "daily nav",  # mutual funds post a NAV every single day — routine, buries real news
+    "weekly nav",  # ...and a weekly one — same routine noise as the daily NAV
     "update of information",  # vague administrative re-posts, no material content
+    "awareness",  # "DSE/BSEC NEWS: Awareness Message for Investors" — regulator boilerplate
+    "daily turnover",  # "DSE NEWS: Daily Turnover of Main Board" — routine market stat
+    "greetings",  # "Greetings Message" / "Eid Greetings" — courtesy notices, not company news
+    "authorized representative",  # withdrawal/appointment of a TREC holder's AR — administrative
+    "ccam",  # "Lodging Investor Complaints through CCAM" — standing regulatory notice
 )
 # Ordered (first match wins). board_meeting before dividend/earnings so "board meeting to consider
 # dividend" reads as a heads-up, not the declaration itself.
@@ -204,11 +211,38 @@ async def backfill_range(market: str, *, days: int) -> dict[str, int]:
     return {"fetched": total_fetched, "kept": total_kept}
 
 
+async def retag(market: str) -> dict[str, int]:
+    """Re-classify + re-decode every stored announcement from its saved headline/body — applies
+    improved rules without re-scraping DSE. Rows that are now noise are dropped."""
+    from sqlalchemy import select
+
+    updated = dropped = 0
+    async with get_sessionmaker()() as session:
+        rows = (
+            await session.scalars(select(Announcement).where(Announcement.market == market))
+        ).all()
+        for a in rows:
+            category = classify(a.headline)
+            if category == "noise":
+                await session.delete(a)
+                dropped += 1
+                continue
+            a.category = category
+            a.strength = strength(category, a.headline)
+            a.details = decode(category, a.headline, a.body or "") or None
+            updated += 1
+        await session.commit()
+    return {"updated": updated, "dropped": dropped}
+
+
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "daily"
     if mode == "backfill":
         print(f"[news] backfill: pulling ~{BACKFILL_DAYS}d of DSE news from the archive (monthly)")
         stats = asyncio.run(backfill_range("DSE", days=BACKFILL_DAYS))
+    elif mode == "retag":
+        print("[news] retag: re-classifying + re-decoding stored announcements (no re-scrape)")
+        stats = asyncio.run(retag("DSE"))
     else:
         print(f"[news] daily: pulling ~{DAILY_LOOKBACK_DAYS}d of recent DSE news")
         stats = asyncio.run(collect("DSE", days=DAILY_LOOKBACK_DAYS))

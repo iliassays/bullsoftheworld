@@ -15,7 +15,9 @@ import datetime as dt
 import re
 from typing import Any
 
-_FACE_VALUE = 10.0  # DSE equities are near-universally Tk 10 par; surfaced in details so the UI says so
+_FACE_VALUE = (
+    10.0  # DSE equities are near-universally Tk 10 par; surfaced in details so the UI says so
+)
 
 
 def _iso(value: str) -> str | None:
@@ -55,11 +57,22 @@ def _eps_trend(cur: float, prior: float) -> str:
 
 def _period(text: str) -> str | None:
     t = text.lower()
-    if "first quarter" in t or "q1" in t or "january-march" in t:
+    if "first quarter" in t or "1st quarter" in t or "q1" in t or "january-march" in t:
         return "Q1"
-    if "half year" in t or "half-year" in t or "january-june" in t:
+    # DSE files the mid-year report as the "Second Quarter" (Jan-Jun cumulative) far more often than
+    # it says "half yearly" — without the q2/second-quarter cues this whole milestone went untagged.
+    if (
+        "second quarter" in t
+        or "2nd quarter" in t
+        or "q2" in t
+        or "half year" in t
+        or "half-year" in t
+        or "half yearly" in t
+        or "january-june" in t
+        or "april-june" in t
+    ):
         return "H1"
-    if "third quarter" in t or "q3" in t or "january-september" in t:
+    if "third quarter" in t or "3rd quarter" in t or "q3" in t or "january-september" in t:
         return "Q3"
     if "annual" in t or "year ended" in t or "audited accounts" in t:
         return "annual"
@@ -95,7 +108,9 @@ def _dividend(body: str) -> dict[str, Any]:
     stock = re.search(r"([\d.]+)\s*%\s*(?:stock|bonus)", body, re.I)
     if cash:
         pct = float(cash.group(1))
-        d.update(cash_pct=pct, per_share_cash=round(pct / 100 * _FACE_VALUE, 4), face_value=_FACE_VALUE)
+        d.update(
+            cash_pct=pct, per_share_cash=round(pct / 100 * _FACE_VALUE, 4), face_value=_FACE_VALUE
+        )
     if stock:
         d["stock_pct"] = float(stock.group(1))
     yr = re.search(r"year ended\s+([A-Za-z]+ \d{1,2}, \d{4})", body, re.I)
@@ -128,7 +143,11 @@ def _corporate_action(body: str) -> dict[str, Any]:
     rec = re.search(r"record date[^0-9]*([\d]{2}\.[\d]{2}\.[\d]{4})", body, re.I)
     if rec:
         d["record_date"] = _iso(rec.group(1))
-    spot = re.search(r"Spot Market.*?from\s+([\d]{2}\.[\d]{2}\.[\d]{4})\s+to\s+([\d]{2}\.[\d]{2}\.[\d]{4})", body, re.I | re.S)
+    spot = re.search(
+        r"Spot Market.*?from\s+([\d]{2}\.[\d]{2}\.[\d]{4})\s+to\s+([\d]{2}\.[\d]{2}\.[\d]{4})",
+        body,
+        re.I | re.S,
+    )
     if spot:
         d["spot_from"], d["spot_to"] = _iso(spot.group(1)), _iso(spot.group(2))
     agm = re.search(r"AGM[:\s]+([\d]{2}\.[\d]{2}\.[\d]{4})", body, re.I)
@@ -173,5 +192,5 @@ def decode(category: str, headline: str, body: str) -> dict[str, Any]:
         return {}
     try:
         return decoder(body, headline)
-    except Exception:  # noqa: BLE001 — a parse miss must never break onboarding
+    except Exception:  # a parse miss must never break onboarding
         return {}
