@@ -170,6 +170,29 @@ def risk_score(
     return _clamp10(score)
 
 
+def dividend_score(
+    *,
+    dividend_yield: float | None = None,
+    roe: float | None = None,
+    eps_growth_yoy: float | None = None,
+) -> int | None:
+    """Cash-income read: yield rewarded, but only when earnings look able to sustain it. A very high
+    yield with thin/negative earnings is docked as a possible dividend trap."""
+    if dividend_yield is None:
+        return None
+    if dividend_yield <= 0:
+        return 2  # pays no cash dividend — weak on the income lens (known, not thin data)
+    score = 5.0
+    score += 3 if dividend_yield >= 6 else 2 if dividend_yield >= 4 else 1 if dividend_yield >= 2 else 0
+    if roe is not None:
+        score += 1 if roe >= 10 else -2 if roe <= 0 else 0
+    if eps_growth_yoy is not None:
+        score += 1 if eps_growth_yoy >= 0 else -1 if eps_growth_yoy < -20 else 0
+    if dividend_yield >= 10 and (roe is None or roe < 5):
+        score -= 1  # yield-trap guard
+    return _clamp10(score)
+
+
 def _verdict(score: int | None) -> str:
     if score is None:
         return "thin_data"
@@ -421,6 +444,43 @@ def _smart_money(
     )
 
 
+def _dividend(
+    *,
+    bn: bool,
+    dividend_yield: float | None,
+    roe: float | None,
+    eps_growth_yoy: float | None,
+) -> InvestorLens:
+    s = dividend_score(dividend_yield=dividend_yield, roe=roe, eps_growth_yoy=eps_growth_yoy)
+    no_div = (dividend_yield or 0) <= 0
+    if bn:
+        summary = "নগদ লভ্যাংশের ইয়িল্ড এবং আয় দিয়ে তা টেকসই কি না — এই লেন্স তা দেখে।"
+        points = [
+            f"Dividend yield {_fmt_pct(dividend_yield)}",
+            f"ROE {_fmt_pct(roe)} · EPS growth {_fmt_pct(eps_growth_yoy)}",
+            "নগদ লভ্যাংশ নেই" if no_div else "আয় লভ্যাংশ কভার করছে কি না দেখুন",
+        ]
+        watch_next = ["রেকর্ড ডেট", "পেআউট ইতিহাস", "EPS কভারেজ", "বোনাস vs নগদ"]
+    else:
+        summary = "Checks cash-dividend yield and whether earnings can sustain it."
+        points = [
+            f"Dividend yield {_fmt_pct(dividend_yield)}",
+            f"ROE {_fmt_pct(roe)} · EPS growth {_fmt_pct(eps_growth_yoy)}",
+            "No cash dividend" if no_div else "Verify earnings cover the payout",
+        ]
+        watch_next = ["Record date", "Payout history", "EPS coverage", "Bonus vs cash"]
+    return InvestorLens(
+        key="dividend_income",
+        name="Dividend Investor",
+        persona="Cash-income read",
+        verdict=_verdict(s),
+        score=s,
+        summary=summary,
+        points=points,
+        watch_next=watch_next,
+    )
+
+
 def _taleb_risk(
     *,
     bn: bool,
@@ -496,7 +556,7 @@ def build_investor_lens(
     volatility: float | None = None,
     today_change_pct: float | None = None,
 ) -> InvestorLensResponse:
-    """Build the five best-fit DSE lenses for a symbol."""
+    """Build the six best-fit DSE lenses for a symbol."""
     bn = locale == "bn"
     lenses = [
         _graham(
@@ -513,6 +573,12 @@ def build_investor_lens(
             eps_growth_yoy=eps_growth_yoy,
             dividend_yield=dividend_yield,
             above_sma_200=above_sma_200,
+        ),
+        _dividend(
+            bn=bn,
+            dividend_yield=dividend_yield,
+            roe=roe,
+            eps_growth_yoy=eps_growth_yoy,
         ),
         _technical(
             bn=bn,
