@@ -1107,7 +1107,9 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
                 it.catalyst_date = str(catalyst.published_at)
                 it.catalyst_category = catalyst.category
             it.setup_quality = _setup_quality(s, it)
-            it.why = _why_text(s, it)
+            # A board builder may have written a richer per-name sentence (e.g. the scanner's
+            # Quality Reversal / Oversold Quality prose) — never clobber it with the generic line.
+            it.why = it.why or _why_text(s, it)
 
 
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
