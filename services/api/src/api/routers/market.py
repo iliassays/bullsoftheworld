@@ -261,16 +261,38 @@ async def get_bars(
     session: DbSession,
     limit: int = Query(180, ge=1, le=2000, description="Most recent N daily bars"),
 ) -> list[BarOut]:
-    """Daily OHLCV history, oldest-first (ready for a candlestick chart)."""
+    """OHLCV history, oldest-first, with the current delayed quote appended during the session."""
+    code = code.upper()
     stmt = (
         select(DailyBar)
-        .where(DailyBar.market == tenant.market, DailyBar.code == code.upper())
+        .where(DailyBar.market == tenant.market, DailyBar.code == code)
         .order_by(DailyBar.date.desc())
         .limit(limit)
     )
     rows = list(await session.scalars(stmt))
     rows.reverse()  # charts want ascending time
-    return [BarOut.model_validate(r) for r in rows]
+    out = [BarOut.model_validate(r) for r in rows]
+
+    snapshot = await session.get(QuoteSnapshot, (tenant.market, code))
+    if snapshot is not None:
+        quote_date = snapshot.as_of.astimezone(ZoneInfo(tenant.timezone)).date()
+        last_date = out[-1].date if out else None
+        if last_date is None or quote_date > last_date:
+            open_price = snapshot.open or snapshot.prev_close or snapshot.ltp
+            high = max(snapshot.high, snapshot.ltp, open_price)
+            low = min(snapshot.low, snapshot.ltp, open_price)
+            out.append(
+                BarOut(
+                    date=quote_date,
+                    open=open_price,
+                    high=high,
+                    low=low,
+                    close=snapshot.ltp,
+                    volume=snapshot.volume,
+                )
+            )
+            out = out[-limit:]
+    return out
 
 
 @router.get("/symbols/{code}/analytics")

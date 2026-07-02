@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Quote } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { formatDhakaTime } from "../lib/time";
 import { Pct, taka } from "./ui";
 
 // DSE trades Sun–Thu, 10:00–14:30 BDT (= 04:00–08:30 UTC). During that window the strip refreshes
@@ -34,9 +35,7 @@ export function TickerStrip() {
 
   if (!quotes.length) return null;
   const asOf = quotes[0]?.as_of;
-  const asOfTime = asOf
-    ? new Date(asOf).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : null;
+  const asOfTime = asOf ? formatDhakaTime(asOf) : null;
   const live = inMarketHours();
   return (
     <div className="flex flex-col gap-1">

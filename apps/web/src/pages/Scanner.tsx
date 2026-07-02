@@ -15,6 +15,7 @@ const BOARD_ICON: Record<string, string> = {
   most_active: "💸",
   value_quality: "⭐",
   dividend_quality: "💵",
+  lens_agreement: "🧭",
   lens_buffett_quality: "🏛️",
   lens_graham_value: "🧮",
   lens_smart_money: "🏦",
@@ -80,6 +81,18 @@ const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; lab
       title: "লভ্যাংশ + কভারেজ",
       desc: "নগদ লভ্যাংশের সাথে আয়ের কভারেজ আছে কি না দেখার তালিকা।",
       label: "লভ্যাংশ চেক",
+    },
+  },
+  lens_agreement: {
+    en: {
+      title: "Multi-Lens Agreement",
+      desc: "At least 3 of 5 lenses are supportive, while risk-control is not caution.",
+      label: "Lens agreement",
+    },
+    bn: {
+      title: "মাল্টি-লেন্স এগ্রিমেন্ট",
+      desc: "৫টির মধ্যে অন্তত ৩টি লেন্স সহায়ক, এবং risk-control caution নয়।",
+      label: "লেন্স এগ্রিমেন্ট",
     },
   },
   lens_buffett_quality: {
@@ -149,6 +162,10 @@ const BOARD_EMPTY_TEXT: Record<string, Record<Lang, string>> = {
     en: "No clean dividend-quality match right now.",
     bn: "এই মুহূর্তে পরিষ্কার লভ্যাংশ + কভারেজ ম্যাচ নেই।",
   },
+  lens_agreement: {
+    en: "No stock has broad multi-lens agreement right now. Use the individual lens boards below.",
+    bn: "এই মুহূর্তে broad multi-lens agreement নেই। নিচের আলাদা lens board দেখুন।",
+  },
   lens_buffett_quality: {
     en: "No stock passes the Quality Lens right now. That is better than forcing weak quality into the list.",
     bn: "এই মুহূর্তে কোনো শেয়ার কোয়ালিটি লেন্স পাস করছে না। দুর্বল মান জোর করে তালিকায় আনার চেয়ে এটিই ভালো।",
@@ -180,6 +197,7 @@ function metricText(board: Screen, item: ScreenItem, lang: Lang): string {
   if (board.value_label === "yield") return `${item.value.toFixed(1)}%`;
   if (board.value_label === "x sector") return `${item.value.toFixed(2)}x`;
   if (board.value_label === "score") return `${item.value.toFixed(0)}/10`;
+  if (board.value_label === "lenses") return `${item.value.toFixed(0)}/5`;
   if (board.value_label.includes("%")) return `${item.value.toFixed(0)}%`;
   if (board.value_label === "activity") return lang === "bn" ? "সক্রিয়" : "Active";
   return item.value.toFixed(1);
@@ -199,6 +217,7 @@ function liquidityText(item: ScreenItem, lang: Lang): string | null {
 
 function defaultHow(board: Screen, lang: Lang): string {
   if (lang === "bn") {
+    if (board.key === "lens_agreement") return "একটি মাত্র signal নয়; কয়েকটি lens একসাথে মিলে কি না দেখতে ব্যবহার করুন। তারপর stock page-এ কোন lens মেলেনি সেটিও যাচাই করুন।";
     if (board.key === "lens_buffett_quality") return "দীর্ঘমেয়াদি ব্যবসার মান খুঁজতে ব্যবহার করুন। ROE ভালো হলেও EPS ধারাবাহিকতা, ঋণ ও valuation যাচাই করুন।";
     if (board.key === "lens_graham_value") return "সস্তা মনে হওয়া শেয়ারের shortlist হিসেবে দেখুন। কেন সস্তা, ব্যবসা দুর্বল হচ্ছে কি না, তা যাচাই করুন।";
     if (board.key === "lens_smart_money") return "প্রকাশিত institution/foreign ownership পরিবর্তনকে clue হিসেবে নিন। এটি price direction guarantee করে না।";
@@ -209,6 +228,7 @@ function defaultHow(board: Screen, lang: Lang): string {
     if (board.key === "dividend_quality") return "লভ্যাংশের আগে EPS কভারেজ, রেকর্ড ডেট ও পেআউট ইতিহাস দেখুন।";
     return "এটি একটি পর্যবেক্ষণ তালিকা, buy signal নয়। এই প্যাটার্নের এজ সাধারণত রিকভারি মার্কেটে বেশি; ডাউনট্রেন্ডে সবচেয়ে বেশি পড়া শেয়ার falling knife হতে পারে। ভলিউম, খবর ও সাপোর্ট যাচাই করুন।";
   }
+  if (board.key === "lens_agreement") return "Use it when you want several independent lenses to line up, not just one signal. Then open the stock page to see which lens still needs confirmation.";
   if (board.key === "lens_buffett_quality") return "Use it to study durable-business candidates. Strong ROE still needs EPS consistency, debt and valuation checks.";
   if (board.key === "lens_graham_value") return "Use it as a cheaper-stock shortlist; verify why it is cheap and whether the business is weakening.";
   if (board.key === "lens_smart_money") return "Treat disclosed institution/foreign ownership change as a clue, not a guarantee of price direction.";
@@ -222,6 +242,7 @@ function defaultHow(board: Screen, lang: Lang): string {
 
 function defaultRisk(board: Screen, lang: Lang): string {
   if (lang === "bn") {
+    if (board.key === "lens_agreement") return "Agreement strong হলেও এটি recommendation নয়। নতুন খবর, দাম বেশি হয়ে যাওয়া, বা হঠাৎ liquidity change আলাদা ঝুঁকি।";
     if (board.key === "lens_buffett_quality") return "ভালো কোম্পানিও দামে বেশি হলে রিটার্ন খারাপ হতে পারে। one-off EPS বা অতিরিক্ত ঋণ দেখুন।";
     if (board.key === "lens_graham_value") return "সস্তা শেয়ার value trap হতে পারে, বিশেষ করে EPS কমছে বা governance/news দুর্বল হলে।";
     if (board.key === "lens_smart_money") return "Disclosure delayed; বড় investor-রাও ভুল করতে পারে বা পরে বিক্রি করতে পারে।";
@@ -231,6 +252,7 @@ function defaultRisk(board: Screen, lang: Lang): string {
     if (board.key === "active_today" || board.key === "most_active") return "অ্যাক্টিভ মানেই দাম বাড়বে নয়; heavy selling-ও হতে পারে।";
     return "অনেক পড়া শেয়ার আরও পড়তে পারে; বিস্তৃত ডাউনট্রেন্ডে এই প্যাটার্ন প্রায়ই falling knife, তলদেশ নয়। এটি buy signal নয়।";
   }
+  if (board.key === "lens_agreement") return "Agreement is not a recommendation. New news, valuation stretch, and sudden liquidity changes can still break the setup.";
   if (board.key === "lens_buffett_quality") return "A good business can still be a poor trade if price is stretched. Check one-off EPS, debt and valuation.";
   if (board.key === "lens_graham_value") return "Cheap can be a value trap, especially if EPS is falling or governance/news is weak.";
   if (board.key === "lens_smart_money") return "Disclosure is delayed; large investors can also be early, wrong, or sellers later.";
@@ -244,6 +266,7 @@ function defaultRisk(board: Screen, lang: Lang): string {
 function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
   if (lang === "en" && item.check_next?.length) return item.check_next;
   if (lang === "bn") {
+    if (board.key === "lens_agreement") return ["লেন্স comparison", "খবর", "ADTV/order size", "মূল লেভেল"];
     if (board.key === "lens_buffett_quality") return ["৫ বছরের EPS", "ঋণ/NAV", "ডিভিডেন্ড", "valuation"];
     if (board.key === "lens_graham_value") return ["EPS ট্রেন্ড", "ঋণ/NAV", "খবর", "সেক্টর P/E"];
     if (board.key === "lens_smart_money") return ["Disclosure date", "CMF/OBV", "দামের reaction", "ভলিউম"];
@@ -253,6 +276,7 @@ function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
     if (board.key === "active_today" || board.key === "most_active") return ["খবর", "দামের দিক", "ADTV", "খাত"];
     return ["খবর", "ভলিউম", "সাপোর্ট", "অর্ডার সাইজ"];
   }
+  if (board.key === "lens_agreement") return ["Lens comparison", "News", "ADTV/order size", "Key levels"];
   if (board.key === "lens_buffett_quality") return ["5Y EPS", "Debt/NAV", "Dividend history", "Valuation"];
   if (board.key === "lens_graham_value") return ["EPS trend", "Debt/NAV", "News", "Sector P/E"];
   if (board.key === "lens_smart_money") return ["Disclosure date", "CMF/OBV", "Price reaction", "Volume"];
@@ -281,6 +305,9 @@ function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: strin
     }
     if (board.key === "most_active") {
       return "আজ টাকার লেনদেন বেশি; দামের দিক ও কারণ আলাদা করে যাচাই করুন।";
+    }
+    if (board.key === "lens_agreement") {
+      return `${item.value.toFixed(0)}/5 lens সহায়ক। ${item.note || "Quality, Value, Technical, Smart Money ও Risk একসাথে পড়ুন।"}`;
     }
     if (board.key === "lens_buffett_quality") {
       return `কোয়ালিটি স্কোর ${item.value.toFixed(0)}/10। ${item.note || "লাভজনকতা ও আয়ের প্রেক্ষাপট স্ক্রিনকে সমর্থন করছে।"}`;
@@ -523,12 +550,12 @@ function ScannerGuide() {
   const useSteps =
     lang === "bn"
       ? [
-          "প্রথমে সেটআপ বেছে নিন: আজকের activity, turnaround, value বা dividend.",
+          "প্রথমে সেটআপ বেছে নিন: আজকের activity, turnaround, value, dividend বা Investor Lens.",
           "যে শেয়ার দেখাবে, সেটি buy/sell signal নয়। সারি চাপুন এবং কেন এসেছে, ঝুঁকি, ADTV/order guide দেখুন।",
           "তারপর পুরো স্টক পেজে চার্ট, খবর, ফান্ডামেন্টাল, সাপোর্ট/রেজিস্ট্যান্স ও নিজের risk limit মিলিয়ে সিদ্ধান্ত নিন।",
         ]
       : [
-          "Start with the setup: today's activity, turnaround, value, or dividend.",
+          "Start with the setup: today's activity, turnaround, value, dividend, or Investor Lens.",
           "A match is not a buy/sell signal. Tap the row and check why it appeared, risk, ADTV and order guide.",
           "Then open the stock page to review chart, news, fundamentals, levels and your own risk limit.",
         ];
@@ -538,11 +565,13 @@ function ScannerGuide() {
           "Turnaround: ৫২-সপ্তাহের high থেকে অনেক নিচে, কিন্তু লাভজনক, P/E reasonable, liquid, এবং সাম্প্রতিক ৫ দিনের high ভাঙছে।",
           "Unusual Activity: নিজের স্বাভাবিক ভলিউম/টার্নওভারের তুলনায় আজ activity বেশি; thin/Z category বাদ দেওয়া হয়।",
           "Value + Dividend: খাতের তুলনায় valuation, profitability, cash dividend, positive EPS এবং liquidity একসাথে দেখা হয়।",
+          "Investor Lens: Multi-Lens Agreement আগে দেখায়, তারপর Quality, Value, Smart Money ও Risk-Controlled আলাদা board দেখায়।",
         ]
       : [
           "Turnaround: far below 52-week high, still profitable, reasonable P/E, liquid, and breaking the recent 5-day high.",
           "Unusual Activity: volume/turnover is high versus the stock's own normal pace; thin/Z-category names are filtered out.",
           "Value + Dividend: combines sector valuation, profitability, cash dividend, positive EPS and liquidity checks.",
+          "Investor Lens: starts with Multi-Lens Agreement, then shows separate Quality, Value, Smart Money and Risk-Controlled boards.",
         ];
   return (
     <section className="rounded-2xl border border-border bg-surface p-4">

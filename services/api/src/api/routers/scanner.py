@@ -18,6 +18,7 @@ from sqlalchemy import func, or_, select
 
 from api.deps import CurrentTenant, DbSession, OptionalUser
 from api.routers.screener import ScreenItem, ScreenOut, _enrich
+from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
 from bulls.core.models import (
     DailyBar,
     QuoteSnapshot,
@@ -69,6 +70,21 @@ def _fmt_x(value: float | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:.1f}x"
+
+
+def _extension_note(row: TickerAnalytics) -> str | None:
+    near_high = row.pct_from_52w_high is not None and row.pct_from_52w_high >= -3
+    hot_rsi = row.rsi_14 is not None and row.rsi_14 >= 72
+    strong_run = row.mom_12_1 is not None and row.mom_12_1 >= 35
+    far_from_low = row.pct_from_52w_low is not None and row.pct_from_52w_low >= 50
+    if near_high and hot_rsi and (strong_run or far_from_low):
+        return (
+            f"Extended: near 52W high ({row.pct_from_52w_high:+.1f}%), "
+            f"RSI {row.rsi_14:.0f}, 12M {row.mom_12_1 or 0:+.0f}%"
+        )
+    if hot_rsi and strong_run:
+        return f"Extended: RSI {row.rsi_14:.0f}, 12M {row.mom_12_1:+.0f}%"
+    return None
 
 
 class ScannerResponse(BaseModel):
@@ -330,16 +346,16 @@ async def _dividend_quality(session, market: str, limit: int) -> ScreenOut:
 
 
 def _quality_score(row: TickerAnalytics) -> int:
-    score = 5.0
-    if row.roe is not None:
-        score += 3 if row.roe >= 20 else 2 if row.roe >= 15 else 1 if row.roe >= 10 else -2
-    if row.eps_growth_yoy is not None:
-        score += 2 if row.eps_growth_yoy >= 15 else 1 if row.eps_growth_yoy >= 0 else -2
-    if row.dividend_yield is not None and row.dividend_yield > 0:
-        score += 1
-    if row.above_sma_200 is False:
-        score -= 1
-    return _clamp10(score)
+    # Single source of truth (bulls.analytics) so the board score matches the symbol-page lens card.
+    return (
+        buffett_quality_score(
+            roe=row.roe,
+            eps_growth_yoy=row.eps_growth_yoy,
+            dividend_yield=row.dividend_yield,
+            above_sma_200=row.above_sma_200,
+        )
+        or 0
+    )
 
 
 async def _lens_buffett_quality(session, market: str, limit: int) -> ScreenOut:
@@ -396,18 +412,16 @@ async def _lens_buffett_quality(session, market: str, limit: int) -> ScreenOut:
 
 
 def _graham_score(row: TickerAnalytics) -> int:
-    score = 5.0
-    if row.pe_vs_sector is not None:
-        score += 2 if row.pe_vs_sector <= 0.65 else 1 if row.pe_vs_sector <= 0.8 else 0
-    if row.pe_ratio is not None:
-        score += 1 if row.pe_ratio <= 12 else -1 if row.pe_ratio > 20 else 0
-    if row.pb_ratio is not None:
-        score += 1 if row.pb_ratio <= 1.5 else -1 if row.pb_ratio > 3 else 0
-    if row.roe is not None:
-        score += 1 if row.roe >= 10 else -2 if row.roe <= 0 else 0
-    if row.dividend_yield is not None and row.dividend_yield >= 3:
-        score += 1
-    return _clamp10(score)
+    return (
+        graham_score(
+            pe_ratio=row.pe_ratio,
+            pb_ratio=row.pb_ratio,
+            pe_vs_sector=row.pe_vs_sector,
+            roe=row.roe,
+            dividend_yield=row.dividend_yield,
+        )
+        or 0
+    )
 
 
 async def _lens_graham_value(session, market: str, limit: int) -> ScreenOut:
@@ -461,13 +475,35 @@ async def _lens_graham_value(session, market: str, limit: int) -> ScreenOut:
 
 
 def _smart_money_score(row: TickerAnalytics) -> int:
-    total_delta = (row.institute_delta or 0) + (row.foreign_delta or 0)
+    return (
+        smart_money_score(
+            institute_delta=row.institute_delta, foreign_delta=row.foreign_delta, cmf_20=row.cmf_20
+        )
+        or 0
+    )
+
+
+def _technical_score(row: TickerAnalytics) -> int | None:
+    if (
+        row.above_sma_50 is None
+        and row.above_sma_200 is None
+        and row.mom_12_1 is None
+        and row.rsi_14 is None
+    ):
+        return None
     score = 5.0
-    score += 3 if total_delta >= 2 else 2 if total_delta >= 1 else 0
-    if (row.institute_delta or 0) > 0 and (row.foreign_delta or 0) > 0:
+    score += 1.5 if row.above_sma_50 is True else -1 if row.above_sma_50 is False else 0
+    score += 2 if row.above_sma_200 is True else -2 if row.above_sma_200 is False else 0
+    if row.mom_12_1 is not None:
+        score += 2 if row.mom_12_1 >= 40 else 1 if row.mom_12_1 > 0 else -1
+    if row.rsi_14 is not None:
+        score += 1 if 45 <= row.rsi_14 <= 70 else -1 if row.rsi_14 > 80 or row.rsi_14 < 30 else 0
+    if row.relative_volume is not None and row.relative_volume >= 1.5:
         score += 1
-    if row.cmf_20 is not None:
-        score += 1 if row.cmf_20 > 0.1 else -1 if row.cmf_20 < -0.1 else 0
+    if row.pct_from_52w_high is not None and row.pct_from_52w_high > -2 and row.rsi_14 and row.rsi_14 > 75:
+        score -= 1
+    if _extension_note(row):
+        score = min(score, 6.0)
     return _clamp10(score)
 
 
@@ -531,6 +567,95 @@ def _risk_control_score(row: TickerAnalytics) -> int:
     return _clamp10(score)
 
 
+def _lens_status(score: int | None) -> str:
+    if score is None:
+        return "No data"
+    if score >= 7:
+        return "Pass"
+    if score >= 4:
+        return "Watch"
+    return "Weak"
+
+
+async def _lens_agreement(session, market: str, limit: int) -> ScreenOut:
+    """Stocks where several independent lenses line up.
+
+    This is not a strict 5/5 gate. Requiring every style to pass would hide useful candidates: quality
+    can be expensive, value can lack momentum, and ownership data can be delayed. The board requires
+    broad support plus no major risk-control failure.
+    """
+    T = TickerAnalytics
+    rows = list(
+        await session.scalars(
+            select(T)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .limit(500)
+        )
+    )
+    ranked: list[tuple[int, float, ScreenItem]] = []
+    for row in rows:
+        scores = {
+            "Quality": _quality_score(row),
+            "Value": _graham_score(row),
+            "Technical": _technical_score(row),
+            "Smart Money": _smart_money_score(row),
+            "Risk": _risk_control_score(row),
+        }
+        risk_score = scores["Risk"]
+        if risk_score is not None and risk_score < 4:
+            continue
+        supportive = [name for name, score in scores.items() if score is not None and score >= 7]
+        if len(supportive) < 3:
+            continue
+        available_scores = [score for score in scores.values() if score is not None]
+        average_score = sum(available_scores) / len(available_scores) if available_scores else 0.0
+        extension = _extension_note(row)
+        watch_or_weak = [
+            f"{name} {_lens_status(score)}"
+            for name, score in scores.items()
+            if score is None or score < 7
+        ]
+        note = (
+            f"Pass: {', '.join(supportive)}"
+            + (f" · Check: {', '.join(watch_or_weak)}" if watch_or_weak else "")
+        )
+        if extension:
+            note = f"{extension} · {note}"
+        ranked.append(
+            (
+                len(supportive),
+                average_score,
+                ScreenItem(
+                    code=row.code,
+                    last_close=row.last_close,
+                    value=float(len(supportive)),
+                    note=note,
+                    why=(
+                        f"{len(supportive)}/5 lenses supportive with Risk score "
+                        f"{risk_score}/10. {note}"
+                    ),
+                ),
+            )
+        )
+    ranked.sort(key=lambda row: (-row[0], -row[1], row[2].code))
+    return ScreenOut(
+        key="lens_agreement",
+        title="Multi-Lens Agreement",
+        description=(
+            "Stocks where at least 3 of 5 lenses are supportive and the risk-control lens is not "
+            "caution. A strong research queue, not a recommendation."
+        ),
+        value_label="lenses",
+        group="value",
+        items=[item for _count, _avg, item in ranked[:limit]],
+    )
+
+
 async def _lens_risk_control(session, market: str, limit: int) -> ScreenOut:
     T = TickerAnalytics
     rows = list(
@@ -584,6 +709,7 @@ _TABS: dict[str, list[str]] = {
     "today": ["quality_reversal", "active_today"],
     "value": ["value_quality", "dividend_quality"],
     "lens": [
+        "lens_agreement",
         "lens_buffett_quality",
         "lens_graham_value",
         "lens_smart_money",
@@ -614,6 +740,11 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
         elif board.key == "dividend_quality":
             board.title = "Dividend Quality"
             board.description = "Cash-yield names with positive earnings context."
+        elif board.key == "lens_agreement":
+            board.title = "Multi-Lens Agreement"
+            board.description = (
+                "At least 3 of 5 lenses are supportive, while risk-control is not caution."
+            )
         elif board.key == "lens_buffett_quality":
             board.title = "Quality Lens"
             board.description = (
@@ -700,6 +831,29 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
                 )
                 item.risk_note = "Past dividend does not guarantee future dividend; price adjusts around record date."
                 item.check_next = ["Record date", "EPS cover", "Payout history", "Price adjustment"]
+            elif board.key == "lens_agreement":
+                extended = (item.note or "").startswith("Extended:")
+                item.scanner_label = (
+                    f"Extended · {item.value:.0f}/5" if extended else f"{item.value:.0f}/5 lenses"
+                )
+                item.why = f"{item.value:.0f}/5 lenses are supportive. {item.note or ''}".strip()
+                item.how_to_read = (
+                    "Use this as the first research queue when you want broad agreement instead of "
+                    "one isolated signal. Open the stock page to see exactly which lenses pass and "
+                    "which ones need confirmation."
+                )
+                if extended:
+                    item.risk_note = (
+                        "This stock already looks extended. Do not treat agreement as an entry signal; "
+                        "check pullback, support, volume quality and whether the move is already priced in."
+                    )
+                    item.check_next = ["Pullback/support", "RSI cools", "News", "Order size"]
+                else:
+                    item.risk_note = (
+                        "Multi-lens agreement is still descriptive. It can miss new news, sudden liquidity "
+                        "changes, and valuation stretch."
+                    )
+                    item.check_next = ["Lens comparison", "News", "ADTV/order size", "Key levels"]
             elif board.key == "lens_buffett_quality":
                 item.scanner_label = "Quality pass"
                 item.why = f"Quality score {item.value:.0f}/10. {item.note or 'Profitability and earnings context support the screen.'}"
@@ -773,6 +927,8 @@ async def radar(
             b = await _value_quality(session, market, limit)
         elif key == "dividend_quality":
             b = await _dividend_quality(session, market, limit)
+        elif key == "lens_agreement":
+            b = await _lens_agreement(session, market, limit)
         elif key == "lens_buffett_quality":
             b = await _lens_buffett_quality(session, market, limit)
         elif key == "lens_graham_value":

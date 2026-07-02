@@ -14,6 +14,7 @@ import { Sparkline } from "../components/Sparkline";
 import { SectorHeat } from "../components/SectorHeat";
 import { WatchToday } from "../components/WatchToday";
 import { type Lang, useLang } from "../lib/i18n";
+import { formatDhakaTime } from "../lib/time";
 import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
@@ -1080,7 +1081,7 @@ function FreshnessTag({ asOf, quoteAsOf }: { asOf: string | null; quoteAsOf?: st
   const { t } = useLang();
   const live = marketLive();
   if (live && quoteAsOf) {
-    const time = new Date(quoteAsOf).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const time = formatDhakaTime(quoteAsOf);
     return (
       <div className="text-[10px] text-muted shrink-0 ml-2 flex items-center gap-1">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-up animate-pulse" />

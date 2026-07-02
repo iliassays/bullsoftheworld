@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
+import { formatDhakaDateTime } from "../lib/time";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
@@ -256,7 +257,7 @@ export function SymbolPage() {
           <div className="text-muted text-sm mt-2">{t("noQuote")}</div>
         )}
         <div className="text-[10px] text-muted mt-2">
-          ⏱ {t("delayedAsOf")} {new Date(q?.as_of ?? "").toLocaleString()}
+          ⏱ {t("delayedAsOf")} {formatDhakaDateTime(q?.as_of)}
         </div>
         {buzz?.attention === "rising" && (
           <div className="mt-2 inline-flex items-center gap-1 text-xs text-accent bg-accent/10 rounded-full px-2 py-0.5 w-fit">
