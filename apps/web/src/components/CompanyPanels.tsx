@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { Company, NewsItem } from "../lib/api";
 import { type Lang, useLang } from "../lib/i18n";
 import { Empty } from "./ui";
@@ -61,12 +61,62 @@ function DateCell({ label, value, accent }: { label: string; value?: string; acc
   );
 }
 
-function WhatItMeans({ text }: { text: string }) {
+const fillT = (t: (k: string) => string, key: string, vars: Record<string, string | number>) =>
+  t(key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
+
+// Localised category name, falling back to the raw key if a translation is missing.
+const catName = (c: string, t: (k: string) => string): string => {
+  const tr = t(`cat.${c}`);
+  return tr.startsWith("cat.") ? c : tr;
+};
+
+// Category → chip/dot colour, so the eye can triage the feed. Dividends read as money (up/green),
+// halts as danger (down/red), routine meetings/actions as neutral, the rest as accent.
+const catChip = (c: string): string => {
+  if (c === "dividend") return "text-up bg-up/10";
+  if (c === "halt") return "text-down bg-down/10";
+  if (c === "board_meeting" || c === "corporate_action") return "text-muted bg-border/40";
+  return "text-accent bg-accent/10";
+};
+const catDot = (c: string): string => {
+  if (c === "dividend") return "bg-up";
+  if (c === "halt") return "bg-down";
+  if (c === "board_meeting" || c === "corporate_action") return "bg-muted";
+  return "bg-accent";
+};
+
+// True only when there's a structured card to show — the materiality gate: decoded items become
+// rich cards, everything else (bare ratings, board-meeting schedules) collapses to a one-liner.
+function hasDecoded(n: NewsItem): boolean {
+  const d = n.details;
+  if (!d) return false;
+  if (n.category === "earnings") return d.eps_current != null;
+  if (n.category === "dividend") return d.cash_pct != null || d.stock_pct != null || d.no_dividend === true;
+  if (n.category === "corporate_action" || n.category === "halt") return !!(d.record_date || d.spot_from);
+  if (n.category === "rating") return !!(d.long_term || d.short_term);
+  return false;
+}
+
+const isFuture = (iso: string | undefined, today: string): boolean => !!iso && iso >= today;
+
+// The plain-language explainer, now a tap-to-open disclosure instead of a line repeated on every
+// card — the education stays, the clutter goes.
+function Explainer({ text }: { text: string }) {
   const { t } = useLang();
+  const [open, setOpen] = useState(false);
   return (
-    <div className="mt-2 flex gap-1.5 text-xs text-muted leading-relaxed">
-      <span className="text-accent shrink-0">{t("news.whatItMeans")}:</span>
-      <span>{text}</span>
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-[11px] text-muted"
+        aria-expanded={open}
+      >
+        <span aria-hidden>ⓘ</span>
+        {t("news.whatItMeans")}
+        <span aria-hidden>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && <p className="mt-1 text-xs text-muted leading-relaxed">{text}</p>}
     </div>
   );
 }
@@ -76,8 +126,7 @@ function WhatItMeans({ text }: { text: string }) {
 function DecodedBody({ n }: { n: NewsItem }) {
   const { t } = useLang();
   const d = n.details;
-  const fill = (key: string, vars: Record<string, string | number>) =>
-    t(key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
+  const fill = (key: string, vars: Record<string, string | number>) => fillT(t, key, vars);
   if (!d) return null;
 
   if (n.category === "earnings" && d.eps_current != null) {
@@ -105,7 +154,7 @@ function DecodedBody({ n }: { n: NewsItem }) {
             {t(`news.trend.${d.eps_trend}`)}
           </span>
         )}
-        <WhatItMeans text={t("news.explain.earnings")} />
+        <Explainer text={t("news.explain.earnings")} />
       </div>
     );
   }
@@ -153,7 +202,7 @@ function DecodedBody({ n }: { n: NewsItem }) {
         <p className="text-sm font-semibold">
           {fill("news.board.title", { date: shortDate(d.meeting_date), what: parts.join(t("news.board.and")) })}
         </p>
-        <WhatItMeans text={t("news.explain.board")} />
+        <Explainer text={t("news.explain.board")} />
       </div>
     );
   }
@@ -166,7 +215,7 @@ function DecodedBody({ n }: { n: NewsItem }) {
           <DateCell label={t("news.recordDate")} value={shortDate(d.record_date)} accent />
           {d.agm_date && <DateCell label={t("news.agm")} value={shortDate(d.agm_date)} />}
         </div>
-        <WhatItMeans text={t("news.explain.dates")} />
+        <Explainer text={t("news.explain.dates")} />
       </div>
     );
   }
@@ -183,7 +232,7 @@ function DecodedBody({ n }: { n: NewsItem }) {
             </span>
           )}
         </div>
-        <WhatItMeans text={t("news.explain.rating")} />
+        <Explainer text={t("news.explain.rating")} />
       </div>
     );
   }
@@ -191,27 +240,209 @@ function DecodedBody({ n }: { n: NewsItem }) {
   return null;
 }
 
+// A routine notice as a single timeline row — dot, terse description, date. Keeps board-meeting
+// schedules and bare ratings from each eating a whole card.
+function CompactRow({ n }: { n: NewsItem }) {
+  const { t } = useLang();
+  const d = n.details;
+  let desc: string;
+  if (n.category === "board_meeting") {
+    const bits = (d?.agenda ?? []).map((a) =>
+      a === "financials"
+        ? fillT(t, "news.board.financials", { period: t(`news.period.${d?.period ?? "annual"}`) })
+        : t("news.board.dividend"),
+    );
+    desc = bits.length ? bits.join(t("news.board.and")) : catName(n.category, t);
+  } else {
+    desc = n.headline.replace(/^[A-Z0-9.&-]+:\s*/, ""); // drop the "CODE: " prefix
+  }
+  return (
+    <div className="flex items-center gap-2 py-1.5 px-1 text-xs">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${catDot(n.category)}`} />
+      <span className="text-muted shrink-0">{catName(n.category, t)}</span>
+      <span className="flex-1 min-w-0 truncate text-text/90">{desc}</span>
+      <span className="text-muted shrink-0 tnum">{shortDate(n.published_at)}</span>
+    </div>
+  );
+}
+
+// Forward-looking events pulled from decoded dates — only ever REAL future dates (never inferred),
+// so the strip is hidden when nothing is scheduled rather than guessing.
+function UpcomingStrip({ items, today }: { items: NewsItem[]; today: string }) {
+  const { t } = useLang();
+  const events = items
+    .map((n) => {
+      const d = n.details;
+      if (n.category === "board_meeting" && isFuture(d?.meeting_date, today)) {
+        const bits = (d?.agenda ?? []).map((a) =>
+          a === "financials"
+            ? fillT(t, "news.board.financials", { period: t(`news.period.${d?.period ?? "annual"}`) })
+            : t("news.board.dividend"),
+        );
+        return { date: d!.meeting_date!, label: catName("board_meeting", t), sub: bits.join(t("news.board.and")) };
+      }
+      if ((n.category === "corporate_action" || n.category === "halt") && isFuture(d?.record_date, today))
+        return { date: d!.record_date!, label: t("news.recordDate"), sub: "" };
+      return null;
+    })
+    .filter((e): e is { date: string; label: string; sub: string } => e !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!events.length) return null;
+  return (
+    <section className="bg-surface border border-accent/40 rounded-2xl p-3">
+      <div className="text-[11px] font-semibold text-accent mb-2">{t("news.upcoming")}</div>
+      <div className="flex flex-col gap-2">
+        {events.map((e, i) => (
+          <div key={i} className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold truncate">{e.label}</div>
+              {e.sub && <div className="text-[11px] text-muted truncate">{e.sub}</div>}
+            </div>
+            <div className="text-sm font-semibold text-accent shrink-0 tnum">{shortDate(e.date)}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// 12-month at-a-glance digest, computed from the feed. Every cell is optional — shown only when the
+// data exists (omit over mislead).
+function Digest({ items }: { items: NewsItem[] }) {
+  const { t } = useLang();
+  const div = items.find(
+    (n) => n.category === "dividend" && (n.details?.cash_pct != null || n.details?.stock_pct != null),
+  );
+  const earn = items.find((n) => n.category === "earnings" && n.details?.eps_current != null);
+  const earnings = items
+    .filter((n) => n.category === "earnings" && n.details?.eps_current != null)
+    .slice(0, 4);
+  const upCount = earnings.filter((n) => (n.details!.eps_current as number) > 0).length;
+  const rating = items.find((n) => n.category === "rating");
+
+  const cells: { label: string; value: ReactNode; sub?: string }[] = [];
+  if (div) {
+    const dd = div.details!;
+    const cash = dd.cash_pct != null ? fillT(t, "news.digest.cash", { pct: dd.cash_pct }) : "";
+    const bonus = dd.stock_pct != null ? fillT(t, "news.digest.bonus", { pct: dd.stock_pct }) : "";
+    cells.push({
+      label: t("news.digest.dividend"),
+      value: (
+        <span className="text-up">
+          {cash}
+          {bonus}
+        </span>
+      ),
+      sub:
+        dd.per_share_cash != null
+          ? fillT(t, "news.div.perShare", { amt: dd.per_share_cash.toFixed(2) })
+          : undefined,
+    });
+  }
+  if (earn) {
+    const ed = earn.details!;
+    const good =
+      ed.eps_trend === "up" || ed.eps_trend === "to_profit" || ed.eps_trend === "loss_narrowed";
+    const flat = ed.eps_trend === "flat" || !ed.eps_trend;
+    cells.push({
+      label: t("news.digest.eps"),
+      value: (
+        <span>
+          {takaSigned(ed.eps_current as number)}{" "}
+          {!flat && <span className={good ? "text-up" : "text-down"}>{good ? "▲" : "▼"}</span>}
+        </span>
+      ),
+      sub: ed.period ? t(`news.period.${ed.period}`) : undefined,
+    });
+  }
+  if (earnings.length) {
+    cells.push({
+      label: t("news.digest.streak"),
+      value: fillT(t, "news.digest.streakVal", { n: upCount, m: earnings.length }),
+    });
+  }
+  if (rating) {
+    cells.push({
+      label: t("news.digest.rating"),
+      value: fillT(t, "news.digest.rated", { date: discMonth(rating.published_at) }),
+    });
+  }
+  if (!cells.length) return null;
+  return (
+    <div>
+      <div className="text-[11px] text-muted mb-1.5 px-1">{t("news.digest.title")}</div>
+      <div className="grid grid-cols-2 gap-2">
+        {cells.map((c, i) => (
+          <div key={i} className="bg-bg/40 rounded-xl px-3 py-2">
+            <div className="text-[11px] text-muted">{c.label}</div>
+            <div className="text-sm font-bold">{c.value}</div>
+            {c.sub && <div className="text-[11px] text-muted">{c.sub}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function NewsPanel({ items }: { items: NewsItem[] }) {
   const { t } = useLang();
+  const [filter, setFilter] = useState<string>("all");
   if (!items.length) return <Empty>{t("news.empty")}</Empty>;
-  const catLabel = (c: string) => {
-    const tr = t(`cat.${c}`);
-    return tr.startsWith("cat.") ? c : tr;
-  };
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = (n: NewsItem): boolean =>
+    (n.category === "board_meeting" && isFuture(n.details?.meeting_date, today)) ||
+    ((n.category === "corporate_action" || n.category === "halt") &&
+      isFuture(n.details?.record_date, today));
+
+  const FILTERS: [string, string][] = [
+    ["all", t("news.filter.all")],
+    ["earnings", t("news.filter.earnings")],
+    ["dividend", t("news.filter.dividend")],
+    ["board_meeting", t("news.filter.meeting")],
+    ["rating", t("news.filter.rating")],
+  ];
+  const timeline = items
+    .filter((n) => !upcoming(n))
+    .filter((n) => filter === "all" || n.category === filter);
+
   return (
-    <div className="flex flex-col gap-2">
-      {items.map((n, i) => (
-        <div key={i} className="bg-surface border border-border rounded-2xl p-3">
-          <div className="flex items-center gap-2 text-[11px]">
-            <span className="text-accent font-semibold bg-accent/10 rounded-full px-2 py-0.5">
-              {catLabel(n.category)}
-            </span>
-            <span className="text-muted">{n.published_at}</span>
-          </div>
-          <p className="text-sm font-semibold mt-2">{n.headline}</p>
-          <DecodedBody n={n} />
-        </div>
-      ))}
+    <div className="flex flex-col gap-3">
+      <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5">
+        {FILTERS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setFilter(key)}
+            className={`shrink-0 text-[12px] rounded-full px-3 py-1 border ${
+              filter === key ? "bg-text text-bg border-text font-semibold" : "text-muted border-border"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <UpcomingStrip items={items} today={today} />
+      <Digest items={items} />
+
+      <div className="flex flex-col gap-2">
+        {timeline.map((n, i) =>
+          n.category === "board_meeting" || !hasDecoded(n) ? (
+            <CompactRow key={i} n={n} />
+          ) : (
+            <div key={i} className="bg-surface border border-border rounded-2xl p-3">
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className={`font-semibold rounded-full px-2 py-0.5 ${catChip(n.category)}`}>
+                  {catName(n.category, t)}
+                </span>
+                <span className="text-muted tnum">{n.published_at}</span>
+              </div>
+              <p className="text-sm font-semibold mt-2">{n.headline}</p>
+              <DecodedBody n={n} />
+            </div>
+          ),
+        )}
+      </div>
       <p className="text-[10px] text-muted">{t("news.footer")}</p>
     </div>
   );
