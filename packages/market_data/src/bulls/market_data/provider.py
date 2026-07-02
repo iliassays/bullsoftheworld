@@ -188,5 +188,9 @@ class MarketDataProvider(Protocol):
 
     async def get_news(self, start: dt.date, end: dt.date) -> list[NewsItem]: ...
 
+    # Optional historical archive for one-shot backfill (live get_news often only returns recent
+    # items). Providers without it fall back to get_news.
+    # async def get_news_archive(self, start: dt.date, end: dt.date) -> list[NewsItem]: ...
+
     # Optional live push. Providers without it (e.g. the scraper) are polled instead.
     # def subscribe(self, codes: list[str], on_tick: Callable[[Quote], None]) -> Unsubscribe: ...

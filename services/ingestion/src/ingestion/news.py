@@ -22,7 +22,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import Announcement
 from bulls.market_data import get_provider
-
 from ingestion.news_decode import decode
 
 BACKFILL_DAYS = 760
@@ -113,13 +112,8 @@ def _key(code: str, day: dt.date, headline: str) -> str:
     return hashlib.sha1(f"{code}|{day}|{headline}".encode()).hexdigest()[:40]
 
 
-async def collect(market: str, *, days: int) -> dict[str, int]:
-    """Pull `days` of news, classify + score, drop noise, upsert. Returns run stats."""
-    provider = get_provider(market)
-    end = dt.datetime.now(dt.UTC).date()
-    start = end - dt.timedelta(days=days)
-    items = await provider.get_news(start, end)
-
+async def _ingest(market: str, items: list) -> int:
+    """Classify + score + decode a batch of raw NewsItems, drop noise, upsert. Returns rows kept."""
     # DSE splits long announcements across rows that repeat the same title ("(Cont. news of X)").
     # They share an identity key, so group them and decode the bodies together — otherwise a
     # continuation fragment overwrites the real declaration and the numbers/dates are lost.
@@ -138,7 +132,9 @@ async def collect(market: str, *, days: int) -> dict[str, int]:
         for k, g in groups.items():
             it, category = g["item"], g["category"]
             # main fragment (not a "(Cont." part) first, so the merged text reads in order
-            ordered = sorted(g["bodies"], key=lambda b: b.strip().lower().startswith(("(cont", "(continuation")))
+            ordered = sorted(
+                g["bodies"], key=lambda b: b.strip().lower().startswith(("(cont", "(continuation"))
+            )
             body = "\n".join(ordered)
             row = {
                 "market": market,
@@ -153,26 +149,69 @@ async def collect(market: str, *, days: int) -> dict[str, int]:
             }
             # On re-run, refresh the derived columns so improved classification / decoding flows to
             # rows we already have (identity is the content hash, so this is idempotent).
-            stmt = pg_insert(Announcement).values(row).on_conflict_do_update(
-                index_elements=["key"],
-                set_={
-                    "category": row["category"],
-                    "strength": row["strength"],
-                    "body": row["body"],
-                    "details": row["details"],
-                },
+            stmt = (
+                pg_insert(Announcement)
+                .values(row)
+                .on_conflict_do_update(
+                    index_elements=["key"],
+                    set_={
+                        "category": row["category"],
+                        "strength": row["strength"],
+                        "body": row["body"],
+                        "details": row["details"],
+                    },
+                )
             )
             result = await session.execute(stmt)
             kept += result.rowcount or 0
         await session.commit()
+    return kept
+
+
+async def collect(market: str, *, days: int) -> dict[str, int]:
+    """Pull `days` of *recent* news (load-news.php), classify + score, drop noise, upsert."""
+    provider = get_provider(market)
+    end = dt.datetime.now(dt.UTC).date()
+    start = end - dt.timedelta(days=days)
+    items = await provider.get_news(start, end)
+    kept = await _ingest(market, items)
     return {"fetched": len(items), "kept": kept}
+
+
+def _month_windows(start: dt.date, end: dt.date):
+    """Yield (window_start, window_end) covering [start, end], one calendar month at a time."""
+    cur = start
+    while cur <= end:
+        nxt = (cur.replace(day=1) + dt.timedelta(days=32)).replace(day=1)
+        yield cur, min(end, nxt - dt.timedelta(days=1))
+        cur = nxt
+
+
+async def backfill_range(market: str, *, days: int) -> dict[str, int]:
+    """One-shot history from the archive (old_news.php), chunked by month so no single request is
+    huge. Upserts per month, so a mid-run failure still keeps the months already pulled."""
+    provider = get_provider(market)
+    get_archive = getattr(provider, "get_news_archive", provider.get_news)
+    end = dt.datetime.now(dt.UTC).date()
+    start = end - dt.timedelta(days=days)
+    total_fetched = total_kept = 0
+    for w_start, w_end in _month_windows(start, end):
+        items = await get_archive(w_start, w_end)
+        kept = await _ingest(market, items)
+        total_fetched += len(items)
+        total_kept += kept
+        print(f"[news]   {w_start}..{w_end}: fetched {len(items)}, kept {kept}", flush=True)
+    return {"fetched": total_fetched, "kept": total_kept}
 
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "daily"
-    days = BACKFILL_DAYS if mode == "backfill" else DAILY_LOOKBACK_DAYS
-    print(f"[news] {mode}: pulling ~{days}d of DSE news")
-    stats = asyncio.run(collect("DSE", days=days))
+    if mode == "backfill":
+        print(f"[news] backfill: pulling ~{BACKFILL_DAYS}d of DSE news from the archive (monthly)")
+        stats = asyncio.run(backfill_range("DSE", days=BACKFILL_DAYS))
+    else:
+        print(f"[news] daily: pulling ~{DAILY_LOOKBACK_DAYS}d of recent DSE news")
+        stats = asyncio.run(collect("DSE", days=DAILY_LOOKBACK_DAYS))
     print(f"[news] done: {stats}")
 
 

@@ -45,6 +45,9 @@ _SECTOR_PE_URL = f"{_BASE}/sectoral_PE.php"
 # ajax/load-news.php (same dsebd.org host). That AJAX endpoint is the only one that returns rows,
 # and only when the X-Requested-With: XMLHttpRequest header is present (see get_news).
 _NEWS_URL = f"{_BASE}/ajax/load-news.php"
+# old_news.php is the historical archive — server-rendered, honours startDate/endDate (see
+# get_news_archive). load-news.php can't backfill because it ignores the range.
+_ARCHIVE_NEWS_URL = f"{_BASE}/old_news.php"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 
@@ -242,7 +245,9 @@ def _emit_news(item: dict[str, str], out: list[NewsItem]) -> None:
     date = _news_date(item.get("date", ""))
     if code and headline and date:
         out.append(
-            NewsItem(code=code, published_at=date, headline=headline, body=item.get("body", "").strip())
+            NewsItem(
+                code=code, published_at=date, headline=headline, body=item.get("body", "").strip()
+            )
         )
 
 
@@ -287,13 +292,19 @@ def parse_news(html: str) -> list[NewsItem]:
         cells = [c.text(strip=True) for c in row.css("td, th")]
         if len(cells) < 2:
             continue
-        field = _NEWS_FIELD_BY_LABEL.get(cells[1].strip().lower())
-        if field is None:
+        # The label ("Trading Code:", ...) is in cell 1 on load-news.php (value|label) but in cell 0
+        # on the old_news.php archive (<th>label</th><td>value</td>). Match either; the value is the
+        # other cell, so one parser reads both the live feed and the historical archive.
+        if (field := _NEWS_FIELD_BY_LABEL.get(cells[0].strip().lower())) is not None:
+            value = cells[1]
+        elif (field := _NEWS_FIELD_BY_LABEL.get(cells[1].strip().lower())) is not None:
+            value = cells[0]
+        else:
             continue
         if field == "code":  # a new item begins — flush the previous one
             _emit_news(current, out)
             current = {}
-        current[field] = cells[0]
+        current[field] = value
     _emit_news(current, out)  # last item has no trailing "Trading Code:" to flush it
     if not out:
         _parse_news_table(tree, out)
@@ -582,5 +593,19 @@ class DseScrapeProvider:
         headers = {"X-Requested-With": "XMLHttpRequest"}
         async with self._client() as client:
             resp = await client.get(_NEWS_URL, params=params, headers=headers)
+            resp.raise_for_status()
+        return parse_news(resp.text)
+
+    async def get_news_archive(self, start: dt.date, end: dt.date) -> list[NewsItem]:
+        """Historical news for a date range from old_news.php.
+
+        load-news.php is the *live* feed — it ignores startDate and only returns the last few days,
+        so it can't backfill. old_news.php is the real archive: it honours the range and renders the
+        full result server-side (no AJAX header needed). It's heavy (~1.5k items/month), so callers
+        must chunk by month rather than requesting years at once.
+        """
+        params = {"startDate": str(start), "endDate": str(end), "criteria": 4, "archive": "news"}
+        async with self._client() as client:
+            resp = await client.get(_ARCHIVE_NEWS_URL, params=params)
             resp.raise_for_status()
         return parse_news(resp.text)
