@@ -37,6 +37,7 @@ from api.routers import (
     portfolio,
     posts,
     pulse,
+    quiz,
     scanner,
     scorecard,
     screener,
@@ -93,6 +94,7 @@ app.include_router(alerts.router)
 app.include_router(health.router)
 app.include_router(investor_lens.router)
 app.include_router(portfolio.router)
+app.include_router(quiz.router)
 app.include_router(admin.router)
 app.include_router(admin_overview.router)
 app.include_router(auth.router)

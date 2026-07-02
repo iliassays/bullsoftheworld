@@ -109,6 +109,14 @@ const STRINGS: Record<string, Entry> = {
     en: "Prices delayed 15 min. We describe your entries — we never advise, and we never see your broker account.",
     bn: "দাম ১৫ মিনিট বিলম্বিত। আমরা শুধু আপনার এন্ট্রি দেখাই — পরামর্শ দিই না, ব্রোকার অ্যাকাউন্টও দেখি না।",
   },
+  // Daily quiz
+  "quiz.title": { en: "Daily quiz", bn: "দৈনিক কুইজ" },
+  "quiz.dayStreak": { en: "day streak", bn: "দিনের স্ট্রিক" },
+  "quiz.pts": { en: "pts", bn: "পয়েন্ট" },
+  "quiz.disclaimer": {
+    en: "Points measure learning — never trading.",
+    bn: "পয়েন্ট শেখার হিসাব — লেনদেনের নয়।",
+  },
   // Onboarding (post-register welcome flow)
   "ob.step": { en: "Step", bn: "ধাপ" },
   "ob.skip": { en: "Skip for now", bn: "এখন থাক" },

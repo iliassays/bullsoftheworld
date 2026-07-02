@@ -700,6 +700,29 @@ export const api = {
     }),
   holdingDelete: (code: string) =>
     request<void>(`/portfolio/holdings/${code}`, { method: "DELETE" }),
+
+  // daily quiz — gamified learning, never trading
+  quizToday: () => request<QuizToday>("/quiz/today"),
+  quizAnswer: (question_id: number, choice_idx: number) =>
+    request<QuizToday>("/quiz/answer", {
+      method: "POST",
+      body: JSON.stringify({ question_id, choice_idx }),
+    }),
+};
+
+// ---- quiz ----
+export type QuizToday = {
+  question_id: number;
+  topic: string;
+  question: string;
+  choices: string[];
+  answered: boolean;
+  your_choice: number | null;
+  correct: boolean | null;
+  answer_idx: number | null;
+  explanation: string | null;
+  streak: number;
+  points: number;
 };
 
 // ---- alerts ----

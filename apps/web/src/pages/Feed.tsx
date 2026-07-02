@@ -6,6 +6,7 @@ import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { Composer } from "../components/Composer";
 import { DhakaMood } from "../components/DhakaMood";
 import { PostCard } from "../components/PostCard";
+import { QuizCard } from "../components/QuizCard";
 import { TodaysWatch } from "../components/TodaysWatch";
 import { WatchlistHome } from "../components/WatchlistHome";
 import { Spinner } from "../components/ui";
@@ -56,6 +57,7 @@ export function Feed() {
       <DhakaMood />
       <WatchlistHome />
       <TodaysWatch />
+      <QuizCard />
 
       {sectionLabel(t("home.myFeed"))}
       <div className="flex gap-2 overflow-x-auto pb-0.5 px-1">
