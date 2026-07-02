@@ -246,14 +246,14 @@ def _chk(label, val, want, *, good, weak, fmt=_fmt_x) -> LensCheck:
 
 
 def _news_check(bn: bool, count: int, label: str | None) -> LensCheck:
-    """Recent material announcements (last 30d) — surfaced so the user doesn't have to go hunt."""
+    """Recent material announcements (last 90d) — surfaced so the user doesn't have to go hunt."""
     if count > 0:
         base = f"{count}টি সাম্প্রতিক" if bn else f"{count} recent"
         actual = f"{base} · {label}" if label else base
         status = "watch"  # there's fresh news worth reading before acting
     else:
-        actual = "নেই (৩০ দিনে)" if bn else "None (30d)"
-        status = "pass"  # nothing pending to reassess
+        actual = "নেই (৯০ দিনে)" if bn else "None (90d)"
+        status = "na"  # absence of news is neutral, not a plus — don't paint it green
     return LensCheck(label="সাম্প্রতিক খবর" if bn else "Recent news", actual=actual, expected="", status=status)
 
 

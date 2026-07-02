@@ -54,9 +54,10 @@ async def get_investor_lens(
         if has_loan and equity > 0:
             debt_to_equity = ((cp.short_term_loan_mn or 0) + (cp.long_term_loan_mn or 0)) / equity
 
-    # Recent material announcements (last 30 days) — so the lens can say "2 recent (dividend)" or
-    # "none", instead of telling the user to go hunt the news themselves.
-    since = ta.as_of_date - dt.timedelta(days=30)
+    # Recent material announcements (last 90 days) — so the lens can say "2 recent (dividend)" or
+    # "none", instead of telling the user to go hunt the news themselves. 90d (a quarter) matches the
+    # reporting cadence: a 30d window missed genuinely recent earnings/dividends and read "none".
+    since = ta.as_of_date - dt.timedelta(days=90)
     news = list(
         await session.scalars(
             select(Announcement)
