@@ -46,6 +46,15 @@ _HDRS = {
 _OVERRIDES: dict[str, str] = {
     "RUPALIBANK": "https://rupalibank.com.bd",
 }
+# Direct, hand-verified logo images for marquee names whose own sites block cloud IPs and aren't in
+# any favicon service (banks especially). Sourced from Wikimedia Commons (reachable from the server).
+# Highest priority — tried before the site/favicon path. Add a line here for any specific company.
+_LOGO_URLS: dict[str, str] = {
+    "DUTCHBANGL": "https://upload.wikimedia.org/wikipedia/commons/1/16/Dutch-bangla-bank-ltd.svg",
+    "IPDC": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Logo_of_IPDC_Finance.svg",
+    "UTTARABANK": "https://upload.wikimedia.org/wikipedia/commons/b/ba/Logo_of_Uttara_Bank.svg",
+    "BERGERPBL": "https://upload.wikimedia.org/wikipedia/commons/3/31/Berger.png",
+}
 
 
 def _favicon_service(domain: str) -> str:
@@ -99,6 +108,14 @@ async def _fetch_one(client: httpx.AsyncClient, provider, code: str) -> dict:
     sites that block or time out on us). An override domain wins over the DSE-listed one.
     """
     row: dict = {"market": MARKET, "code": code, "image": None, "content_type": None, "source_url": None}
+    # 0. A hand-curated logo image, if we have one (wins over everything).
+    direct = _LOGO_URLS.get(code)
+    if direct:
+        got = await _download_image(client, direct)
+        if got:
+            row.update(got)
+            return row
+
     site = _OVERRIDES.get(code)
     if not site:
         try:
