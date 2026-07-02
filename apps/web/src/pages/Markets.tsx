@@ -1297,9 +1297,6 @@ export function Markets() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-[11px] uppercase tracking-wide text-muted px-1">
-        {t("markets.lookingFor")}
-      </div>
       {/* Pinned below the app header — same treatment as the Ideas/Symbol tab bars. */}
       <div
         className="sticky z-10 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur flex gap-2 overflow-x-auto"
