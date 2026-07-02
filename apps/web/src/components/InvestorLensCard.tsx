@@ -93,6 +93,13 @@ function shortName(key: string, fallback: string, bn: boolean): string {
   return s ? (bn ? s.bn : s.en) : fallback;
 }
 
+function checkDot(status: string): string {
+  if (status === "pass") return "bg-up";
+  if (status === "fail") return "bg-down";
+  if (status === "na") return "bg-muted";
+  return "bg-accent"; // watch
+}
+
 export function InvestorLensCard({ code }: { code: string }) {
   const { lang } = useLang();
   const bn = lang === "bn";
@@ -167,13 +174,29 @@ export function InvestorLensCard({ code }: { code: string }) {
 
             <p className="mt-2 text-[11px] text-muted leading-snug">{l.summary}</p>
 
-            <ul className="mt-2 flex flex-col gap-1">
-              {l.points.map((p, i) => (
-                <li key={i} className="text-[12px] text-muted leading-snug tnum">
-                  <span className="text-text">•</span> {p}
-                </li>
-              ))}
-            </ul>
+            {/* have-vs-want: your value against the style's benchmark, so the gap is visible */}
+            {l.checks && l.checks.length > 0 ? (
+              <div className="mt-2 flex flex-col gap-1">
+                {l.checks.map((c, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[12px]">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${checkDot(c.status)}`} />
+                    <span className="text-muted flex-1 min-w-0 truncate">{c.label}</span>
+                    <span className="text-text font-semibold tnum">{c.actual}</span>
+                    <span className="text-muted tnum">
+                      {bn ? "চাই" : "want"} {c.expected}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-2 flex flex-col gap-1">
+                {l.points.map((p, i) => (
+                  <li key={i} className="text-[12px] text-muted leading-snug tnum">
+                    <span className="text-text">•</span> {p}
+                  </li>
+                ))}
+              </ul>
+            )}
 
             <div className="mt-2 flex flex-wrap gap-1.5">
               {l.watch_next.map((w) => (

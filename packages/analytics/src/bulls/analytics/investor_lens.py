@@ -10,6 +10,16 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class LensCheck(BaseModel):
+    """One criterion the style cares about, shown as actual-vs-expected so the reader sees the gap.
+    Field names + status values match the web client's declared contract."""
+
+    label: str
+    actual: str  # this stock's value, formatted (or "—" if unknown)
+    expected: str  # the style's benchmark, plain (e.g. "≤ 15x")
+    status: str  # pass | watch | fail | na
+
+
 class InvestorLens(BaseModel):
     key: str
     name: str
@@ -18,6 +28,7 @@ class InvestorLens(BaseModel):
     score: int | None
     summary: str
     points: list[str]
+    checks: list[LensCheck] = []  # have-vs-want criteria (fundamental lenses); FE prefers these
     watch_next: list[str]
 
 
@@ -215,6 +226,19 @@ def _fmt_tk_mn(v: float | None) -> str:
     return f"৳{v:.1f}mn"
 
 
+def _chk(label, val, want, *, good, weak, fmt=_fmt_x) -> LensCheck:
+    """Build an actual-vs-expected check. `good`/`weak` are predicates on the value (only called when
+    it's present), so the reader sees their number, the style's benchmark, and where it stands."""
+    if val is None:
+        return LensCheck(label=label, actual="—", expected=want, status="na")
+    return LensCheck(
+        label=label,
+        actual=fmt(val),
+        expected=want,
+        status="pass" if good(val) else "fail" if weak(val) else "watch",
+    )
+
+
 def _extended_technical(
     *,
     pct_from_52w_high: float | None,
@@ -276,6 +300,22 @@ def _graham(
         ]
         watch_next = ["Latest EPS", "Sector P/E", "Debt/loans", "Dividend sustainability"]
 
+    checks = [
+        _chk(
+            "খাতের চেয়ে সস্তা" if bn else "Cheaper than sector",
+            pe_vs_sector, "< 1.0x", good=lambda x: x < 0.9, weak=lambda x: x > 1.25,
+        ),
+        _chk("P/E", pe_ratio, "≤ 15x", good=lambda x: 0 < x <= 15, weak=lambda x: x > 25),
+        _chk("P/B", pb_ratio, "≤ 1.5x", good=lambda x: x <= 1.5, weak=lambda x: x > 3),
+        _chk(
+            "আয় (ROE)" if bn else "Earnings (ROE)",
+            roe, "≥ 10%", good=lambda x: x >= 10, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "লভ্যাংশ" if bn else "Dividend",
+            dividend_yield, "≥ 3%", good=lambda x: x >= 3, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+    ]
     return InvestorLens(
         key="graham_value",
         name="Graham Value",
@@ -284,6 +324,7 @@ def _graham(
         score=s,
         summary=summary,
         points=points,
+        checks=checks,
         watch_next=watch_next,
     )
 
@@ -310,6 +351,26 @@ def _buffett(
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
         watch_next = ["5-year EPS consistency", "Margins/loans", "Dividend history", "Business moat"]
 
+    checks = [
+        _chk(
+            "লাভজনকতা (ROE)" if bn else "Profitability (ROE)",
+            roe, "≥ 15%", good=lambda x: x >= 15, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "আয় বৃদ্ধি (YoY)" if bn else "Earnings growth (YoY)",
+            eps_growth_yoy, "> 0%", good=lambda x: x >= 15, weak=lambda x: x < 0, fmt=_fmt_pct,
+        ),
+        LensCheck(
+            label="দীর্ঘমেয়াদি ট্রেন্ড" if bn else "Long-term trend",
+            actual=("200DMA উপরে" if bn else "Above 200-DMA")
+            if above_sma_200
+            else ("200DMA নিচে" if bn else "Below 200-DMA")
+            if above_sma_200 is False
+            else "—",
+            expected="↑ 200-DMA",
+            status="pass" if above_sma_200 else "fail" if above_sma_200 is False else "na",
+        ),
+    ]
     return InvestorLens(
         key="buffett_quality",
         name="Buffett/Munger Quality",
@@ -318,6 +379,7 @@ def _buffett(
         score=s,
         summary=summary,
         points=points,
+        checks=checks,
         watch_next=watch_next,
     )
 
@@ -469,6 +531,20 @@ def _dividend(
             "No cash dividend" if no_div else "Verify earnings cover the payout",
         ]
         watch_next = ["Record date", "Payout history", "EPS coverage", "Bonus vs cash"]
+    checks = [
+        _chk(
+            "নগদ ইয়িল্ড" if bn else "Cash yield",
+            dividend_yield, "≥ 4%", good=lambda x: x >= 4, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "আয় কভারেজ (ROE)" if bn else "Earnings cover (ROE)",
+            roe, "≥ 10%", good=lambda x: x >= 10, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "আয় স্থিতিশীল" if bn else "Earnings stable",
+            eps_growth_yoy, "≥ 0%", good=lambda x: x >= 0, weak=lambda x: x < -20, fmt=_fmt_pct,
+        ),
+    ]
     return InvestorLens(
         key="dividend_income",
         name="Dividend Investor",
@@ -477,6 +553,7 @@ def _dividend(
         score=s,
         summary=summary,
         points=points,
+        checks=checks,
         watch_next=watch_next,
     )
 
