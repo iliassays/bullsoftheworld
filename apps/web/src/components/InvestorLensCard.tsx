@@ -11,6 +11,16 @@ const ICONS: Record<string, string> = {
   taleb_risk: "🛡️",
 };
 
+// Where to verify each lens — the symbol-page tabs that hold the data behind its checks.
+const VERIFY_TABS: Record<string, string[]> = {
+  graham_value: ["fundamentals", "earnings"],
+  buffett_quality: ["fundamentals", "earnings"],
+  dividend_income: ["earnings", "fundamentals", "news"],
+  technical_trader: ["overview"],
+  smart_money: ["ownership", "news"],
+  taleb_risk: ["overview"],
+};
+
 // Short labels for the at-a-glance strip.
 const SHORT: Record<string, { en: string; bn: string }> = {
   graham_value: { en: "Value", bn: "ভ্যালু" },
@@ -100,8 +110,14 @@ function checkDot(status: string): string {
   return "bg-accent"; // watch
 }
 
-export function InvestorLensCard({ code }: { code: string }) {
-  const { lang } = useLang();
+export function InvestorLensCard({
+  code,
+  onGoTab,
+}: {
+  code: string;
+  onGoTab?: (tab: string) => void;
+}) {
+  const { lang, t } = useLang();
   const bn = lang === "bn";
   const [data, setData] = useState<InvestorLensResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -198,7 +214,11 @@ export function InvestorLensCard({ code }: { code: string }) {
               </ul>
             )}
 
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            {/* what to verify next (the lens can't see these) ... */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10.5px] text-muted font-semibold">
+                {bn ? "এরপর যাচাই করুন:" : "Check next:"}
+              </span>
               {l.watch_next.map((w) => (
                 <span
                   key={w}
@@ -208,6 +228,22 @@ export function InvestorLensCard({ code }: { code: string }) {
                 </span>
               ))}
             </div>
+
+            {/* ... and where to check it — tap to jump to that tab */}
+            {onGoTab && (VERIFY_TABS[l.key]?.length ?? 0) > 0 && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10.5px] text-muted">{bn ? "এখানে দেখুন →" : "Open →"}</span>
+                {VERIFY_TABS[l.key].map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => onGoTab(id)}
+                    className="text-[10.5px] font-semibold text-accent border border-accent/30 bg-accent/5 rounded-full px-2 py-0.5 hover:bg-accent/15 transition"
+                  >
+                    {t(`tab.${id}`)}
+                  </button>
+                ))}
+              </div>
+            )}
           </article>
         ))}
       </div>
