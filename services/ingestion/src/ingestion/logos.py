@@ -16,7 +16,7 @@ import asyncio
 import datetime as dt
 import re
 import sys
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from selectolax.parser import HTMLParser
@@ -32,7 +32,26 @@ RECHECK_DAYS = 30  # in daily mode, skip names already checked this recently
 _CONCURRENCY = 8  # be polite to DSE + company sites
 _MIN_BYTES = 100
 _MAX_BYTES = 1_000_000
-_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+# Full browser-ish headers — a bare UA gets 403'd by some company sites.
+_HDRS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+# DSE sometimes lists a dead/stale Web Address (e.g. RUPALIBANK -> the defunct .org). Override with
+# the real domain here; the fetcher + favicon fallback use this instead of the DSE value.
+_OVERRIDES: dict[str, str] = {
+    "RUPALIBANK": "https://rupalibank.com.bd",
+}
+
+
+def _favicon_service(domain: str) -> str:
+    """A favicon service that already has icons cached for sites that block or time out on us. It
+    returns 404 for domains it doesn't know, which we skip (so we never store its default globe)."""
+    return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
 
 
 def pick_icons(html: str, base: str) -> list[str]:
@@ -61,35 +80,61 @@ def pick_icons(html: str, base: str) -> list[str]:
     return [u for u in ordered if not (u in seen or seen.add(u))]
 
 
-async def _fetch_one(client: httpx.AsyncClient, provider, code: str) -> dict:
-    """Resolve one company's logo → an upsert row dict (image + status)."""
-    row: dict = {"market": MARKET, "code": code, "image": None, "content_type": None, "source_url": None}
+async def _download_image(client: httpx.AsyncClient, url: str) -> dict | None:
+    """GET `url`; return an image row fragment if it's a real image within the size cap, else None."""
     try:
-        site = await provider.get_company_website(code)
+        r = await client.get(url, headers=_HDRS)
     except Exception:
-        row["status"] = "error"
-        return row
+        return None
+    ct = r.headers.get("content-type", "").split(";")[0].strip().lower()
+    if r.status_code == 200 and ct.startswith("image/") and _MIN_BYTES < len(r.content) <= _MAX_BYTES:
+        return {"image": r.content, "content_type": ct, "source_url": str(r.url), "status": "ok"}
+    return None
+
+
+async def _fetch_one(client: httpx.AsyncClient, provider, code: str) -> dict:
+    """Resolve one company's logo → an upsert row dict (image + status).
+
+    Order: the company site's own declared icons, then a favicon service (which has icons cached for
+    sites that block or time out on us). An override domain wins over the DSE-listed one.
+    """
+    row: dict = {"market": MARKET, "code": code, "image": None, "content_type": None, "source_url": None}
+    site = _OVERRIDES.get(code)
+    if not site:
+        try:
+            site = await provider.get_company_website(code)
+        except Exception:
+            site = None
     if not site:
         row["status"] = "no_site"
         return row
     if not site.startswith(("http://", "https://")):
         site = "http://" + site
+
+    # 1. The company site's own icons (best quality when reachable).
+    home_ok = False
     try:
-        home = await client.get(site, headers={"User-Agent": _UA})
+        home = await client.get(site, headers=_HDRS)
         home.raise_for_status()
+        home_ok = True
     except Exception:
-        row["status"] = "error"
-        return row
-    for icon in pick_icons(home.text, str(home.url))[:4]:
-        try:
-            r = await client.get(icon, headers={"User-Agent": _UA})
-        except Exception:
-            continue
-        ct = r.headers.get("content-type", "").split(";")[0].strip().lower()
-        if r.status_code == 200 and ct.startswith("image/") and _MIN_BYTES < len(r.content) <= _MAX_BYTES:
-            row.update(image=r.content, content_type=ct, source_url=str(r.url), status="ok")
+        home = None
+    if home is not None:
+        for icon in pick_icons(home.text, str(home.url))[:4]:
+            got = await _download_image(client, icon)
+            if got:
+                row.update(got)
+                return row
+
+    # 2. Favicon service fallback — works even when the site itself blocks/times out on us.
+    domain = urlparse(site).netloc
+    if domain:
+        got = await _download_image(client, _favicon_service(domain))
+        if got:
+            row.update(got)
             return row
-    row["status"] = "no_icon"
+
+    row["status"] = "no_icon" if home_ok else "error"
     return row
 
 
@@ -99,10 +144,13 @@ async def collect(*, recheck_days: int) -> dict[str, int]:
     async with sm() as session:
         codes = list(await session.scalars(select(Symbol.code).where(Symbol.market == MARKET)))
         cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=recheck_days)
+        # Only skip names we already have a logo for — so re-runs keep retrying the failures.
         recent = set(
             await session.scalars(
                 select(CompanyLogo.code).where(
-                    CompanyLogo.market == MARKET, CompanyLogo.checked_at >= cutoff
+                    CompanyLogo.market == MARKET,
+                    CompanyLogo.status == "ok",
+                    CompanyLogo.checked_at >= cutoff,
                 )
             )
         )
