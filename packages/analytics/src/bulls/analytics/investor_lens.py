@@ -290,7 +290,7 @@ def _graham(
             f"P/E {_fmt_x(pe_ratio)} · P/B {_fmt_x(pb_ratio)}",
             f"ROE {_fmt_pct(roe)} · dividend yield {_fmt_pct(dividend_yield)}",
         ]
-        watch_next = ["সর্বশেষ EPS", "খাতের P/E", "ঋণ/লোন", "ডিভিডেন্ড টেকসই কি না"]
+        watch_next = ["ঋণ/লোন", "সাম্প্রতিক খবর"]
     else:
         summary = "Checks whether valuation is reasonable versus sector peers and backed by earnings quality."
         points = [
@@ -298,7 +298,7 @@ def _graham(
             f"P/E {_fmt_x(pe_ratio)} · P/B {_fmt_x(pb_ratio)}",
             f"ROE {_fmt_pct(roe)} · dividend yield {_fmt_pct(dividend_yield)}",
         ]
-        watch_next = ["Latest EPS", "Sector P/E", "Debt/loans", "Dividend sustainability"]
+        watch_next = ["Debt / loans", "Recent news"]
 
     checks = [
         _chk(
@@ -344,12 +344,12 @@ def _buffett(
         summary = "ব্যবসার মান, লাভজনকতা ও স্থায়িত্বের দিক থেকে কোম্পানিটা কতটা শক্ত — এই লেন্স তা দেখে।"
         trend = "200DMA-এর উপরে" if above_sma_200 else "200DMA-এর নিচে" if above_sma_200 is False else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["৫ বছরের EPS ধারাবাহিকতা", "মার্জিন/লোন", "ডিভিডেন্ড ইতিহাস", "ব্যবসার moat"]
+        watch_next = ["৫ বছরের আয় ধারাবাহিকতা", "ঋণ ও মার্জিন", "ব্যবসার moat"]
     else:
         summary = "Looks for business quality: durable profitability, steady earnings, and staying power."
         trend = "Above 200-DMA" if above_sma_200 else "Below 200-DMA" if above_sma_200 is False else "Long-term trend unknown"
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["5-year EPS consistency", "Margins/loans", "Dividend history", "Business moat"]
+        watch_next = ["5-year earnings trend", "Debt & margins", "Business moat"]
 
     checks = [
         _chk(
@@ -484,7 +484,7 @@ def _smart_money(
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
             f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
         ]
-        watch_next = ["নতুন shareholding disclosure", "CMF/OBV", "দাম না বাড়িয়ে ভলিউম জমছে কি না"]
+        watch_next = ["পরবর্তী ডিসক্লোজার", "সাম্প্রতিক খবর"]
     else:
         summary = "Checks whether institutional/foreign ownership and money flow support the story."
         points = [
@@ -492,7 +492,7 @@ def _smart_money(
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
             f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
         ]
-        watch_next = ["Next shareholding disclosure", "CMF/OBV", "Volume building without price chase"]
+        watch_next = ["Next disclosure date", "Recent news"]
 
     return InvestorLens(
         key="smart_money",
@@ -522,7 +522,7 @@ def _dividend(
             f"ROE {_fmt_pct(roe)} · EPS growth {_fmt_pct(eps_growth_yoy)}",
             "নগদ লভ্যাংশ নেই" if no_div else "আয় লভ্যাংশ কভার করছে কি না দেখুন",
         ]
-        watch_next = ["রেকর্ড ডেট", "পেআউট ইতিহাস", "EPS কভারেজ", "বোনাস vs নগদ"]
+        watch_next = ["পেআউট ইতিহাস", "রেকর্ড ডেট", "বোনাস vs নগদ"]
     else:
         summary = "Checks cash-dividend yield and whether earnings can sustain it."
         points = [
@@ -530,7 +530,7 @@ def _dividend(
             f"ROE {_fmt_pct(roe)} · EPS growth {_fmt_pct(eps_growth_yoy)}",
             "No cash dividend" if no_div else "Verify earnings cover the payout",
         ]
-        watch_next = ["Record date", "Payout history", "EPS coverage", "Bonus vs cash"]
+        watch_next = ["Payout history", "Record date", "Bonus vs cash"]
     checks = [
         _chk(
             "নগদ ইয়িল্ড" if bn else "Cash yield",
@@ -583,7 +583,7 @@ def _taleb_risk(
             f"ADTV {_fmt_tk_mn(adtv_mn)} · rough 5% order guide {_fmt_tk_mn(order_guide)}",
             f"Volatility {_fmt_pct(volatility)} · today {_fmt_pct(today_change_pct)}",
         ]
-        watch_next = ["বিড-আস্ক স্প্রেড", "অর্ডার সাইজ", "সার্কিট/হল্ট", "নিজের stop-loss"]
+        watch_next = ["বিড-আস্ক স্প্রেড", "অর্ডার সাইজ", "নিজের stop-loss"]
     else:
         summary = "Focuses on fragility: exit risk, volatility, category risk, and whether orders can move price."
         points = [
@@ -591,7 +591,7 @@ def _taleb_risk(
             f"ADTV {_fmt_tk_mn(adtv_mn)} · rough 5% order guide {_fmt_tk_mn(order_guide)}",
             f"Volatility {_fmt_pct(volatility)} · today {_fmt_pct(today_change_pct)}",
         ]
-        watch_next = ["Bid-ask spread", "Order size", "Circuit/halt risk", "Your stop-loss"]
+        watch_next = ["Bid-ask spread", "Order size", "Your stop-loss"]
 
     return InvestorLens(
         key="taleb_risk",
