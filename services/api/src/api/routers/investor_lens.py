@@ -6,11 +6,20 @@ grounded persona-style reads without buy/sell calls or targets.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession
 from bulls.analytics import InvestorLensResponse, build_investor_lens
-from bulls.core.models import CompanyProfile, QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.core.models import (
+    Announcement,
+    CompanyProfile,
+    QuoteSnapshot,
+    Symbol,
+    TickerAnalytics,
+)
 
 router = APIRouter(tags=["investor-lens"])
 
@@ -43,6 +52,21 @@ async def get_investor_lens(
         if has_loan and equity > 0:
             debt_to_equity = ((cp.short_term_loan_mn or 0) + (cp.long_term_loan_mn or 0)) / equity
 
+    # Recent material announcements (last 30 days) — so the lens can say "2 recent (dividend)" or
+    # "none", instead of telling the user to go hunt the news themselves.
+    since = ta.as_of_date - dt.timedelta(days=30)
+    news = list(
+        await session.scalars(
+            select(Announcement)
+            .where(
+                Announcement.market == tenant.market,
+                Announcement.code == code,
+                Announcement.published_at >= since,
+            )
+            .order_by(Announcement.published_at.desc())
+        )
+    )
+
     return build_investor_lens(
         code=code,
         as_of_date=str(ta.as_of_date),
@@ -71,4 +95,9 @@ async def get_investor_lens(
         today_change_pct=quote.change_pct if quote else None,
         debt_to_equity=debt_to_equity,
         credit_rating=credit_rating,
+        nearest_support=ta.nearest_support,
+        nearest_resistance=ta.nearest_resistance,
+        last_close=ta.last_close,
+        recent_news_count=len(news),
+        recent_news_label=news[0].category if news else None,
     )

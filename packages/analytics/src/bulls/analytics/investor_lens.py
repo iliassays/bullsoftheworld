@@ -226,6 +226,10 @@ def _fmt_tk_mn(v: float | None) -> str:
     return f"৳{v:.1f}mn"
 
 
+def _fmt_tk(v: float | None) -> str:
+    return "—" if v is None else f"৳{v:.1f}"
+
+
 def _chk(label, val, want, *, good, weak, fmt=_fmt_x) -> LensCheck:
     """Build an actual-vs-expected check. `good`/`weak` are predicates on the value (only called when
     it's present), so the reader sees their number, the style's benchmark, and where it stands."""
@@ -237,6 +241,18 @@ def _chk(label, val, want, *, good, weak, fmt=_fmt_x) -> LensCheck:
         expected=want,
         status="pass" if good(val) else "fail" if weak(val) else "watch",
     )
+
+
+def _news_check(bn: bool, count: int, label: str | None) -> LensCheck:
+    """Recent material announcements (last 30d) — surfaced so the user doesn't have to go hunt."""
+    if count > 0:
+        base = f"{count}টি সাম্প্রতিক" if bn else f"{count} recent"
+        actual = f"{base} · {label}" if label else base
+        status = "watch"  # there's fresh news worth reading before acting
+    else:
+        actual = "নেই (৩০ দিনে)" if bn else "None (30d)"
+        status = "pass"  # nothing pending to reassess
+    return LensCheck(label="সাম্প্রতিক খবর" if bn else "Recent news", actual=actual, expected="", status=status)
 
 
 def _extended_technical(
@@ -280,6 +296,8 @@ def _graham(
     roe: float | None,
     dividend_yield: float | None,
     debt_to_equity: float | None = None,
+    recent_news_count: int = 0,
+    recent_news_label: str | None = None,
 ) -> InvestorLens:
     s = graham_score(
         pe_ratio=pe_ratio, pb_ratio=pb_ratio, pe_vs_sector=pe_vs_sector, roe=roe, dividend_yield=dividend_yield
@@ -291,7 +309,7 @@ def _graham(
             f"P/E {_fmt_x(pe_ratio)} · P/B {_fmt_x(pb_ratio)}",
             f"ROE {_fmt_pct(roe)} · dividend yield {_fmt_pct(dividend_yield)}",
         ]
-        watch_next = ["সাম্প্রতিক খবর"]
+        watch_next = []
     else:
         summary = "Checks whether valuation is reasonable versus sector peers and backed by earnings quality."
         points = [
@@ -299,7 +317,7 @@ def _graham(
             f"P/E {_fmt_x(pe_ratio)} · P/B {_fmt_x(pb_ratio)}",
             f"ROE {_fmt_pct(roe)} · dividend yield {_fmt_pct(dividend_yield)}",
         ]
-        watch_next = ["Recent news"]
+        watch_next = []
 
     checks = [
         _chk(
@@ -320,6 +338,7 @@ def _graham(
             "ঋণ/ইকুইটি" if bn else "Debt / equity",
             debt_to_equity, "≤ 1.0x", good=lambda x: x <= 0.5, weak=lambda x: x > 2, fmt=_fmt_x,
         ),
+        _news_check(bn, recent_news_count, recent_news_label),
     ]
     return InvestorLens(
         key="graham_value",
@@ -410,6 +429,9 @@ def _technical(
     rsi_14: float | None,
     relative_volume: float | None,
     pct_from_52w_high: float | None,
+    nearest_support: float | None = None,
+    nearest_resistance: float | None = None,
+    last_close: float | None = None,
 ) -> InvestorLens:
     if above_sma_50 is None and above_sma_200 is None and mom_12_1 is None and rsi_14 is None:
         s = None
@@ -450,11 +472,7 @@ def _technical(
             f"200DMA {'উপরে' if above_sma_200 else 'নিচে' if above_sma_200 is False else 'অজানা'}"
         )
         points = [trend, f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}", f"Volume {_fmt_x(relative_volume)} normal"]
-        watch_next = (
-            ["pullback/support", "RSI ঠান্ডা হয় কি না", "ভলিউম টিকে আছে কি না"]
-            if extended
-            else ["সাপোর্ট/রেজিস্ট্যান্স", "ভলিউম টিকে আছে কি না", "RSI অতিরিক্ত গরম কি না"]
-        )
+        watch_next = ["pullback/support", "RSI ঠান্ডা হয় কি না"] if extended else []
     else:
         summary = (
             "Trend is strong, but price is extended near its 52-week high with hot RSI. Treat this as chase-risk; wait for pullback/support confirmation."
@@ -466,11 +484,7 @@ def _technical(
             f"200-DMA {'above' if above_sma_200 else 'below' if above_sma_200 is False else 'unknown'}"
         )
         points = [trend, f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}", f"Volume {_fmt_x(relative_volume)} normal"]
-        watch_next = (
-            ["Pullback/support", "RSI cools", "Volume persistence"]
-            if extended
-            else ["Support/resistance", "Volume persistence", "Whether RSI is overheated"]
-        )
+        watch_next = ["Pullback/support", "RSI cools"] if extended else []
 
     checks = [
         LensCheck(
@@ -492,6 +506,19 @@ def _technical(
         _chk(
             "RSI", rsi_14, "45-70",
             good=lambda x: 45 <= x <= 70, weak=lambda x: x > 80 or x < 30, fmt=lambda v: _fmt_pct(v, ""),
+        ),
+        _chk(
+            "ভলিউম (স্বাভাবিকের বিপরীতে)" if bn else "Volume vs normal",
+            relative_volume, "≥ 1.5x" + (" নিশ্চিতকরণে" if bn else " to confirm"),
+            good=lambda x: x >= 1.5, weak=lambda x: x < 0.7, fmt=_fmt_x,
+        ),
+        LensCheck(
+            label="সাপোর্ট / রেজিস্ট্যান্স" if bn else "Support / resistance",
+            actual=f"{_fmt_tk(nearest_support)} / {_fmt_tk(nearest_resistance)}"
+            if (nearest_support is not None or nearest_resistance is not None)
+            else "—",
+            expected="",
+            status="na",
         ),
     ]
     return InvestorLens(
@@ -515,6 +542,8 @@ def _smart_money(
     institute_pct: float | None,
     foreign_pct: float | None,
     cmf_20: float | None,
+    recent_news_count: int = 0,
+    recent_news_label: str | None = None,
 ) -> InvestorLens:
     s = smart_money_score(institute_delta=institute_delta, foreign_delta=foreign_delta, cmf_20=cmf_20)
     if bn:
@@ -524,7 +553,7 @@ def _smart_money(
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
             f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
         ]
-        watch_next = ["পরবর্তী ডিসক্লোজার", "সাম্প্রতিক খবর"]
+        watch_next = ["পরবর্তী ডিসক্লোজার"]
     else:
         summary = "Checks whether institutional/foreign ownership and money flow support the story."
         points = [
@@ -532,7 +561,7 @@ def _smart_money(
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
             f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
         ]
-        watch_next = ["Next disclosure date", "Recent news"]
+        watch_next = ["Next disclosure date"]
 
     checks = [
         _chk(
@@ -549,6 +578,7 @@ def _smart_money(
             "মানি ফ্লো (CMF)" if bn else "Money flow (CMF)",
             cmf_20, "> 0", good=lambda x: x > 0.1, weak=lambda x: x < -0.1, fmt=lambda v: _fmt_pct(v, ""),
         ),
+        _news_check(bn, recent_news_count, recent_news_label),
     ]
     return InvestorLens(
         key="smart_money",
@@ -713,6 +743,11 @@ def build_investor_lens(
     today_change_pct: float | None = None,
     debt_to_equity: float | None = None,
     credit_rating: str | None = None,
+    nearest_support: float | None = None,
+    nearest_resistance: float | None = None,
+    last_close: float | None = None,
+    recent_news_count: int = 0,
+    recent_news_label: str | None = None,
 ) -> InvestorLensResponse:
     """Build the six best-fit DSE lenses for a symbol."""
     bn = locale == "bn"
@@ -725,6 +760,8 @@ def build_investor_lens(
             roe=roe,
             dividend_yield=dividend_yield,
             debt_to_equity=debt_to_equity,
+            recent_news_count=recent_news_count,
+            recent_news_label=recent_news_label,
         ),
         _buffett(
             bn=bn,
@@ -749,6 +786,9 @@ def build_investor_lens(
             rsi_14=rsi_14,
             relative_volume=relative_volume,
             pct_from_52w_high=pct_from_52w_high,
+            nearest_support=nearest_support,
+            nearest_resistance=nearest_resistance,
+            last_close=last_close,
         ),
         _smart_money(
             bn=bn,
@@ -757,6 +797,8 @@ def build_investor_lens(
             institute_pct=institute_pct,
             foreign_pct=foreign_pct,
             cmf_20=cmf_20,
+            recent_news_count=recent_news_count,
+            recent_news_label=recent_news_label,
         ),
         _taleb_risk(
             bn=bn,

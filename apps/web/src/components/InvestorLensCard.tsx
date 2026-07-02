@@ -198,9 +198,11 @@ export function InvestorLensCard({
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${checkDot(c.status)}`} />
                     <span className="text-muted flex-1 min-w-0 truncate">{c.label}</span>
                     <span className="text-text font-semibold tnum">{c.actual}</span>
-                    <span className="text-muted tnum">
-                      {bn ? "চাই" : "want"} {c.expected}
-                    </span>
+                    {c.expected && c.expected !== "—" && (
+                      <span className="text-muted tnum">
+                        {bn ? "চাই" : "want"} {c.expected}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -214,20 +216,22 @@ export function InvestorLensCard({
               </ul>
             )}
 
-            {/* what to verify next (the lens can't see these) ... */}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10.5px] text-muted font-semibold">
-                {bn ? "এরপর যাচাই করুন:" : "Check next:"}
-              </span>
-              {l.watch_next.map((w) => (
-                <span
-                  key={w}
-                  className="text-[10.5px] text-muted border border-border rounded-full px-2 py-0.5"
-                >
-                  {w}
+            {/* what to verify next (the lens can't see these) — only when there's anything left */}
+            {l.watch_next.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10.5px] text-muted font-semibold">
+                  {bn ? "এরপর যাচাই করুন:" : "Check next:"}
                 </span>
-              ))}
-            </div>
+                {l.watch_next.map((w) => (
+                  <span
+                    key={w}
+                    className="text-[10.5px] text-muted border border-border rounded-full px-2 py-0.5"
+                  >
+                    {w}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {/* ... and where to check it — tap to jump to that tab */}
             {onGoTab && (VERIFY_TABS[l.key]?.length ?? 0) > 0 && (
