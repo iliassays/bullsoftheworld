@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type EarningsEvent } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { CompanyLogo } from "./CompanyLogo";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = {
@@ -14,16 +15,6 @@ function fmt(iso: string, bn: boolean) {
   const [y, m, d] = iso.split("-").map(Number);
   const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
   return { day: `${d} ${MONTHS[m - 1] ?? "?"}`, weekday: WEEKDAYS[bn ? "bn" : "en"][wd] ?? "" };
-}
-
-// The DSE portal carries no company logos, so we use a deterministic monogram (ticker initials in a
-// brand-tinted circle) — consistent, offline-safe, and carries no up/down meaning.
-function Monogram({ code }: { code: string }) {
-  return (
-    <span className="flex-none w-8 h-8 rounded-full bg-accent/10 text-accent grid place-items-center text-[11px] font-bold">
-      {code.slice(0, 2)}
-    </span>
-  );
 }
 
 // This week's earnings — DSE board meetings called to consider results, from decoded announcements.
@@ -76,7 +67,7 @@ export function EarningsWeek() {
                   const showName = !!name && name !== e.code;
                   return (
                     <Link key={e.code} to={`/s/${e.code}`} className="flex items-center gap-3">
-                      <Monogram code={e.code} />
+                      <CompanyLogo code={e.code} />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">${e.code}</div>
                         {showName && (

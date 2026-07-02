@@ -482,6 +482,20 @@ def _parse_shareholdings(tree: HTMLParser, code: str) -> list[Shareholding]:
     return out
 
 
+def parse_web_address(html: str) -> str | None:
+    """Pull the company's own website from the displayCompany.php 'Web Address' row (used to hop to
+    the site and fetch its logo). None when the field is blank."""
+    tree = HTMLParser(html)
+    for tr in tree.css("tr"):
+        cells = tr.css("td, th")
+        if len(cells) >= 2 and cells[0].text(strip=True).lower() == "web address":
+            link = cells[1].css_first("a")
+            url = (link.attributes.get("href") if link else None) or cells[1].text(strip=True)
+            url = (url or "").strip()
+            return url or None
+    return None
+
+
 def parse_company(html: str, code: str) -> CompanyInfo | None:
     """Parse displayCompany.php into a profile + shareholding history. None if the code is unknown."""
     tree = HTMLParser(html)
@@ -579,6 +593,13 @@ class DseScrapeProvider:
             resp = await client.get(_COMPANY_URL, params={"name": code})
             resp.raise_for_status()
         return parse_company(resp.text, code)
+
+    async def get_company_website(self, code: str) -> str | None:
+        """The company's own website URL, from the DSE company page (for logo fetching)."""
+        async with self._client() as client:
+            resp = await client.get(_COMPANY_URL, params={"name": code})
+            resp.raise_for_status()
+        return parse_web_address(resp.text)
 
     async def get_sector_pe(self) -> list[SectorPE]:
         async with self._client() as client:

@@ -5,6 +5,9 @@ import { currentLang } from "./i18n";
 // which the API doesn't bind. Override with VITE_API_BASE if needed.
 const BASE =
   (import.meta.env.VITE_API_BASE as string) || "http://127.0.0.1:8090";
+
+// Direct URL for a company logo image (served by the API; 404s when we have none → UI falls back).
+export const logoUrl = (code: string) => `${BASE}/symbols/${encodeURIComponent(code)}/logo`;
 const TOKEN_KEY = "bulls.token";
 
 export const tokenStore = {

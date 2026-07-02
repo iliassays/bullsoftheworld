@@ -10,7 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -19,6 +19,7 @@ from bulls.analytics import AnalyticsResult, MoodIndex, build_mood, compute
 from bulls.core.config import get_settings
 from bulls.core.models import (
     Announcement,
+    CompanyLogo,
     DailyBar,
     MarketSummary,
     QuoteSnapshot,
@@ -221,6 +222,20 @@ async def earnings_calendar(
     ]
     events.sort(key=lambda e: e.meeting_date)
     return events
+
+
+@router.get("/symbols/{code}/logo")
+async def get_symbol_logo(code: str, tenant: CurrentTenant, session: DbSession) -> Response:
+    """Cached company logo bytes (fetched from the company website at onboarding). 404 when we have
+    none — the frontend then falls back to a monogram."""
+    logo = await session.get(CompanyLogo, (tenant.market, code.upper()))
+    if logo is None or logo.image is None:
+        raise HTTPException(status_code=404, detail="no logo")
+    return Response(
+        content=logo.image,
+        media_type=logo.content_type or "image/png",
+        headers={"Cache-Control": "public, max-age=86400"},  # logos change rarely
+    )
 
 
 # Enough history for the longest indicator (200-day SMA) plus headroom.

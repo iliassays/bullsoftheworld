@@ -8,6 +8,7 @@ from bulls.core.models.company import (
     SectorPE,
     ShareholdingSnapshot,
 )
+from bulls.core.models.company_logo import CompanyLogo
 from bulls.core.models.follow import Follow
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
@@ -26,6 +27,7 @@ __all__ = [
     "Announcement",
     "AnnualFinancial",
     "Cashtag",
+    "CompanyLogo",
     "CompanyProfile",
     "DailyBar",
     "DividendRecord",
