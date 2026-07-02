@@ -339,6 +339,9 @@ class ScreenOut(BaseModel):
     description: str
     value_label: str
     group: str = "technical"  # movers | community | value | technical
+    # Truth-in-labeling: backtested (validated on our DSE data) | framework (classic
+    # investing lens, not locally validated) | utility (descriptive, no edge claimed).
+    evidence: str | None = None
     items: list[ScreenItem]
 
 

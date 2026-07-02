@@ -218,6 +218,7 @@ export interface Screen {
   description: string;
   value_label: string;
   group: string;
+  evidence?: "backtested" | "framework" | "utility" | null;
   items: ScreenItem[];
 }
 export interface MarketMethodology {
@@ -233,6 +234,7 @@ export interface ScannerResponse {
   as_of: string | null;
   quote_as_of: string | null;
   tab: string;
+  market_regime?: "above_200dma" | "below_200dma" | null;
   boards: Screen[];
 }
 export interface ScreensResponse {

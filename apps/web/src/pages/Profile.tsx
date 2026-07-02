@@ -121,15 +121,30 @@ function AccountSection({ user }: { user: User }) {
   );
 }
 
+// Bulls of Dhaka's Facebook page (numeric id works even without a vanity URL).
+const FB_URL = "https://www.facebook.com/1214682241723822";
+
 function ContactLine() {
   const { t } = useLang();
   return (
-    <p className="text-muted text-xs text-center mt-2">
-      {t("profile.contact")}{" "}
-      <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent">
-        {SUPPORT_EMAIL}
-      </a>
-    </p>
+    <div className="mt-2 flex flex-col gap-1.5 text-center">
+      <p className="text-muted text-xs">
+        {t("profile.contact")}{" "}
+        <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent">
+          {SUPPORT_EMAIL}
+        </a>
+      </p>
+      {/* Relocated from the header (2026-07 noise cut) — reachable, not omnipresent. */}
+      <p className="text-muted text-xs">
+        <Link to="/about" className="text-accent">
+          ⓘ {t("nav.about")}
+        </Link>
+        {" · "}
+        <a href={FB_URL} target="_blank" rel="noopener noreferrer" className="text-accent">
+          Facebook ↗
+        </a>
+      </p>
+    </div>
   );
 }
 

@@ -21,6 +21,7 @@ from api.routers.screener import ScreenItem, ScreenOut, _enrich
 from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
 from bulls.core.models import (
     DailyBar,
+    MarketSummary,
     QuoteSnapshot,
     Symbol,
     TickerAnalytics,
@@ -40,6 +41,50 @@ _WASHOUT_FROM_HIGH = -40.0  # >=40% off the 52-week high
 _NEAR_LOW = 15.0  # still within 15% of the 52-week low
 _MAX_PE = 25.0  # reasonably priced
 _5D = 5  # prior-day window for the breakout trigger
+
+# Oversold Quality (from dse-trading-research.md §2 — oversold RSI was the strongest single
+# signal: IC +0.094 @60d, positive on 82% of rebalances; quality filter per the Scheme-3 lesson).
+_OVERSOLD_RSI = 30.0
+
+# Truth-in-labeling per board (spec review 2026-07-02): what each list's evidence actually is.
+_EVIDENCE: dict[str, str] = {
+    "quality_reversal": "backtested",
+    "oversold_quality": "backtested",
+    "active_today": "backtested",
+    "most_active": "utility",
+    "value_quality": "utility",
+    "dividend_quality": "utility",
+    "lens_agreement": "framework",
+    "lens_buffett_quality": "framework",
+    "lens_graham_value": "framework",
+    "lens_smart_money": "framework",
+    "lens_risk_control": "framework",
+}
+
+# The reversal-family edge is regime-dependent: proven on a *recovering* market, likely a
+# falling-knife catcher in a sustained bear. These boards get the live regime banner.
+_REGIME_SENSITIVE = frozenset({"quality_reversal", "oversold_quality"})
+_REGIME_WINDOW = 200
+_REGIME_MIN_OBS = 120  # under this, say nothing (omit over mislead)
+
+
+def regime_from(latest: float, avg: float) -> str:
+    return "above_200dma" if latest >= avg else "below_200dma"
+
+
+async def _market_regime(session, market: str) -> str | None:
+    """DSEX vs its 200-day average — the gate the research says the reversal edge depends on."""
+    closes = list(
+        await session.scalars(
+            select(MarketSummary.dsex)
+            .where(MarketSummary.market == market, MarketSummary.dsex.isnot(None))
+            .order_by(MarketSummary.date.desc())
+            .limit(_REGIME_WINDOW)
+        )
+    )
+    if len(closes) < _REGIME_MIN_OBS:
+        return None
+    return regime_from(closes[0], sum(closes) / len(closes))
 
 
 def _clean_codes(market: str):
@@ -91,6 +136,9 @@ class ScannerResponse(BaseModel):
     as_of: str | None
     quote_as_of: str | None = None
     tab: str
+    # DSEX vs its 200-day average ("above_200dma" | "below_200dma"); None when history is too
+    # short to say. The frontend shows a louder caution on reversal boards when below.
+    market_regime: str | None = None
     boards: list[ScreenOut]
 
 
@@ -164,6 +212,13 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
         if s and s.category == "Z":
             continue
         adtv_mn = (ta.avg_volume_20 * ta.last_close / 1e6) if ta.avg_volume_20 else None
+        # The readable one-liner the sheet leads with: fall + quality + trigger (+ volume when real).
+        rel_vol = (latest.volume / ta.avg_volume_20) if ta.avg_volume_20 else None
+        why = (
+            f"Fell {abs(ta.pct_from_52w_high):.0f}% from its 52-week high, still profitable "
+            f"(ROE {ta.roe:.0f}%, P/E {ta.pe_ratio:.0f}), and just broke above its 5-day high"
+        )
+        why += f" on {rel_vol:.1f}x volume." if rel_vol and rel_vol >= 1.2 else "."
         items.append(
             ScreenItem(
                 code=code,
@@ -175,10 +230,7 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
                 adtv_mn=round(adtv_mn, 2) if adtv_mn else None,
                 market_cap_mn=ta.market_cap_mn,
                 note=f"ROE {ta.roe:.0f}% · P/E {ta.pe_ratio:.0f}",
-                why=(
-                    f"{ta.pct_from_52w_high:.0f}% off its 52-week high yet profitable "
-                    f"(ROE {ta.roe:.0f}%, P/E {ta.pe_ratio:.0f}) — just broke its 5-day high."
-                ),
+                why=why,
             )
         )
     # Deepest washouts first (strongest historical effect), cap to limit.
@@ -194,6 +246,55 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
         value_label="% from 52w high",
         group="technical",
         items=items[:limit],
+    )
+
+
+async def _oversold_quality(session, market: str, limit: int) -> ScreenOut:
+    """Oversold RSI x profitability — the strongest single signal in our DSE factor study.
+
+    Low RSI positively predicted 60-day returns on 82% of rebalances (IC +0.094) — the zone,
+    not a timing trigger. The quality filter (profitable, liquid, non-Z) applies the Scheme-3
+    lesson: the washout edge concentrates in real businesses, not junk."""
+    T = TickerAnalytics
+    rows = list(
+        await session.scalars(
+            select(T)
+            .where(
+                T.market == market,
+                T.code.in_(_clean_codes(market)),
+                T.rsi_14.isnot(None),
+                T.rsi_14 <= _OVERSOLD_RSI,
+                T.roe > 0,  # profitable — skip the junk washouts
+                _adtv_mn(T) >= _MIN_ADTV_MN,
+                T.market_cap_mn >= _MIN_MCAP_MN,
+            )
+            .order_by(T.rsi_14.asc())
+            .limit(limit)
+        )
+    )
+    items = [
+        ScreenItem(
+            code=row.code,
+            last_close=row.last_close,
+            value=round(row.rsi_14, 0),
+            note=f"ROE {_fmt_pct(row.roe)}",
+            why=(
+                f"RSI at {row.rsi_14:.0f} — deep in the oversold zone that historically led DSE "
+                f"recoveries — while the business stays profitable (ROE {row.roe:.0f}%)."
+            ),
+        )
+        for row in rows
+    ]
+    return ScreenOut(
+        key="oversold_quality",
+        title="Oversold Quality",
+        description=(
+            "Profitable, liquid names whose RSI sits in the oversold zone. The strongest single "
+            "signal in our DSE study — a zone to research, never a timing call."
+        ),
+        value_label="RSI",
+        group="technical",
+        items=items,
     )
 
 
@@ -500,7 +601,12 @@ def _technical_score(row: TickerAnalytics) -> int | None:
         score += 1 if 45 <= row.rsi_14 <= 70 else -1 if row.rsi_14 > 80 or row.rsi_14 < 30 else 0
     if row.relative_volume is not None and row.relative_volume >= 1.5:
         score += 1
-    if row.pct_from_52w_high is not None and row.pct_from_52w_high > -2 and row.rsi_14 and row.rsi_14 > 75:
+    if (
+        row.pct_from_52w_high is not None
+        and row.pct_from_52w_high > -2
+        and row.rsi_14
+        and row.rsi_14 > 75
+    ):
         score -= 1
     if _extension_note(row):
         score = min(score, 6.0)
@@ -620,9 +726,8 @@ async def _lens_agreement(session, market: str, limit: int) -> ScreenOut:
             for name, score in scores.items()
             if score is None or score < 7
         ]
-        note = (
-            f"Pass: {', '.join(supportive)}"
-            + (f" · Check: {', '.join(watch_or_weak)}" if watch_or_weak else "")
+        note = f"Pass: {', '.join(supportive)}" + (
+            f" · Check: {', '.join(watch_or_weak)}" if watch_or_weak else ""
         )
         if extension:
             note = f"{extension} · {note}"
@@ -706,7 +811,7 @@ async def _lens_risk_control(session, market: str, limit: int) -> ScreenOut:
 
 
 _TABS: dict[str, list[str]] = {
-    "today": ["quality_reversal", "active_today"],
+    "today": ["quality_reversal", "oversold_quality", "active_today"],
     "value": ["value_quality", "dividend_quality"],
     "lens": [
         "lens_agreement",
@@ -720,6 +825,13 @@ _TABS: dict[str, list[str]] = {
 
 def _apply_scanner_context(boards: list[ScreenOut]) -> None:
     for board in boards:
+        board.evidence = _EVIDENCE.get(board.key)
+        if board.key == "oversold_quality":
+            board.title = "Oversold Quality"
+            board.description = (
+                "Profitable, liquid names deep in the oversold zone — the strongest single signal "
+                "in our DSE study. A research zone, not a timing call."
+            )
         if board.key == "quality_reversal":
             board.title = "Quality Reversal"
             board.description = (
@@ -770,7 +882,9 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
         for item in board.items:
             if board.key == "quality_reversal":
                 item.scanner_label = "Broke 5-day high"
-                item.why = (
+                # The builder writes the rich per-name line (fall %, ROE, P/E, volume); only
+                # fall back to a generic one if it's somehow missing.
+                item.why = item.why or (
                     f"Deep washout: {abs(item.value):.0f}% below 52W high, "
                     f"but profitable and just broke its 5-day high."
                 )
@@ -784,6 +898,17 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
                     "a falling knife, not a bottom. This is not a buy signal."
                 )
                 item.check_next = ["News", "Volume holds", "Support level", "Order size"]
+            elif board.key == "oversold_quality":
+                item.scanner_label = f"RSI {item.value:.0f}"
+                item.how_to_read = (
+                    "Oversold marks a zone where selling has historically exhausted on DSE — it "
+                    "says nothing about timing. Read why it fell before anything else."
+                )
+                item.risk_note = (
+                    "Oversold can stay oversold, and a genuine business problem deserves a low "
+                    "price. This is a research zone, not a buy signal."
+                )
+                item.check_next = ["Why it fell (news)", "EPS trend", "Support level", "Order size"]
             elif board.key == "active_today":
                 item.scanner_label = "Unusual activity"
                 item.why = (
@@ -902,7 +1027,12 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
                     "Even liquid stocks can gap, hit circuit limits, or move against you. Keep order "
                     "size and stop discipline separate from the screen."
                 )
-                item.check_next = ["ADTV/order size", "Bid-ask spread", "Volatility", "Support level"]
+                item.check_next = [
+                    "ADTV/order size",
+                    "Bid-ask spread",
+                    "Volatility",
+                    "Support level",
+                ]
 
 
 @router.get("/scanner/radar")
@@ -921,6 +1051,8 @@ async def radar(
     for key in keys:
         if key == "quality_reversal":
             b = await _quality_reversal(session, market, limit)
+        elif key == "oversold_quality":
+            b = await _oversold_quality(session, market, limit)
         elif key == "active_today":
             b = await _trending_board(session, market, limit)
         elif key == "value_quality":
@@ -964,9 +1096,15 @@ async def radar(
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
+    # Live regime gate (spec §2): only fetched when a regime-sensitive board is on this tab.
+    regime = None
+    if any(b.key in _REGIME_SENSITIVE for b in boards):
+        regime = await _market_regime(session, market)
+
     return ScannerResponse(
         as_of=str(as_of) if as_of else None,
         quote_as_of=quote_ts.isoformat() if quote_ts else None,
         tab=tab,
+        market_regime=regime,
         boards=boards,
     )
