@@ -181,7 +181,10 @@ export function Profile() {
     setErr("");
     try {
       if (mode === "login") await login(idField.trim(), password);
-      else await register(name.trim(), idField.trim(), password);
+      else {
+        await register(name.trim(), idField.trim(), password);
+        navigate("/welcome", { replace: true }); // seed sectors → stocks → desks
+      }
     } catch (e) {
       setErr(e instanceof ApiError ? e.detail : t("profile.error"));
     } finally {

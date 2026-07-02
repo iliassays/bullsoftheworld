@@ -12,6 +12,7 @@ import { Profile } from "./pages/Profile";
 import { ScreenExplore } from "./pages/ScreenExplore";
 import { SymbolPage } from "./pages/Symbol";
 import { Watchlist } from "./pages/Watchlist";
+import { Welcome } from "./pages/Welcome";
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
         <Route path="me" element={<Profile />} />
+        <Route path="welcome" element={<Welcome />} />
         <Route path="about" element={<About />} />
         <Route path="forgot" element={<ForgotPassword />} />
         <Route path="reset" element={<ResetPassword />} />

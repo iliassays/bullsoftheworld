@@ -109,6 +109,34 @@ const STRINGS: Record<string, Entry> = {
     en: "Prices delayed 15 min. We describe your entries — we never advise, and we never see your broker account.",
     bn: "দাম ১৫ মিনিট বিলম্বিত। আমরা শুধু আপনার এন্ট্রি দেখাই — পরামর্শ দিই না, ব্রোকার অ্যাকাউন্টও দেখি না।",
   },
+  // Onboarding (post-register welcome flow)
+  "ob.step": { en: "Step", bn: "ধাপ" },
+  "ob.skip": { en: "Skip for now", bn: "এখন থাক" },
+  "ob.continue": { en: "Continue", bn: "পরের ধাপ" },
+  "ob.finish": { en: "Done — take me in", bn: "শেষ — শুরু করি" },
+  "ob.sectorsTitle": { en: "Which sectors interest you?", bn: "কোন সেক্টরে আগ্রহ?" },
+  "ob.sectorsBody": {
+    en: "Pick one or more — we'll build your feed around them.",
+    bn: "এক বা একাধিক বাছুন — সেগুলো ঘিরেই আপনার ফিড সাজাব।",
+  },
+  "ob.stocksTitle": { en: "Watch a few stocks", bn: "কয়েকটি শেয়ার ওয়াচ করুন" },
+  "ob.stocksBody": {
+    en: "They'll show on your home screen, and their data events land in your alerts.",
+    bn: "এগুলো আপনার হোমে দেখাবে, আর তাদের ডেটা ইভেন্ট অ্যালার্টে আসবে।",
+  },
+  "ob.desksTitle": { en: "Follow the official desks", bn: "অফিসিয়াল ডেস্ক ফলো করুন" },
+  "ob.desksBody": {
+    en: "Verified, automated, facts-only — they post when the data moves.",
+    bn: "ভেরিফাইড, স্বয়ংক্রিয়, শুধুই তথ্য — ডেটা নড়লেই পোস্ট করে।",
+  },
+  "ob.noStocks": {
+    en: "Pick a sector first to see its stocks.",
+    bn: "শেয়ার দেখতে আগে একটি সেক্টর বাছুন।",
+  },
+  "ob.watch": { en: "Watch", bn: "ওয়াচ" },
+  "ob.watching": { en: "Watching", bn: "ওয়াচ হচ্ছে" },
+  "ob.follow": { en: "Follow", bn: "ফলো" },
+  "ob.following": { en: "Following", bn: "ফলো হচ্ছে" },
   // Per-stock price alerts
   "pa.title": { en: "Price alerts", bn: "দামের অ্যালার্ট" },
   "pa.above": { en: "above", bn: "উপরে" },
