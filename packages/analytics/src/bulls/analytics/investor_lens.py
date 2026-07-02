@@ -279,6 +279,7 @@ def _graham(
     pe_vs_sector: float | None,
     roe: float | None,
     dividend_yield: float | None,
+    debt_to_equity: float | None = None,
 ) -> InvestorLens:
     s = graham_score(
         pe_ratio=pe_ratio, pb_ratio=pb_ratio, pe_vs_sector=pe_vs_sector, roe=roe, dividend_yield=dividend_yield
@@ -290,7 +291,7 @@ def _graham(
             f"P/E {_fmt_x(pe_ratio)} · P/B {_fmt_x(pb_ratio)}",
             f"ROE {_fmt_pct(roe)} · dividend yield {_fmt_pct(dividend_yield)}",
         ]
-        watch_next = ["ঋণ/লোন", "সাম্প্রতিক খবর"]
+        watch_next = ["সাম্প্রতিক খবর"]
     else:
         summary = "Checks whether valuation is reasonable versus sector peers and backed by earnings quality."
         points = [
@@ -298,7 +299,7 @@ def _graham(
             f"P/E {_fmt_x(pe_ratio)} · P/B {_fmt_x(pb_ratio)}",
             f"ROE {_fmt_pct(roe)} · dividend yield {_fmt_pct(dividend_yield)}",
         ]
-        watch_next = ["Debt / loans", "Recent news"]
+        watch_next = ["Recent news"]
 
     checks = [
         _chk(
@@ -314,6 +315,10 @@ def _graham(
         _chk(
             "লভ্যাংশ" if bn else "Dividend",
             dividend_yield, "≥ 3%", good=lambda x: x >= 3, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "ঋণ/ইকুইটি" if bn else "Debt / equity",
+            debt_to_equity, "≤ 1.0x", good=lambda x: x <= 0.5, weak=lambda x: x > 2, fmt=_fmt_x,
         ),
     ]
     return InvestorLens(
@@ -336,6 +341,8 @@ def _buffett(
     eps_growth_yoy: float | None,
     dividend_yield: float | None,
     above_sma_200: bool | None,
+    debt_to_equity: float | None = None,
+    credit_rating: str | None = None,
 ) -> InvestorLens:
     s = buffett_quality_score(
         roe=roe, eps_growth_yoy=eps_growth_yoy, dividend_yield=dividend_yield, above_sma_200=above_sma_200
@@ -344,12 +351,12 @@ def _buffett(
         summary = "ব্যবসার মান, লাভজনকতা ও স্থায়িত্বের দিক থেকে কোম্পানিটা কতটা শক্ত — এই লেন্স তা দেখে।"
         trend = "200DMA-এর উপরে" if above_sma_200 else "200DMA-এর নিচে" if above_sma_200 is False else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["৫ বছরের আয় ধারাবাহিকতা", "ঋণ ও মার্জিন", "ব্যবসার moat"]
+        watch_next = ["৫ বছরের আয় ধারাবাহিকতা", "মার্জিন", "ব্যবসার moat"]
     else:
         summary = "Looks for business quality: durable profitability, steady earnings, and staying power."
         trend = "Above 200-DMA" if above_sma_200 else "Below 200-DMA" if above_sma_200 is False else "Long-term trend unknown"
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["5-year earnings trend", "Debt & margins", "Business moat"]
+        watch_next = ["5-year earnings trend", "Margins", "Business moat"]
 
     checks = [
         _chk(
@@ -359,6 +366,16 @@ def _buffett(
         _chk(
             "আয় বৃদ্ধি (YoY)" if bn else "Earnings growth (YoY)",
             eps_growth_yoy, "> 0%", good=lambda x: x >= 15, weak=lambda x: x < 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "ঋণ/ইকুইটি" if bn else "Debt / equity",
+            debt_to_equity, "≤ 1.0x", good=lambda x: x <= 0.5, weak=lambda x: x > 2, fmt=_fmt_x,
+        ),
+        LensCheck(
+            label="ক্রেডিট রেটিং" if bn else "Credit rating",
+            actual=credit_rating or "—",
+            expected="investment grade" if not bn else "ইনভেস্টমেন্ট গ্রেড",
+            status="na" if not credit_rating else ("pass" if credit_rating.strip().upper().startswith(("AAA", "AA", "A")) else "watch"),
         ),
         LensCheck(
             label="দীর্ঘমেয়াদি ট্রেন্ড" if bn else "Long-term trend",
@@ -694,6 +711,8 @@ def build_investor_lens(
     free_float_cap_mn: float | None = None,
     volatility: float | None = None,
     today_change_pct: float | None = None,
+    debt_to_equity: float | None = None,
+    credit_rating: str | None = None,
 ) -> InvestorLensResponse:
     """Build the six best-fit DSE lenses for a symbol."""
     bn = locale == "bn"
@@ -705,6 +724,7 @@ def build_investor_lens(
             pe_vs_sector=pe_vs_sector,
             roe=roe,
             dividend_yield=dividend_yield,
+            debt_to_equity=debt_to_equity,
         ),
         _buffett(
             bn=bn,
@@ -712,6 +732,8 @@ def build_investor_lens(
             eps_growth_yoy=eps_growth_yoy,
             dividend_yield=dividend_yield,
             above_sma_200=above_sma_200,
+            debt_to_equity=debt_to_equity,
+            credit_rating=credit_rating,
         ),
         _dividend(
             bn=bn,

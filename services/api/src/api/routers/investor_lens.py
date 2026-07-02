@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession
 from bulls.analytics import InvestorLensResponse, build_investor_lens
-from bulls.core.models import QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.core.models import CompanyProfile, QuoteSnapshot, Symbol, TickerAnalytics
 
 router = APIRouter(tags=["investor-lens"])
 
@@ -30,6 +30,18 @@ async def get_investor_lens(
 
     quote = await session.get(QuoteSnapshot, (tenant.market, code))
     adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 else None
+
+    # Balance-sheet leverage from the company profile (loans vs book equity), so the lenses can SHOW
+    # debt instead of punting it. Skipped when the profile lacks loan data.
+    cp = await session.get(CompanyProfile, (tenant.market, code))
+    debt_to_equity: float | None = None
+    credit_rating: str | None = None
+    if cp is not None:
+        credit_rating = cp.credit_rating_long
+        has_loan = cp.short_term_loan_mn is not None or cp.long_term_loan_mn is not None
+        equity = (cp.paid_up_capital_mn or 0) + (cp.reserve_surplus_mn or 0) + (cp.oci_mn or 0)
+        if has_loan and equity > 0:
+            debt_to_equity = ((cp.short_term_loan_mn or 0) + (cp.long_term_loan_mn or 0)) / equity
 
     return build_investor_lens(
         code=code,
@@ -57,4 +69,6 @@ async def get_investor_lens(
         free_float_cap_mn=ta.free_float_cap_mn,
         volatility=ta.volatility,
         today_change_pct=quote.change_pct if quote else None,
+        debt_to_equity=debt_to_equity,
+        credit_rating=credit_rating,
     )
