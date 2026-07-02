@@ -18,7 +18,7 @@ export function Sparkline({
     .map((v, i) => `${(i * dx).toFixed(1)},${(height - ((v - min) / span) * height).toFixed(1)}`)
     .join(" ");
   const up = data[data.length - 1] >= data[0];
-  const color = up ? "var(--color-up, #16c784)" : "var(--color-down, #ea3943)";
+  const color = up ? "var(--color-up, #2fbf71)" : "var(--color-down, #f0564a)";
   return (
     <svg width={width} height={height} className="shrink-0" aria-hidden>
       <polyline

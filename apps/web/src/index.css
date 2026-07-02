@@ -1,17 +1,19 @@
 @import "tailwindcss";
 
-/* Design tokens (mirror of design/bulls-of-dhaka-ui.html), exposed as Tailwind colors:
-   bg-bg, bg-surface, bg-card, border-border, text-text/muted/accent/up/down. */
+/* Design tokens — the 2026-07 redesign palette (deep navy + Bull Gold, per the approved
+   mockup board). Exposed as Tailwind colors: bg-bg, bg-surface, bg-card, border-border,
+   text-text/muted/accent/up/down, bg-nav. One place; every page inherits. */
 @theme {
-  --color-bg: #0b0e11;
-  --color-surface: #151a21;
-  --color-card: #1a2029;
-  --color-border: #232b36;
-  --color-text: #e8edf2;
-  --color-muted: #8b97a6;
-  --color-accent: #f5b82e; /* Bull Gold */
-  --color-up: #16c784;
-  --color-down: #ea3943;
+  --color-bg: #0d1524; /* deep navy ground */
+  --color-surface: #152036; /* cards */
+  --color-card: #1b2842; /* inner panels / chips */
+  --color-border: #243049; /* hairlines (≈ white 9% over the ground) */
+  --color-text: #e9eef7;
+  --color-muted: #8fa0b8;
+  --color-accent: #e3b341; /* Bull Gold */
+  --color-up: #2fbf71;
+  --color-down: #f0564a;
+  --color-nav: #0b1322; /* header/bottom-nav — a shade deeper than the ground */
 
   --font-sans: "Inter", system-ui, sans-serif;
   --font-bn: "Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif;

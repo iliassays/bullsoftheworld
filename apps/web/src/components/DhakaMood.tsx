@@ -7,14 +7,14 @@ import { useLang } from "../lib/i18n";
 
 // Five colour zones (fear → greed), matching the 0..100 dial. Endpoints precomputed from the arc
 // geometry in cards.py's gauge so the segments line up; see build_mood for the band thresholds.
-// Fear → greed ramp. The endpoints are the app's theme red/green (#ea3943 / #16c784); the middle
+// Fear → greed ramp. The endpoints are the app's theme red/green (#f0564a / #2fbf71); the middle
 // three are intermediate gradient steps.
 const ZONES = [
-  { d: "M65,175 A135 135 0 0 1 104.5,79.5", c: "#ea3943" },
+  { d: "M65,175 A135 135 0 0 1 104.5,79.5", c: "#f0564a" },
   { d: "M104.5,79.5 A135 135 0 0 1 178.9,41.7", c: "#e8804a" },
   { d: "M178.9,41.7 A135 135 0 0 1 221.1,41.7", c: "#d9b53a" },
   { d: "M221.1,41.7 A135 135 0 0 1 295.5,79.5", c: "#2bb673" },
-  { d: "M295.5,79.5 A135 135 0 0 1 335,175", c: "#16c784" },
+  { d: "M295.5,79.5 A135 135 0 0 1 335,175", c: "#2fbf71" },
 ];
 
 function bandText(band: MoodIndex["band"]): string {
@@ -75,12 +75,12 @@ export function DhakaMood() {
               y1="175"
               x2={nx}
               y2={ny}
-              stroke="#f5b82e"
+              stroke="#e3b341"
               strokeWidth="4.5"
               strokeLinecap="round"
             />
-            <circle cx="200" cy="175" r="9" fill="#f5b82e" />
-            <circle cx="200" cy="175" r="4" fill="#0b0e11" />
+            <circle cx="200" cy="175" r="9" fill="#e3b341" />
+            <circle cx="200" cy="175" r="4" fill="#0d1524" />
             <text
               x="200"
               y="150"

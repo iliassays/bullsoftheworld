@@ -554,7 +554,7 @@ function smartMoneyRead(o: Company["ownership"]): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const OWN_GREEN = "#16c784";
+const OWN_GREEN = "#2fbf71";
 
 export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   const cats = [

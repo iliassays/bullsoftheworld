@@ -60,11 +60,11 @@ export function VerifiedBadge({ size = 15 }: { size?: number }) {
       aria-label="Verified official desk"
     >
       <path
-        fill="#f5b82e"
+        fill="#e3b341"
         d="M12 1l2.6 1.9 3.2-.2 1 3 2.8 1.6-.9 3.1.9 3.1-2.8 1.6-1 3-3.2-.2L12 23l-2.6-1.9-3.2.2-1-3L2.4 15l.9-3.1L2.4 8.8l2.8-1.6 1-3 3.2.2z"
       />
       <path
-        fill="#0b0e11"
+        fill="#0d1524"
         d="M10.5 15.4l-2.9-2.9 1.3-1.3 1.6 1.6 4-4 1.3 1.3z"
       />
     </svg>

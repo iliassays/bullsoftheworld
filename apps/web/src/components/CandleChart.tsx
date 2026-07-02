@@ -10,9 +10,9 @@ import { api, type Bar } from "../lib/api";
 import { useLang } from "../lib/i18n";
 
 const C = {
-  up: "#16c784",
-  down: "#ea3943",
-  ema9: "#f5b82e",
+  up: "#2fbf71",
+  down: "#f0564a",
+  ema9: "#e3b341",
   ema20: "#5b9cf5",
   vwap: "#a78bfa",
   grid: "#161b22",

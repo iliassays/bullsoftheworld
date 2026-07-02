@@ -129,7 +129,7 @@ export function Shell() {
     <div className="min-h-full max-w-[480px] mx-auto flex flex-col bg-bg">
       <header
         ref={headerRef}
-        className="sticky top-0 z-20 bg-bg/85 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5"
+        className="sticky top-0 z-20 bg-nav/90 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5"
       >
         <div className="flex items-center gap-2.5">
           <Link to="/" aria-label="Bulls of Dhaka — home" className="flex items-center gap-2.5 min-w-0">
@@ -161,7 +161,7 @@ export function Shell() {
       {/* Fixed (not sticky): a sticky last-child has no scroll room below it, so it wouldn't pin to
           the viewport. Centered within the 480px column; extra bottom inset for the phone home bar. */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-20 mx-auto max-w-[480px] bg-bg/92 backdrop-blur border-t border-border flex justify-around items-center px-2 py-2"
+        className="fixed bottom-0 left-0 right-0 z-20 mx-auto max-w-[480px] bg-nav/92 backdrop-blur border-t border-border flex justify-around items-center px-2 py-2"
         style={{ paddingBottom: "calc(0.875rem + env(safe-area-inset-bottom))" }}
       >
         {tabs.map((tab) => (
