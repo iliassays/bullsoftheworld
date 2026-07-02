@@ -15,7 +15,9 @@ from api.deps import CurrentLocale, CurrentTenant, DbSession
 from bulls.analytics import InvestorLensResponse, build_investor_lens
 from bulls.core.models import (
     Announcement,
+    AnnualFinancial,
     CompanyProfile,
+    DividendRecord,
     QuoteSnapshot,
     Symbol,
     TickerAnalytics,
@@ -67,6 +69,32 @@ async def get_investor_lens(
         )
     )
 
+    # Dividend track record (last few years) — so the Dividend lens shows consistency + latest
+    # cash/bonus split instead of "check payout history / bonus vs cash".
+    divs = list(
+        await session.scalars(
+            select(DividendRecord)
+            .where(DividendRecord.market == tenant.market, DividendRecord.code == code)
+            .order_by(DividendRecord.year.desc())
+            .limit(6)
+        )
+    )
+    div_total_years = len(divs)
+    div_paid_years = sum(1 for dv in divs if (dv.cash_pct or 0) > 0)
+    latest_cash_pct = divs[0].cash_pct if divs else None
+    latest_bonus_pct = divs[0].bonus_pct if divs else None
+
+    # Multi-year EPS (oldest -> newest) for the Buffett 5-year earnings trend check.
+    fins = list(
+        await session.scalars(
+            select(AnnualFinancial)
+            .where(AnnualFinancial.market == tenant.market, AnnualFinancial.code == code)
+            .order_by(AnnualFinancial.fiscal_year.asc())
+            .limit(6)
+        )
+    )
+    eps_history = [f.eps for f in fins if f.eps is not None]
+
     return build_investor_lens(
         code=code,
         as_of_date=str(ta.as_of_date),
@@ -100,4 +128,9 @@ async def get_investor_lens(
         last_close=ta.last_close,
         recent_news_count=len(news),
         recent_news_label=news[0].category if news else None,
+        div_paid_years=div_paid_years,
+        div_total_years=div_total_years,
+        latest_cash_pct=latest_cash_pct,
+        latest_bonus_pct=latest_bonus_pct,
+        eps_history=eps_history,
     )

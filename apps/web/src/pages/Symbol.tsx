@@ -307,15 +307,7 @@ export function SymbolPage() {
         </>
       )}
 
-      {tab === "lens" && (
-        <InvestorLensCard
-          code={sym}
-          onGoTab={(t) => {
-            setTab(t as Tab);
-            window.scrollTo({ top: 0, behavior: "smooth" });
-          }}
-        />
-      )}
+      {tab === "lens" && <InvestorLensCard code={sym} />}
 
       {tab === "feed" && (
         <>

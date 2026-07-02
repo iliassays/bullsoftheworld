@@ -7,6 +7,8 @@ rating. Each lens is a grounded interpretation of the persisted DSE analytics ro
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 from pydantic import BaseModel
 
 
@@ -362,20 +364,28 @@ def _buffett(
     above_sma_200: bool | None,
     debt_to_equity: float | None = None,
     credit_rating: str | None = None,
+    eps_history: list[float] | None = None,
 ) -> InvestorLens:
     s = buffett_quality_score(
         roe=roe, eps_growth_yoy=eps_growth_yoy, dividend_yield=dividend_yield, above_sma_200=above_sma_200
     )
+    # Multi-year EPS trend from annual financials (oldest -> newest): how many years earnings rose.
+    eps_years_up: int | None = None
+    eps_years_n = 0
+    if eps_history and len(eps_history) >= 2:
+        pairs = list(pairwise(eps_history))
+        eps_years_up = sum(1 for a, b in pairs if b >= a)
+        eps_years_n = len(pairs)
     if bn:
         summary = "ব্যবসার মান, লাভজনকতা ও স্থায়িত্বের দিক থেকে কোম্পানিটা কতটা শক্ত — এই লেন্স তা দেখে।"
         trend = "200DMA-এর উপরে" if above_sma_200 else "200DMA-এর নিচে" if above_sma_200 is False else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["৫ বছরের আয় ধারাবাহিকতা", "মার্জিন", "ব্যবসার moat"]
+        watch_next = ["ব্যবসার moat"]
     else:
         summary = "Looks for business quality: durable profitability, steady earnings, and staying power."
         trend = "Above 200-DMA" if above_sma_200 else "Below 200-DMA" if above_sma_200 is False else "Long-term trend unknown"
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["5-year earnings trend", "Margins", "Business moat"]
+        watch_next = ["Business moat"]
 
     checks = [
         _chk(
@@ -389,6 +399,22 @@ def _buffett(
         _chk(
             "ঋণ/ইকুইটি" if bn else "Debt / equity",
             debt_to_equity, "≤ 1.0x", good=lambda x: x <= 0.5, weak=lambda x: x > 2, fmt=_fmt_x,
+        ),
+        LensCheck(
+            label="বহু-বছরের আয়" if bn else "Multi-year earnings",
+            actual=(f"{eps_years_up}/{eps_years_n} বছর বেড়েছে" if bn else f"up {eps_years_up}/{eps_years_n} yrs")
+            if eps_years_up is not None
+            else "—",
+            expected="ধারাবাহিক" if bn else "rising",
+            status=(
+                "na"
+                if eps_years_up is None
+                else "pass"
+                if eps_years_up >= eps_years_n * 0.6
+                else "fail"
+                if eps_years_up == 0
+                else "watch"
+            ),
         ),
         LensCheck(
             label="ক্রেডিট রেটিং" if bn else "Credit rating",
@@ -599,6 +625,10 @@ def _dividend(
     dividend_yield: float | None,
     roe: float | None,
     eps_growth_yoy: float | None,
+    div_paid_years: int = 0,
+    div_total_years: int = 0,
+    latest_cash_pct: float | None = None,
+    latest_bonus_pct: float | None = None,
 ) -> InvestorLens:
     s = dividend_score(dividend_yield=dividend_yield, roe=roe, eps_growth_yoy=eps_growth_yoy)
     no_div = (dividend_yield or 0) <= 0
@@ -609,7 +639,7 @@ def _dividend(
             f"ROE {_fmt_pct(roe)} · EPS growth {_fmt_pct(eps_growth_yoy)}",
             "নগদ লভ্যাংশ নেই" if no_div else "আয় লভ্যাংশ কভার করছে কি না দেখুন",
         ]
-        watch_next = ["পেআউট ইতিহাস", "রেকর্ড ডেট", "বোনাস vs নগদ"]
+        watch_next = ["রেকর্ড ডেট"]
     else:
         summary = "Checks cash-dividend yield and whether earnings can sustain it."
         points = [
@@ -617,7 +647,7 @@ def _dividend(
             f"ROE {_fmt_pct(roe)} · EPS growth {_fmt_pct(eps_growth_yoy)}",
             "No cash dividend" if no_div else "Verify earnings cover the payout",
         ]
-        watch_next = ["Payout history", "Record date", "Bonus vs cash"]
+        watch_next = ["Record date"]
     checks = [
         _chk(
             "নগদ ইয়িল্ড" if bn else "Cash yield",
@@ -630,6 +660,33 @@ def _dividend(
         _chk(
             "আয় স্থিতিশীল" if bn else "Earnings stable",
             eps_growth_yoy, "≥ 0%", good=lambda x: x >= 0, weak=lambda x: x < -20, fmt=_fmt_pct,
+        ),
+        LensCheck(
+            label="লভ্যাংশ ট্র্যাক রেকর্ড" if bn else "Payout track record",
+            actual=(f"নগদ {div_paid_years}/{div_total_years} বছর" if bn else f"cash {div_paid_years}/{div_total_years} yrs")
+            if div_total_years
+            else "—",
+            expected="≥ 3 yrs" if div_total_years else "",
+            status=(
+                "na"
+                if not div_total_years
+                else "pass"
+                if div_paid_years >= 3
+                else "watch"
+                if div_paid_years >= 1
+                else "fail"
+            ),
+        ),
+        LensCheck(
+            label="সর্বশেষ পেআউট" if bn else "Latest payout",
+            actual=(
+                (f"নগদ {latest_cash_pct:.0f}%" if bn else f"cash {latest_cash_pct:.0f}%")
+                + ((f" + বোনাস {latest_bonus_pct:.0f}%" if bn else f" + bonus {latest_bonus_pct:.0f}%") if latest_bonus_pct else "")
+            )
+            if latest_cash_pct is not None
+            else "—",
+            expected="",
+            status="na",
         ),
     ]
     return InvestorLens(
@@ -748,6 +805,11 @@ def build_investor_lens(
     last_close: float | None = None,
     recent_news_count: int = 0,
     recent_news_label: str | None = None,
+    div_paid_years: int = 0,
+    div_total_years: int = 0,
+    latest_cash_pct: float | None = None,
+    latest_bonus_pct: float | None = None,
+    eps_history: list[float] | None = None,
 ) -> InvestorLensResponse:
     """Build the six best-fit DSE lenses for a symbol."""
     bn = locale == "bn"
@@ -771,12 +833,17 @@ def build_investor_lens(
             above_sma_200=above_sma_200,
             debt_to_equity=debt_to_equity,
             credit_rating=credit_rating,
+            eps_history=eps_history,
         ),
         _dividend(
             bn=bn,
             dividend_yield=dividend_yield,
             roe=roe,
             eps_growth_yoy=eps_growth_yoy,
+            div_paid_years=div_paid_years,
+            div_total_years=div_total_years,
+            latest_cash_pct=latest_cash_pct,
+            latest_bonus_pct=latest_bonus_pct,
         ),
         _technical(
             bn=bn,
