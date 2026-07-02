@@ -159,55 +159,8 @@ const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; lab
   },
 };
 
-const BOARD_EMPTY_TEXT: Record<string, Record<Lang, string>> = {
-  quality_reversal: {
-    en: "No clean turnaround setup today. That is useful too: do not force a trade when the setup is absent.",
-    bn: "আজ পরিষ্কার টার্নারাউন্ড সেটআপ নেই। এটাও গুরুত্বপূর্ণ তথ্য: সেটআপ না থাকলে জোর করে ট্রেড করার দরকার নেই।",
-  },
-  oversold_quality: {
-    en: "No profitable name is in the oversold zone right now — also worth knowing.",
-    bn: "এই মুহূর্তে কোনো লাভজনক শেয়ার ওভারসোল্ড জোনে নেই — এটাও জানার মতো তথ্য।",
-  },
-  active_today: {
-    en: "No clean unusual-activity setup is available right now.",
-    bn: "এই মুহূর্তে পরিষ্কার অস্বাভাবিক লেনদেন সেটআপ নেই।",
-  },
-  value_quality: {
-    en: "No liquid value + profitability match right now.",
-    bn: "এই মুহূর্তে লিকুইড ভ্যালু + লাভজনকতা ম্যাচ নেই।",
-  },
-  dividend_quality: {
-    en: "No clean dividend-quality match right now.",
-    bn: "এই মুহূর্তে পরিষ্কার লভ্যাংশ + কভারেজ ম্যাচ নেই।",
-  },
-  lens_agreement: {
-    en: "No stock has broad multi-lens agreement right now. Use the individual lens boards below.",
-    bn: "এই মুহূর্তে broad multi-lens agreement নেই। নিচের আলাদা lens board দেখুন।",
-  },
-  lens_buffett_quality: {
-    en: "No stock passes the Quality Lens right now. That is better than forcing weak quality into the list.",
-    bn: "এই মুহূর্তে কোনো শেয়ার কোয়ালিটি লেন্স পাস করছে না। দুর্বল মান জোর করে তালিকায় আনার চেয়ে এটিই ভালো।",
-  },
-  lens_graham_value: {
-    en: "No clean Graham Value match right now.",
-    bn: "এই মুহূর্তে পরিষ্কার Graham ভ্যালু ম্যাচ নেই।",
-  },
-  lens_smart_money: {
-    en: "No clean ownership-flow match right now.",
-    bn: "এই মুহূর্তে পরিষ্কার ownership-flow ম্যাচ নেই।",
-  },
-  lens_risk_control: {
-    en: "No clean risk-controlled match right now.",
-    bn: "এই মুহূর্তে পরিষ্কার risk-controlled ম্যাচ নেই।",
-  },
-};
-
 function boardText(board: Screen, lang: Lang) {
   return BOARD_TEXT[board.key]?.[lang] ?? { title: board.title, desc: board.description, label: board.title };
-}
-
-function emptyText(board: Screen, lang: Lang): string {
-  return BOARD_EMPTY_TEXT[board.key]?.[lang] ?? (lang === "bn" ? "এই স্ক্যানে এখন কোনো ম্যাচ নেই।" : "No matches in this scan right now.");
 }
 
 function metricText(board: Screen, item: ScreenItem, lang: Lang): string {
@@ -487,30 +440,40 @@ function BoardCard({
 }) {
   const { lang } = useLang();
   const text = boardText(board, lang);
+
+  // A silent board is discipline, not content — it costs one slim line, not a card.
+  // (Quality Reversal fires ~50x/year across the whole market by design; most days: nothing.)
+  if (board.items.length === 0) {
+    return (
+      <section className="flex items-center gap-2 rounded-2xl border border-border/60 bg-surface/50 px-4 py-2.5">
+        <span className="text-sm opacity-60">{BOARD_ICON[board.key] ?? "📈"}</span>
+        <span className="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted">
+          {text.title}
+        </span>
+        <span className="ml-auto shrink-0 text-[11px] text-muted">
+          {lang === "bn" ? "আজ কোনো ম্যাচ নেই — এটাও তথ্য" : "no match today — that's data too"}
+        </span>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-2xl border border-border bg-surface p-4">
       <div className="flex items-center gap-2">
-        <div className="text-lg">{BOARD_ICON[board.key] ?? "📈"}</div>
-        <div className="min-w-0 text-sm font-bold truncate">{text.title}</div>
+        <span className="text-base">{BOARD_ICON[board.key] ?? "📈"}</span>
+        <span className="min-w-0 truncate text-[11px] font-bold uppercase tracking-[0.12em] text-text/90">
+          {text.title}
+        </span>
         <EvidenceChip evidence={board.evidence} />
-        {board.items.length > 0 && (
-          <span className="ml-auto shrink-0 text-[11px] text-muted tnum">
-            {board.items.length} {lang === "bn" ? "টি ম্যাচ" : "matches"}
-          </span>
-        )}
+        <span className="ml-auto shrink-0 text-[11px] font-semibold text-accent tnum">
+          {board.items.length} {lang === "bn" ? "টি ম্যাচ" : "matches"}
+        </span>
       </div>
-      <p className="mt-1 line-clamp-1 text-[11px] leading-snug text-muted">{text.desc}</p>
       {REGIME_SENSITIVE.has(board.key) && regime === "below_200dma" && <RegimeBanner />}
       <div className="mt-1 flex flex-col divide-y divide-border">
-        {board.items.length > 0 ? (
-          board.items.map((item) => (
-            <ScannerRow key={item.code} board={board} item={item} onPick={() => onPick({ board, item })} />
-          ))
-        ) : (
-          <div className="mt-3 rounded-xl border border-border bg-card/50 p-3 text-xs leading-relaxed text-muted">
-            {emptyText(board, lang)}
-          </div>
-        )}
+        {board.items.map((item) => (
+          <ScannerRow key={item.code} board={board} item={item} onPick={() => onPick({ board, item })} />
+        ))}
       </div>
     </section>
   );
