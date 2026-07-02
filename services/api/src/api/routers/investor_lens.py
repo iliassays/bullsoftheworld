@@ -95,6 +95,26 @@ async def get_investor_lens(
     )
     eps_history = [f.eps for f in fins if f.eps is not None]
 
+    # Next board meeting (the next earnings/dividend decision) — DSE announces it ~a week ahead and
+    # carries the date in the announcement details, so we can SHOW it instead of "check disclosure date".
+    next_meeting_date: str | None = None
+    next_meeting_period: str | None = None
+    today_iso = dt.date.today().isoformat()
+    bms = await session.scalars(
+        select(Announcement)
+        .where(
+            Announcement.market == tenant.market,
+            Announcement.code == code,
+            Announcement.category == "board_meeting",
+        )
+        .order_by(Announcement.published_at.desc())
+        .limit(6)
+    )
+    for a in bms:
+        md = (a.details or {}).get("meeting_date")
+        if isinstance(md, str) and md >= today_iso and (next_meeting_date is None or md < next_meeting_date):
+            next_meeting_date, next_meeting_period = md, (a.details or {}).get("period")
+
     return build_investor_lens(
         code=code,
         as_of_date=str(ta.as_of_date),
@@ -133,4 +153,6 @@ async def get_investor_lens(
         latest_cash_pct=latest_cash_pct,
         latest_bonus_pct=latest_bonus_pct,
         eps_history=eps_history,
+        next_meeting_date=next_meeting_date,
+        next_meeting_period=next_meeting_period,
     )

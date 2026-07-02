@@ -570,6 +570,8 @@ def _smart_money(
     cmf_20: float | None,
     recent_news_count: int = 0,
     recent_news_label: str | None = None,
+    next_meeting_date: str | None = None,
+    next_meeting_period: str | None = None,
 ) -> InvestorLens:
     s = smart_money_score(institute_delta=institute_delta, foreign_delta=foreign_delta, cmf_20=cmf_20)
     if bn:
@@ -579,7 +581,7 @@ def _smart_money(
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
             f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
         ]
-        watch_next = ["পরবর্তী ডিসক্লোজার"]
+        watch_next = []
     else:
         summary = "Checks whether institutional/foreign ownership and money flow support the story."
         points = [
@@ -587,7 +589,7 @@ def _smart_money(
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
             f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
         ]
-        watch_next = ["Next disclosure date"]
+        watch_next = []
 
     checks = [
         _chk(
@@ -605,6 +607,14 @@ def _smart_money(
             cmf_20, "> 0", good=lambda x: x > 0.1, weak=lambda x: x < -0.1, fmt=lambda v: _fmt_pct(v, ""),
         ),
         _news_check(bn, recent_news_count, recent_news_label),
+        LensCheck(
+            label="পরবর্তী বোর্ড সভা" if bn else "Next board meeting",
+            actual=(f"{next_meeting_date} ({next_meeting_period})" if next_meeting_period else next_meeting_date)
+            if next_meeting_date
+            else ("নির্ধারিত নেই" if bn else "none scheduled"),
+            expected="",
+            status="watch" if next_meeting_date else "na",
+        ),
     ]
     return InvestorLens(
         key="smart_money",
@@ -810,6 +820,8 @@ def build_investor_lens(
     latest_cash_pct: float | None = None,
     latest_bonus_pct: float | None = None,
     eps_history: list[float] | None = None,
+    next_meeting_date: str | None = None,
+    next_meeting_period: str | None = None,
 ) -> InvestorLensResponse:
     """Build the six best-fit DSE lenses for a symbol."""
     bn = locale == "bn"
@@ -866,6 +878,8 @@ def build_investor_lens(
             cmf_20=cmf_20,
             recent_news_count=recent_news_count,
             recent_news_label=recent_news_label,
+            next_meeting_date=next_meeting_date,
+            next_meeting_period=next_meeting_period,
         ),
         _taleb_risk(
             bn=bn,
