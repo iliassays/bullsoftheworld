@@ -69,6 +69,26 @@ async def get_investor_lens(
             .order_by(Announcement.published_at.desc())
         )
     )
+    # Attach a direction cue to the most-recent item so the lens shows the earnings *impact*
+    # (up/down), not just that news happened. Arrow only, no colour — it states the fact without
+    # implying a buy/sell call. Board meetings / dividends carry no direction, so no arrow.
+    recent_news_label: str | None = None
+    if news:
+        top = news[0]
+        det = top.details or {}
+        arrow = ""
+        if top.category == "earnings":
+            trend = det.get("eps_trend")
+            if trend in {"up", "to_profit", "loss_narrowed"}:
+                arrow = " ▲"
+            elif trend in {"down", "to_loss", "loss_widened"}:
+                arrow = " ▼"
+        elif top.category == "rating":
+            if det.get("action") == "upgrade":
+                arrow = " ▲"
+            elif det.get("action") == "downgrade":
+                arrow = " ▼"
+        recent_news_label = f"{top.category}{arrow}"
 
     # Dividend track record (last few years) — so the Dividend lens shows consistency + latest
     # cash/bonus split instead of "check payout history / bonus vs cash".
@@ -148,7 +168,7 @@ async def get_investor_lens(
         nearest_resistance=ta.nearest_resistance,
         last_close=ta.last_close,
         recent_news_count=len(news),
-        recent_news_label=news[0].category if news else None,
+        recent_news_label=recent_news_label,
         div_paid_years=div_paid_years,
         div_total_years=div_total_years,
         latest_cash_pct=latest_cash_pct,
