@@ -461,6 +461,15 @@ const STRINGS: Record<string, Entry> = {
   "home.discussion": { en: "Discussion", bn: "আলোচনা" },
   "home.latest": { en: "Latest", bn: "সর্বশেষ" },
   "home.watchlistFeed": { en: "From your watchlist", bn: "আপনার ওয়াচলিস্ট থেকে" },
+  "home.earningsWeek": { en: "Earnings this week", bn: "এই সপ্তাহের আয় ঘোষণা" },
+  "home.earningsWeekSub": {
+    en: "Board meetings called to consider results",
+    bn: "ফলাফল বিবেচনায় ডাকা বোর্ড সভা",
+  },
+  "home.earningsWeekNote": {
+    en: "Announced dates — companies can reschedule.",
+    bn: "ঘোষিত তারিখ — কোম্পানি সময় বদলাতে পারে।",
+  },
   "home.myFeed": { en: "Your feed", bn: "আপনার ফিড" },
   "home.signedOutTitle": {
     en: "Your market, your feed",

@@ -18,6 +18,7 @@ from api.deps import CurrentLocale, CurrentTenant, DbSession, visible_codes
 from bulls.analytics import AnalyticsResult, MoodIndex, build_mood, compute
 from bulls.core.config import get_settings
 from bulls.core.models import (
+    Announcement,
     DailyBar,
     MarketSummary,
     QuoteSnapshot,
@@ -156,6 +157,70 @@ async def trending_stocks(
             )
         )
     return out
+
+
+class EarningsEventOut(BaseModel):
+    """One upcoming earnings board meeting — the date a company will consider its results."""
+
+    code: str
+    name_en: str
+    name_bn: str | None = None
+    category: str | None = None
+    meeting_date: str
+    period: str | None = None
+
+
+@router.get("/market/earnings-calendar")
+async def earnings_calendar(
+    tenant: CurrentTenant, session: DbSession, days: int = Query(7, ge=1, le=30)
+) -> list[EarningsEventOut]:
+    """Upcoming earnings — board meetings called to consider financials within the next `days`.
+
+    Descriptive heads-up only: the date + period come straight from the decoded DSE board-meeting
+    notice (companies can still reschedule). One row per company, nearest date first.
+    """
+    today = dt.datetime.now(dt.UTC).date()
+    until = today + dt.timedelta(days=days)
+    meeting_date = Announcement.details["meeting_date"].astext
+    rows = list(
+        await session.scalars(
+            select(Announcement)
+            .where(
+                Announcement.market == tenant.market,
+                Announcement.category == "board_meeting",
+                meeting_date >= today.isoformat(),
+                meeting_date <= until.isoformat(),
+            )
+            .order_by(meeting_date.asc(), Announcement.strength.desc())
+        )
+    )
+    # Earnings meetings only (agenda includes financials), one per code — the earliest wins since
+    # rows are already date-ordered.
+    by_code: dict[str, Announcement] = {}
+    for a in rows:
+        if "financials" in ((a.details or {}).get("agenda") or []):
+            by_code.setdefault(a.code, a)
+    if not by_code:
+        return []
+    names = {
+        s.code: s
+        for s in await session.scalars(
+            select(Symbol).where(Symbol.market == tenant.market, Symbol.code.in_(list(by_code)))
+        )
+    }
+    events = [
+        EarningsEventOut(
+            code=code,
+            name_en=(names[code].name_en if code in names else code),
+            name_bn=(names[code].name_bn if code in names else None),
+            category=(names[code].category if code in names else None),
+            meeting_date=(a.details or {}).get("meeting_date", ""),
+            period=(a.details or {}).get("period"),
+        )
+        for code, a in by_code.items()
+    ]
+    events.sort(key=lambda e: e.meeting_date)
+    return events
 
 
 # Enough history for the longest indicator (200-day SMA) plus headroom.

@@ -363,6 +363,14 @@ export interface TrendingReason {
   cr?: number;
   pct?: number;
 }
+export interface EarningsEvent {
+  code: string;
+  name_en: string;
+  name_bn?: string | null;
+  category?: string | null;
+  meeting_date: string;
+  period?: "Q1" | "H1" | "Q3" | "annual" | null;
+}
 export interface TrendingStock {
   code: string;
   name_en: string;
@@ -612,6 +620,8 @@ export const api = {
   trendingStocks: (limit = 15) =>
     request<TrendingStock[]>(`/trending-stocks?limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
+  earningsCalendar: (days = 7) =>
+    request<EarningsEvent[]>(`/market/earnings-calendar?days=${days}`),
 
   // posts
   feed: (
