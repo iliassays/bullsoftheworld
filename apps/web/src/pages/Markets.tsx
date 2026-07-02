@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EarningsWeek } from "../components/EarningsWeek";
+import { EvidenceNote } from "../components/EvidenceChip";
 import { Link } from "react-router-dom";
 import {
   api,
@@ -58,6 +59,8 @@ export const SCREEN_HELP: Record<string, string> = {
     "How foreign investors changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ they went from owning 10% to 15%). The line is the share price over that window; the dots are the stake at each disclosure (hover for figures). The 'since' date is the comparison point — disclosures come a few times a year, not daily. History, not a forecast.",
   institutional_buying:
     "How local institutions (mutual funds, asset managers) changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ stake up 5 of the company's points). The line is the share price over that window; the dots are the stake at each disclosure. History, not a forecast.",
+  sponsor_selling:
+    "Sponsors/directors — the company's own insiders — reduced their stake since the prior disclosure. pp = percentage points of the company they let go. Insiders selling their own company is a disclosed fact worth reading into (why? to whom?), and a streak across disclosures matters more than one print. Not a sell signal by itself.",
   most_active:
     "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
   beating_market:
@@ -107,6 +110,8 @@ const SCREEN_HELP_BN: Record<string, string> = {
     "বিদেশি বিনিয়োগকারীরা শেষ প্রকাশের পর মালিকানা কীভাবে বদলেছে। ক্রয়/বিক্রয় চিপ দিয়ে সঞ্চয় ও বিক্রির মধ্যে পাল্টান। pp = শতাংশ পয়েন্ট (+৫ pp ≈ ১০% থেকে ১৫% মালিকানা)। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ (হোভার করলে সংখ্যা)। 'since' তারিখ তুলনার বিন্দু — প্রকাশ বছরে কয়েকবার হয়, প্রতিদিন নয়। ইতিহাস, পূর্বাভাস নয়।",
   institutional_buying:
     "স্থানীয় প্রতিষ্ঠান (মিউচুয়াল ফান্ড, অ্যাসেট ম্যানেজার) শেষ প্রকাশের পর মালিকানা কীভাবে বদলেছে। ক্রয়/বিক্রয় চিপ দিয়ে পাল্টান। pp = শতাংশ পয়েন্ট (+৫ pp ≈ কোম্পানির ৫ পয়েন্ট অংশ বেড়েছে)। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ। ইতিহাস, পূর্বাভাস নয়।",
+  sponsor_selling:
+    "স্পনসর/পরিচালক — কোম্পানির নিজস্ব অভ্যন্তরীণরা — শেষ প্রকাশের পর নিজেদের অংশ কমিয়েছেন। pp = কোম্পানির কত শতাংশ পয়েন্ট ছেড়েছেন। অভ্যন্তরীণদের নিজের কোম্পানি বিক্রি একটি প্রকাশিত তথ্য যা পড়ে দেখা উচিত (কেন? কার কাছে?), আর এক প্রিন্টের চেয়ে ধারাবাহিক স্ট্রিক বেশি গুরুত্বপূর্ণ। এটি নিজে বিক্রির সংকেত নয়।",
   most_active:
     "আজ অর্থমূল্যে সবচেয়ে বেশি লেনদেন (দাম × ভলিউম), কোটি টাকায়। ক্লাসিক 'টপ টার্নওভার' বোর্ড — দিনের কাজ যেখানে, সস্তা-ব্যস্ত নামসহ।",
   beating_market:
@@ -220,7 +225,10 @@ export function metricChip(label: string, v: number, t: Tr): Chip | null {
   if (label === "yield") return w(v >= 8 ? "mc.highYield" : "mc.paysDividend", "neutral");
   if (label.includes("sector")) return w("mc.cheaperPeers", "neutral");
   if (label === "% YoY") return w(v >= 50 ? "mc.fastGrowth" : "mc.growing", "up");
-  if (label === "pp") return w(v >= 3 ? "mc.accumulating" : "mc.buying", "up");
+  if (label === "pp") {
+    if (v < 0) return w("mc.reducing", "down"); // sponsor selling / distribution rows
+    return w(v >= 3 ? "mc.accumulating" : "mc.buying", "up");
+  }
   if (label === "ROE") return w(v >= 20 ? "mc.highlyProfitable" : "mc.profitable", "neutral");
   if (label === "volatility") return w(v < 25 ? "mc.verySteady" : "mc.steady", "neutral");
   if (label === "vs market") return w("mc.outperforming", "up");
@@ -380,6 +388,8 @@ function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
         return `প্রতিষ্ঠানের মালিকানা ${metric} ${item.value >= 0 ? "বেড়েছে" : "কমেছে"}`;
       case "foreign_buying":
         return `বিদেশি মালিকানা ${metric} ${item.value >= 0 ? "বেড়েছে" : "কমেছে"}`;
+      case "sponsor_selling":
+        return `স্পনসর/পরিচালকদের অংশ ${metric} কমেছে`;
       case "value_vs_sector":
         return `P/E খাতের মধ্যমার ${metric}`;
       case "dividend_yield":
@@ -428,6 +438,8 @@ function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
   switch (screen.key) {
     case "institutional_buying":
       return `Institutions changed stake by ${metric}`;
+    case "sponsor_selling":
+      return `Sponsors/directors reduced their stake by ${metric}`;
     case "foreign_buying":
       return `Foreign investors changed stake by ${metric}`;
     case "value_vs_sector":
@@ -457,6 +469,7 @@ function metricDetailLabel(screen: Screen, lang: Lang): string {
     switch (screen.key) {
       case "institutional_buying":
       case "foreign_buying":
+      case "sponsor_selling":
         return "মালিকানা পরিবর্তন";
       case "value_vs_sector":
         return "P/E বনাম খাত";
@@ -504,6 +517,7 @@ function metricDetailLabel(screen: Screen, lang: Lang): string {
   switch (screen.key) {
     case "institutional_buying":
     case "foreign_buying":
+    case "sponsor_selling":
       return "Stake change";
     case "value_vs_sector":
       return "P/E vs sector";
@@ -1007,13 +1021,17 @@ const GROUPS: { id: string; labelKey: string; advanced?: boolean }[] = [
 // "Active today" engine already covers what's genuinely moving (liquidity-gated, not thin-circuit
 // noise), and they live under the Momentum lens / All boards for anyone who wants them. Each card
 // here is a different decision axis — smart money, relative strength, income, value × quality, buzz.
+// Merit order (2026-07 review): ownership intelligence first, income + value core, community
+// pulse, and relative strength LAST — momentum was the one factor our DSE study found harmful,
+// so it never headlines. sponsor_selling = the disclosure-synthesis red-flag board.
 const FOCUS_KEYS = [
   "institutional_buying", // smart money — what institutions are accumulating
-  "beating_market", // relative strength vs the DSEX
+  "sponsor_selling", // insiders reducing — the red-flag counterweight
   "dividend_yield", // trailing cash income — BD investors care
   "value_vs_sector", // cheap vs its sector...
   "quality_roe", // ...paired with quality so it's not a value trap
   "most_discussed", // the community pulse
+  "beating_market", // relative strength vs the DSEX — context only, demoted
 ];
 
 // "What are you looking for?" — curate the screens down to a goal, so a beginner sees relevant
@@ -1136,13 +1154,25 @@ export function screenDesc(s: Screen, lang: Lang): string {
   return lang === "bn" ? (SCREEN_BN[s.key]?.d ?? s.description) : s.description;
 }
 
+// Momentum-family boards carry the honest caution: our own factor study found trend-chasing
+// HURT returns on DSE (IC −0.077 @60d). Descriptive context, never a hunting ground.
+const MOMENTUM_CAUTION_KEYS = new Set(["beating_market", "momentum_12_1", "near_52w_high"]);
+const momentumCaution = (lang: string) =>
+  lang === "bn"
+    ? "সতর্কতা: আমাদের নিজস্ব DSE গবেষণায় (২০২৪–২৬) ট্রেন্ড-চেজিং ক্ষতি করেছে। এটি প্রেক্ষাপট, শিকারের তালিকা নয়।"
+    : "Heads-up: our own DSE study (2024–26) found trend-chasing hurt returns. This is context, not a hunting list.";
+
 function ScreenCard({ s }: { s: Screen }) {
   const { t, lang } = useLang();
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <div className="font-semibold text-sm">{screenTitle(s, lang)}</div>
         <InfoTip text={screenHelp(s.key, lang) ?? screenDesc(s, lang)} lessonId={SCREEN_LESSON[s.key]} />
+        <EvidenceNote
+          evidence={s.evidence}
+          extra={MOMENTUM_CAUTION_KEYS.has(s.key) ? momentumCaution(lang) : undefined}
+        />
       </div>
       <div className="text-[11px] text-muted">{screenDesc(s, lang)}</div>
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">

@@ -288,9 +288,27 @@ _GROUP: dict[str, str] = {
     "quiet_accumulation": "value",
     "foreign_buying": "value",
     "institutional_buying": "value",
+    "sponsor_selling": "value",
     "momentum_12_1": "movers",
     "quality_roe": "value",
     "low_volatility": "value",
+}
+
+# Truth-in-labeling (matches the scanner's chips): backtested = validated on our DSE data,
+# utility = descriptive with no edge claimed. Unlisted screens carry no chip.
+_SCREEN_EVIDENCE: dict[str, str] = {
+    "oversold": "backtested",  # strongest single signal in the factor study
+    "unusual_volume": "utility",
+    "beating_market": "utility",  # momentum family — frontend adds the trend-chasing caution
+    "momentum_12_1": "utility",
+    "near_52w_high": "utility",
+    "institutional_buying": "utility",
+    "foreign_buying": "utility",
+    "sponsor_selling": "utility",
+    "dividend_yield": "utility",
+    "value_vs_sector": "utility",
+    "quality_roe": "utility",
+    "most_discussed": "utility",
 }
 
 
@@ -944,6 +962,27 @@ def _flow_tag(prev_delta: float | None, direction: str) -> str:
     return "Buying more" if prev_delta > 0 else "Started buying"
 
 
+def _persistence_note(series: list[float], direction: str) -> str | None:
+    """How professionals actually read holder flow: persistence over single prints.
+
+    Counts consecutive same-direction steps ending at the latest disclosure; from 3 steps the
+    row says so explicitly with the cumulative move ("3 straight rises · +2.4 pp total")."""
+    if len(series) < 4:
+        return None
+    run = 0
+    for newer, older in zip(reversed(series), list(reversed(series))[1:], strict=False):
+        step = newer - older
+        if (direction == "sell" and step < 0) or (direction != "sell" and step > 0):
+            run += 1
+        else:
+            break
+    if run < 3:
+        return None
+    total = series[-1] - series[-1 - run]
+    word = "falls" if direction == "sell" else "rises"
+    return f"{run} straight {word} · {total:+.1f} pp total"
+
+
 @dataclass
 class _Flow:
     series: list[float]  # stake % at each disclosure, oldest→newest
@@ -971,8 +1010,9 @@ async def _ownership_flow(session, market: str, codes: list[str], attr: str) -> 
         by_code.setdefault(r.code, []).append(r)  # newest-first per code
     out: dict[str, _Flow] = {}
     for code, snaps in by_code.items():
+        # 5 disclosures: 3 draw the dots, the extra depth feeds the persistence read.
         pairs = [
-            (s.as_of_date, getattr(s, attr)) for s in snaps[:3] if getattr(s, attr) is not None
+            (s.as_of_date, getattr(s, attr)) for s in snaps[:5] if getattr(s, attr) is not None
         ]
         pairs.reverse()  # oldest→newest
         series = [round(v, 2) for _, v in pairs]
@@ -1049,7 +1089,9 @@ async def _ownership(
                 code=c,
                 last_close=lc,
                 value=round(d, 1),
-                note=_flow_tag(f.prev_delta, direction),
+                # Persistence beats a single print — pros' first question is "how many
+                # disclosures in a row?", so a real streak overrides the basic tag.
+                note=_persistence_note(f.series, direction) or _flow_tag(f.prev_delta, direction),
                 flow=f.series,
                 flow_dates=f.dates,
                 period_spark=psparks.get(c, []),
@@ -1061,7 +1103,77 @@ async def _ownership(
         title=title,
         description=(
             f"{who} {verb} their stake since the prior disclosure (the 'since' date on each row). "
+            "Streaks are marked — persistence across disclosures matters more than one print. "
             "Line = price over that window; dots = stake at each disclosure."
+        ),
+        value_label="pp",
+        group="value",
+        items=items,
+    )
+
+
+# Sponsors/directors reducing needs a lower floor than institutions: insiders trimming their own
+# stake is material even in small steps, and DSE sponsor floors (30% joint) make big prints rare.
+_MIN_SPONSOR_DROP = 0.5
+
+
+async def _sponsor_selling(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+    """Insiders reducing their own stake — the disclosure-synthesis red-flag board.
+
+    No sponsor delta lives in ticker_analytics, so the deltas come straight from the last two
+    shareholding disclosures per code (the whole table is ~3 rows/stock — this is cheap)."""
+    codes = list(await session.scalars(_screenable_codes(market)))
+    flows = await _ownership_flow(session, market, codes, "sponsor_director")
+    drops: list[tuple[str, float, _Flow]] = []
+    for code, f in flows.items():
+        if len(f.series) < 2:
+            continue
+        delta = f.series[-1] - f.series[-2]
+        if delta <= -_MIN_SPONSOR_DROP:
+            drops.append((code, delta, f))
+    drops.sort(key=lambda x: x[1])  # deepest reduction first
+    drops = drops[:limit]
+
+    closes = {
+        c: lc
+        for c, lc in (
+            await session.execute(
+                select(T.code, T.last_close).where(
+                    T.market == market, T.code.in_([c for c, _, _ in drops]), _LIQUID
+                )
+            )
+        ).all()
+    }
+    code_from = {
+        c: dt.date.fromisoformat(f.dates[-2])
+        for c, _, f in drops
+        if c in closes and len(f.dates) >= 2
+    }
+    psparks = await _period_sparks(session, market, code_from)
+    items = [
+        ScreenItem(
+            code=c,
+            last_close=closes[c],
+            value=round(delta, 1),
+            note=_persistence_note(f.series, "sell") or _flow_tag(f.prev_delta, "sell"),
+            why=(
+                f"Sponsor/director holding fell {f.series[-2]:.1f}% → {f.series[-1]:.1f}% "
+                f"({delta:+.1f} pp) at the latest disclosure."
+            ),
+            flow=f.series,
+            flow_dates=f.dates,
+            period_spark=psparks.get(c, []),
+        )
+        for c, delta, f in drops
+        if c in closes
+    ]
+    return ScreenOut(
+        key="sponsor_selling",
+        title="Sponsor Selling",
+        description=(
+            "Sponsors/directors reduced their own stake since the prior disclosure — insiders' "
+            "own money leaving. A disclosed fact to research, not a sell signal. "
+            "Source: DSE shareholding disclosures."
         ),
         value_label="pp",
         group="value",
@@ -1079,6 +1191,7 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     context = await _execution_context(session, market, codes)
     catalysts = await _recent_catalysts(session, market, codes)
     for s in screens_list:
+        s.evidence = s.evidence or _SCREEN_EVIDENCE.get(s.key)
         for it in s.items:
             it.name = names.get(it.code, "")
             it.change_1d = None if s.key in _NO_1D else changes.get(it.code)
@@ -1133,6 +1246,8 @@ async def build_screen(
         return await _ownership(session, market, kind="foreign", direction=direction, limit=limit)
     if key == "institutional_buying":
         return await _ownership(session, market, kind="institute", direction=direction, limit=limit)
+    if key == "sponsor_selling":
+        return await _sponsor_selling(session, market, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, tenant_id=tenant_id, limit=limit)
     if key == "most_discussed":
@@ -1162,7 +1277,9 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
-    key = f"screens:v2:{market}:{quote_ts}:{ana_ts}"
+    # v3: sponsor_selling board + evidence labels + persistence notes (bump on shape changes —
+    # the key folds in data freshness, but only a version bump invalidates on code changes).
+    key = f"screens:v3:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1190,6 +1307,7 @@ async def _build_screens(
     out.append(await _beating_market(session, tenant.market))
     out.append(await _ownership(session, tenant.market, kind="foreign"))
     out.append(await _ownership(session, tenant.market, kind="institute"))
+    out.append(await _sponsor_selling(session, tenant.market))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
     out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))
     out.append(await _attention_rising(session, tenant.market))

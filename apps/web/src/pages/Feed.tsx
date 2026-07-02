@@ -5,6 +5,7 @@ import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { Composer } from "../components/Composer";
 import { DhakaMood } from "../components/DhakaMood";
+import { EarningsWeek } from "../components/EarningsWeek";
 import { PostCard } from "../components/PostCard";
 import { QuizCard } from "../components/QuizCard";
 import { TodaysWatch } from "../components/TodaysWatch";
@@ -57,6 +58,7 @@ export function Feed() {
       <DhakaMood />
       <WatchlistHome />
       <TodaysWatch />
+      <EarningsWeek />
       <QuizCard />
 
       {sectionLabel(t("home.myFeed"))}

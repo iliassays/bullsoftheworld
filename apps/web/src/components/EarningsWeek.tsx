@@ -17,12 +17,16 @@ function fmt(iso: string, bn: boolean) {
   return { day: `${d} ${MONTHS[m - 1] ?? "?"}`, weekday: WEEKDAYS[bn ? "bn" : "en"][wd] ?? "" };
 }
 
-// This week's earnings — DSE board meetings called to consider results, from decoded announcements.
-// Descriptive heads-up only; hidden entirely when nothing is scheduled.
+const GRID = 9; // 3×3 by default; "+N more" expands the rest
+
+// This week's earnings — DSE board meetings called to consider results, from decoded
+// announcements. A compact logo grid (3 across): who reports, and when. Descriptive heads-up
+// only; hidden entirely when nothing is scheduled.
 export function EarningsWeek() {
   const { t, lang } = useLang();
   const bn = lang === "bn";
   const [events, setEvents] = useState<EarningsEvent[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -36,54 +40,47 @@ export function EarningsWeek() {
   }, []);
 
   if (!events || events.length === 0) return null;
-
-  // Group by meeting date (API returns them nearest-first) so the card reads like an agenda: a day
-  // header, then the companies reporting that day — clean when sparse, scalable when a week is busy.
-  const groups: { date: string; items: EarningsEvent[] }[] = [];
-  for (const e of events) {
-    const last = groups[groups.length - 1];
-    if (last && last.date === e.meeting_date) last.items.push(e);
-    else groups.push({ date: e.meeting_date, items: [e] });
-  }
+  const shown = expanded ? events : events.slice(0, GRID);
+  const hidden = events.length - shown.length;
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="font-semibold text-sm">📅 {t("home.earningsWeek")}</div>
-      <p className="text-[12px] text-muted mt-0.5 leading-snug">{t("home.earningsWeekSub")}</p>
-      <div className="mt-1">
-        {groups.map((g) => {
-          const { day, weekday } = fmt(g.date, bn);
+      <div className="flex items-center gap-2">
+        <span className="text-base">📅</span>
+        <span className="min-w-0 truncate text-[11px] font-bold uppercase tracking-[0.12em] text-text/90">
+          {t("home.earningsWeek")}
+        </span>
+        <span className="ml-auto shrink-0 text-[11px] font-semibold text-accent tnum">
+          {events.length}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {shown.map((e) => {
+          const { day, weekday } = fmt(e.meeting_date, bn);
           return (
-            <div key={g.date} className="mt-3">
-              <div className="text-[12px] font-semibold text-accent mb-2">
+            <Link
+              key={`${e.code}-${e.meeting_date}`}
+              to={`/s/${e.code}`}
+              className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/50 px-1.5 py-2.5 text-center hover:border-accent"
+            >
+              <CompanyLogo code={e.code} size={30} />
+              <div className="w-full truncate text-[11px] font-bold">${e.code}</div>
+              <div className="text-[10px] text-accent font-semibold tnum">
                 {weekday} · {day}
               </div>
-              <div className="flex flex-col gap-2.5">
-                {g.items.map((e) => {
-                  const period = e.period ? t(`news.period.${e.period}`) : "";
-                  // name_en falls back to the code for un-enriched symbols; skip the sub-line then
-                  // so we don't print the ticker twice.
-                  const name = (bn && e.name_bn) || e.name_en;
-                  const showName = !!name && name !== e.code;
-                  return (
-                    <Link key={e.code} to={`/s/${e.code}`} className="flex items-center gap-3">
-                      <CompanyLogo code={e.code} />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">${e.code}</div>
-                        {showName && (
-                          <div className="text-[11px] text-muted truncate">{name}</div>
-                        )}
-                      </div>
-                      {period && <div className="text-[11px] text-muted flex-none">{period}</div>}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
+            </Link>
           );
         })}
       </div>
-      <p className="text-[10px] text-muted mt-3">{t("home.earningsWeekNote")}</p>
+      {hidden > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="mt-2 w-full rounded-xl border border-border py-1.5 text-[11px] font-semibold text-muted hover:border-accent hover:text-accent"
+        >
+          +{hidden} {bn ? "আরও" : "more"}
+        </button>
+      )}
+      <p className="text-[10px] text-muted mt-2.5">{t("home.earningsWeekNote")}</p>
     </div>
   );
 }

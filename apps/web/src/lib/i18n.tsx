@@ -549,6 +549,7 @@ const STRINGS: Record<string, Entry> = {
   "mc.growing": { en: "Growing", bn: "বর্ধনশীল" },
   "mc.accumulating": { en: "Accumulating", bn: "জমছে" },
   "mc.buying": { en: "Buying", bn: "কেনা হচ্ছে" },
+  "mc.reducing": { en: "Insiders reducing", bn: "অভ্যন্তরীণরা কমাচ্ছেন" },
   "mc.highlyProfitable": { en: "Highly profitable", bn: "অত্যন্ত লাভজনক" },
   "mc.profitable": { en: "Profitable", bn: "লাভজনক" },
   "mc.verySteady": { en: "Very steady", bn: "খুব স্থির" },
