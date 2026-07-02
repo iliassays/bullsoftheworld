@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { api, type MarketStatus } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { type Lang, useLang } from "../lib/i18n";
 import { SearchBar } from "./SearchBar";
 
@@ -51,12 +52,51 @@ function MarketStatusPill() {
 }
 
 const tabs = [
-  { to: "/", icon: "🏠", key: "nav.feed", end: true },
+  { to: "/", icon: "🏠", key: "nav.home", end: true },
+  { to: "/ideas", icon: "💡", key: "nav.ideas" },
   { to: "/markets", icon: "📊", key: "nav.markets" },
-  { to: "/bulls", icon: "🐂", key: "nav.bulls" },
-  { to: "/scanner", icon: "🛰️", key: "nav.scanner" },
+  { to: "/portfolio", icon: "💼", key: "nav.portfolio" },
   { to: "/me", icon: "👤", key: "nav.me" },
 ];
+
+// Header alerts bell: unread count for the signed-in user, refreshed on a slow poll.
+// Hidden entirely when logged out — alerts are per-user by definition.
+function AlertsBell() {
+  const { user } = useAuth();
+  const { t } = useLang();
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    const load = () =>
+      api
+        .alertsUnread()
+        .then((r) => live && setUnread(r.unread))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 60000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [user]);
+  if (!user) return null;
+  return (
+    <Link
+      to="/alerts"
+      aria-label={t("nav.alerts")}
+      title={t("nav.alerts")}
+      className="relative text-muted hover:text-accent transition p-1 text-lg leading-none"
+    >
+      🔔
+      {unread > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] rounded-full bg-down text-white text-[9px] font-bold grid place-items-center px-0.5">
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 function LangToggle() {
   const { lang, setLang } = useLang();
@@ -97,6 +137,7 @@ export function Shell() {
           </Link>
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
             <MarketStatusPill />
+            <AlertsBell />
             <a
               href={FB_URL}
               target="_blank"

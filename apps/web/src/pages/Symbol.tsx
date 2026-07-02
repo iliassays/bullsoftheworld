@@ -8,6 +8,7 @@ import {
   type Company,
   type NewsItem,
   type Post,
+  type PriceAlert as PriceAlertT,
   type SymbolDetail,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -23,8 +24,6 @@ import {
   OwnershipPanel,
 } from "../components/CompanyPanels";
 import { BeforeYouTrade } from "../components/BeforeYouTrade";
-import { DigestPanel } from "../components/DigestPanel";
-import { ExplainCard } from "../components/ExplainCard";
 import { KeyLevels } from "../components/KeyLevels";
 import { InvestorLensCard } from "../components/InvestorLensCard";
 import { PlainReadCard } from "../components/PlainReadCard";
@@ -36,24 +35,16 @@ import { Sparkline } from "../components/Sparkline";
 import { Technicals } from "../components/Technicals";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 
-type Tab =
-  | "overview"
-  | "lens"
-  | "feed"
-  | "bulls"
-  | "news"
-  | "fundamentals"
-  | "ownership"
-  | "earnings";
+// Redesign 2026-07: 8 tabs → 6. Community = discussion + desk notes in one stream (the /posts
+// feed for a code already interleaves both); Financials = fundamentals + earnings + dividends.
+type Tab = "overview" | "lens" | "community" | "news" | "financials" | "ownership";
 const TABS: { id: Tab; icon?: string; key: string }[] = [
   { id: "overview", key: "tab.overview" },
   { id: "lens", icon: "🧠", key: "tab.investorLens" },
-  { id: "feed", icon: "💬", key: "tab.feed" },
-  { id: "bulls", icon: "🐂", key: "tab.bulls" },
+  { id: "community", icon: "💬", key: "tab.community" },
   { id: "news", icon: "📰", key: "tab.news" },
-  { id: "fundamentals", key: "tab.fundamentals" },
+  { id: "financials", key: "tab.financials" },
   { id: "ownership", key: "tab.ownership" },
-  { id: "earnings", key: "tab.earnings" },
 ];
 
 const crore = (mn: number | null | undefined) =>
@@ -113,6 +104,81 @@ function QuickStrip({
   );
 }
 
+// Per-stock price alerts: a small sheet under the header. Create "above/below ৳X" lines; the
+// intraday poll triggers them into the Alerts inbox. Descriptive by design — a level you chose.
+function PriceAlertSheet({ code, onClose }: { code: string; onClose: () => void }) {
+  const { t } = useLang();
+  const [existing, setExisting] = useState<PriceAlertT[]>([]);
+  const [level, setLevel] = useState("");
+  const [direction, setDirection] = useState<"above" | "below">("above");
+  const load = () =>
+    api
+      .priceAlerts(code)
+      .then(setExisting)
+      .catch(() => setExisting([]));
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
+  const add = async () => {
+    const v = Number(level);
+    if (!Number.isFinite(v) || v <= 0) return;
+    await api.priceAlertCreate({ code, level: v, direction }).catch(() => {});
+    setLevel("");
+    load();
+  };
+  return (
+    <div className="bg-surface border border-accent/40 rounded-2xl p-4 flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="font-semibold text-sm">🔔 {t("pa.title")} ${code}</div>
+        <button onClick={onClose} className="text-muted text-sm px-1" aria-label={t("pf.cancel")}>
+          ✕
+        </button>
+      </div>
+      {existing.map((a) => (
+        <div key={a.id} className="flex items-center gap-2 text-sm tnum">
+          <span>{a.direction === "above" ? "▲" : "▼"}</span>
+          <span>{taka(a.level)}</span>
+          {a.triggered_at && <span className="text-[10px] text-muted">{t("pa.triggered")}</span>}
+          <button
+            onClick={() => api.priceAlertDelete(a.id).then(load)}
+            className="ml-auto text-muted text-xs hover:text-down"
+          >
+            {t("pa.remove")}
+          </button>
+        </div>
+      ))}
+      {existing.length === 0 && <div className="text-xs text-muted">{t("pa.none")}</div>}
+      <div className="flex gap-2">
+        <div className="flex rounded-xl border border-border overflow-hidden text-xs font-semibold">
+          {(["above", "below"] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDirection(d)}
+              className={`px-3 py-2 ${direction === d ? "bg-accent text-bg" : "text-muted"}`}
+            >
+              {d === "above" ? `▲ ${t("pa.above")}` : `▼ ${t("pa.below")}`}
+            </button>
+          ))}
+        </div>
+        <input
+          value={level}
+          onChange={(e) => setLevel(e.target.value)}
+          placeholder="৳"
+          inputMode="decimal"
+          className="bg-bg border border-border rounded-xl px-3 py-2 text-sm flex-1 tnum min-w-0"
+        />
+        <button
+          onClick={add}
+          className="rounded-xl px-4 text-sm font-bold bg-accent text-bg hover:opacity-90"
+        >
+          {t("pa.add")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SymbolPage() {
   const { code = "" } = useParams();
   const sym = code.toUpperCase();
@@ -125,12 +191,10 @@ export function SymbolPage() {
   const [news, setNews] = useState<NewsItem[] | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [watched, setWatched] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const discussion = useInfiniteFeed(`${sym}:discussion`, (l, o) =>
     api.feed(sym, undefined, l, o),
-  );
-  const noteFeed = useInfiniteFeed(`${sym}:notes`, (l, o) =>
-    api.feed(sym, "note", l, o),
   );
 
   useEffect(() => {
@@ -213,6 +277,20 @@ export function SymbolPage() {
                 )}
               </span>
             )}
+            {user && (
+              <button
+                onClick={() => setAlertsOpen((v) => !v)}
+                aria-label={t("pa.title")}
+                title={t("pa.title")}
+                className={`grid h-8 w-8 place-items-center rounded-full border text-sm leading-none transition ${
+                  alertsOpen
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border text-muted hover:border-accent hover:text-accent"
+                }`}
+              >
+                🔔
+              </button>
+            )}
             {user ? (
               <button
                 onClick={toggleWatch}
@@ -274,6 +352,8 @@ export function SymbolPage() {
         )}
       </div>
 
+      {alertsOpen && <PriceAlertSheet code={sym} onClose={() => setAlertsOpen(false)} />}
+
       {/* tab bar */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map((tb) => (
@@ -288,32 +368,33 @@ export function SymbolPage() {
           >
             {tb.icon ? `${tb.icon} ` : ""}
             {t(tb.key)}
-            {tb.id === "bulls" && noteFeed.items.length
-              ? ` (${noteFeed.items.length})`
-              : ""}
           </button>
         ))}
       </div>
 
       {tab === "overview" && (
         <>
-          {/* Quick read → optional deep dive → chart → levels → crowd → raw numbers → checklist.
-              Each card answers a distinct question; no two duplicate. */}
+          {/* Redesign 2026-07: five cards, one voice. Chart → the single narrative → scores +
+              flags → structure → checklist. Digest/Explainer/Pulse/Technicals moved or dropped —
+              see docs/redesign/2026-07-drops.md. */}
+          <CandleChart code={sym} />
           <PlainReadCard code={sym} />
           <ScorecardCard code={sym} />
-          <ExplainCard code={sym} />
-          <CandleChart code={sym} />
           <KeyLevels code={sym} />
-          <DigestPanel code={sym} />
-          <PulseGauges code={sym} />
-          <Technicals code={sym} />
           <BeforeYouTrade />
         </>
       )}
 
-      {tab === "lens" && <InvestorLensCard code={sym} />}
+      {tab === "lens" && (
+        <>
+          <InvestorLensCard code={sym} />
+          {/* The deeper gauge/indicator detail lives behind the Lens tab now, not on Overview. */}
+          <PulseGauges code={sym} />
+          <Technicals code={sym} />
+        </>
+      )}
 
-      {tab === "feed" && (
+      {tab === "community" && (
         <>
           {topPost && (
             <div className="flex flex-col gap-2">
@@ -348,41 +429,23 @@ export function SymbolPage() {
         </>
       )}
 
-      {tab === "bulls" && (
-        <>
-          {noteFeed.items.map((p) => (
-            <PostCard key={p.id} post={p} />
-          ))}
-          {noteFeed.loading && <Spinner />}
-          {!noteFeed.loading && noteFeed.items.length === 0 && (
-            <Empty>
-              No data notes for ${sym} yet — they appear as the stock moves.
-            </Empty>
-          )}
-          <div ref={noteFeed.sentinelRef} />
-        </>
-      )}
-
       {tab === "news" &&
         (news === null ? <Spinner /> : <NewsPanel items={news} />)}
-      {tab === "fundamentals" &&
+      {tab === "financials" &&
         (company ? (
-          <FundamentalsPanel f={company.fundamentals} />
+          <>
+            <FundamentalsPanel f={company.fundamentals} />
+            <EarningsPanel
+              earnings={company.earnings}
+              dividends={company.dividends}
+              f={company.fundamentals}
+            />
+          </>
         ) : (
           <Spinner />
         ))}
       {tab === "ownership" &&
         (company ? <OwnershipPanel o={company.ownership} /> : <Spinner />)}
-      {tab === "earnings" &&
-        (company ? (
-          <EarningsPanel
-            earnings={company.earnings}
-            dividends={company.dividends}
-            f={company.fundamentals}
-          />
-        ) : (
-          <Spinner />
-        ))}
     </div>
   );
 }

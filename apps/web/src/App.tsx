@@ -1,11 +1,12 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { About } from "./pages/About";
 import { Shell } from "./components/Shell";
+import { Alerts } from "./pages/Alerts";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AuthFlows";
-import { BullsFeed } from "./pages/BullsFeed";
 import { DeskProfile } from "./pages/DeskProfile";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
+import { Portfolio } from "./pages/Portfolio";
 import { Scanner } from "./pages/Scanner";
 import { Profile } from "./pages/Profile";
 import { ScreenExplore } from "./pages/ScreenExplore";
@@ -19,9 +20,13 @@ export function App() {
         <Route index element={<Feed />} />
         <Route path="markets" element={<Markets />} />
         <Route path="markets/:key" element={<ScreenExplore />} />
-        <Route path="bulls" element={<BullsFeed />} />
+        <Route path="ideas" element={<Scanner />} />
+        <Route path="portfolio" element={<Portfolio />} />
+        <Route path="alerts" element={<Alerts />} />
+        {/* Redesign 2026-07: Bulls tab merged into Home (desks filter chip); Scanner renamed Ideas. */}
+        <Route path="bulls" element={<Navigate to="/?feed=desks" replace />} />
+        <Route path="scanner" element={<Navigate to="/ideas" replace />} />
         <Route path="desk/:handle" element={<DeskProfile />} />
-        <Route path="scanner" element={<Scanner />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
         <Route path="me" element={<Profile />} />

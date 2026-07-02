@@ -677,4 +677,68 @@ export const api = {
     }),
   watchRemove: (code: string) =>
     request<void>(`/watchlist/${code}`, { method: "DELETE" }),
+
+  // alerts
+  alertsUnread: () => request<{ unread: number }>("/alerts/unread-count"),
+  alerts: (limit = 30, offset = 0) =>
+    request<AlertItem[]>(`/alerts?limit=${limit}&offset=${offset}`),
+  alertsMarkRead: () =>
+    request<{ status: string }>("/alerts/mark-read", { method: "POST" }),
+  priceAlerts: (code: string) =>
+    request<PriceAlert[]>(`/alerts/price?code=${code}`),
+  priceAlertCreate: (b: { code: string; level: number; direction: "above" | "below" }) =>
+    request<PriceAlert>("/alerts/price", { method: "POST", body: JSON.stringify(b) }),
+  priceAlertDelete: (id: number) =>
+    request<void>(`/alerts/price/${id}`, { method: "DELETE" }),
+
+  // portfolio — manual entries only; we never touch a broker account
+  portfolio: () => request<Portfolio>("/portfolio"),
+  holdingUpsert: (b: { code: string; quantity: number; avg_cost: number }) =>
+    request<PortfolioHoldingOut>("/portfolio/holdings", {
+      method: "POST",
+      body: JSON.stringify(b),
+    }),
+  holdingDelete: (code: string) =>
+    request<void>(`/portfolio/holdings/${code}`, { method: "DELETE" }),
+};
+
+// ---- alerts ----
+export type AlertItem = {
+  id: number;
+  kind: string; // price_cross | signal | ownership | earnings
+  code: string | null;
+  title: string;
+  body: string | null;
+  created_at: string;
+  read: boolean;
+};
+export type PriceAlert = {
+  id: number;
+  code: string;
+  level: number;
+  direction: "above" | "below";
+  triggered_at: string | null;
+};
+
+// ---- portfolio ----
+export type PortfolioHoldingOut = {
+  code: string;
+  name: string | null;
+  quantity: number;
+  avg_cost: number;
+  ltp: number | null;
+  as_of: string | null;
+  value: number | null;
+  day_change_pct: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+};
+export type Portfolio = {
+  holdings: PortfolioHoldingOut[];
+  total_value: number | null;
+  total_cost: number;
+  day_pnl: number | null;
+  day_pnl_pct: number | null;
+  total_pnl: number | null;
+  total_pnl_pct: number | null;
 };
