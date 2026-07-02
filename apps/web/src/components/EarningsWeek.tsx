@@ -46,39 +46,49 @@ export function EarningsWeek() {
 
   if (!events || events.length === 0) return null;
 
+  // Group by meeting date (API returns them nearest-first) so the card reads like an agenda: a day
+  // header, then the companies reporting that day — clean when sparse, scalable when a week is busy.
+  const groups: { date: string; items: EarningsEvent[] }[] = [];
+  for (const e of events) {
+    const last = groups[groups.length - 1];
+    if (last && last.date === e.meeting_date) last.items.push(e);
+    else groups.push({ date: e.meeting_date, items: [e] });
+  }
+
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="font-semibold text-sm">📅 {t("home.earningsWeek")}</div>
       <p className="text-[12px] text-muted mt-0.5 leading-snug">{t("home.earningsWeekSub")}</p>
-      <div className="mt-3 flex flex-col divide-y divide-border">
-        {events.map((e) => {
-          const { day, weekday } = fmt(e.meeting_date, bn);
-          const period = e.period ? t(`news.period.${e.period}`) : "";
+      <div className="mt-1">
+        {groups.map((g) => {
+          const { day, weekday } = fmt(g.date, bn);
           return (
-            <Link
-              key={e.code}
-              to={`/s/${e.code}`}
-              className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-            >
-              <Monogram code={e.code} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold">${e.code}</div>
-                <div className="text-[11px] text-muted truncate">
-                  {(bn && e.name_bn) || e.name_en}
-                </div>
+            <div key={g.date} className="mt-3">
+              <div className="text-[12px] font-semibold text-accent mb-2">
+                {weekday} · {day}
               </div>
-              <div className="text-right flex-none">
-                <div className="text-sm font-semibold text-accent tnum">{day}</div>
-                <div className="text-[11px] text-muted">
-                  {weekday}
-                  {period ? ` · ${period}` : ""}
-                </div>
+              <div className="flex flex-col gap-2.5">
+                {g.items.map((e) => {
+                  const period = e.period ? t(`news.period.${e.period}`) : "";
+                  return (
+                    <Link key={e.code} to={`/s/${e.code}`} className="flex items-center gap-3">
+                      <Monogram code={e.code} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold">${e.code}</div>
+                        <div className="text-[11px] text-muted truncate">
+                          {(bn && e.name_bn) || e.name_en}
+                        </div>
+                      </div>
+                      {period && <div className="text-[11px] text-muted flex-none">{period}</div>}
+                    </Link>
+                  );
+                })}
               </div>
-            </Link>
+            </div>
           );
         })}
       </div>
-      <p className="text-[10px] text-muted mt-2">{t("home.earningsWeekNote")}</p>
+      <p className="text-[10px] text-muted mt-3">{t("home.earningsWeekNote")}</p>
     </div>
   );
 }
