@@ -455,6 +455,28 @@ def _technical(
             else ["Support/resistance", "Volume persistence", "Whether RSI is overheated"]
         )
 
+    checks = [
+        LensCheck(
+            label="50-দিনের ট্রেন্ড" if bn else "50-day trend",
+            actual=("উপরে" if bn else "Above") if above_sma_50 else ("নিচে" if bn else "Below") if above_sma_50 is False else "—",
+            expected="↑ 50-DMA",
+            status="pass" if above_sma_50 else "fail" if above_sma_50 is False else "na",
+        ),
+        LensCheck(
+            label="200-দিনের ট্রেন্ড" if bn else "200-day trend",
+            actual=("উপরে" if bn else "Above") if above_sma_200 else ("নিচে" if bn else "Below") if above_sma_200 is False else "—",
+            expected="↑ 200-DMA",
+            status="pass" if above_sma_200 else "fail" if above_sma_200 is False else "na",
+        ),
+        _chk(
+            "মোমেন্টাম (12m)" if bn else "Momentum (12m)",
+            mom_12_1, "> 0%", good=lambda x: x >= 40, weak=lambda x: x <= 0, fmt=_fmt_pct,
+        ),
+        _chk(
+            "RSI", rsi_14, "45-70",
+            good=lambda x: 45 <= x <= 70, weak=lambda x: x > 80 or x < 30, fmt=lambda v: _fmt_pct(v, ""),
+        ),
+    ]
     return InvestorLens(
         key="technical_trader",
         name="Technical Trader",
@@ -463,6 +485,7 @@ def _technical(
         score=s,
         summary=summary,
         points=points,
+        checks=checks,
         watch_next=watch_next,
     )
 
@@ -494,6 +517,22 @@ def _smart_money(
         ]
         watch_next = ["Next disclosure date", "Recent news"]
 
+    checks = [
+        _chk(
+            "প্রতিষ্ঠান বদল" if bn else "Institutions change",
+            institute_delta, "> 0 pp",
+            good=lambda x: x > 0, weak=lambda x: x < 0, fmt=lambda v: _fmt_pct(v, " pp"),
+        ),
+        _chk(
+            "বিদেশি বদল" if bn else "Foreign change",
+            foreign_delta, "> 0 pp",
+            good=lambda x: x > 0, weak=lambda x: x < 0, fmt=lambda v: _fmt_pct(v, " pp"),
+        ),
+        _chk(
+            "মানি ফ্লো (CMF)" if bn else "Money flow (CMF)",
+            cmf_20, "> 0", good=lambda x: x > 0.1, weak=lambda x: x < -0.1, fmt=lambda v: _fmt_pct(v, ""),
+        ),
+    ]
     return InvestorLens(
         key="smart_money",
         name="Smart Money",
@@ -502,6 +541,7 @@ def _smart_money(
         score=s,
         summary=summary,
         points=points,
+        checks=checks,
         watch_next=watch_next,
     )
 
@@ -593,6 +633,27 @@ def _taleb_risk(
         ]
         watch_next = ["Bid-ask spread", "Order size", "Your stop-loss"]
 
+    checks = [
+        LensCheck(
+            label="ক্যাটাগরি" if bn else "Category",
+            actual=category or "—",
+            expected="A / B",
+            status="fail" if category == "Z" else "pass" if category else "na",
+        ),
+        _chk(
+            "লিকুইডিটি (ADTV)" if bn else "Liquidity (ADTV)",
+            adtv_mn, "≥ ৳5mn/day", good=lambda x: x >= 10, weak=lambda x: x < 5, fmt=_fmt_tk_mn,
+        ),
+        _chk(
+            "ভোলাটিলিটি" if bn else "Volatility",
+            volatility, "< 50%", good=lambda x: x < 35, weak=lambda x: x >= 50, fmt=_fmt_pct,
+        ),
+        _chk(
+            "আজকের মুভ" if bn else "Today's move",
+            today_change_pct, "সার্কিটে নয়" if bn else "not at circuit",
+            good=lambda x: abs(x) < 7, weak=lambda x: abs(x) >= 9.5, fmt=_fmt_pct,
+        ),
+    ]
     return InvestorLens(
         key="taleb_risk",
         name="Taleb Risk",
@@ -601,6 +662,7 @@ def _taleb_risk(
         score=s,
         summary=summary,
         points=points,
+        checks=checks,
         watch_next=watch_next,
     )
 
