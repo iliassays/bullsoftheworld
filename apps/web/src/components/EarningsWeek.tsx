@@ -70,14 +70,18 @@ export function EarningsWeek() {
               <div className="flex flex-col gap-2.5">
                 {g.items.map((e) => {
                   const period = e.period ? t(`news.period.${e.period}`) : "";
+                  // name_en falls back to the code for un-enriched symbols; skip the sub-line then
+                  // so we don't print the ticker twice.
+                  const name = (bn && e.name_bn) || e.name_en;
+                  const showName = !!name && name !== e.code;
                   return (
                     <Link key={e.code} to={`/s/${e.code}`} className="flex items-center gap-3">
                       <Monogram code={e.code} />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">${e.code}</div>
-                        <div className="text-[11px] text-muted truncate">
-                          {(bn && e.name_bn) || e.name_en}
-                        </div>
+                        {showName && (
+                          <div className="text-[11px] text-muted truncate">{name}</div>
+                        )}
                       </div>
                       {period && <div className="text-[11px] text-muted flex-none">{period}</div>}
                     </Link>
