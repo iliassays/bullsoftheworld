@@ -38,11 +38,14 @@ function MarketStatusPill() {
   const preopen = phase === "pre_open";
   const dot = open ? "bg-up" : preopen ? "bg-accent" : "bg-muted";
   const label = open ? t("mkt.open") : preopen ? t("mkt.preOpen") : t("mkt.closed");
+  const delayed = open || preopen;
   return (
-    <span className="flex items-center gap-1.5 text-[10px] text-muted border border-border px-2 py-1 rounded-full">
-      <span className={`w-1.5 h-1.5 rounded-full ${dot} ${open ? "animate-pulse" : ""}`} />
-      {label}
-      {open || preopen ? ` · ${t("delayed")}` : ""}
+    <span className="flex items-center gap-1.5 text-muted border border-border px-2 py-1 rounded-2xl shrink-0">
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot} ${open ? "animate-pulse" : ""}`} />
+      <span className="flex flex-col leading-none gap-0.5">
+        <span className="text-[10px] font-semibold text-text">{label}</span>
+        {delayed && <span className="text-[9px] whitespace-nowrap">{t("delayed")}</span>}
+      </span>
     </span>
   );
 }
@@ -86,7 +89,7 @@ export function Shell() {
           <Link to="/" aria-label="Bulls of Dhaka — home" className="flex items-center gap-2.5 min-w-0">
             <img src="/logo-mark-v2.png" alt="Bulls of Dhaka" className="w-9 h-9 shrink-0" />
             <div className="leading-tight min-w-0">
-              <div className="font-bold text-base">Bulls of Dhaka</div>
+              <div className="font-bold text-base whitespace-nowrap">Bulls of Dhaka</div>
               <div lang={lang} className="text-[11px] text-accent font-semibold truncate">
                 {t("tagline")}
               </div>

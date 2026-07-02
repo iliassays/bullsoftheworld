@@ -45,11 +45,134 @@ def _clamp10(x: float) -> int:
     return int(max(0, min(10, round(x))))
 
 
-def _verdict(score: int | None, *, risk: bool = False) -> str:
+# --- Persona scorers: the SINGLE SOURCE OF TRUTH for every lens score. -------------
+# Both the per-symbol Investor Lens card and the Scanner "lens" boards call these, so a stock's
+# score is identical wherever it appears. Each returns 0-10, or None when inputs are too thin to
+# judge (never fabricate). Boards apply their own stricter eligibility filters on top.
+
+
+def graham_score(
+    *,
+    pe_ratio: float | None = None,
+    pb_ratio: float | None = None,
+    pe_vs_sector: float | None = None,
+    roe: float | None = None,
+    dividend_yield: float | None = None,
+) -> int | None:
+    if pe_vs_sector is None and pe_ratio is None and pb_ratio is None:
+        return None
+    score = 5.0
+    if pe_vs_sector is not None:
+        score += 2 if pe_vs_sector < 0.75 else 1 if pe_vs_sector < 0.95 else -2 if pe_vs_sector > 1.25 else 0
+    if pe_ratio is not None and pe_ratio > 0:
+        score += 1 if pe_ratio <= 12 else -2 if pe_ratio > 25 else 0
+    if pb_ratio is not None:
+        score += 1 if pb_ratio < 1.2 else -1 if pb_ratio > 3 else 0
+    if roe is not None and roe <= 0:
+        score -= 2
+    if dividend_yield is not None and dividend_yield >= 3:
+        score += 1
+    return _clamp10(score)
+
+
+def buffett_quality_score(
+    *,
+    roe: float | None = None,
+    eps_growth_yoy: float | None = None,
+    dividend_yield: float | None = None,
+    above_sma_200: bool | None = None,
+) -> int | None:
+    if roe is None and eps_growth_yoy is None:
+        return None
+    score = 5.0
+    if roe is not None:
+        score += 3 if roe >= 20 else 2 if roe >= 15 else 1 if roe >= 10 else -3 if roe <= 0 else -1
+    if eps_growth_yoy is not None:
+        score += 2 if eps_growth_yoy >= 15 else 1 if eps_growth_yoy > 0 else -2 if eps_growth_yoy < -20 else -1
+    if dividend_yield is not None and dividend_yield > 0:
+        score += 1
+    if above_sma_200 is False:
+        score -= 1
+    return _clamp10(score)
+
+
+def technical_score(
+    *,
+    above_sma_50: bool | None = None,
+    above_sma_200: bool | None = None,
+    mom_12_1: float | None = None,
+    rsi_14: float | None = None,
+    relative_volume: float | None = None,
+    pct_from_52w_high: float | None = None,
+) -> int | None:
+    if above_sma_50 is None and above_sma_200 is None and mom_12_1 is None and rsi_14 is None:
+        return None
+    score = 5.0
+    score += 1.5 if above_sma_50 is True else -1 if above_sma_50 is False else 0
+    score += 2 if above_sma_200 is True else -2 if above_sma_200 is False else 0
+    if mom_12_1 is not None:
+        score += 2 if mom_12_1 >= 40 else 1 if mom_12_1 > 0 else -1
+    if rsi_14 is not None:
+        score += 1 if 45 <= rsi_14 <= 70 else -1 if rsi_14 > 80 or rsi_14 < 30 else 0
+    if relative_volume is not None and relative_volume >= 1.5:
+        score += 1
+    if pct_from_52w_high is not None and pct_from_52w_high > -2 and rsi_14 and rsi_14 > 75:
+        score -= 1
+    return _clamp10(score)
+
+
+def smart_money_score(
+    *,
+    institute_delta: float | None = None,
+    foreign_delta: float | None = None,
+    cmf_20: float | None = None,
+) -> int | None:
+    if institute_delta is None and foreign_delta is None and cmf_20 is None:
+        return None
+    total = (institute_delta or 0) + (foreign_delta or 0)
+    score = 5.0
+    score += 3 if total >= 2 else 1 if total > 0 else -2 if total <= -2 else -1 if total < 0 else 0
+    if (institute_delta or 0) > 0 and (foreign_delta or 0) > 0:
+        score += 1
+    if cmf_20 is not None:
+        score += 1 if cmf_20 > 0.1 else -1 if cmf_20 < -0.1 else 0
+    return _clamp10(score)
+
+
+def risk_score(
+    *,
+    category: str | None = None,
+    adtv_mn: float | None = None,
+    free_float_cap_mn: float | None = None,
+    volatility: float | None = None,
+    today_change_pct: float | None = None,
+) -> int | None:
+    # Fragility needs at least a liquidity or volatility read; otherwise it's thin_data, not "safe".
+    if adtv_mn is None and volatility is None:
+        return None
+    score = 8.0
+    if category == "Z":
+        score -= 3
+    if adtv_mn is None:
+        score -= 1
+    elif adtv_mn < 2:
+        score -= 3
+    elif adtv_mn < 5:
+        score -= 2
+    elif adtv_mn < 10:
+        score -= 1
+    if free_float_cap_mn is not None and free_float_cap_mn < 100:
+        score -= 1
+    if volatility is not None:
+        score -= 2 if volatility >= 80 else 1 if volatility >= 50 else 0
+    if today_change_pct is not None and abs(today_change_pct) >= 9.7:
+        score -= 2
+    return _clamp10(score)
+
+
+def _verdict(score: int | None) -> str:
     if score is None:
         return "thin_data"
-    if risk:
-        return "supportive" if score >= 7 else "mixed" if score >= 4 else "caution"
     return "supportive" if score >= 7 else "mixed" if score >= 4 else "caution"
 
 
@@ -67,6 +190,18 @@ def _fmt_tk_mn(v: float | None) -> str:
     if v >= 10:
         return f"৳{v / 10:.1f}cr"
     return f"৳{v:.1f}mn"
+
+
+def _extended_technical(
+    *,
+    pct_from_52w_high: float | None,
+    rsi_14: float | None,
+    mom_12_1: float | None,
+) -> bool:
+    near_high = pct_from_52w_high is not None and pct_from_52w_high >= -3
+    hot_rsi = rsi_14 is not None and rsi_14 >= 72
+    strong_run = mom_12_1 is not None and mom_12_1 >= 35
+    return hot_rsi and (near_high or strong_run)
 
 
 def _headline(lenses: list[InvestorLens], bn: bool) -> str:
@@ -98,21 +233,9 @@ def _graham(
     roe: float | None,
     dividend_yield: float | None,
 ) -> InvestorLens:
-    score: float | None = None
-    if pe_vs_sector is not None or pe_ratio is not None or pb_ratio is not None:
-        score = 5.0
-        if pe_vs_sector is not None:
-            score += 2 if pe_vs_sector < 0.75 else 1 if pe_vs_sector < 0.95 else -2 if pe_vs_sector > 1.25 else 0
-        if pe_ratio is not None and pe_ratio > 0:
-            score += 1 if pe_ratio <= 12 else -2 if pe_ratio > 25 else 0
-        if pb_ratio is not None:
-            score += 1 if pb_ratio < 1.2 else -1 if pb_ratio > 3 else 0
-        if roe is not None and roe <= 0:
-            score -= 2
-        if dividend_yield is not None and dividend_yield >= 3:
-            score += 1
-
-    s = _clamp10(score) if score is not None else None
+    s = graham_score(
+        pe_ratio=pe_ratio, pb_ratio=pb_ratio, pe_vs_sector=pe_vs_sector, roe=roe, dividend_yield=dividend_yield
+    )
     if bn:
         summary = "খাতের তুলনায় দাম কতটা যুক্তিযুক্ত এবং আয়ের সাপোর্ট আছে কি না — এই লেন্স তা দেখে।"
         points = [
@@ -150,20 +273,9 @@ def _buffett(
     dividend_yield: float | None,
     above_sma_200: bool | None,
 ) -> InvestorLens:
-    if roe is None and eps_growth_yoy is None:
-        s = None
-    else:
-        score = 5.0
-        if roe is not None:
-            score += 3 if roe >= 20 else 2 if roe >= 15 else 1 if roe >= 10 else -3 if roe <= 0 else -1
-        if eps_growth_yoy is not None:
-            score += 2 if eps_growth_yoy >= 15 else 1 if eps_growth_yoy > 0 else -2 if eps_growth_yoy < -20 else -1
-        if dividend_yield is not None and dividend_yield > 0:
-            score += 1
-        if above_sma_200 is False:
-            score -= 1
-        s = _clamp10(score)
-
+    s = buffett_quality_score(
+        roe=roe, eps_growth_yoy=eps_growth_yoy, dividend_yield=dividend_yield, above_sma_200=above_sma_200
+    )
     if bn:
         summary = "ব্যবসার মান, লাভজনকতা ও স্থায়িত্বের দিক থেকে কোম্পানিটা কতটা শক্ত — এই লেন্স তা দেখে।"
         trend = "200DMA-এর উপরে" if above_sma_200 else "200DMA-এর নিচে" if above_sma_200 is False else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
@@ -211,24 +323,52 @@ def _technical(
             score += 1
         if pct_from_52w_high is not None and pct_from_52w_high > -2 and rsi_14 and rsi_14 > 75:
             score -= 1
+        extended = _extended_technical(
+            pct_from_52w_high=pct_from_52w_high,
+            rsi_14=rsi_14,
+            mom_12_1=mom_12_1,
+        )
+        if extended:
+            score = min(score, 6.0)
         s = _clamp10(score)
+    extended = _extended_technical(
+        pct_from_52w_high=pct_from_52w_high,
+        rsi_14=rsi_14,
+        mom_12_1=mom_12_1,
+    )
 
     if bn:
-        summary = "চার্ট, ট্রেন্ড, ভলিউম ও RSI দিয়ে ট্রেডাররা এখনকার অবস্থান কীভাবে পড়বে — এই লেন্স তা দেখায়।"
+        summary = (
+            "চার্ট শক্ত, তবে দাম অনেকটা দৌড়ে ৫২-সপ্তাহের উচ্চতার কাছে এবং RSI গরম — chase না করে pullback/support দেখুন।"
+            if extended
+            else "চার্ট, ট্রেন্ড, ভলিউম ও RSI দিয়ে ট্রেডাররা এখনকার অবস্থান কীভাবে পড়বে — এই লেন্স তা দেখায়।"
+        )
         trend = (
             f"50DMA {'উপরে' if above_sma_50 else 'নিচে' if above_sma_50 is False else 'অজানা'} · "
             f"200DMA {'উপরে' if above_sma_200 else 'নিচে' if above_sma_200 is False else 'অজানা'}"
         )
         points = [trend, f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}", f"Volume {_fmt_x(relative_volume)} normal"]
-        watch_next = ["সাপোর্ট/রেজিস্ট্যান্স", "ভলিউম টিকে আছে কি না", "RSI অতিরিক্ত গরম কি না"]
+        watch_next = (
+            ["pullback/support", "RSI ঠান্ডা হয় কি না", "ভলিউম টিকে আছে কি না"]
+            if extended
+            else ["সাপোর্ট/রেজিস্ট্যান্স", "ভলিউম টিকে আছে কি না", "RSI অতিরিক্ত গরম কি না"]
+        )
     else:
-        summary = "Reads the chart setup: trend, momentum, volume confirmation, and short-term stretch."
+        summary = (
+            "Trend is strong, but price is extended near its 52-week high with hot RSI. Treat this as chase-risk; wait for pullback/support confirmation."
+            if extended
+            else "Reads the chart setup: trend, momentum, volume confirmation, and short-term stretch."
+        )
         trend = (
             f"50-DMA {'above' if above_sma_50 else 'below' if above_sma_50 is False else 'unknown'} · "
             f"200-DMA {'above' if above_sma_200 else 'below' if above_sma_200 is False else 'unknown'}"
         )
         points = [trend, f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}", f"Volume {_fmt_x(relative_volume)} normal"]
-        watch_next = ["Support/resistance", "Volume persistence", "Whether RSI is overheated"]
+        watch_next = (
+            ["Pullback/support", "RSI cools", "Volume persistence"]
+            if extended
+            else ["Support/resistance", "Volume persistence", "Whether RSI is overheated"]
+        )
 
     return InvestorLens(
         key="technical_trader",
@@ -251,18 +391,7 @@ def _smart_money(
     foreign_pct: float | None,
     cmf_20: float | None,
 ) -> InvestorLens:
-    if institute_delta is None and foreign_delta is None and cmf_20 is None:
-        s = None
-    else:
-        total = (institute_delta or 0) + (foreign_delta or 0)
-        score = 5.0
-        score += 3 if total >= 2 else 1 if total > 0 else -2 if total <= -2 else -1 if total < 0 else 0
-        if institute_delta is not None and institute_delta > 0 and foreign_delta is not None and foreign_delta > 0:
-            score += 1
-        if cmf_20 is not None:
-            score += 1 if cmf_20 > 0.1 else -1 if cmf_20 < -0.1 else 0
-        s = _clamp10(score)
-
+    s = smart_money_score(institute_delta=institute_delta, foreign_delta=foreign_delta, cmf_20=cmf_20)
     if bn:
         summary = "প্রতিষ্ঠান/বিদেশি মালিকানা ও মানি-ফ্লো দেখে বড় অংশগ্রহণকারীদের আচরণ বোঝার চেষ্টা করে।"
         points = [
@@ -301,24 +430,13 @@ def _taleb_risk(
     volatility: float | None,
     today_change_pct: float | None,
 ) -> InvestorLens:
-    score = 8.0
-    if category == "Z":
-        score -= 3
-    if adtv_mn is None:
-        score -= 1
-    elif adtv_mn < 2:
-        score -= 3
-    elif adtv_mn < 5:
-        score -= 2
-    elif adtv_mn < 10:
-        score -= 1
-    if free_float_cap_mn is not None and free_float_cap_mn < 100:
-        score -= 1
-    if volatility is not None:
-        score -= 2 if volatility >= 80 else 1 if volatility >= 50 else 0
-    if today_change_pct is not None and abs(today_change_pct) >= 9.7:
-        score -= 2
-    s = _clamp10(score)
+    s = risk_score(
+        category=category,
+        adtv_mn=adtv_mn,
+        free_float_cap_mn=free_float_cap_mn,
+        volatility=volatility,
+        today_change_pct=today_change_pct,
+    )
     order_guide = adtv_mn * 0.05 if adtv_mn is not None else None
 
     if bn:
@@ -342,7 +460,7 @@ def _taleb_risk(
         key="taleb_risk",
         name="Taleb Risk",
         persona="Downside and exit-risk read",
-        verdict=_verdict(s, risk=True),
+        verdict=_verdict(s),
         score=s,
         summary=summary,
         points=points,

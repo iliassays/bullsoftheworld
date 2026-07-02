@@ -15,7 +15,16 @@ from bulls.analytics.indicators import (
     swing_high_indices,
     swing_low_indices,
 )
-from bulls.analytics.investor_lens import InvestorLens, InvestorLensResponse, build_investor_lens
+from bulls.analytics.investor_lens import (
+    InvestorLens,
+    InvestorLensResponse,
+    buffett_quality_score,
+    build_investor_lens,
+    graham_score,
+    risk_score,
+    smart_money_score,
+    technical_score,
+)
 from bulls.analytics.mood import MoodComponent, MoodIndex, build_mood
 from bulls.analytics.plain_read import PlainRead, ReadPoint, build_plain_read
 from bulls.analytics.scenarios import LevelsInsight, build_levels
@@ -46,6 +55,7 @@ __all__ = [
     "Scorecard",
     "ValuationResult",
     "atr",
+    "buffett_quality_score",
     "build_investor_lens",
     "build_levels",
     "build_mood",
@@ -56,10 +66,14 @@ __all__ = [
     "compute",
     "compute_valuation",
     "ema",
+    "graham_score",
     "momentum_12_1",
     "realized_volatility",
+    "risk_score",
     "rsi",
     "sma",
+    "smart_money_score",
     "swing_high_indices",
     "swing_low_indices",
+    "technical_score",
 ]
