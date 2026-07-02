@@ -278,14 +278,36 @@ function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: strin
   return item.why || fallback;
 }
 
-// Truth-in-labeling chip: what kind of evidence stands behind a board.
+// Truth-in-labeling chip: what kind of evidence stands behind a board. Plain words on the
+// chip; tapping it opens the one-sentence explanation (nobody should have to guess).
 const EVIDENCE_TEXT: Record<string, Record<Lang, string>> = {
-  backtested: { en: "🧪 DSE-tested", bn: "🧪 DSE-তে যাচাইকৃত" },
-  framework: { en: "📐 Framework", bn: "📐 ফ্রেমওয়ার্ক" },
-  utility: { en: "🔧 Utility", bn: "🔧 সহায়ক তালিকা" },
+  backtested: { en: "🧪 tested on history", bn: "🧪 ইতিহাসে যাচাইকৃত" },
+  framework: { en: "📐 classic method", bn: "📐 ক্লাসিক পদ্ধতি" },
+  utility: { en: "🔧 info list", bn: "🔧 তথ্যের তালিকা" },
 };
 
-function EvidenceChip({ evidence }: { evidence?: string | null }) {
+const EVIDENCE_EXPLAIN: Record<string, Record<Lang, string>> = {
+  backtested: {
+    en: "We tested this pattern against 2 years of real DSE price history and it showed a genuine edge there. Past results never guarantee the future.",
+    bn: "এই প্যাটার্নটি আমরা DSE-র ২ বছরের আসল দামের ইতিহাসে পরীক্ষা করেছি — সেখানে সত্যিকারের এজ দেখা গেছে। অতীতের ফল কখনোই ভবিষ্যতের নিশ্চয়তা নয়।",
+  },
+  framework: {
+    en: "A classic investing method (Buffett/Graham style). Sensible thinking — but we have not separately proven it on DSE data.",
+    bn: "ক্লাসিক বিনিয়োগ পদ্ধতি (Buffett/Graham ধাঁচের)। যুক্তিসঙ্গত চিন্তা — তবে DSE-র ডেটায় আলাদাভাবে প্রমাণিত নয়।",
+  },
+  utility: {
+    en: "A useful information list — it makes no claim of predicting anything.",
+    bn: "দরকারি তথ্যের তালিকা — এটি কোনো ভবিষ্যদ্বাণীর দাবি করে না।",
+  },
+};
+
+function EvidenceChip({
+  evidence,
+  onToggle,
+}: {
+  evidence?: string | null;
+  onToggle?: () => void;
+}) {
   const { lang } = useLang();
   const text = evidence ? EVIDENCE_TEXT[evidence]?.[lang] : null;
   if (!text) return null;
@@ -294,9 +316,15 @@ function EvidenceChip({ evidence }: { evidence?: string | null }) {
       ? "border-up/40 bg-up/10 text-up"
       : "border-border bg-card text-muted";
   return (
-    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle?.();
+      }}
+      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}
+    >
       {text}
-    </span>
+    </button>
   );
 }
 
@@ -440,6 +468,7 @@ function BoardCard({
 }) {
   const { lang } = useLang();
   const text = boardText(board, lang);
+  const [explain, setExplain] = useState(false);
 
   // A silent board is discipline, not content — it costs one slim line, not a card.
   // (Quality Reversal fires ~50x/year across the whole market by design; most days: nothing.)
@@ -464,11 +493,16 @@ function BoardCard({
         <span className="min-w-0 truncate text-[11px] font-bold uppercase tracking-[0.12em] text-text/90">
           {text.title}
         </span>
-        <EvidenceChip evidence={board.evidence} />
+        <EvidenceChip evidence={board.evidence} onToggle={() => setExplain((v) => !v)} />
         <span className="ml-auto shrink-0 text-[11px] font-semibold text-accent tnum">
           {board.items.length} {lang === "bn" ? "টি ম্যাচ" : "matches"}
         </span>
       </div>
+      {explain && board.evidence && (
+        <p lang={lang} className="mt-2 rounded-xl bg-card/60 border border-border p-2.5 text-[11px] leading-relaxed text-muted">
+          {EVIDENCE_EXPLAIN[board.evidence]?.[lang]}
+        </p>
+      )}
       {REGIME_SENSITIVE.has(board.key) && regime === "below_200dma" && <RegimeBanner />}
       <div className="mt-1 flex flex-col divide-y divide-border">
         {board.items.map((item) => (
