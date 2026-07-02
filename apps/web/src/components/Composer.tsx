@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CompanyLogo } from "./CompanyLogo";
 import { api, ApiError, type Post, type SymbolOut } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
@@ -190,6 +191,7 @@ export function Composer({
                   i === sel ? "bg-card" : "hover:bg-card"
                 }`}
               >
+                <CompanyLogo code={s.code} size={22} />
                 <span className="font-bold text-[13px] text-accent shrink-0">
                   ${s.code}
                 </span>

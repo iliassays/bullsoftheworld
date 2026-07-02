@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
+import { CompanyLogo } from "../components/CompanyLogo";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 
 export function Watchlist() {
@@ -32,8 +33,9 @@ export function Watchlist() {
         <Link
           key={symbol.code}
           to={`/s/${symbol.code}`}
-          className="flex items-center bg-surface border border-border rounded-xl px-3 py-2.5"
+          className="flex items-center gap-2.5 bg-surface border border-border rounded-xl px-3 py-2.5"
         >
+          <CompanyLogo code={symbol.code} size={30} />
           <div>
             <div className="font-bold text-sm">${symbol.code}</div>
             <div className="text-xs text-muted">{symbol.name_en}</div>

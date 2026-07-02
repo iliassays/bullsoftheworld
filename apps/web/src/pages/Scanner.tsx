@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CompanyLogo } from "../components/CompanyLogo";
 import { Link } from "react-router-dom";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 import { api, type ScannerResponse, type Screen, type ScreenItem } from "../lib/api";
@@ -463,6 +464,7 @@ function ScannerRow({ board, item, onPick }: { board: Screen; item: ScreenItem; 
   const why = scannerWhy(board, item, lang, text.desc);
   return (
     <button onClick={onPick} className="flex w-full items-start gap-3 py-3 text-left">
+      <CompanyLogo code={item.code} size={28} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-extrabold text-sm">${item.code}</span>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CompanyLogo } from "../components/CompanyLogo";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
@@ -186,9 +187,12 @@ export function SymbolPage() {
     <div className="flex flex-col gap-3">
       <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xl font-bold">${sym}</div>
-            <div className="text-xs text-muted truncate">{detail.symbol.name_en}</div>
+          <div className="flex items-center gap-3 min-w-0">
+            <CompanyLogo code={sym} size={40} />
+            <div className="min-w-0">
+              <div className="text-xl font-bold">${sym}</div>
+              <div className="text-xs text-muted truncate">{detail.symbol.name_en}</div>
+            </div>
           </div>
           {/* StockTwits-style: compact watchers count + a small +/✓ follow toggle. */}
           <div className="flex items-center gap-2 shrink-0">

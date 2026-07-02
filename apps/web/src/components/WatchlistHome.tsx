@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type Post, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
+import { CompanyLogo } from "./CompanyLogo";
 import { Pct, taka } from "./ui";
 
 // Personalized home section: the user's watched tickers + the latest agent note for each —
@@ -53,7 +54,8 @@ export function WatchlistHome() {
             to={`/s/${symbol.code}`}
             className="bg-surface border border-border rounded-xl px-3 py-2.5"
           >
-            <div className="flex items-center">
+            <div className="flex items-center gap-2.5">
+              <CompanyLogo code={symbol.code} size={30} />
               <div className="min-w-0">
                 <div className="font-bold text-sm">${symbol.code}</div>
                 <div className="text-xs text-muted truncate">

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type Quote } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { formatDhakaTime } from "../lib/time";
+import { CompanyLogo } from "./CompanyLogo";
 import { Pct, taka } from "./ui";
 
 // DSE trades Sun–Thu, 10:00–14:30 BDT (= 04:00–08:30 UTC). During that window the strip refreshes
@@ -54,8 +55,11 @@ export function TickerStrip() {
             to={`/s/${q.code}`}
             className="shrink-0 min-w-[104px] bg-card border border-border rounded-xl px-3 py-2"
           >
-            <div className="font-bold text-[13px]">${q.code}</div>
-            <div className="text-xs text-muted tnum">{taka(q.ltp)}</div>
+            <div className="flex items-center gap-1.5">
+              <CompanyLogo code={q.code} size={16} />
+              <span className="font-bold text-[13px]">${q.code}</span>
+            </div>
+            <div className="text-xs text-muted tnum mt-0.5">{taka(q.ltp)}</div>
             <div className="text-xs font-semibold mt-0.5">
               <Pct value={q.change_pct} />
             </div>

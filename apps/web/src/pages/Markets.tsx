@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { CompanyLogo } from "../components/CompanyLogo";
+import { EarningsWeek } from "../components/EarningsWeek";
 import { Link } from "react-router-dom";
 import {
   api,
@@ -907,6 +909,7 @@ export function ScreenRow({
           {rank != null && (
             <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
           )}
+          <CompanyLogo code={item.code} size={26} />
           <span className="flex flex-col min-w-0 gap-0.5">
             <span className="flex items-center gap-1.5 min-w-0">
               <span className="font-bold text-[13px]">${item.code}</span>
@@ -1323,6 +1326,7 @@ export function Markets() {
       <MarketPulse />
       {isFocus && <MarketIntro />}
       {isFocus && <WatchToday />}
+      {isFocus && <EarningsWeek />}
       {(isFocus || isAllBoards) && <SectorHeat />}
 
       {isFocus

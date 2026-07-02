@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLang } from "../lib/i18n";
 import { useNavigate } from "react-router-dom";
 import { api, type SymbolOut } from "../lib/api";
+import { CompanyLogo } from "./CompanyLogo";
 
 // Global ticker search — instant client-side typeahead over the (small) symbol universe.
 // The list is fetched once and module-cached so it loads at most once per session.
@@ -80,6 +81,7 @@ export function SearchBar() {
               onMouseDown={() => go(s.code)}
               className="w-full text-left px-3 py-2 hover:bg-card flex items-center gap-2"
             >
+              <CompanyLogo code={s.code} size={22} />
               <span className="font-bold text-[13px] text-accent shrink-0">${s.code}</span>
               <span className="text-xs text-muted truncate" lang="bn">
                 {s.name_en}
