@@ -484,7 +484,15 @@ async def compose_earnings_week(session, market: str) -> ComposedPost:
     ][:5]
     first = dt.date.fromisoformat(min(by_day))
     last = dt.date.fromisoformat(max(by_day))
-    date_label = f"{first.day}-{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
+    if first == last:
+        date_label = f"{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
+    elif first.month == last.month:
+        date_label = f"{first.day}-{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
+    else:
+        date_label = (
+            f"{first.day} {_MONTH_SHORT[first.month - 1]} - "
+            f"{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
+        )
 
     total = len(by_code)
     caption = (
