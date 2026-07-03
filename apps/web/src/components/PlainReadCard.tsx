@@ -49,10 +49,16 @@ export function PlainReadCard({ code }: { code: string }) {
         ))}
       </ul>
 
-      <div className="mt-3 rounded-xl bg-card border border-border p-3">
-        <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{t("plainRead.howTraders")}</div>
-        <p className="text-[13px] leading-snug">{read.how_to_read}</p>
-      </div>
+      {/* Density cut 2026-07: the generic-per-profile pedagogy collapses behind a tap — the
+          per-stock facts above stay; the teaching paragraph stops taxing every scroll. */}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-muted">
+          ⓘ {t("plainRead.howTraders")}
+        </summary>
+        <p className="mt-1.5 rounded-xl bg-card border border-border p-3 text-[13px] leading-snug">
+          {read.how_to_read}
+        </p>
+      </details>
 
       <p className="text-[10px] text-muted mt-2">{read.disclaimer}</p>
     </div>

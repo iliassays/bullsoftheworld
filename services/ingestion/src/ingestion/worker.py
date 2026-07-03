@@ -26,6 +26,7 @@ from bulls.core.config import get_settings
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion import news
 from ingestion.analytics import compute_all
+from ingestion.block_trades import pull_block_trades as collect_block_trades
 from ingestion.buzz import snapshot_all
 from ingestion.company import collect as collect_company
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
@@ -151,6 +152,19 @@ async def pull_news(ctx) -> str:
     return f"news_kept={counts['kept']} notes={sig['published']}"
 
 
+async def pull_block_trades(ctx) -> str:
+    """Daily per-scrip block-market list — INTERNAL dataset (admin-only; no public surface).
+
+    Sourced from LankaBD pending the ToS decision (docs/redesign/2026-07-drops.md); one request
+    per trading day, after the session closes."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    counts = await collect_block_trades(MARKET)
+    log.info("block trades: stored %s / %s fetched", counts["stored"], counts["fetched"])
+    return f"block_trades={counts['stored']}"
+
+
 async def _trigger_publish(paths: list[str]) -> dict[str, str]:
     """POST each publish path against the API (posting + dedupe live there). Idempotent per day,
     so a manual publish or a re-run won't double-post; one path failing won't break the others."""
@@ -228,6 +242,7 @@ class WorkerSettings:
         run_market_signals,
         run_factor_signals,
         pull_news,
+        pull_block_trades,
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
@@ -265,5 +280,13 @@ class WorkerSettings:
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
         # and after the close (13:35 UTC) to catch intraday postings.
         cron(pull_news, hour={3, 13}, minute=35, run_at_startup=False),
+        # Block-market list, once after the close (session ends 08:30 UTC); internal dataset.
+        cron(
+            pull_block_trades,
+            weekday="sun,mon,tues,wed,thurs",
+            hour=9,
+            minute=30,
+            run_at_startup=False,
+        ),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

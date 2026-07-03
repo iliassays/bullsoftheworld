@@ -2,6 +2,7 @@
 
 from bulls.core.models.alert import AlertEvent, PriceAlert
 from bulls.core.models.announcement import Announcement
+from bulls.core.models.block_trade import BlockTrade
 from bulls.core.models.company import (
     AnnualFinancial,
     CompanyProfile,
@@ -30,6 +31,7 @@ __all__ = [
     "AlertEvent",
     "Announcement",
     "AnnualFinancial",
+    "BlockTrade",
     "Cashtag",
     "CompanyLogo",
     "CompanyProfile",

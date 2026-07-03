@@ -6,6 +6,8 @@ view. `is_hidden` is a manual override the scraper never touches, so a hide stic
 
 from __future__ import annotations
 
+import datetime as dt
+
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -16,7 +18,7 @@ from api.deps import CurrentTenant, DbSession, require_admin
 from api.fb import compose as fbcompose
 from api.fb import feed as fbfeed
 from bulls.core.config import get_settings
-from bulls.core.models import Symbol
+from bulls.core.models import BlockTrade, Symbol
 
 # pillar key -> composer; add a pillar by adding its composer here
 _FB_COMPOSERS = {
@@ -26,6 +28,44 @@ _FB_COMPOSERS = {
 }
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+
+class BlockTradeOut(BaseModel):
+    code: str
+    trade_date: str
+    quantity: int
+    value_mn: float
+    trades: int
+    max_price: float | None
+    min_price: float | None
+
+
+@router.get("/block-trades")
+async def block_trades(
+    tenant: CurrentTenant,
+    session: DbSession,
+    days: int = Query(7, ge=1, le=90),
+) -> list[BlockTradeOut]:
+    """INTERNAL block-market view — sourced from LankaBD pending the ToS decision; nothing
+    public renders this (see docs/redesign/2026-07-drops.md)."""
+    since = dt.date.today() - dt.timedelta(days=days)
+    rows = await session.scalars(
+        select(BlockTrade)
+        .where(BlockTrade.market == tenant.market, BlockTrade.trade_date >= since)
+        .order_by(BlockTrade.trade_date.desc(), BlockTrade.value_mn.desc())
+    )
+    return [
+        BlockTradeOut(
+            code=r.code,
+            trade_date=str(r.trade_date),
+            quantity=r.quantity,
+            value_mn=r.value_mn,
+            trades=r.trades,
+            max_price=r.max_price,
+            min_price=r.min_price,
+        )
+        for r in rows
+    ]
 
 
 class VisibilityIn(BaseModel):
