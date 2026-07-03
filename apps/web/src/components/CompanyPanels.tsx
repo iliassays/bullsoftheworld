@@ -181,6 +181,27 @@ function newsTier(n: NewsItem): NewsTier {
   return n.strength >= 60 ? "important" : "routine";
 }
 
+// Raw DSE headlines on the symbol's own page: drop the leading "CODE:" (redundant here),
+// tame ALL-CAPS shouting, and trim trailing periods/whitespace.
+function cleanHeadline(raw: string): string {
+  let h = raw.replace(/^[A-Z0-9.&()-]{2,16}\s*[:\-–]\s*/, "").trim();
+  const letters = h.replace(/[^A-Za-z]/g, "");
+  const uppers = h.replace(/[^A-Z]/g, "");
+  if (letters.length > 8 && uppers.length / letters.length > 0.7) {
+    // Title-case the shouting, keeping connective words small: "Q3 Financial Statements
+    // of Olympic Industries Limited" rather than all-lowercase soup.
+    const small = new Set(["of", "the", "by", "a", "an", "and", "for", "to", "in", "on", "at"]);
+    h = h
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w, i) =>
+        i > 0 && small.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1),
+      )
+      .join(" ");
+  }
+  return h.replace(/\.\s*$/, "");
+}
+
 const dhakaTodayIso = () => new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
 const daysUntil = (iso?: string): number | null =>
   iso ? Math.round((Date.parse(iso) - Date.parse(dhakaTodayIso())) / 86_400_000) : null;
@@ -230,6 +251,10 @@ function plainHeadline(n: NewsItem, bn: boolean): string | null {
 // The fact-aware "মানে কী" — references the actual numbers, teaches without advising.
 function whatItMeans(n: NewsItem, bn: boolean): string | null {
   const d = n.details;
+  // No decode = we don't actually know what this notice says; a generic per-category
+  // explainer could teach the WRONG thing (e.g. a subsidiary's dividend has no record
+  // date for THIS stock's holders). Halts are the exception — the meaning is structural.
+  if (n.category !== "halt" && !hasDecoded(n)) return null;
   if (n.category === "earnings" && d?.eps_current != null) {
     const rising = d.eps_prior != null && d.eps_current > d.eps_prior;
     if (bn)
@@ -356,11 +381,11 @@ function ImportantCard({ n, ltp }: { n: NewsItem; ltp?: number | null }) {
             <span className="text-muted tnum">{shortDate(n.published_at)}</span>
           </div>
           <p lang={lang} className="text-sm font-semibold mt-1.5 leading-snug">
-            {plain ?? n.headline}
+            {plain ?? cleanHeadline(n.headline)}
           </p>
           {plain && (
             <p className="text-[10px] text-muted mt-0.5 truncate" title={n.headline}>
-              {bn ? "উৎস: DSE ঘোষণা" : "Source: DSE filing"} — {n.headline}
+              {bn ? "উৎস: DSE ঘোষণা" : "Source: DSE filing"} — {cleanHeadline(n.headline)}
             </p>
           )}
         </div>
