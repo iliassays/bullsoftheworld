@@ -11,6 +11,7 @@ request through rather than lock everyone out (availability > a best-effort thro
 from __future__ import annotations
 
 import logging
+import os
 
 import redis.asyncio as aioredis
 from fastapi import HTTPException, Request
@@ -18,6 +19,10 @@ from fastapi import HTTPException, Request
 from bulls.core.config import get_settings
 
 log = logging.getLogger(__name__)
+
+# Test-only escape hatch: local DB test suites hammer register/login from one fake IP
+# ("testclient") and would trip the real limits. Never set in any deployed environment.
+_DISABLED = os.environ.get("DISABLE_RATELIMIT") == "1"
 
 
 def client_ip(request: Request) -> str:
@@ -34,6 +39,8 @@ def _redis() -> aioredis.Redis:
 
 async def throttle(bucket: str, *, limit: int, window_s: int) -> None:
     """Count a hit on `bucket`; raise 429 once more than `limit` hits land within `window_s`."""
+    if _DISABLED:
+        return
     try:
         redis = _redis()
         try:

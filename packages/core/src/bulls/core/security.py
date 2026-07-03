@@ -1,13 +1,25 @@
-"""Auth helpers: password hashing + JWT."""
+"""Auth helpers: password hashing + JWT + opaque refresh tokens."""
 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import secrets
 
 import bcrypt
 import jwt
 
 from bulls.core.config import get_settings
+
+
+def new_refresh_token() -> str:
+    """Opaque 384-bit URL-safe token — never a JWT, carries nothing, means nothing off-server."""
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh(token: str) -> str:
+    """Only this hash is persisted; a DB leak alone can't replay sessions."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _to_bytes(password: str) -> bytes:

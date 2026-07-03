@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, tokenStore, type User } from "./api";
+import { api, refreshStore, tokenStore, type User } from "./api";
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   register: (name: string, contact: string, password: string) => Promise<void>;
-  applyToken: (token: string) => Promise<void>;
+  applyToken: (token: string, refreshToken?: string | null) => Promise<void>;
   refresh: () => Promise<void>;
   logout: () => void;
 }
@@ -18,16 +18,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!tokenStore.get()) return setLoading(false);
+    // A stored refresh token counts as "signed in": even if the 30-min access token has
+    // expired, api.me()'s 401 auto-rotates it and the session continues seamlessly.
+    if (!tokenStore.get() && !refreshStore.get()) return setLoading(false);
     api
       .me()
       .then(setUser)
-      .catch(() => tokenStore.clear())
+      .catch(() => {
+        tokenStore.clear();
+        refreshStore.clear();
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  const finishAuth = async (token: string) => {
+  const finishAuth = async (token: string, refreshToken?: string | null) => {
     tokenStore.set(token);
+    if (refreshToken) refreshStore.set(refreshToken);
     setUser(await api.me());
   };
 
@@ -36,14 +42,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
-        login: async (identifier, password) =>
-          finishAuth((await api.login({ identifier, password })).access_token),
-        register: async (name, contact, password) =>
-          finishAuth((await api.register({ name, contact, password })).access_token),
+        login: async (identifier, password) => {
+          const t = await api.login({ identifier, password });
+          await finishAuth(t.access_token, t.refresh_token);
+        },
+        register: async (name, contact, password) => {
+          const t = await api.register({ name, contact, password });
+          await finishAuth(t.access_token, t.refresh_token);
+        },
         applyToken: finishAuth,
         refresh: async () => setUser(await api.me()),
         logout: () => {
+          // Best-effort server-side revocation — the tokens are cleared locally regardless.
+          const rt = refreshStore.get();
+          if (rt) api.logout(rt).catch(() => {});
           tokenStore.clear();
+          refreshStore.clear();
           setUser(null);
         },
       }}

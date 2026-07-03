@@ -35,7 +35,8 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me-in-prod"
     jwt_algorithm: str = "HS256"
-    access_token_ttl_min: int = 60
+    access_token_ttl_min: int = 30  # short-lived by design; the refresh token carries persistence
+    refresh_token_ttl_days: int = 60  # rotating opaque token — sliding 60-day sign-in
 
     # Shared token guarding /admin routes (sent as X-Admin-Token). Empty = admin locked.
     admin_token: str = ""

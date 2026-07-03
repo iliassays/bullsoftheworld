@@ -1,11 +1,18 @@
-"""Auth: register, login, me. Handle-based, JWT bearer tokens."""
+"""Auth: register, login, refresh, me. Handle-based, JWT bearer + rotating refresh tokens.
+
+Session model (fintech-standard): the access JWT lives 30 minutes; a 60-day opaque refresh token
+(rotated on every use, reuse-detected, revocable) carries persistence. Presenting an already-
+rotated refresh token revokes its whole family — the classic stolen-token replay defence."""
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import func, select
+from pydantic import BaseModel
+from sqlalchemy import func, select, update
 
 from api.deps import CurrentTenant, CurrentUser, DbSession
 from api.emails import password_reset, verify_welcome
@@ -19,7 +26,7 @@ from api.ratelimit import (
     throttle,
 )
 from bulls.core.config import get_settings
-from bulls.core.models import User
+from bulls.core.models import RefreshSession, User
 from bulls.core.schemas.social import (
     ContactUpdateIn,
     ForgotIn,
@@ -35,6 +42,8 @@ from bulls.core.security import (
     create_purpose_token,
     decode_purpose_token,
     hash_password,
+    hash_refresh,
+    new_refresh_token,
     verify_password,
 )
 
@@ -47,6 +56,86 @@ _VERIFY_TTL_MIN = 60 * 24
 
 def _link(path: str, token: str) -> str:
     return f"{get_settings().app_base_url.rstrip('/')}{path}?token={token}"
+
+
+async def _issue_tokens(
+    session, user_id: int, request: Request, *, family: str | None = None
+) -> TokenOut:
+    """Mint the access+refresh pair; persist only the refresh hash."""
+    raw = new_refresh_token()
+    session.add(
+        RefreshSession(
+            user_id=user_id,
+            token_hash=hash_refresh(raw),
+            family=family or uuid.uuid4().hex,
+            expires_at=dt.datetime.now(dt.UTC)
+            + dt.timedelta(days=get_settings().refresh_token_ttl_days),
+            user_agent=(request.headers.get("user-agent") or "")[:256] or None,
+            ip=client_ip(request),
+        )
+    )
+    await session.flush()
+    return TokenOut(access_token=create_access_token(str(user_id)), refresh_token=raw)
+
+
+async def _revoke_all_sessions(session, user_id: int) -> None:
+    """Kill every live refresh session — used on password reset (and available for 'log out everywhere')."""
+    await session.execute(
+        update(RefreshSession)
+        .where(RefreshSession.user_id == user_id, RefreshSession.revoked_at.is_(None))
+        .values(revoked_at=func.now())
+    )
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh")
+async def refresh(body: RefreshIn, request: Request, session: DbSession) -> TokenOut:
+    """Rotate the refresh token and mint a fresh access token.
+
+    Reuse detection: a token that was already rotated (or revoked) coming back means replay —
+    the entire family dies, forcing a real re-login on every device that shared the chain."""
+    await throttle(f"refresh:{client_ip(request)}", limit=60, window_s=300)
+    now = dt.datetime.now(dt.UTC)
+    row = await session.scalar(
+        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(body.refresh_token))
+    )
+    if row is None:
+        raise HTTPException(status_code=401, detail="Session expired — please log in again.")
+    if row.revoked_at is not None or row.replaced_by_id is not None:
+        await session.execute(
+            update(RefreshSession)
+            .where(RefreshSession.family == row.family, RefreshSession.revoked_at.is_(None))
+            .values(revoked_at=func.now())
+        )
+        # Commit BEFORE raising — the error response would otherwise roll back the family
+        # kill, leaving the attacker's rotated token alive. (Caught by the DB-gated test.)
+        await session.commit()
+        raise HTTPException(status_code=401, detail="Session expired — please log in again.")
+    if row.expires_at <= now:
+        raise HTTPException(status_code=401, detail="Session expired — please log in again.")
+
+    out = await _issue_tokens(session, row.user_id, request, family=row.family)
+    new_row = await session.scalar(
+        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(out.refresh_token))
+    )
+    row.revoked_at = now
+    row.replaced_by_id = new_row.id if new_row else None
+    row.last_used_at = now
+    return out
+
+
+@router.post("/logout")
+async def logout(body: RefreshIn, session: DbSession) -> dict[str, str]:
+    """Revoke this device's refresh session (the client drops the access token itself)."""
+    row = await session.scalar(
+        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(body.refresh_token))
+    )
+    if row is not None and row.revoked_at is None:
+        row.revoked_at = dt.datetime.now(dt.UTC)
+    return {"status": "ok"}
 
 
 @router.post("/register", status_code=201)
@@ -96,7 +185,7 @@ async def register(
         except Exception:
             log.exception("welcome/verify email failed for %s", email)
 
-    return TokenOut(access_token=create_access_token(str(user.id)))
+    return await _issue_tokens(session, user.id, request)
 
 
 @router.post("/login")
@@ -123,7 +212,7 @@ async def login(
         # Generic message — never reveal whether the account exists or the password was wrong.
         raise HTTPException(status_code=401, detail="Invalid login or password")
     await reset_failures(key)
-    return TokenOut(access_token=create_access_token(str(user.id)))
+    return await _issue_tokens(session, user.id, request)
 
 
 @router.post("/forgot", status_code=202)
@@ -147,7 +236,7 @@ async def forgot_password(
 
 
 @router.post("/reset")
-async def reset_password(body: ResetIn, session: DbSession) -> TokenOut:
+async def reset_password(body: ResetIn, request: Request, session: DbSession) -> TokenOut:
     """Consume a reset token and set a new password; log the user straight in."""
     uid = decode_purpose_token(body.token, "reset")
     user = await session.get(User, int(uid)) if uid and uid.isdigit() else None
@@ -155,8 +244,10 @@ async def reset_password(body: ResetIn, session: DbSession) -> TokenOut:
         raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
     user.password_hash = hash_password(body.password)
     user.email_verified = True  # using the emailed link also proves the address
+    # A password reset means the old credentials can't be trusted — every session dies.
+    await _revoke_all_sessions(session, user.id)
     await session.flush()
-    return TokenOut(access_token=create_access_token(str(user.id)))
+    return await _issue_tokens(session, user.id, request)
 
 
 @router.post("/verify")

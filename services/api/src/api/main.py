@@ -84,6 +84,18 @@ async def resolve_tenant(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Baseline hardening on every response (nginx terminates TLS; HSTS pins it in browsers)."""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+    resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return resp
+
+
 # Serve generated card images (agent cards, e.g. Evening Wrap) referenced from feed posts.
 _card_dir = Path(get_settings().card_dir)
 _card_dir.mkdir(parents=True, exist_ok=True)

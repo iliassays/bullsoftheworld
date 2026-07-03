@@ -31,16 +31,16 @@ def test_social_flow_end_to_end():
         reg = c.post(
             "/auth/register",
             json={
-                "handle": handle,
                 "name": "Test User",
-                "email": f"{handle}@example.com",
+                "contact": f"{handle}@example.com",
                 "password": "password123",
             },
         )
         assert reg.status_code == 201, reg.text
         auth_hdr = {"Authorization": f"Bearer {reg.json()['access_token']}"}
 
-        assert c.get("/auth/me", headers=auth_hdr).json()["handle"] == handle
+        # Handles are auto-generated from the display name now — just assert one exists.
+        assert c.get("/auth/me", headers=auth_hdr).json()["handle"]
 
         # post with a real cashtag (GP) and a bogus one (filtered out)
         p = c.post(
@@ -74,9 +74,8 @@ def test_reactions_and_replies_flow():
         reg = c.post(
             "/auth/register",
             json={
-                "handle": handle,
                 "name": "Reactor",
-                "email": f"{handle}@example.com",
+                "contact": f"{handle}@example.com",
                 "password": "password123",
             },
         )

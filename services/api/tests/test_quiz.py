@@ -53,9 +53,8 @@ def test_quiz_flow() -> None:
         reg = c.post(
             "/auth/register",
             json={
-                "handle": handle,
                 "name": "Quiz Tester",
-                "email": f"{handle}@example.com",
+                "contact": f"{handle}@example.com",
                 "password": "password123",
             },
         )

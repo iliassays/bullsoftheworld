@@ -21,9 +21,8 @@ def test_alerts_flow() -> None:
         reg = c.post(
             "/auth/register",
             json={
-                "handle": handle,
                 "name": "Alert Tester",
-                "email": f"{handle}@example.com",
+                "contact": f"{handle}@example.com",
                 "password": "password123",
             },
         )

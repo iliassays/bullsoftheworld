@@ -42,6 +42,8 @@ class VerifyIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    # Long-lived rotating refresh token (None only on legacy paths that don't mint sessions).
+    refresh_token: str | None = None
 
 
 class UserOut(BaseModel):

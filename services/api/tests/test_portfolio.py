@@ -64,9 +64,8 @@ def test_portfolio_endpoint_flow() -> None:
         reg = c.post(
             "/auth/register",
             json={
-                "handle": handle,
                 "name": "PF Tester",
-                "email": f"{handle}@example.com",
+                "contact": f"{handle}@example.com",
                 "password": "password123",
             },
         )

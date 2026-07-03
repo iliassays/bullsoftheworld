@@ -16,6 +16,14 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+// The long-lived half of the pair: rotated by the server on every /auth/refresh.
+const REFRESH_KEY = "bulls.refresh";
+export const refreshStore = {
+  get: () => localStorage.getItem(REFRESH_KEY),
+  set: (t: string) => localStorage.setItem(REFRESH_KEY, t),
+  clear: () => localStorage.removeItem(REFRESH_KEY),
+};
+
 
 // Stable anonymous client id so page views can be de-duped without a login.
 const CID_KEY = "bulls.cid";
@@ -39,7 +47,38 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+// Single-flight refresh: many parallel 401s must trigger ONE rotation, not a stampede
+// (a second rotation of the same token trips the reuse detector and kills the session).
+let refreshing: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  refreshing ??= (async () => {
+    const rt = refreshStore.get();
+    if (!rt) return false;
+    try {
+      const res = await fetch(`${BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) throw new Error();
+      const body = await res.json();
+      tokenStore.set(body.access_token);
+      if (body.refresh_token) refreshStore.set(body.refresh_token);
+      return true;
+    } catch {
+      // Rotation failed → the session is genuinely dead; clear so the UI shows logged-out.
+      tokenStore.clear();
+      refreshStore.clear();
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+async function request<T>(path: string, opts: RequestInit = {}, retried = false): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Locale": currentLang(),
@@ -49,6 +88,11 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  // Access token expired mid-session → rotate the refresh token once and replay the call.
+  // /auth/* is excluded so a failing login/refresh can never recurse.
+  if (res.status === 401 && !retried && !path.startsWith("/auth/") && refreshStore.get()) {
+    if (await tryRefresh()) return request<T>(path, opts, true);
+  }
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => ({}));
   if (!res.ok)
@@ -530,14 +574,19 @@ export interface User {
 export const api = {
   // auth
   register: (b: { name: string; contact: string; password: string }) =>
-    request<{ access_token: string }>("/auth/register", {
+    request<{ access_token: string; refresh_token?: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(b),
     }),
   login: (b: { identifier: string; password: string }) =>
-    request<{ access_token: string }>("/auth/login", {
+    request<{ access_token: string; refresh_token?: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(b),
+    }),
+  logout: (refresh_token: string) =>
+    request<{ status: string }>("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token }),
     }),
   forgotPassword: (email: string) =>
     request<{ status: string }>("/auth/forgot", {
@@ -545,7 +594,7 @@ export const api = {
       body: JSON.stringify({ email }),
     }),
   resetPassword: (token: string, password: string) =>
-    request<{ access_token: string }>("/auth/reset", {
+    request<{ access_token: string; refresh_token?: string }>("/auth/reset", {
       method: "POST",
       body: JSON.stringify({ token, password }),
     }),
