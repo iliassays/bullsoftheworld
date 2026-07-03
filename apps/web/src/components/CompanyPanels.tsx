@@ -782,7 +782,17 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
 }
 
 // One compact key-stat box.
-function Stat({ label, value, tip }: { label: string; value: ReactNode; tip?: string }) {
+function Stat({
+  label,
+  value,
+  tip,
+  sub,
+}: {
+  label: string;
+  value: ReactNode;
+  tip?: string;
+  sub?: string;
+}) {
   return (
     <div className="flex-1 rounded-lg bg-card border border-border p-2 min-w-0">
       <div className="text-[10px] text-muted flex items-center gap-1">
@@ -790,19 +800,25 @@ function Stat({ label, value, tip }: { label: string; value: ReactNode; tip?: st
         {tip && <InfoTip text={tip} />}
       </div>
       <div className="text-sm font-semibold tnum mt-0.5 truncate">{value}</div>
+      {sub && <div className="text-[10px] text-muted tnum truncate">{sub}</div>}
     </div>
   );
 }
 
 // Mini year-by-year bar chart: value above each bar, year below; latest highlighted, losses in red.
+// One color per meaning: every paid/positive year is the same color, losses are red,
+// missing years are an empty slot with an explicit label. The latest year is marked by
+// its bold label only — a differently-colored bar would imply a difference that isn't there.
 function YearBars({
   data,
   fmt,
   color = "var(--color-accent)",
+  emptyLabel = "n/a",
 }: {
   data: { year: number; v: number | null }[];
   fmt: (n: number) => string;
   color?: string;
+  emptyLabel?: string;
 }) {
   const known = data.filter((d): d is { year: number; v: number } => d.v != null);
   if (known.length < 2) return null;
@@ -812,16 +828,19 @@ function YearBars({
     <div className="flex items-end gap-1.5 mt-2 mb-3">
       {data.map((d) => {
         const last = d.year === lastYear && d.v != null;
-        const bg =
-          d.v == null ? undefined : d.v < 0 ? "var(--color-down)" : last ? color : "var(--color-border)";
         return (
           <div key={d.year} className="flex-1 flex flex-col items-center min-w-0">
-            <span className="text-[9px] text-muted tnum mb-0.5">{d.v == null ? "—" : fmt(d.v)}</span>
+            <span className="text-[9px] text-muted tnum mb-0.5 whitespace-nowrap">
+              {d.v == null ? emptyLabel : fmt(d.v)}
+            </span>
             <div className="w-full h-14 flex items-end">
               {d.v != null && (
                 <div
                   className="w-full rounded-t"
-                  style={{ height: `${Math.max(4, (Math.abs(d.v) / max) * 100)}%`, backgroundColor: bg }}
+                  style={{
+                    height: `${Math.max(4, (Math.abs(d.v) / max) * 100)}%`,
+                    backgroundColor: d.v < 0 ? "var(--color-down)" : color,
+                  }}
                 />
               )}
             </div>
@@ -922,22 +941,16 @@ export function EarningsPanel({
             <Stat label="Dividend yield" value={pct(f.dividend_yield)} />
             <Stat
               label="Cash (latest)"
-              value={
-                latestCash == null ? (
-                  pct(latestCash)
-                ) : (
-                  <>
-                    {pct(latestCash)}{" "}
-                    <span className="text-muted font-normal">
-                      = ৳{+((latestCash / 100) * face).toFixed(2)}/share
-                    </span>
-                  </>
-                )
+              value={pct(latestCash)}
+              sub={
+                latestCash == null
+                  ? undefined
+                  : `= ৳${+((latestCash / 100) * face).toFixed(2)}/share`
               }
             />
             <Stat label="Payout ratio" value={pct(payout)} tip={_PAYOUT_TIP} />
           </div>
-          <YearBars data={cashBars} fmt={(n) => `${n.toFixed(0)}%`} color="#0ea5e9" />
+          <YearBars data={cashBars} fmt={(n) => `${n.toFixed(0)}%`} color="#0ea5e9" emptyLabel="no div" />
           <div className="grid grid-cols-3 text-[11px] text-muted font-semibold pb-1 border-b border-border">
             <span>Year</span>
             <span className="text-right">Cash</span>
