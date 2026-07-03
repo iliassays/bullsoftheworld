@@ -29,28 +29,78 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
   const [events, setEvents] = useState<EarningsEvent[] | null>(null);
   const [expanded, setExpanded] = useState(false);
 
+  // All dates in DHAKA time (UTC+6, no DST) — plain toISOString() would show yesterday
+  // to anyone browsing before 6am Dhaka.
+  const dhakaNow = new Date(Date.now() + 6 * 3600_000);
+  const dhakaToday = dhakaNow.toISOString().slice(0, 10);
+  // The DSE week runs Sun–Thu. On Fri/Sat, show the coming week; otherwise the current one.
+  const dow = dhakaNow.getUTCDay(); // 0=Sun … 6=Sat
+  const toSunday = dow === 5 ? 2 : dow === 6 ? 1 : -dow;
+  const weekStart = new Date(dhakaNow.getTime() + toSunday * 86_400_000);
+  const weekDates = Array.from({ length: 5 }, (_, i) =>
+    new Date(weekStart.getTime() + i * 86_400_000).toISOString().slice(0, 10),
+  );
+
   useEffect(() => {
     let alive = true;
+    const back = scope === "week" ? Math.max(0, -toSunday) : 0;
     api
-      .earningsCalendar(scope === "today" ? 1 : 7)
+      .earningsCalendar(scope === "today" ? 1 : 7, back)
       .then((e) => {
         if (!alive) return;
-        if (scope === "today") {
-          // "Today" means the DHAKA date (UTC+6, no DST) — plain toISOString() would show
-          // yesterday's meetings to anyone browsing before 6am Dhaka.
-          const today = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
-          setEvents(e.filter((ev) => ev.meeting_date === today));
-        } else {
-          setEvents(e);
-        }
+        setEvents(
+          scope === "today" ? e.filter((ev) => ev.meeting_date === dhakaToday) : e,
+        );
       })
       .catch(() => alive && setEvents([]));
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
 
-  if (!events || events.length === 0) return null;
+  if (!events) return null;
+  if (scope === "today" && events.length === 0) return null; // silent on quiet days
+
+  if (scope === "week") {
+    // Earnings-Whispers calendar: five fixed Sun–Thu columns. Empty columns stay empty —
+    // an almost-blank week honestly LOOKS almost blank.
+    return (
+      <div className="bg-surface border border-border rounded-2xl p-3">
+        <div className="grid grid-cols-5 divide-x divide-border/50">
+          {weekDates.map((iso) => {
+            const { day, weekday } = fmt(iso, bn);
+            const items = events.filter((e) => e.meeting_date === iso);
+            const past = iso < dhakaToday;
+            return (
+              <div key={iso} className={`px-1 ${past ? "opacity-50" : ""}`}>
+                <div className="text-center text-[9px] font-bold uppercase tracking-[0.1em] text-accent leading-tight">
+                  {weekday}
+                  <div className="text-[9px] font-semibold text-muted normal-case tracking-normal">{day}</div>
+                </div>
+                <div className="mt-2 flex flex-col items-center gap-2.5 min-h-[56px]">
+                  {items.map((e) => (
+                    <Link
+                      key={e.code}
+                      to={`/s/${e.code}`}
+                      className="flex w-full flex-col items-center gap-0.5"
+                    >
+                      <CompanyLogo code={e.code} size={30} />
+                      <span className="w-full truncate text-center text-[8px] font-bold leading-tight">
+                        {e.code}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted mt-2 text-center">{t("home.earningsWeekNote")}</p>
+      </div>
+    );
+  }
+
   const shown = expanded ? events : events.slice(0, GRID);
   const hidden = events.length - shown.length;
 

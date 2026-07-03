@@ -173,7 +173,10 @@ class EarningsEventOut(BaseModel):
 
 @router.get("/market/earnings-calendar")
 async def earnings_calendar(
-    tenant: CurrentTenant, session: DbSession, days: int = Query(7, ge=1, le=30)
+    tenant: CurrentTenant,
+    session: DbSession,
+    days: int = Query(7, ge=1, le=30),
+    back: int = Query(0, ge=0, le=7, description="Also include this many past days (week views)"),
 ) -> list[EarningsEventOut]:
     """Upcoming earnings — board meetings called to consider financials within the next `days`.
 
@@ -181,6 +184,7 @@ async def earnings_calendar(
     notice (companies can still reschedule). One row per company, nearest date first.
     """
     today = dt.datetime.now(dt.UTC).date()
+    since = today - dt.timedelta(days=back)
     until = today + dt.timedelta(days=days)
     meeting_date = Announcement.details["meeting_date"].astext
     rows = list(
@@ -189,7 +193,7 @@ async def earnings_calendar(
             .where(
                 Announcement.market == tenant.market,
                 Announcement.category == "board_meeting",
-                meeting_date >= today.isoformat(),
+                meeting_date >= since.isoformat(),
                 meeting_date <= until.isoformat(),
             )
             .order_by(meeting_date.asc(), Announcement.strength.desc())

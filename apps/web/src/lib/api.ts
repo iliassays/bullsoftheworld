@@ -674,8 +674,8 @@ export const api = {
   trendingStocks: (limit = 15) =>
     request<TrendingStock[]>(`/trending-stocks?limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
-  earningsCalendar: (days = 7) =>
-    request<EarningsEvent[]>(`/market/earnings-calendar?days=${days}`),
+  earningsCalendar: (days = 7, back = 0) =>
+    request<EarningsEvent[]>(`/market/earnings-calendar?days=${days}&back=${back}`),
 
   // posts
   feed: (

@@ -1164,6 +1164,8 @@ const momentumCaution = (lang: string) =>
 
 function ScreenCard({ s }: { s: Screen }) {
   const { t, lang } = useLang();
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? s.items : s.items.slice(0, 5);
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -1183,16 +1185,24 @@ function ScreenCard({ s }: { s: Screen }) {
         </span>
       </div>
       <div className="flex flex-col">
-        {s.items.slice(0, 6).map((it) => (
+        {visible.map((it) => (
           <ScreenRow key={it.code} item={it} screen={s} />
         ))}
       </div>
-      {s.items.length >= 6 && (
+      {!showAll && s.items.length > 5 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="block w-full text-center text-[11px] font-semibold text-accent mt-2 pt-2 border-t border-border/60"
+        >
+          {t("viewMore")} ({s.items.length - 5})
+        </button>
+      )}
+      {showAll && (
         <Link
           to={`/markets/${s.key}`}
           className="block text-center text-[11px] text-accent mt-2 pt-2 border-t border-border/60"
         >
-          {t("viewMore")}
+          {t("viewMore")} →
         </Link>
       )}
     </div>

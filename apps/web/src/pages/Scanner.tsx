@@ -420,6 +420,8 @@ function BoardCard({
   const { lang } = useLang();
   const text = boardText(board, lang);
   const [explain, setExplain] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? board.items : board.items.slice(0, 5);
 
   // A silent board is discipline, not content — it costs one slim line, not a card.
   // (Quality Reversal fires ~50x/year across the whole market by design; most days: nothing.)
@@ -456,10 +458,18 @@ function BoardCard({
       )}
       {REGIME_SENSITIVE.has(board.key) && regime === "below_200dma" && <RegimeBanner />}
       <div className="mt-1 flex flex-col divide-y divide-border">
-        {board.items.map((item) => (
+        {visible.map((item) => (
           <ScannerRow key={item.code} board={board} item={item} onPick={() => onPick({ board, item })} />
         ))}
       </div>
+      {!showAll && board.items.length > 5 && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="mt-1 block w-full border-t border-border/60 pt-2 text-center text-[11px] font-semibold text-accent"
+        >
+          {lang === "bn" ? "আরও দেখুন" : "View more"} ({board.items.length - 5})
+        </button>
+      )}
     </section>
   );
 }
