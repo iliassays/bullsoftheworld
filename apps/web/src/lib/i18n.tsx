@@ -57,6 +57,7 @@ const STRINGS: Record<string, Entry> = {
     bn: "আপনার ওয়াচলিস্টের কোনো শেয়ার এই মুহূর্তে মিলছে না।",
   },
   "nav.me": { en: "Me", bn: "আমি" },
+  "home.earningsToday": { en: "Earnings today", bn: "আজকের আয়" },
   // Alerts inbox
   "alerts.title": { en: "Alerts", bn: "অ্যালার্ট" },
   "alerts.subtitle": {

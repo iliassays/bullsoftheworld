@@ -58,7 +58,7 @@ export function Feed() {
       <DhakaMood />
       <WatchlistHome />
       <TodaysWatch />
-      <EarningsWeek />
+      <EarningsWeek scope="today" />
       <QuizCard />
 
       {sectionLabel(t("home.myFeed"))}

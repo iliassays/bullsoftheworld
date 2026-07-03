@@ -19,10 +19,11 @@ function fmt(iso: string, bn: boolean) {
 
 const GRID = 9; // 3×3 by default; "+N more" expands the rest
 
-// This week's earnings — DSE board meetings called to consider results, from decoded
-// announcements. A compact logo grid (3 across): who reports, and when. Descriptive heads-up
-// only; hidden entirely when nothing is scheduled.
-export function EarningsWeek() {
+// Earnings calendar — DSE board meetings called to consider results, from decoded
+// announcements. Logo-first, grouped by day (Earnings-Whispers style). Two scopes:
+// scope="today" (Home: just today's reporters, hidden on the many empty days) and
+// scope="week" (Markets: the full trading week). Hidden entirely when nothing is scheduled.
+export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
   const { t, lang } = useLang();
   const bn = lang === "bn";
   const [events, setEvents] = useState<EarningsEvent[] | null>(null);
@@ -31,13 +32,23 @@ export function EarningsWeek() {
   useEffect(() => {
     let alive = true;
     api
-      .earningsCalendar(7)
-      .then((e) => alive && setEvents(e))
+      .earningsCalendar(scope === "today" ? 1 : 7)
+      .then((e) => {
+        if (!alive) return;
+        if (scope === "today") {
+          // "Today" means the DHAKA date (UTC+6, no DST) — plain toISOString() would show
+          // yesterday's meetings to anyone browsing before 6am Dhaka.
+          const today = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+          setEvents(e.filter((ev) => ev.meeting_date === today));
+        } else {
+          setEvents(e);
+        }
+      })
       .catch(() => alive && setEvents([]));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [scope]);
 
   if (!events || events.length === 0) return null;
   const shown = expanded ? events : events.slice(0, GRID);
@@ -57,7 +68,7 @@ export function EarningsWeek() {
       <div className="flex items-center gap-2">
         <span className="text-base">📅</span>
         <span className="min-w-0 truncate text-[11px] font-bold uppercase tracking-[0.12em] text-text/90">
-          {t("home.earningsWeek")}
+          {t(scope === "today" ? "home.earningsToday" : "home.earningsWeek")}
         </span>
         <span className="ml-auto shrink-0 text-[11px] font-semibold text-accent tnum">
           {events.length}
