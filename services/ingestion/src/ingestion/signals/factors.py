@@ -226,7 +226,11 @@ _VARIANTS: dict[str, list[tuple[str, str]]] = {
 
 def render(sig: FactorSignal, code: str, locale: str) -> str:
     # circuit shares one beat but two templates (up/down), chosen by direction.
-    key = ("circuit_up" if sig.payload.get("dir") == "up" else "circuit_down") if sig.beat == "circuit" else sig.beat
+    key = (
+        ("circuit_up" if sig.payload.get("dir") == "up" else "circuit_down")
+        if sig.beat == "circuit"
+        else sig.beat
+    )
     if key in _VARIANTS:
         vs = _VARIANTS[key]
         tmpl = vs[sum(ord(c) for c in code) % len(vs)][1 if locale == "bn" else 0]

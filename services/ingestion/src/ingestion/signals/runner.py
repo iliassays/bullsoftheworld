@@ -36,9 +36,7 @@ _COOLDOWN_DAYS = 5  # don't repeat the same event on a name within this many day
 _OWN_COOLDOWN_DAYS = 20  # ownership discloses monthly — don't refire within a disclosure window
 
 
-async def run_levels_agent(
-    market: str, *, tenant_id: str = "bullsofdhaka"
-) -> dict[str, int]:
+async def run_levels_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     sm = get_sessionmaker()
     handle = AGENTS[BEAT][0]
     published = 0
@@ -99,9 +97,7 @@ async def run_levels_agent(
     return {"symbols": len(codes), "published": published}
 
 
-async def run_ownership_agents(
-    market: str, *, tenant_id: str = "bullsofdhaka"
-) -> dict[str, int]:
+async def run_ownership_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     """Compare each symbol's two latest shareholding disclosures; post material stake changes."""
     sm = get_sessionmaker()
     published = 0
@@ -164,9 +160,7 @@ async def run_ownership_agents(
     return {"symbols": len(codes), "published": published}
 
 
-async def run_volume_agent(
-    market: str, *, tenant_id: str = "bullsofdhaka"
-) -> dict[str, int]:
+async def run_volume_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     """Flag unusual intraday volume vs the expected-by-now pace. Fires once per name per day."""
     now = dt.datetime.now(dt.UTC)
     fraction = volume.session_fraction(now)
@@ -242,9 +236,7 @@ async def run_volume_agent(
     return {"published": published}
 
 
-async def run_factor_agents(
-    market: str, *, tenant_id: str = "bullsofdhaka"
-) -> dict[str, int]:
+async def run_factor_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     """Descriptive factor notes (momentum / quality-value / smart-money / relative strength) from the
     precomputed analytics row + today's price vs the index. Once per name per factor per month."""
     now = dt.datetime.now(dt.UTC)
@@ -328,9 +320,7 @@ async def run_factor_agents(
     return {"symbols": len(rows), "published": published}
 
 
-async def run_market_update(
-    market: str, *, tenant_id: str = "bullsofdhaka"
-) -> dict[str, int]:
+async def run_market_update(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     """One market-wide close wrap (DSEX + breadth + turnover). No cashtag — global feed only."""
     sm = get_sessionmaker()
     async with sm() as session:

@@ -92,11 +92,23 @@ def _trend(above_200: bool | None, above_50: bool | None, mom_12_1: float | None
     if mom_12_1 is not None:
         base += 2 if mom_12_1 >= 50 else 1 if mom_12_1 > 0 else -1 if mom_12_1 < -20 else 0
     if bn:
-        d = "200-দিন গড়ের উপরে" if above_200 else "200-দিন গড়ের নিচে" if above_200 is False else "দীর্ঘমেয়াদি দিকনির্দেশনা"
+        d = (
+            "200-দিন গড়ের উপরে"
+            if above_200
+            else "200-দিন গড়ের নিচে"
+            if above_200 is False
+            else "দীর্ঘমেয়াদি দিকনির্দেশনা"
+        )
         if mom_12_1 is not None:
             d += f" · 12-মাস {mom_12_1:+.0f}%"
     else:
-        d = "Above 200-DMA" if above_200 else "Below 200-DMA" if above_200 is False else "Long-term direction"
+        d = (
+            "Above 200-DMA"
+            if above_200
+            else "Below 200-DMA"
+            if above_200 is False
+            else "Long-term direction"
+        )
         if mom_12_1 is not None:
             d += f" · 12m {mom_12_1:+.0f}%"
     return Dimension(key="trend", label=_label("trend", bn), score=_clamp10(base), detail=d)
@@ -105,7 +117,19 @@ def _trend(above_200: bool | None, above_50: bool | None, mom_12_1: float | None
 def _quality(roe: float | None, bn: bool):
     if roe is None:
         return None
-    score = 1 if roe <= 0 else 3 if roe < 5 else 5 if roe < 8 else 7 if roe < 15 else 8 if roe < 20 else 10
+    score = (
+        1
+        if roe <= 0
+        else 3
+        if roe < 5
+        else 5
+        if roe < 8
+        else 7
+        if roe < 15
+        else 8
+        if roe < 20
+        else 10
+    )
     d = f"ROE {roe:.0f}%"
     return Dimension(key="quality", label=_label("quality", bn), score=score, detail=d)
 
@@ -113,7 +137,17 @@ def _quality(roe: float | None, bn: bool):
 def _value(pe_vs_sector: float | None, pe_ratio: float | None, bn: bool):
     if pe_vs_sector is None:
         return None
-    score = 9 if pe_vs_sector < 0.7 else 7 if pe_vs_sector < 0.9 else 5 if pe_vs_sector < 1.1 else 3 if pe_vs_sector < 1.4 else 2
+    score = (
+        9
+        if pe_vs_sector < 0.7
+        else 7
+        if pe_vs_sector < 0.9
+        else 5
+        if pe_vs_sector < 1.1
+        else 3
+        if pe_vs_sector < 1.4
+        else 2
+    )
     if bn:
         d = f"খাতের {pe_vs_sector:.1f}x"
         if pe_ratio is not None and pe_ratio > 0:
@@ -129,8 +163,10 @@ def _income(dividend_yield: float | None, bn: bool):
     # No dividend isn't a low score — it's simply not an income stock. Omit rather than penalise.
     if dividend_yield is None or dividend_yield <= 0:
         return None
-    score = 10 if dividend_yield >= 8 else 8 if dividend_yield >= 5 else 6 if dividend_yield >= 3 else 4
-    d = (f"ইল্ড {dividend_yield:.1f}%" if bn else f"Yield {dividend_yield:.1f}%")
+    score = (
+        10 if dividend_yield >= 8 else 8 if dividend_yield >= 5 else 6 if dividend_yield >= 3 else 4
+    )
+    d = f"ইল্ড {dividend_yield:.1f}%" if bn else f"Yield {dividend_yield:.1f}%"
     return Dimension(key="income", label=_label("income", bn), score=score, detail=d)
 
 
@@ -146,9 +182,14 @@ def _momentum(rsi_14: float | None, mom_6_1: float | None, mom_3_1: float | None
     if rsi_14 is not None:
         bits.append(f"RSI {rsi_14:.0f}")
     if mom is not None:
-        bits.append((f"6-মাস {mom:+.0f}%" if mom_6_1 is not None else f"3-মাস {mom:+.0f}%") if bn
-                    else (f"6m {mom:+.0f}%" if mom_6_1 is not None else f"3m {mom:+.0f}%"))
-    return Dimension(key="momentum", label=_label("momentum", bn), score=score, detail=" · ".join(bits))
+        bits.append(
+            (f"6-মাস {mom:+.0f}%" if mom_6_1 is not None else f"3-মাস {mom:+.0f}%")
+            if bn
+            else (f"6m {mom:+.0f}%" if mom_6_1 is not None else f"3m {mom:+.0f}%")
+        )
+    return Dimension(
+        key="momentum", label=_label("momentum", bn), score=score, detail=" · ".join(bits)
+    )
 
 
 def build_scorecard(

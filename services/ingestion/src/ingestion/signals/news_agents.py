@@ -87,7 +87,9 @@ def _decoded_fact(category: str, details: dict | None, locale: str) -> str | Non
     return None
 
 
-def render(category: str, headline: str, code: str, locale: str, details: dict | None = None) -> str:
+def render(
+    category: str, headline: str, code: str, locale: str, details: dict | None = None
+) -> str:
     en, bn = _TEMPLATES[category]
     tmpl = bn if locale == "bn" else en
     # Decoded numbers beat the raw exchange headline; the headline is the fallback only.
@@ -95,9 +97,7 @@ def render(category: str, headline: str, code: str, locale: str, details: dict |
     return f"{code} — " + tmpl.format(headline=fact or headline)
 
 
-async def run_news_agents(
-    market: str, *, tenant_id: str = "bullsofdhaka"
-) -> dict[str, int]:
+async def run_news_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     """Post one note per new material dividend/earnings/rating announcement."""
     since = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=_RECENT_DAYS)
     sm = get_sessionmaker()

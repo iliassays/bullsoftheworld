@@ -96,7 +96,11 @@ async def _download_image(client: httpx.AsyncClient, url: str) -> dict | None:
     except Exception:
         return None
     ct = r.headers.get("content-type", "").split(";")[0].strip().lower()
-    if r.status_code == 200 and ct.startswith("image/") and _MIN_BYTES < len(r.content) <= _MAX_BYTES:
+    if (
+        r.status_code == 200
+        and ct.startswith("image/")
+        and _MIN_BYTES < len(r.content) <= _MAX_BYTES
+    ):
         return {"image": r.content, "content_type": ct, "source_url": str(r.url), "status": "ok"}
     return None
 
@@ -107,7 +111,13 @@ async def _fetch_one(client: httpx.AsyncClient, provider, code: str) -> dict:
     Order: the company site's own declared icons, then a favicon service (which has icons cached for
     sites that block or time out on us). An override domain wins over the DSE-listed one.
     """
-    row: dict = {"market": MARKET, "code": code, "image": None, "content_type": None, "source_url": None}
+    row: dict = {
+        "market": MARKET,
+        "code": code,
+        "image": None,
+        "content_type": None,
+        "source_url": None,
+    }
     # 0. A hand-curated logo image, if we have one (wins over everything).
     direct = _LOGO_URLS.get(code)
     if direct:

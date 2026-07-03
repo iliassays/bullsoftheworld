@@ -28,13 +28,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import CompanyProfile, DailyBar, Symbol, TrendingScore
 
-BASELINE_W = 60         # trailing window for the self-normal baseline
-MIN_BARS = 60           # need at least this much history to score
-WEEK52_W = 252          # DSE has ~252 trading sessions/year; used only for descriptive range chips
+BASELINE_W = 60  # trailing window for the self-normal baseline
+MIN_BARS = 60  # need at least this much history to score
+WEEK52_W = 252  # DSE has ~252 trading sessions/year; used only for descriptive range chips
 HISTORY_W = max(BASELINE_W + 5, WEEK52_W)
-TURNOVER_FLOOR_TK = 5_000_000   # median 20-day turnover floor (~৳50 lakh/day) — tradeable only
-MCAP_FLOOR_MN = 500             # ~৳50 crore market cap floor
-TOP_N = 25              # how many to persist (strip shows ~8, list ~15)
+TURNOVER_FLOOR_TK = 5_000_000  # median 20-day turnover floor (~৳50 lakh/day) — tradeable only
+MCAP_FLOOR_MN = 500  # ~৳50 crore market cap floor
+TOP_N = 25  # how many to persist (strip shows ~8, list ~15)
 
 
 def _z(series: np.ndarray, today: float) -> float | None:
@@ -47,7 +47,9 @@ def _z(series: np.ndarray, today: float) -> float | None:
     return (today - mean) / std
 
 
-def _reasons(*, vol_mult, turnover_cr, turnover_mult, pct_from_high, pct_from_low, change_pct) -> list[dict[str, Any]]:
+def _reasons(
+    *, vol_mult, turnover_cr, turnover_mult, pct_from_high, pct_from_low, change_pct
+) -> list[dict[str, Any]]:
     """Descriptive context chips, most-important first, capped at 3. Display only — not rank drivers."""
     chips: list[dict[str, Any]] = []
     if change_pct >= 9.5:
@@ -155,7 +157,11 @@ async def compute_trending(market: str) -> dict[str, int]:
                     "as_of_date": t.date,
                     "score": round(score, 4),
                     "change_pct": round(change_pct, 2),
-                    "direction": "up" if change_pct > 0.1 else "down" if change_pct < -0.1 else "flat",
+                    "direction": "up"
+                    if change_pct > 0.1
+                    else "down"
+                    if change_pct < -0.1
+                    else "flat",
                     "heating_up": bool(vol_z >= 2 and to_z >= 2),
                     "reasons": _reasons(
                         vol_mult=vol_mult,
@@ -180,7 +186,11 @@ async def compute_trending(market: str) -> dict[str, int]:
             await session.execute(pg_insert(TrendingScore).values(top))
         await session.commit()
 
-    return {"eligible": len(scored), "stored": len(top), "as_of": as_of.isoformat() if as_of else "—"}
+    return {
+        "eligible": len(scored),
+        "stored": len(top),
+        "as_of": as_of.isoformat() if as_of else "—",
+    }
 
 
 async def _run(market: str) -> None:

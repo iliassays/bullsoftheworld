@@ -115,7 +115,9 @@ async def _eod_problems(now: dt.datetime) -> list[str]:
         ).scalar_one_or_none()
     problems: list[str] = []
     if bar != today:
-        problems.append(f"EOD bars not updated for {today} (latest {bar}) — the worker's EOD chain didn't run")
+        problems.append(
+            f"EOD bars not updated for {today} (latest {bar}) — the worker's EOD chain didn't run"
+        )
     if trend != today:
         problems.append(f"'Active today' not updated for {today} (latest {trend})")
     return problems
@@ -198,7 +200,9 @@ async def main() -> int:
     should_email = True
     try:
         r = aioredis.from_url(s.redis_url)
-        should_email = bool(await r.set(_COOLDOWN_KEY, now.isoformat(), nx=True, ex=COOLDOWN_SECONDS))
+        should_email = bool(
+            await r.set(_COOLDOWN_KEY, now.isoformat(), nx=True, ex=COOLDOWN_SECONDS)
+        )
         await r.aclose()
     except Exception:
         log.warning("redis cooldown unavailable — emailing anyway", exc_info=True)

@@ -133,7 +133,11 @@ async def get_investor_lens(
     )
     for a in bms:
         md = (a.details or {}).get("meeting_date")
-        if isinstance(md, str) and md >= today_iso and (next_meeting_date is None or md < next_meeting_date):
+        if (
+            isinstance(md, str)
+            and md >= today_iso
+            and (next_meeting_date is None or md < next_meeting_date)
+        ):
             next_meeting_date, next_meeting_period = md, (a.details or {}).get("period")
 
     return build_investor_lens(

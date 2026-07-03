@@ -44,9 +44,7 @@ def test_quality_needs_cheap_and_strong():
 def test_smartmoney_needs_both_positive():
     assert f.detect_smartmoney(_STRONG, "2026-06").beat == "smartmoney"
     # institutions up, foreign down → not "broad" accumulation
-    assert (
-        f.detect_smartmoney(NS(institute_delta=3.0, foreign_delta=-1.0), "2026-06") is None
-    )
+    assert f.detect_smartmoney(NS(institute_delta=3.0, foreign_delta=-1.0), "2026-06") is None
 
 
 def test_strength_up_while_market_down():
@@ -65,15 +63,23 @@ def test_accumulation_fires_on_inflow_flat_price():
 
 def test_accumulation_skips_when_price_already_ran():
     # money in + OBV up, but price 25% above its base → not "quiet"
-    assert f.detect_accumulation(NS(cmf_20=0.3, obv_slope=0.3, sma_50=100.0, last_close=125.0), "m") is None
+    assert (
+        f.detect_accumulation(NS(cmf_20=0.3, obv_slope=0.3, sma_50=100.0, last_close=125.0), "m")
+        is None
+    )
     # money in but OBV not confirming → skip
-    assert f.detect_accumulation(NS(cmf_20=0.3, obv_slope=-0.1, sma_50=100.0, last_close=101.0), "m") is None
+    assert (
+        f.detect_accumulation(NS(cmf_20=0.3, obv_slope=-0.1, sma_50=100.0, last_close=101.0), "m")
+        is None
+    )
 
 
 def test_circuit_up_and_down():
     up = f.detect_circuit(10.0, "2026-06-28")
     assert up and up.beat == "circuit" and up.payload["dir"] == "up"
-    assert "limit" in f.render(up, "GP", "en").lower() and "advice" in f.render(up, "GP", "en").lower()
+    assert (
+        "limit" in f.render(up, "GP", "en").lower() and "advice" in f.render(up, "GP", "en").lower()
+    )
     dn = f.detect_circuit(-9.95, "2026-06-28")
     assert dn and dn.payload["dir"] == "down"
     assert f.detect_circuit(8.0, "2026-06-28") is None  # not at the limit

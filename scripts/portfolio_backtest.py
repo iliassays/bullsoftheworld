@@ -219,12 +219,18 @@ def simulate(
                     cash += positions[weak]["shares"] * wbar.close * (1 - COST)
                     rret = wbar.close / positions[weak]["entry"] - 1
                     trades.append(rret)
-                    trade_log.append({
-                        "code": weak, "in_date": positions[weak]["entry_date"],
-                        "in_px": positions[weak]["entry"], "out_date": d,
-                        "out_px": round(wbar.close, 2), "ret": rret * 100,
-                        "held": positions[weak]["held"], "reason": "rotate",
-                    })
+                    trade_log.append(
+                        {
+                            "code": weak,
+                            "in_date": positions[weak]["entry_date"],
+                            "in_px": positions[weak]["entry"],
+                            "out_date": d,
+                            "out_px": round(wbar.close, 2),
+                            "ret": rret * 100,
+                            "held": positions[weak]["held"],
+                            "reason": "rotate",
+                        }
+                    )
                     del positions[weak]
                 equity = cash + sum(positions[c]["shares"] * last_px.get(c, 0) for c in positions)
                 alloc = min(equity / max_pos, cash / (1 + COST))

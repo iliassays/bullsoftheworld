@@ -105,28 +105,47 @@ def _volatility_score(closes: Sequence[float]) -> float | None:
 def _caption(band: str, top: MoodComponent | None, bn: bool) -> str:
     drivers = {
         "breadth": ("most shares are rising", "অধিকাংশ শেয়ার বাড়ছে"),
-        "strength": ("most shares hold above their long-term average", "অধিকাংশ শেয়ার দীর্ঘমেয়াদি গড়ের উপরে"),
-        "highs_lows": ("more shares are near 52-week highs than lows", "নিম্নের তুলনায় বেশি শেয়ার 52-সপ্তাহের উচ্চের কাছে"),
+        "strength": (
+            "most shares hold above their long-term average",
+            "অধিকাংশ শেয়ার দীর্ঘমেয়াদি গড়ের উপরে",
+        ),
+        "highs_lows": (
+            "more shares are near 52-week highs than lows",
+            "নিম্নের তুলনায় বেশি শেয়ার 52-সপ্তাহের উচ্চের কাছে",
+        ),
         "volatility": ("day-to-day swings are calm", "দৈনিক ওঠানামা শান্ত"),
     }
     fear_drivers = {
         "breadth": ("most shares are falling", "অধিকাংশ শেয়ার কমছে"),
-        "strength": ("most shares sit below their long-term average", "অধিকাংশ শেয়ার দীর্ঘমেয়াদি গড়ের নিচে"),
-        "highs_lows": ("more shares are near 52-week lows than highs", "উচ্চের তুলনায় বেশি শেয়ার 52-সপ্তাহের নিম্নের কাছে"),
+        "strength": (
+            "most shares sit below their long-term average",
+            "অধিকাংশ শেয়ার দীর্ঘমেয়াদি গড়ের নিচে",
+        ),
+        "highs_lows": (
+            "more shares are near 52-week lows than highs",
+            "উচ্চের তুলনায় বেশি শেয়ার 52-সপ্তাহের নিম্নের কাছে",
+        ),
         "volatility": ("day-to-day swings are large", "দৈনিক ওঠানামা বড়"),
     }
     greedy = band in ("greed", "extreme_greed")
     fearful = band in ("fear", "extreme_fear")
     if top is None or band == "unknown":
-        return "বাজারের মন বোঝার মতো যথেষ্ট তথ্য নেই।" if bn else "Not enough data to read the market's mood."
+        return (
+            "বাজারের মন বোঝার মতো যথেষ্ট তথ্য নেই।"
+            if bn
+            else "Not enough data to read the market's mood."
+        )
     pool = drivers if top.score >= 50 else fear_drivers
     reason = pool[top.key][1 if bn else 0]
     if greedy:
-        return (f"বাজারে এখন লোভের আবহ — {reason}।" if bn else f"The market mood is greedy — {reason}.")
+        return f"বাজারে এখন লোভের আবহ — {reason}।" if bn else f"The market mood is greedy — {reason}."
     if fearful:
-        return (f"বাজারে এখন ভয়ের আবহ — {reason}।" if bn else f"The market mood is fearful — {reason}.")
-    return (f"বাজারের মন এখন মোটামুটি ভারসাম্যে — {reason}।" if bn
-            else f"The market mood is fairly balanced — {reason}.")
+        return f"বাজারে এখন ভয়ের আবহ — {reason}।" if bn else f"The market mood is fearful — {reason}."
+    return (
+        f"বাজারের মন এখন মোটামুটি ভারসাম্যে — {reason}।"
+        if bn
+        else f"The market mood is fairly balanced — {reason}."
+    )
 
 
 def build_mood(
@@ -153,9 +172,13 @@ def build_mood(
     }
     details = {
         "breadth": f"{advancers} ▲ / {decliners} ▼",
-        "strength": None if pct_above_200dma is None else f"{pct_above_200dma * 100:.0f}% > 200-DMA",
+        "strength": None
+        if pct_above_200dma is None
+        else f"{pct_above_200dma * 100:.0f}% > 200-DMA",
         "highs_lows": f"{n_near_52w_high} ⤴ / {n_near_52w_low} ⤵",
-        "volatility": ("শান্ত" if bn else "calm") if (raw["volatility"] or 0) >= 50 else ("উত্থানপতন" if bn else "turbulent"),
+        "volatility": ("শান্ত" if bn else "calm")
+        if (raw["volatility"] or 0) >= 50
+        else ("উত্থানপতন" if bn else "turbulent"),
     }
     components = [
         MoodComponent(

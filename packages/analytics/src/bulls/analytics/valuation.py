@@ -57,7 +57,11 @@ def compute_valuation(
     pb_ratio = last_close / nav_per_share if nav_per_share and nav_per_share > 0 else None
     # Return on equity = profit/equity = (profit/shares) / (equity/shares) = EPS / NAV-per-share.
     # NAV floored at ৳1 to avoid a tiny denominator exploding ROE on distressed names.
-    roe = eps / nav_per_share * 100 if eps is not None and nav_per_share and nav_per_share >= 1 else None
+    roe = (
+        eps / nav_per_share * 100
+        if eps is not None and nav_per_share and nav_per_share >= 1
+        else None
+    )
 
     dividend_yield = None
     if cash_dividend_pct is not None and face_value:

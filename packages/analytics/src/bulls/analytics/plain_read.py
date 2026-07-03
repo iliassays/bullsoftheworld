@@ -189,7 +189,8 @@ def _income_point(dividend_yield: float | None, bn: bool) -> ReadPoint | None:
         )
     qualifier = "a healthy" if dividend_yield >= 5 else "a modest"
     return ReadPoint(
-        tag="income", text=f"It pays {qualifier} cash dividend (~{dividend_yield:.1f}% at this price)."
+        tag="income",
+        text=f"It pays {qualifier} cash dividend (~{dividend_yield:.1f}% at this price).",
     )
 
 
@@ -304,8 +305,14 @@ def _headline(
 
 
 def _how_to_read(
-    above_200: bool | None, volatility: float | None, roe: float | None, rsi: float | None,
-    pe_vs_sector: float | None, dividend_yield: float | None, pct_from_low: float | None, bn: bool,
+    above_200: bool | None,
+    volatility: float | None,
+    roe: float | None,
+    rsi: float | None,
+    pe_vs_sector: float | None,
+    dividend_yield: float | None,
+    pct_from_low: float | None,
+    bn: bool,
 ) -> str:
     lines: list[str] = []
     quality_steady = (roe is not None and roe >= 8) and (volatility is not None and volatility < 35)
@@ -322,9 +329,7 @@ def _how_to_read(
         if dividend_yield is not None and dividend_yield >= 5:
             lines.append("আয়-সন্ধানী বিনিয়োগকারীরা লভ্যাংশকে ব্যবসার স্থিতিশীলতার সাথে বিবেচনা করবেন।")
         if rsi is not None and rsi >= 70:
-            lines.append(
-                "দ্রুত বেড়ে যাওয়ায় অনেক ট্রেডার পিছনে না ছুটে শান্ত একটি পুলব্যাকের অপেক্ষা করেন।"
-            )
+            lines.append("দ্রুত বেড়ে যাওয়ায় অনেক ট্রেডার পিছনে না ছুটে শান্ত একটি পুলব্যাকের অপেক্ষা করেন।")
         elif rsi is not None and rsi <= 30 and pct_from_low is not None and pct_from_low <= 5:
             lines.append(
                 "৫২-সপ্তাহের সর্বনিম্নের কাছে পড়ে থাকা একটি বাউন্স সেটআপ হতে পারে, আবার পড়ন্ত ছুরিও হতে "
@@ -347,7 +352,9 @@ def _how_to_read(
             "though 'cheap' can also mean the market sees a problem, so check why."
         )
     if dividend_yield is not None and dividend_yield >= 5:
-        lines.append("Income investors would weigh the dividend against how steady the business is.")
+        lines.append(
+            "Income investors would weigh the dividend against how steady the business is."
+        )
     if rsi is not None and rsi >= 70:
         lines.append(
             "Because it's run up fast, many traders watch for a calmer pullback rather than chase it."
@@ -407,8 +414,14 @@ def build_plain_read(
         headline=_headline(above_sma_200, volatility, roe, rsi_14, bn),
         points=points,
         how_to_read=_how_to_read(
-            above_sma_200, volatility, roe, rsi_14, pe_vs_sector, dividend_yield,
-            pct_from_52w_low, bn,
+            above_sma_200,
+            volatility,
+            roe,
+            rsi_14,
+            pe_vs_sector,
+            dividend_yield,
+            pct_from_52w_low,
+            bn,
         ),
         disclaimer=_DISCLAIMER["bn" if bn else "en"],
     )

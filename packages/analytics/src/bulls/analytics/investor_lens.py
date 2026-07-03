@@ -76,7 +76,15 @@ def graham_score(
         return None
     score = 5.0
     if pe_vs_sector is not None:
-        score += 2 if pe_vs_sector < 0.75 else 1 if pe_vs_sector < 0.95 else -2 if pe_vs_sector > 1.25 else 0
+        score += (
+            2
+            if pe_vs_sector < 0.75
+            else 1
+            if pe_vs_sector < 0.95
+            else -2
+            if pe_vs_sector > 1.25
+            else 0
+        )
     if pe_ratio is not None and pe_ratio > 0:
         score += 1 if pe_ratio <= 12 else -2 if pe_ratio > 25 else 0
     if pb_ratio is not None:
@@ -101,7 +109,15 @@ def buffett_quality_score(
     if roe is not None:
         score += 3 if roe >= 20 else 2 if roe >= 15 else 1 if roe >= 10 else -3 if roe <= 0 else -1
     if eps_growth_yoy is not None:
-        score += 2 if eps_growth_yoy >= 15 else 1 if eps_growth_yoy > 0 else -2 if eps_growth_yoy < -20 else -1
+        score += (
+            2
+            if eps_growth_yoy >= 15
+            else 1
+            if eps_growth_yoy > 0
+            else -2
+            if eps_growth_yoy < -20
+            else -1
+        )
     if dividend_yield is not None and dividend_yield > 0:
         score += 1
     if above_sma_200 is False:
@@ -196,7 +212,9 @@ def dividend_score(
     if dividend_yield <= 0:
         return 2  # pays no cash dividend — weak on the income lens (known, not thin data)
     score = 5.0
-    score += 3 if dividend_yield >= 6 else 2 if dividend_yield >= 4 else 1 if dividend_yield >= 2 else 0
+    score += (
+        3 if dividend_yield >= 6 else 2 if dividend_yield >= 4 else 1 if dividend_yield >= 2 else 0
+    )
     if roe is not None:
         score += 1 if roe >= 10 else -2 if roe <= 0 else 0
     if eps_growth_yoy is not None:
@@ -254,7 +272,9 @@ def _news_check(bn: bool, count: int, label: str | None) -> LensCheck:
     else:
         actual = "নেই (৯০ দিনে)" if bn else "None (90d)"
         status = "na"  # absence of news is neutral, not a plus — don't paint it green
-    return LensCheck(label="সাম্প্রতিক খবর" if bn else "Recent news", actual=actual, expected="", status=status)
+    return LensCheck(
+        label="সাম্প্রতিক খবর" if bn else "Recent news", actual=actual, expected="", status=status
+    )
 
 
 def _extended_technical(
@@ -302,7 +322,11 @@ def _graham(
     recent_news_label: str | None = None,
 ) -> InvestorLens:
     s = graham_score(
-        pe_ratio=pe_ratio, pb_ratio=pb_ratio, pe_vs_sector=pe_vs_sector, roe=roe, dividend_yield=dividend_yield
+        pe_ratio=pe_ratio,
+        pb_ratio=pb_ratio,
+        pe_vs_sector=pe_vs_sector,
+        roe=roe,
+        dividend_yield=dividend_yield,
     )
     if bn:
         summary = "খাতের তুলনায় দাম কতটা যুক্তিযুক্ত এবং আয়ের সাপোর্ট আছে কি না — এই লেন্স তা দেখে।"
@@ -324,21 +348,36 @@ def _graham(
     checks = [
         _chk(
             "খাতের চেয়ে সস্তা" if bn else "Cheaper than sector",
-            pe_vs_sector, "< 1.0x", good=lambda x: x < 0.9, weak=lambda x: x > 1.25,
+            pe_vs_sector,
+            "< 1.0x",
+            good=lambda x: x < 0.9,
+            weak=lambda x: x > 1.25,
         ),
         _chk("P/E", pe_ratio, "≤ 15x", good=lambda x: 0 < x <= 15, weak=lambda x: x > 25),
         _chk("P/B", pb_ratio, "≤ 1.5x", good=lambda x: x <= 1.5, weak=lambda x: x > 3),
         _chk(
             "আয় (ROE)" if bn else "Earnings (ROE)",
-            roe, "≥ 10%", good=lambda x: x >= 10, weak=lambda x: x <= 0, fmt=_fmt_pct,
+            roe,
+            "≥ 10%",
+            good=lambda x: x >= 10,
+            weak=lambda x: x <= 0,
+            fmt=_fmt_pct,
         ),
         _chk(
             "লভ্যাংশ" if bn else "Dividend",
-            dividend_yield, "≥ 3%", good=lambda x: x >= 3, weak=lambda x: x <= 0, fmt=_fmt_pct,
+            dividend_yield,
+            "≥ 3%",
+            good=lambda x: x >= 3,
+            weak=lambda x: x <= 0,
+            fmt=_fmt_pct,
         ),
         _chk(
             "ঋণ/ইকুইটি" if bn else "Debt / equity",
-            debt_to_equity, "≤ 1.0x", good=lambda x: x <= 0.5, weak=lambda x: x > 2, fmt=_fmt_x,
+            debt_to_equity,
+            "≤ 1.0x",
+            good=lambda x: x <= 0.5,
+            weak=lambda x: x > 2,
+            fmt=_fmt_x,
         ),
         _news_check(bn, recent_news_count, recent_news_label),
     ]
@@ -367,7 +406,10 @@ def _buffett(
     eps_history: list[float] | None = None,
 ) -> InvestorLens:
     s = buffett_quality_score(
-        roe=roe, eps_growth_yoy=eps_growth_yoy, dividend_yield=dividend_yield, above_sma_200=above_sma_200
+        roe=roe,
+        eps_growth_yoy=eps_growth_yoy,
+        dividend_yield=dividend_yield,
+        above_sma_200=above_sma_200,
     )
     # Multi-year EPS trend from annual financials (oldest -> newest): how many years earnings rose.
     eps_years_up: int | None = None
@@ -378,31 +420,61 @@ def _buffett(
         eps_years_n = len(pairs)
     if bn:
         summary = "ব্যবসার মান, লাভজনকতা ও স্থায়িত্বের দিক থেকে কোম্পানিটা কতটা শক্ত — এই লেন্স তা দেখে।"
-        trend = "200DMA-এর উপরে" if above_sma_200 else "200DMA-এর নিচে" if above_sma_200 is False else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
+        trend = (
+            "200DMA-এর উপরে"
+            if above_sma_200
+            else "200DMA-এর নিচে"
+            if above_sma_200 is False
+            else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
+        )
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
         watch_next = ["ব্যবসার moat"]
     else:
-        summary = "Looks for business quality: durable profitability, steady earnings, and staying power."
-        trend = "Above 200-DMA" if above_sma_200 else "Below 200-DMA" if above_sma_200 is False else "Long-term trend unknown"
+        summary = (
+            "Looks for business quality: durable profitability, steady earnings, and staying power."
+        )
+        trend = (
+            "Above 200-DMA"
+            if above_sma_200
+            else "Below 200-DMA"
+            if above_sma_200 is False
+            else "Long-term trend unknown"
+        )
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
         watch_next = ["Business moat"]
 
     checks = [
         _chk(
             "লাভজনকতা (ROE)" if bn else "Profitability (ROE)",
-            roe, "≥ 15%", good=lambda x: x >= 15, weak=lambda x: x <= 0, fmt=_fmt_pct,
+            roe,
+            "≥ 15%",
+            good=lambda x: x >= 15,
+            weak=lambda x: x <= 0,
+            fmt=_fmt_pct,
         ),
         _chk(
             "আয় বৃদ্ধি (YoY)" if bn else "Earnings growth (YoY)",
-            eps_growth_yoy, "> 0%", good=lambda x: x >= 15, weak=lambda x: x < 0, fmt=_fmt_pct,
+            eps_growth_yoy,
+            "> 0%",
+            good=lambda x: x >= 15,
+            weak=lambda x: x < 0,
+            fmt=_fmt_pct,
         ),
         _chk(
             "ঋণ/ইকুইটি" if bn else "Debt / equity",
-            debt_to_equity, "≤ 1.0x", good=lambda x: x <= 0.5, weak=lambda x: x > 2, fmt=_fmt_x,
+            debt_to_equity,
+            "≤ 1.0x",
+            good=lambda x: x <= 0.5,
+            weak=lambda x: x > 2,
+            fmt=_fmt_x,
         ),
         LensCheck(
             label="বহু-বছরের আয়" if bn else "Multi-year earnings",
-            actual=(f"{eps_years_up}/{eps_years_n} বছর বেড়েছে" if bn else f"up {eps_years_up}/{eps_years_n} yrs")
+            actual=(
+                f"{eps_years_up}/{eps_years_n} বছর বেড়েছে"
+                if bn
+                else f"up {eps_years_up}/{eps_years_n} yrs"
+            )
             if eps_years_up is not None
             else "—",
             expected="ধারাবাহিক" if bn else "rising",
@@ -420,7 +492,11 @@ def _buffett(
             label="ক্রেডিট রেটিং" if bn else "Credit rating",
             actual=credit_rating or "—",
             expected="investment grade" if not bn else "ইনভেস্টমেন্ট গ্রেড",
-            status="na" if not credit_rating else ("pass" if credit_rating.strip().upper().startswith(("AAA", "AA", "A")) else "watch"),
+            status="na"
+            if not credit_rating
+            else (
+                "pass" if credit_rating.strip().upper().startswith(("AAA", "AA", "A")) else "watch"
+            ),
         ),
         LensCheck(
             label="দীর্ঘমেয়াদি ট্রেন্ড" if bn else "Long-term trend",
@@ -497,7 +573,11 @@ def _technical(
             f"50DMA {'উপরে' if above_sma_50 else 'নিচে' if above_sma_50 is False else 'অজানা'} · "
             f"200DMA {'উপরে' if above_sma_200 else 'নিচে' if above_sma_200 is False else 'অজানা'}"
         )
-        points = [trend, f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}", f"Volume {_fmt_x(relative_volume)} normal"]
+        points = [
+            trend,
+            f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}",
+            f"Volume {_fmt_x(relative_volume)} normal",
+        ]
         watch_next = ["pullback/support", "RSI ঠান্ডা হয় কি না"] if extended else []
     else:
         summary = (
@@ -509,34 +589,57 @@ def _technical(
             f"50-DMA {'above' if above_sma_50 else 'below' if above_sma_50 is False else 'unknown'} · "
             f"200-DMA {'above' if above_sma_200 else 'below' if above_sma_200 is False else 'unknown'}"
         )
-        points = [trend, f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}", f"Volume {_fmt_x(relative_volume)} normal"]
+        points = [
+            trend,
+            f"12m momentum {_fmt_pct(mom_12_1)} · RSI {_fmt_pct(rsi_14, '')}",
+            f"Volume {_fmt_x(relative_volume)} normal",
+        ]
         watch_next = ["Pullback/support", "RSI cools"] if extended else []
 
     checks = [
         LensCheck(
             label="50-দিনের ট্রেন্ড" if bn else "50-day trend",
-            actual=("উপরে" if bn else "Above") if above_sma_50 else ("নিচে" if bn else "Below") if above_sma_50 is False else "—",
+            actual=("উপরে" if bn else "Above")
+            if above_sma_50
+            else ("নিচে" if bn else "Below")
+            if above_sma_50 is False
+            else "—",
             expected="↑ 50-DMA",
             status="pass" if above_sma_50 else "fail" if above_sma_50 is False else "na",
         ),
         LensCheck(
             label="200-দিনের ট্রেন্ড" if bn else "200-day trend",
-            actual=("উপরে" if bn else "Above") if above_sma_200 else ("নিচে" if bn else "Below") if above_sma_200 is False else "—",
+            actual=("উপরে" if bn else "Above")
+            if above_sma_200
+            else ("নিচে" if bn else "Below")
+            if above_sma_200 is False
+            else "—",
             expected="↑ 200-DMA",
             status="pass" if above_sma_200 else "fail" if above_sma_200 is False else "na",
         ),
         _chk(
             "মোমেন্টাম (12m)" if bn else "Momentum (12m)",
-            mom_12_1, "> 0%", good=lambda x: x >= 40, weak=lambda x: x <= 0, fmt=_fmt_pct,
+            mom_12_1,
+            "> 0%",
+            good=lambda x: x >= 40,
+            weak=lambda x: x <= 0,
+            fmt=_fmt_pct,
         ),
         _chk(
-            "RSI", rsi_14, "45-70",
-            good=lambda x: 45 <= x <= 70, weak=lambda x: x > 80 or x < 30, fmt=lambda v: _fmt_pct(v, ""),
+            "RSI",
+            rsi_14,
+            "45-70",
+            good=lambda x: 45 <= x <= 70,
+            weak=lambda x: x > 80 or x < 30,
+            fmt=lambda v: _fmt_pct(v, ""),
         ),
         _chk(
             "ভলিউম (স্বাভাবিকের বিপরীতে)" if bn else "Volume vs normal",
-            relative_volume, "≥ 1.5x" + (" নিশ্চিতকরণে" if bn else " to confirm"),
-            good=lambda x: x >= 1.5, weak=lambda x: x < 0.7, fmt=_fmt_x,
+            relative_volume,
+            "≥ 1.5x" + (" নিশ্চিতকরণে" if bn else " to confirm"),
+            good=lambda x: x >= 1.5,
+            weak=lambda x: x < 0.7,
+            fmt=_fmt_x,
         ),
         LensCheck(
             label="সাপোর্ট / রেজিস্ট্যান্স" if bn else "Support / resistance",
@@ -573,7 +676,9 @@ def _smart_money(
     next_meeting_date: str | None = None,
     next_meeting_period: str | None = None,
 ) -> InvestorLens:
-    s = smart_money_score(institute_delta=institute_delta, foreign_delta=foreign_delta, cmf_20=cmf_20)
+    s = smart_money_score(
+        institute_delta=institute_delta, foreign_delta=foreign_delta, cmf_20=cmf_20
+    )
     if bn:
         summary = "প্রতিষ্ঠান/বিদেশি মালিকানা ও মানি-ফ্লো দেখে বড় অংশগ্রহণকারীদের আচরণ বোঝার চেষ্টা করে।"
         points = [
@@ -594,22 +699,36 @@ def _smart_money(
     checks = [
         _chk(
             "প্রতিষ্ঠান বদল" if bn else "Institutions change",
-            institute_delta, "> 0 pp",
-            good=lambda x: x > 0, weak=lambda x: x < 0, fmt=lambda v: _fmt_pct(v, " pp"),
+            institute_delta,
+            "> 0 pp",
+            good=lambda x: x > 0,
+            weak=lambda x: x < 0,
+            fmt=lambda v: _fmt_pct(v, " pp"),
         ),
         _chk(
             "বিদেশি বদল" if bn else "Foreign change",
-            foreign_delta, "> 0 pp",
-            good=lambda x: x > 0, weak=lambda x: x < 0, fmt=lambda v: _fmt_pct(v, " pp"),
+            foreign_delta,
+            "> 0 pp",
+            good=lambda x: x > 0,
+            weak=lambda x: x < 0,
+            fmt=lambda v: _fmt_pct(v, " pp"),
         ),
         _chk(
             "মানি ফ্লো (CMF)" if bn else "Money flow (CMF)",
-            cmf_20, "> 0", good=lambda x: x > 0.1, weak=lambda x: x < -0.1, fmt=lambda v: _fmt_pct(v, ""),
+            cmf_20,
+            "> 0",
+            good=lambda x: x > 0.1,
+            weak=lambda x: x < -0.1,
+            fmt=lambda v: _fmt_pct(v, ""),
         ),
         _news_check(bn, recent_news_count, recent_news_label),
         LensCheck(
             label="পরবর্তী বোর্ড সভা" if bn else "Next board meeting",
-            actual=(f"{next_meeting_date} ({next_meeting_period})" if next_meeting_period else next_meeting_date)
+            actual=(
+                f"{next_meeting_date} ({next_meeting_period})"
+                if next_meeting_period
+                else next_meeting_date
+            )
             if next_meeting_date
             else ("নির্ধারিত নেই" if bn else "none scheduled"),
             expected="",
@@ -661,19 +780,35 @@ def _dividend(
     checks = [
         _chk(
             "নগদ ইয়িল্ড" if bn else "Cash yield",
-            dividend_yield, "≥ 4%", good=lambda x: x >= 4, weak=lambda x: x <= 0, fmt=_fmt_pct,
+            dividend_yield,
+            "≥ 4%",
+            good=lambda x: x >= 4,
+            weak=lambda x: x <= 0,
+            fmt=_fmt_pct,
         ),
         _chk(
             "আয় কভারেজ (ROE)" if bn else "Earnings cover (ROE)",
-            roe, "≥ 10%", good=lambda x: x >= 10, weak=lambda x: x <= 0, fmt=_fmt_pct,
+            roe,
+            "≥ 10%",
+            good=lambda x: x >= 10,
+            weak=lambda x: x <= 0,
+            fmt=_fmt_pct,
         ),
         _chk(
             "আয় স্থিতিশীল" if bn else "Earnings stable",
-            eps_growth_yoy, "≥ 0%", good=lambda x: x >= 0, weak=lambda x: x < -20, fmt=_fmt_pct,
+            eps_growth_yoy,
+            "≥ 0%",
+            good=lambda x: x >= 0,
+            weak=lambda x: x < -20,
+            fmt=_fmt_pct,
         ),
         LensCheck(
             label="লভ্যাংশ ট্র্যাক রেকর্ড" if bn else "Payout track record",
-            actual=(f"নগদ {div_paid_years}/{div_total_years} বছর" if bn else f"cash {div_paid_years}/{div_total_years} yrs")
+            actual=(
+                f"নগদ {div_paid_years}/{div_total_years} বছর"
+                if bn
+                else f"cash {div_paid_years}/{div_total_years} yrs"
+            )
             if div_total_years
             else "—",
             expected="≥ 3 yrs" if div_total_years else "",
@@ -691,7 +826,15 @@ def _dividend(
             label="সর্বশেষ পেআউট" if bn else "Latest payout",
             actual=(
                 (f"নগদ {latest_cash_pct:.0f}%" if bn else f"cash {latest_cash_pct:.0f}%")
-                + ((f" + বোনাস {latest_bonus_pct:.0f}%" if bn else f" + bonus {latest_bonus_pct:.0f}%") if latest_bonus_pct else "")
+                + (
+                    (
+                        f" + বোনাস {latest_bonus_pct:.0f}%"
+                        if bn
+                        else f" + bonus {latest_bonus_pct:.0f}%"
+                    )
+                    if latest_bonus_pct
+                    else ""
+                )
             )
             if latest_cash_pct is not None
             else "—",
@@ -756,16 +899,27 @@ def _taleb_risk(
         ),
         _chk(
             "লিকুইডিটি (ADTV)" if bn else "Liquidity (ADTV)",
-            adtv_mn, "≥ ৳5mn/day", good=lambda x: x >= 10, weak=lambda x: x < 5, fmt=_fmt_tk_mn,
+            adtv_mn,
+            "≥ ৳5mn/day",
+            good=lambda x: x >= 10,
+            weak=lambda x: x < 5,
+            fmt=_fmt_tk_mn,
         ),
         _chk(
             "ভোলাটিলিটি" if bn else "Volatility",
-            volatility, "< 50%", good=lambda x: x < 35, weak=lambda x: x >= 50, fmt=_fmt_pct,
+            volatility,
+            "< 50%",
+            good=lambda x: x < 35,
+            weak=lambda x: x >= 50,
+            fmt=_fmt_pct,
         ),
         _chk(
             "আজকের মুভ" if bn else "Today's move",
-            today_change_pct, "সার্কিটে নয়" if bn else "not at circuit",
-            good=lambda x: abs(x) < 7, weak=lambda x: abs(x) >= 9.5, fmt=_fmt_pct,
+            today_change_pct,
+            "সার্কিটে নয়" if bn else "not at circuit",
+            good=lambda x: abs(x) < 7,
+            weak=lambda x: abs(x) >= 9.5,
+            fmt=_fmt_pct,
         ),
     ]
     return InvestorLens(

@@ -39,9 +39,7 @@ class TenantOut(BaseModel):
 async def list_tenants(request: Request) -> list[TenantOut]:
     """Every configured tenant — drives the admin tenant selector."""
     reg = request.app.state.tenants
-    return [
-        TenantOut(name=t.name, display_name=t.display_name, market=t.market) for t in reg.all()
-    ]
+    return [TenantOut(name=t.name, display_name=t.display_name, market=t.market) for t in reg.all()]
 
 
 class RecentEvent(BaseModel):
@@ -113,7 +111,9 @@ async def overview(
     # people vs agent desks (both are User rows; desks carry is_official=true)
     users_desks = await _count(
         session,
-        select(func.count()).select_from(User).where(User.tenant_id == name, User.is_official.is_(True)),
+        select(func.count())
+        .select_from(User)
+        .where(User.tenant_id == name, User.is_official.is_(True)),
     )
     users_total = await _count(
         session, select(func.count()).select_from(User).where(User.tenant_id == name)
@@ -133,18 +133,24 @@ async def overview(
     posts_total = sum(moderation.values())
 
     agent_notes = await _count(
-        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "note")
+        session,
+        select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "note"),
     )
     user_posts = await _count(
-        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "user")
+        session,
+        select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "user"),
     )
 
     def _today(kind: str):
-        return select(func.count()).select_from(Post).where(
-            Post.tenant_id == name,
-            Post.kind == kind,
-            Post.moderation_status == "published",
-            Post.created_at >= day_start,
+        return (
+            select(func.count())
+            .select_from(Post)
+            .where(
+                Post.tenant_id == name,
+                Post.kind == kind,
+                Post.moderation_status == "published",
+                Post.created_at >= day_start,
+            )
         )
 
     people_posts_today = await _count(session, _today("user"))
@@ -179,7 +185,9 @@ async def overview(
         )
         for ev in await session.scalars(
             select(ModerationEvent)
-            .where(ModerationEvent.tenant_id == name, ModerationEvent.decision.in_(("hold", "block")))
+            .where(
+                ModerationEvent.tenant_id == name, ModerationEvent.decision.in_(("hold", "block"))
+            )
             .order_by(desc(ModerationEvent.created_at))
             .limit(10)
         )
@@ -211,11 +219,15 @@ async def overview(
     )
     symbols_active = await _count(
         session,
-        select(func.count()).select_from(Symbol).where(Symbol.market == market, Symbol.is_active.is_(True)),
+        select(func.count())
+        .select_from(Symbol)
+        .where(Symbol.market == market, Symbol.is_active.is_(True)),
     )
     symbols_hidden = await _count(
         session,
-        select(func.count()).select_from(Symbol).where(Symbol.market == market, Symbol.is_hidden.is_(True)),
+        select(func.count())
+        .select_from(Symbol)
+        .where(Symbol.market == market, Symbol.is_hidden.is_(True)),
     )
 
     return OverviewOut(
@@ -365,23 +377,27 @@ async def analytics(
     # KPIs
     people_total = await _count(
         session,
-        select(func.count()).select_from(User).where(User.tenant_id == name, User.is_official.is_(False)),
+        select(func.count())
+        .select_from(User)
+        .where(User.tenant_id == name, User.is_official.is_(False)),
     )
     desks_total = await _count(
         session,
-        select(func.count()).select_from(User).where(User.tenant_id == name, User.is_official.is_(True)),
+        select(func.count())
+        .select_from(User)
+        .where(User.tenant_id == name, User.is_official.is_(True)),
     )
     new_people_7d = await _count(
         session,
-        select(func.count()).select_from(User).where(
-            User.tenant_id == name, User.is_official.is_(False), User.created_at >= since_7d
-        ),
+        select(func.count())
+        .select_from(User)
+        .where(User.tenant_id == name, User.is_official.is_(False), User.created_at >= since_7d),
     )
     new_people_30d = await _count(
         session,
-        select(func.count()).select_from(User).where(
-            User.tenant_id == name, User.is_official.is_(False), User.created_at >= since_30d
-        ),
+        select(func.count())
+        .select_from(User)
+        .where(User.tenant_id == name, User.is_official.is_(False), User.created_at >= since_30d),
     )
     posters_7d = set(
         await session.scalars(
@@ -398,10 +414,12 @@ async def analytics(
         )
     )
     public_posts_total = await _count(
-        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "user")
+        session,
+        select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "user"),
     )
     agent_notes_total = await _count(
-        session, select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "note")
+        session,
+        select(func.count()).select_from(Post).where(Post.tenant_id == name, Post.kind == "note"),
     )
     reactions_7d = await _count(
         session,

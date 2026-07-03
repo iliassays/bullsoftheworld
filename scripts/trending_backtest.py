@@ -25,9 +25,9 @@ RUN (on the server, where daily_bars lives):
 import numpy as np
 import pandas as pd
 
-W_VOL = 60      # baseline window for volume/turnover/range z-scores
-W_RET = 20      # window for return volatility
-K = 5           # forward horizon (days) for the label
+W_VOL = 60  # baseline window for volume/turnover/range z-scores
+W_RET = 20  # window for return volatility
+K = 5  # forward horizon (days) for the label
 MIN_HIST = 120  # need this much history before a stock is scored
 NS = [5, 10, 20]  # top-N cutoffs to report precision at
 
@@ -37,7 +37,7 @@ g = df.groupby("code", group_keys=False)
 
 # --- base series ---
 df["ret"] = g["close"].pct_change()
-df["turnover"] = df["close"] * df["volume"]            # value-traded proxy
+df["turnover"] = df["close"] * df["volume"]  # value-traded proxy
 df["log_vol"] = np.log1p(df["volume"])
 df["log_to"] = np.log1p(df["turnover"])
 df["range"] = (df["high"] - df["low"]) / df["close"].replace(0, np.nan)
@@ -55,23 +55,38 @@ def z_trailing(col, w):
 df["vol_z"] = z_trailing("log_vol", W_VOL)
 df["to_z"] = z_trailing("log_to", W_VOL)
 df["range_z"] = z_trailing("range", W_VOL)
-ret_vol = df.groupby("code")["ret"].transform(lambda s: s.shift(1).rolling(W_RET, min_periods=10).std())
+ret_vol = df.groupby("code")["ret"].transform(
+    lambda s: s.shift(1).rolling(W_RET, min_periods=10).std()
+)
 df["ret_vol"] = ret_vol
 df["abs_ret_z"] = (df["ret"].abs()) / ret_vol
-roll_max = df.groupby("code")["close"].transform(lambda s: s.shift(1).rolling(252, min_periods=60).max())
-roll_min = df.groupby("code")["close"].transform(lambda s: s.shift(1).rolling(252, min_periods=60).min())
+roll_max = df.groupby("code")["close"].transform(
+    lambda s: s.shift(1).rolling(252, min_periods=60).max()
+)
+roll_min = df.groupby("code")["close"].transform(
+    lambda s: s.shift(1).rolling(252, min_periods=60).min()
+)
 df["breakout"] = ((df["close"] >= roll_max) | (df["close"] <= roll_min)).astype(float)
 sign = np.sign(df["ret"]).fillna(0)
-df["persist"] = df.groupby("code")["ret"].transform(
-    lambda s: np.sign(s).rolling(5, min_periods=3).sum().abs()
-) / 5.0
+df["persist"] = (
+    df.groupby("code")["ret"].transform(lambda s: np.sign(s).rolling(5, min_periods=3).sum().abs())
+    / 5.0
+)
 # liquidity: trailing-20 median turnover (known at t)
-df["liq"] = df.groupby("code")["turnover"].transform(lambda s: s.shift(1).rolling(20, min_periods=10).median())
+df["liq"] = df.groupby("code")["turnover"].transform(
+    lambda s: s.shift(1).rolling(20, min_periods=10).median()
+)
 
 # --- forward label (uses only data > t) ---
-fwd_to = pd.concat([df.groupby("code")["turnover"].shift(-i) for i in range(1, K + 1)], axis=1).mean(axis=1)
-mean_logto = df.groupby("code")["log_to"].transform(lambda s: s.shift(1).rolling(W_VOL, min_periods=W_VOL // 2).mean())
-std_logto = df.groupby("code")["log_to"].transform(lambda s: s.shift(1).rolling(W_VOL, min_periods=W_VOL // 2).std())
+fwd_to = pd.concat(
+    [df.groupby("code")["turnover"].shift(-i) for i in range(1, K + 1)], axis=1
+).mean(axis=1)
+mean_logto = df.groupby("code")["log_to"].transform(
+    lambda s: s.shift(1).rolling(W_VOL, min_periods=W_VOL // 2).mean()
+)
+std_logto = df.groupby("code")["log_to"].transform(
+    lambda s: s.shift(1).rolling(W_VOL, min_periods=W_VOL // 2).std()
+)
 df["fwd_to_z"] = (np.log1p(fwd_to) - mean_logto) / std_logto.replace(0, np.nan)
 fwd_cum = [df.groupby("code")["close"].shift(-i) / df["close"] - 1 for i in range(1, K + 1)]
 df["fwd_abs_move"] = pd.concat([c.abs() for c in fwd_cum], axis=1).max(axis=1)
@@ -84,7 +99,12 @@ df["notable_score"] = df[["fwd_to_z", "fwd_abs_z"]].clip(lower=0).fillna(0).sum(
 # --- scoring universe: enough history, valid features, liquidity gate (top 60% by trailing turnover, per day) ---
 df["bar_n"] = df.groupby("code").cumcount()
 feat_cols = ["vol_z", "to_z", "range_z", "abs_ret_z", "breakout", "persist"]
-elig = df[(df["bar_n"] >= MIN_HIST) & df[feat_cols].notna().all(axis=1) & df["notable"].notna() & df["liq"].notna()].copy()
+elig = df[
+    (df["bar_n"] >= MIN_HIST)
+    & df[feat_cols].notna().all(axis=1)
+    & df["notable"].notna()
+    & df["liq"].notna()
+].copy()
 # per-day liquidity gate
 elig["liq_pct"] = elig.groupby("date")["liq"].rank(pct=True)
 elig = elig[elig["liq_pct"] >= 0.40].copy()
@@ -93,13 +113,17 @@ for c in feat_cols:  # clip extreme z's
 
 dates = np.sort(elig["date"].unique())
 split = dates[int(len(dates) * 0.6)]
-print(f"scored rows={len(elig):,}  days={len(dates)}  base notable rate={elig['notable'].mean():.1%}")
+print(
+    f"scored rows={len(elig):,}  days={len(dates)}  base notable rate={elig['notable'].mean():.1%}"
+)
 print(f"in-sample <= {pd.Timestamp(split).date()}  | OOS after\n")
 
 WEIGHTS = {
-    "equal":        dict(vol_z=1, to_z=1, range_z=1, abs_ret_z=1, breakout=1, persist=1),
-    "spec":         dict(vol_z=0.35, to_z=0.25, abs_ret_z=0.20, persist=0.10, range_z=0.05, breakout=0.05),
-    "volume_heavy": dict(vol_z=0.45, to_z=0.35, abs_ret_z=0.10, range_z=0.05, breakout=0.05, persist=0.0),
+    "equal": dict(vol_z=1, to_z=1, range_z=1, abs_ret_z=1, breakout=1, persist=1),
+    "spec": dict(vol_z=0.35, to_z=0.25, abs_ret_z=0.20, persist=0.10, range_z=0.05, breakout=0.05),
+    "volume_heavy": dict(
+        vol_z=0.45, to_z=0.35, abs_ret_z=0.10, range_z=0.05, breakout=0.05, persist=0.0
+    ),
     "activity_only": dict(vol_z=0.5, to_z=0.5, range_z=0, abs_ret_z=0, breakout=0, persist=0),
 }
 
@@ -111,16 +135,20 @@ def composite(frame, w):
 
 def eval_precision(frame, score_col, n):
     """avg precision@n across days in frame."""
+
     def per_day(d):
         top = d.nlargest(n, score_col)
         return top["notable"].mean()
+
     return frame.groupby("date").apply(per_day).mean()
 
 
 def rank_ic(frame, score_col):
-    return frame.groupby("date").apply(
-        lambda d: d[score_col].corr(d["notable_score"], method="spearman")
-    ).mean()
+    return (
+        frame.groupby("date")
+        .apply(lambda d: d[score_col].corr(d["notable_score"], method="spearman"))
+        .mean()
+    )
 
 
 oos = elig[elig["date"] > split]
@@ -129,7 +157,7 @@ base_rate = oos["notable"].mean()
 
 # baselines to beat
 oos = oos.copy()
-oos["gainers"] = oos["ret"]           # current strip: today's % change (top gainers)
+oos["gainers"] = oos["ret"]  # current strip: today's % change (top gainers)
 oos["absmove_today"] = oos["ret"].abs()
 
 print("=== univariate precision@10 (OOS) — which single signal carries edge? ===")
@@ -145,9 +173,11 @@ for name, w in WEIGHTS.items():
     line = f"  {name:13}"
     for n in NS:
         p = eval_precision(o, "_c", n)
-        line += f"  @{n}={p:.1%}(x{p/base_rate:.2f})"
+        line += f"  @{n}={p:.1%}(x{p / base_rate:.2f})"
     line += f"  IC={rank_ic(o, '_c'):+.3f}"
     print(line)
 
-print(f"\n  baseline strip @10 lift = {eval_precision(oos,'gainers',10)/base_rate:.2f}x base")
-print(f"  abs-move-today @10 lift = {eval_precision(oos,'absmove_today',10)/base_rate:.2f}x base")
+print(f"\n  baseline strip @10 lift = {eval_precision(oos, 'gainers', 10) / base_rate:.2f}x base")
+print(
+    f"  abs-move-today @10 lift = {eval_precision(oos, 'absmove_today', 10) / base_rate:.2f}x base"
+)
