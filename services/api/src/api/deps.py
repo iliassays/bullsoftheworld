@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -46,7 +47,8 @@ def visible_codes(market: str) -> Select:
 def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None:
     """Guard admin routes with a shared token (ADMIN_TOKEN). No token configured = locked."""
     token = get_settings().admin_token
-    if not token or x_admin_token != token:
+    # Constant-time comparison: response timing can never leak how much of the token matched.
+    if not token or not secrets.compare_digest(x_admin_token or "", token):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
