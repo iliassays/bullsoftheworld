@@ -804,22 +804,26 @@ function YearBars({
   fmt: (n: number) => string;
   color?: string;
 }) {
-  const pts = data.filter((d): d is { year: number; v: number } => d.v != null);
-  if (pts.length < 2) return null;
-  const max = Math.max(...pts.map((d) => Math.abs(d.v)), 0.0001);
+  const known = data.filter((d): d is { year: number; v: number } => d.v != null);
+  if (known.length < 2) return null;
+  const max = Math.max(...known.map((d) => Math.abs(d.v)), 0.0001);
+  const lastYear = known[known.length - 1].year;
   return (
     <div className="flex items-end gap-1.5 mt-2 mb-3">
-      {pts.map((d, i) => {
-        const last = i === pts.length - 1;
-        const bg = d.v < 0 ? "var(--color-down)" : last ? color : "var(--color-border)";
+      {data.map((d) => {
+        const last = d.year === lastYear && d.v != null;
+        const bg =
+          d.v == null ? undefined : d.v < 0 ? "var(--color-down)" : last ? color : "var(--color-border)";
         return (
           <div key={d.year} className="flex-1 flex flex-col items-center min-w-0">
-            <span className="text-[9px] text-muted tnum mb-0.5">{fmt(d.v)}</span>
+            <span className="text-[9px] text-muted tnum mb-0.5">{d.v == null ? "—" : fmt(d.v)}</span>
             <div className="w-full h-14 flex items-end">
-              <div
-                className="w-full rounded-t"
-                style={{ height: `${Math.max(4, (Math.abs(d.v) / max) * 100)}%`, backgroundColor: bg }}
-              />
+              {d.v != null && (
+                <div
+                  className="w-full rounded-t"
+                  style={{ height: `${Math.max(4, (Math.abs(d.v) / max) * 100)}%`, backgroundColor: bg }}
+                />
+              )}
             </div>
             <span className={`text-[9px] tnum mt-1 ${last ? "text-fg font-semibold" : "text-muted"}`}>
               &rsquo;{String(d.year).slice(2)}
@@ -829,6 +833,17 @@ function YearBars({
       })}
     </div>
   );
+}
+
+// Fill calendar gaps so a skipped year shows as an empty "—" slot instead of being
+// silently collapsed — the year a company paid nothing is often the most informative
+// bar on the chart. Capped so one long gap can't stretch the row absurdly.
+function fillYears(pts: { year: number; v: number | null }[], cap = 8) {
+  if (pts.length < 2) return pts;
+  const filled: { year: number; v: number | null }[] = [];
+  for (let y = pts[0].year; y <= pts[pts.length - 1].year; y++)
+    filled.push(pts.find((p) => p.year === y) ?? { year: y, v: null });
+  return filled.slice(-cap);
 }
 
 const _EY_TIP =
@@ -854,7 +869,7 @@ export function EarningsPanel({
       <span className={`text-[11px] ${yoy >= 0 ? "text-up" : "text-down"}`}>
         {" "}
         {yoy >= 0 ? "▲" : "▼"}
-        {Math.abs(yoy).toFixed(0)}%
+        {Math.abs(yoy).toFixed(Math.abs(yoy) < 10 ? 1 : 0)}%
       </span>
     );
   const earningsYield = f.pe_ratio && f.pe_ratio > 0 ? 100 / f.pe_ratio : null;
@@ -865,8 +880,12 @@ export function EarningsPanel({
   const payout =
     latestCash != null && eps0 ? ((latestCash / 100) * face) / eps0 * 100 : null;
 
-  const epsBars = earnings.slice(0, 6).reverse().map((e) => ({ year: e.fiscal_year, v: e.eps }));
-  const cashBars = dividends.slice(0, 6).reverse().map((d) => ({ year: d.year, v: d.cash_pct }));
+  const epsBars = fillYears(
+    earnings.slice(0, 6).reverse().map((e) => ({ year: e.fiscal_year, v: e.eps })),
+  );
+  const cashBars = fillYears(
+    dividends.slice(0, 6).reverse().map((d) => ({ year: d.year, v: d.cash_pct })),
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -901,7 +920,21 @@ export function EarningsPanel({
         <Card title="Dividends">
           <div className="flex gap-2 mb-1">
             <Stat label="Dividend yield" value={pct(f.dividend_yield)} />
-            <Stat label="Cash (latest)" value={pct(latestCash)} />
+            <Stat
+              label="Cash (latest)"
+              value={
+                latestCash == null ? (
+                  pct(latestCash)
+                ) : (
+                  <>
+                    {pct(latestCash)}{" "}
+                    <span className="text-muted font-normal">
+                      = ৳{+((latestCash / 100) * face).toFixed(2)}/share
+                    </span>
+                  </>
+                )
+              }
+            />
             <Stat label="Payout ratio" value={pct(payout)} tip={_PAYOUT_TIP} />
           </div>
           <YearBars data={cashBars} fmt={(n) => `${n.toFixed(0)}%`} color="#0ea5e9" />
