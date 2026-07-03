@@ -281,12 +281,8 @@ class WorkerSettings:
         # and after the close (13:35 UTC) to catch intraday postings.
         cron(pull_news, hour={3, 13}, minute=35, run_at_startup=False),
         # Block-market list, once after the close (session ends 08:30 UTC); internal dataset.
-        cron(
-            pull_block_trades,
-            weekday="sun,mon,tues,wed,thurs",
-            hour=9,
-            minute=30,
-            run_at_startup=False,
-        ),
+        # No weekday filter — arq only accepts a single weekday string (a comma-joined list
+        # crash-loops the whole worker); the task itself skips non-trading days.
+        cron(pull_block_trades, hour=9, minute=30, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
