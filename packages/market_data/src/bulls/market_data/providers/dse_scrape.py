@@ -144,17 +144,26 @@ def parse_bars(html: str) -> list[Bar]:
         if not code or not date_str:
             continue
         close = _num(_col(row, headers, "CLOSEP"))
-        if close is None:
-            continue  # suspended/halted day ('--' everywhere) — no real close, not a real bar
+        # '--' parses to None (caught above). A suspended/halted stock can also render a literal
+        # "0.00" cell, which _num happily parses as 0.0 — that used to sail through as a fake
+        # "crashed to ৳0" bar (confirmed live: SALVOCHEM got 7 such bars after its Dec 2025
+        # suspension). No real DSE trading day ever closes at zero, so treat it the same as None.
+        if close is None or close <= 0:
+            continue
+        high = _num(_col(row, headers, "HIGH")) or close
+        low = _num(_col(row, headers, "LOW")) or close
+        open_ = _num(_col(row, headers, "OPENP")) or close
+        if high < low or open_ <= 0 or high <= 0 or low <= 0:
+            continue  # incoherent OHLC — a parse/layout error, not a real trading day
         bars.append(
             Bar(
                 market="DSE",
                 code=code,
                 date=dt.date.fromisoformat(date_str),
-                open=_num(_col(row, headers, "OPENP")) or close or 0.0,
-                high=_num(_col(row, headers, "HIGH")) or close or 0.0,
-                low=_num(_col(row, headers, "LOW")) or close or 0.0,
-                close=close or 0.0,
+                open=open_,
+                high=high,
+                low=low,
+                close=close,
                 volume=int(_num(_col(row, headers, "VOLUME")) or 0),
             )
         )
@@ -465,8 +474,14 @@ def _parse_shareholdings(tree: HTMLParser, code: str) -> list[Shareholding]:
                 continue
             if date in seen:
                 continue
-            seen.add(date)
             sp, gv, ins, fo, pub = (float(x) for x in sh.groups())
+            # A real disclosure's five categories always sum to ~100% by definition — unlike a
+            # dividend percentage (which can legitimately hit 3000%+ for a stock like RECKITTBEN),
+            # there's no such thing as a genuine 0% or 340% total. A miss here is always a parse
+            # error (confirmed live: CNATEX/APOLOISPAT both stored 0/0/0/0/0). Drop, don't guess.
+            if not (90.0 <= sp + gv + ins + fo + pub <= 110.0):
+                continue
+            seen.add(date)
             out.append(
                 Shareholding(
                     market="DSE",

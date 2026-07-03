@@ -64,3 +64,13 @@ def test_row_fields() -> None:
 def test_no_date_means_no_rows() -> None:
     """Freshness-honesty: a page without a parsable date yields nothing rather than a guess."""
     assert parse_block_market(FIXTURE.replace('value="2026-07-02"', 'value=""')) == []
+
+
+def test_rejects_degenerate_rows() -> None:
+    """A malformed row (zero quantity/value, or min price above max) is a parse error, not a
+    real block trade — reject it rather than storing garbage for the admin view."""
+    bad = FIXTURE.replace(
+        '<td class="text-right">1,850,000</td>', '<td class="text-right">0</td>', 1
+    )
+    rows = parse_block_market(bad)
+    assert [r.code for r in rows] == ["UTTARABANK"]  # the zero-quantity BEXIMCO row is dropped

@@ -64,15 +64,19 @@ def parse_block_market(html: str) -> list[BlockTradeRow]:
     rows = []
     for m in _ROW_RE.finditer(pane):
         code, qty, value, trades, mx, mn = m.groups()
+        quantity, value_mn, max_price, min_price = int(_num(qty)), _num(value), _num(mx), _num(mn)
+        # Structural sanity — a malformed row is a parse error, never a real block trade.
+        if quantity <= 0 or value_mn <= 0 or (max_price and min_price and min_price > max_price):
+            continue
         rows.append(
             BlockTradeRow(
                 code=code.strip().upper(),
                 trade_date=trade_date,
-                quantity=int(_num(qty)),
-                value_mn=_num(value),
+                quantity=quantity,
+                value_mn=value_mn,
                 trades=int(trades),
-                max_price=_num(mx),
-                min_price=_num(mn),
+                max_price=max_price,
+                min_price=min_price,
             )
         )
     return rows

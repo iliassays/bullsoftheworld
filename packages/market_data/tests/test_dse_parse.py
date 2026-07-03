@@ -68,11 +68,23 @@ def test_parse_bars_full_ohlc():
 
 
 def test_parse_bars_skips_suspended_rows():
-    """A halted/suspended day comes back as '--' across the board; CLOSEP parses to None.
-    Such rows must be dropped, not persisted as all-zero bars (regression: SALVOCHEM)."""
+    """A halted/suspended day comes back as '--' across the board (CLOSEP -> None) OR as a
+    literal '0.00' (CLOSEP -> 0.0, which is NOT None and used to sail straight through).
+    Confirmed live in prod: SALVOCHEM got 7 real all-zero bars in the daily_bars table after
+    its Dec 2025 suspension, because '--' -> None was caught but 0.0 -> close<=0 wasn't. Both
+    row shapes are in the fixture; both must be dropped, never stored as a fake ৳0 bar."""
     bars = parse_bars(ARCHIVE)
     assert all(b.code != "SALVOCHEM" for b in bars)
     assert all(b.close > 0 for b in bars)
+
+
+def test_parse_bars_rejects_incoherent_ohlc():
+    """A row where high < low is a parse/layout error, never a real trading day."""
+    html = """<html><body><table class="shares-table">
+    <tr><th>DATE</th><th>TRADING CODE</th><th>OPENP</th><th>HIGH</th><th>LOW</th><th>CLOSEP</th><th>VOLUME</th></tr>
+    <tr><td>2026-01-05</td><td>BAD</td><td>50</td><td>40</td><td>60</td><td>55</td><td>100</td></tr>
+    </table></body></html>"""
+    assert parse_bars(html) == []
 
 
 def test_parse_market_summary():
@@ -157,6 +169,17 @@ def test_parse_company_shareholdings():
         + latest.public
     )
     assert abs(total - 100.0) < 0.05
+
+
+def test_parse_shareholdings_rejects_degenerate_sum():
+    """A real disclosure's 5 categories always sum to ~100% by definition. Confirmed live in
+    prod: CNATEX and APOLOISPAT both had a stored Shareholding row of 0/0/0/0/0 (sum 0) — a
+    parse artifact, not a real 'nobody owns this company' disclosure. Must be dropped."""
+    html = """<html><body><table><tr><td>
+    Sponsor/Director: 0.00 Govt: 0.00 Institute: 0.00 Foreign: 0.00 Public: 0.00 as on Jun 30, 2023
+    </td></tr></table></body></html>"""
+    info = parse_company(html, "BADCO")
+    assert info is None or info.shareholdings == []
 
 
 def test_parse_company_unknown_code_returns_none():
