@@ -1,11 +1,15 @@
 """Out-of-band health watchdog — runs as its OWN systemd timer (every 5 min), independent of the
 arq worker, so a dead or crash-looping worker can't take its own monitor down with it.
 
-It checks the three things that, if broken, make the site silently wrong:
+It checks the things that, if broken, make the site silently wrong:
 
   1. the worker unit is alive          (systemctl is-active bullsofdhaka-worker)
   2. quotes are fresh in trading hours  (max(quote_snapshots.as_of) not older than STALE_AFTER)
   3. the API answers /health            (HTTP 200)
+  4. today's EOD chain ran              (see _eod_problems)
+  5. no impossible values got ingested  (see _data_quality_problems — OHLC/shareholding/
+     dividend/index invariants; second line of defense behind the parser-level checks in
+     packages/market_data, in case a future bug or a manual edit bypasses them)
 
 On trouble it attempts a one-shot worker restart (for worker-down / stale-data faults) and emails
 an alert via Resend. The email is rate-limited by a Redis cooldown key so a sustained outage pages
@@ -123,6 +127,94 @@ async def _eod_problems(now: dt.datetime) -> list[str]:
     return problems
 
 
+async def _data_quality_problems() -> list[str]:
+    """Independent, second-line check of the invariants the parsers are supposed to enforce
+    (packages/market_data/providers/dse_scrape.py, lankabd.py) — catches the case where a NEW
+    bug, a manual DB edit, or a backfill script bypasses those parsers and writes something
+    impossible straight into the tables. Confirmed real incidents (2026-07-03): SALVOCHEM got 7
+    fake all-zero OHLCV bars from a suspended-stock '0.00' render; CNATEX/APOLOISPAT both got a
+    0/0/0/0/0 shareholding disclosure. Both classes are hard invariants — any count here should
+    always be 0; a nonzero count means the ingestion boundary has a hole, not that the market did
+    something unusual."""
+    problems: list[str] = []
+    async with get_sessionmaker()() as session:
+        bad_bars = (
+            await session.execute(
+                text(
+                    "select code, date from daily_bars "
+                    "where high < low or close <= 0 or open <= 0 or high <= 0 or low <= 0 "
+                    "order by date desc limit 5"
+                )
+            )
+        ).all()
+        if bad_bars:
+            n = (
+                await session.execute(
+                    text(
+                        "select count(*) from daily_bars "
+                        "where high < low or close <= 0 or open <= 0 or high <= 0 or low <= 0"
+                    )
+                )
+            ).scalar_one()
+            sample = ", ".join(f"{c}:{d}" for c, d in bad_bars)
+            problems.append(f"{n} impossible OHLC bar(s) in daily_bars — e.g. {sample}")
+
+        bad_sh = (
+            await session.execute(
+                text(
+                    "select code, as_of_date from shareholding_snapshots "
+                    "where sponsor_director + coalesce(govt,0) + institute + foreign_pct + public "
+                    "not between 90 and 110 "
+                    "order by as_of_date desc limit 5"
+                )
+            )
+        ).all()
+        if bad_sh:
+            sample = ", ".join(f"{c}:{d}" for c, d in bad_sh)
+            problems.append(
+                f"{len(bad_sh)}+ shareholding disclosure(s) not summing to ~100% — e.g. {sample}"
+            )
+
+        bad_div = (
+            await session.execute(
+                text("select count(*) from company_dividends where cash_pct < 0 or bonus_pct < 0")
+            )
+        ).scalar_one()
+        if bad_div:
+            problems.append(f"{bad_div} dividend record(s) with a negative percentage")
+
+        bad_idx = (
+            await session.execute(
+                text("select count(*) from market_summary where dsex <= 0 or dsex > 20000")
+            )
+        ).scalar_one()
+        if bad_idx:
+            problems.append(f"{bad_idx} market_summary row(s) with an implausible DSEX level")
+
+        # Soft signal, not a hard invariant: DSE's circuit bands cap a legitimate single-day
+        # move well under 40%, but a corporate action (bonus/rights adjustment) can occasionally
+        # produce a large gap our bars don't split-adjust for. Worth a human's eye, not a restart.
+        big_moves = (
+            await session.execute(
+                text(
+                    "select code, date, close, prev_close from ("
+                    "  select code, date, close,"
+                    "    lag(close) over (partition by code order by date) as prev_close"
+                    "  from daily_bars where date >= current_date - interval '3 days'"
+                    ") t where prev_close > 0 and abs(close / prev_close - 1) > 0.4 "
+                    "limit 5"
+                )
+            )
+        ).all()
+        if big_moves:
+            sample = ", ".join(f"{c} {p:.1f}->{cl:.1f}" for c, _d, cl, p in big_moves)
+            problems.append(
+                f"{len(big_moves)} stock(s) moved >40% day-over-day in the last 3 days "
+                f"(check for a scrape error vs a real corporate action): {sample}"
+            )
+    return problems
+
+
 async def _send_alert(problems: list[str], actions: list[str]) -> None:
     s = get_settings()
     recipients = [a.strip() for a in (s.alert_email or s.support_email).split(",") if a.strip()]
@@ -181,6 +273,13 @@ async def main() -> int:
     # re-run them), and restarting every 5 min through the window would be a restart storm. The
     # email is the signal to manually re-run the EOD chain.
     problems += await _eod_problems(now)
+
+    # Data-quality: alert only, never restart — a corrupted row isn't fixed by a worker bounce,
+    # it needs the parser fixed and the bad row deleted (see docs on the 2026-07-03 incident).
+    try:
+        problems += await _data_quality_problems()
+    except Exception:
+        log.exception("data-quality check failed")
 
     if not problems:
         log.info("ok — worker active, quotes fresh, API healthy")
