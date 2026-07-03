@@ -50,17 +50,6 @@ const shortDate = (iso?: string): string => {
 // crore-formatting `taka` below used elsewhere in this file).
 const takaSigned = (v: number): string => `${v < 0 ? "−" : ""}৳${Math.abs(v).toFixed(2)}`;
 
-// One labelled date in the corporate-action timeline.
-function DateCell({ label, value, accent }: { label: string; value?: string; accent?: boolean }) {
-  if (!value) return null;
-  return (
-    <div className="flex-1 text-center px-1 py-1.5">
-      <div className="text-[10px] text-muted">{label}</div>
-      <div className={`text-xs font-semibold ${accent ? "text-accent" : ""}`}>{value}</div>
-    </div>
-  );
-}
-
 const fillT = (t: (k: string) => string, key: string, vars: Record<string, string | number>) =>
   t(key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 
@@ -70,14 +59,6 @@ const catName = (c: string, t: (k: string) => string): string => {
   return tr.startsWith("cat.") ? c : tr;
 };
 
-// Category → chip/dot colour, so the eye can triage the feed. Dividends read as money (up/green),
-// halts as danger (down/red), routine meetings/actions as neutral, the rest as accent.
-const catChip = (c: string): string => {
-  if (c === "dividend") return "text-up bg-up/10";
-  if (c === "halt") return "text-down bg-down/10";
-  if (c === "board_meeting" || c === "corporate_action") return "text-muted bg-border/40";
-  return "text-accent bg-accent/10";
-};
 const catDot = (c: string): string => {
   if (c === "dividend") return "bg-up";
   if (c === "halt") return "bg-down";
@@ -121,127 +102,6 @@ function Explainer({ text }: { text: string }) {
   );
 }
 
-// Renders the decoded body for one announcement, switching on category. Falls back to nothing
-// (the headline alone) when there's no structured detail — so it never shows half-parsed noise.
-function DecodedBody({ n }: { n: NewsItem }) {
-  const { t } = useLang();
-  const d = n.details;
-  const fill = (key: string, vars: Record<string, string | number>) => fillT(t, key, vars);
-  if (!d) return null;
-
-  if (n.category === "earnings" && d.eps_current != null) {
-    const loss = d.eps_current < 0;
-    return (
-      <div className="mt-2">
-        <div className="flex gap-2 flex-wrap">
-          <div className="flex-1 min-w-[120px] bg-bg/40 rounded-xl px-3 py-2">
-            <div className="text-[11px] text-muted">{t("news.eps")}</div>
-            <div className={`text-xl font-bold ${loss ? "text-down" : "text-up"}`}>{takaSigned(d.eps_current)}</div>
-            {d.eps_prior != null && (
-              <div className="text-[11px] text-muted">{fill("news.epsVsPrior", { prior: takaSigned(d.eps_prior) })}</div>
-            )}
-          </div>
-          {d.nav != null && (
-            <div className="flex-1 min-w-[120px] bg-bg/40 rounded-xl px-3 py-2">
-              <div className="text-[11px] text-muted">{t("news.nav")}</div>
-              <div className="text-xl font-bold">{takaSigned(d.nav)}</div>
-              <div className="text-[11px] text-muted">{t("news.navHint")}</div>
-            </div>
-          )}
-        </div>
-        {d.eps_trend && (
-          <span className={`inline-block mt-2 text-[11px] font-semibold rounded-full px-2 py-0.5 ${loss ? "text-down bg-down/10" : "text-up bg-up/10"}`}>
-            {t(`news.trend.${d.eps_trend}`)}
-          </span>
-        )}
-        <Explainer text={t("news.explain.earnings")} />
-      </div>
-    );
-  }
-
-  if (n.category === "dividend") {
-    return (
-      <div className="mt-2">
-        {d.no_dividend ? (
-          <div className="text-sm font-semibold">
-            {t("news.div.none")}{" "}
-            {d.year_ended && <span className="text-muted font-normal">{fill("news.div.forYear", { year: shortDate(d.year_ended) })}</span>}
-          </div>
-        ) : (
-          <>
-            {d.cash_pct != null && (
-              <div className="text-sm font-semibold text-up">
-                {fill("news.div.cash", { pct: d.cash_pct })}{" "}
-                {d.per_share_cash != null && <span>{fill("news.div.perShare", { amt: d.per_share_cash.toFixed(2) })}</span>}
-              </div>
-            )}
-            {d.stock_pct != null && <div className="text-sm">{fill("news.div.stock", { pct: d.stock_pct })}</div>}
-            {d.per_share_cash != null && (
-              <div className="bg-up/10 rounded-xl px-3 py-2 mt-2 text-xs text-text/90 leading-relaxed">
-                {fill("news.div.example", { amt: (d.per_share_cash * 100).toFixed(0) })}
-                <div className="text-muted mt-1">{fill("news.div.priceAdj", { amt: d.per_share_cash.toFixed(2) })}</div>
-              </div>
-            )}
-          </>
-        )}
-        {d.agm_date && (
-          <div className="flex mt-2 border border-border rounded-xl divide-x divide-border">
-            <DateCell label={t("news.agm")} value={shortDate(d.agm_date)} />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (n.category === "board_meeting" && d.meeting_date) {
-    const parts = (d.agenda ?? []).map((a) =>
-      a === "financials" ? fill("news.board.financials", { period: t(`news.period.${d.period ?? "annual"}`) }) : t("news.board.dividend"),
-    );
-    return (
-      <div className="mt-2">
-        <p className="text-sm font-semibold">
-          {fill("news.board.title", { date: shortDate(d.meeting_date), what: parts.join(t("news.board.and")) })}
-        </p>
-        <Explainer text={t("news.explain.board")} />
-      </div>
-    );
-  }
-
-  if ((n.category === "corporate_action" || n.category === "halt") && (d.record_date || d.spot_from)) {
-    return (
-      <div className="mt-2">
-        <div className="flex border border-border rounded-xl divide-x divide-border">
-          {d.spot_from && <DateCell label={t("news.spotMarket")} value={`${shortDate(d.spot_from)}–${shortDate(d.spot_to)}`} />}
-          <DateCell label={t("news.recordDate")} value={shortDate(d.record_date)} accent />
-          {d.agm_date && <DateCell label={t("news.agm")} value={shortDate(d.agm_date)} />}
-        </div>
-        <Explainer text={t("news.explain.dates")} />
-      </div>
-    );
-  }
-
-  if (n.category === "rating" && (d.long_term || d.short_term)) {
-    return (
-      <div className="mt-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold">{fill("news.rating.line", { lt: d.long_term ?? "—", st: d.short_term ?? "—" })}</span>
-          {d.outlook && <span className="text-xs text-muted">{fill("news.rating.outlook", { outlook: d.outlook })}</span>}
-          {d.action && (
-            <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${d.action === "upgrade" ? "text-up bg-up/10" : "text-down bg-down/10"}`}>
-              {t(`news.rating.${d.action}`)}
-            </span>
-          )}
-        </div>
-        <Explainer text={t("news.explain.rating")} />
-      </div>
-    );
-  }
-
-  return null;
-}
-
-// A routine notice as a single timeline row — dot, terse description, date. Keeps board-meeting
-// schedules and bare ratings from each eating a whole card.
 function CompactRow({ n }: { n: NewsItem }) {
   const { t } = useLang();
   const d = n.details;
@@ -308,141 +168,275 @@ function UpcomingStrip({ items, today }: { items: NewsItem[]; today: string }) {
 
 // 12-month at-a-glance digest, computed from the feed. Every cell is optional — shown only when the
 // data exists (omit over mislead).
-function Digest({ items }: { items: NewsItem[] }) {
-  const { t } = useLang();
-  const div = items.find(
-    (n) => n.category === "dividend" && (n.details?.cash_pct != null || n.details?.stock_pct != null),
-  );
-  const earn = items.find((n) => n.category === "earnings" && n.details?.eps_current != null);
-  const earnings = items
-    .filter((n) => n.category === "earnings" && n.details?.eps_current != null)
-    .slice(0, 4);
-  const upCount = earnings.filter((n) => (n.details!.eps_current as number) > 0).length;
-  const rating = items.find((n) => n.category === "rating");
+// --- Beginner-first news presentation (2026-07 redesign) ------------------------------
+// The decoded facts ARE the interface: plain-language headlines, an importance tier per
+// item (only Important/Caution take screen space; Routine folds away), countdown chips and
+// a fact-aware "what it means". All deterministic from the decoded details — no LLM.
 
-  const cells: { label: string; value: ReactNode; sub?: string }[] = [];
-  if (div) {
-    const dd = div.details!;
-    const cash = dd.cash_pct != null ? fillT(t, "news.digest.cash", { pct: dd.cash_pct }) : "";
-    const bonus = dd.stock_pct != null ? fillT(t, "news.digest.bonus", { pct: dd.stock_pct }) : "";
-    cells.push({
-      label: t("news.digest.dividend"),
-      value: (
-        <span className="text-up">
-          {cash}
-          {bonus}
-        </span>
-      ),
-      sub:
-        dd.per_share_cash != null
-          ? fillT(t, "news.div.perShare", { amt: dd.per_share_cash.toFixed(2) })
-          : undefined,
-    });
+type NewsTier = "caution" | "important" | "routine";
+
+function newsTier(n: NewsItem): NewsTier {
+  if (n.category === "halt") return "caution";
+  if (hasDecoded(n) && ["earnings", "dividend", "rating"].includes(n.category)) return "important";
+  return n.strength >= 60 ? "important" : "routine";
+}
+
+const dhakaTodayIso = () => new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+const daysUntil = (iso?: string): number | null =>
+  iso ? Math.round((Date.parse(iso) - Date.parse(dhakaTodayIso())) / 86_400_000) : null;
+
+const PERIOD_EN = { Q1: "in Q1", H1: "in H1", Q3: "in Q3", annual: "for the year" } as const;
+const PERIOD_BN = { Q1: "১ম প্রান্তিকে", H1: "অর্ধবার্ষিকে", Q3: "৩য় প্রান্তিকে", annual: "পুরো বছরে" } as const;
+
+// The sentence a person would actually say — built from the decoded numbers; null → raw headline.
+function plainHeadline(n: NewsItem, bn: boolean): string | null {
+  const d = n.details;
+  if (!d) return null;
+  if (n.category === "earnings" && d.eps_current != null) {
+    const p = d.period ? (bn ? PERIOD_BN[d.period] : PERIOD_EN[d.period]) : bn ? "এই প্রান্তিকে" : "this period";
+    let head = bn
+      ? `শেয়ারপ্রতি আয় ${p} ${takaSigned(d.eps_current)}`
+      : `Earned ${takaSigned(d.eps_current)} per share ${p}`;
+    if (d.eps_prior != null && d.eps_prior > 0) {
+      const delta = ((d.eps_current - d.eps_prior) / d.eps_prior) * 100;
+      head += bn
+        ? ` — আগের বছরের চেয়ে ${delta >= 0 ? "+" : ""}${delta.toFixed(0)}%`
+        : ` — ${delta >= 0 ? "up" : "down"} ${Math.abs(delta).toFixed(0)}% from last year`;
+    } else if (d.eps_current < 0) {
+      head += bn ? " (লোকসান)" : " (a loss)";
+    }
+    return head;
   }
-  if (earn) {
-    const ed = earn.details!;
-    const good =
-      ed.eps_trend === "up" || ed.eps_trend === "to_profit" || ed.eps_trend === "loss_narrowed";
-    const flat = ed.eps_trend === "flat" || !ed.eps_trend;
-    cells.push({
-      label: t("news.digest.eps"),
-      value: (
-        <span>
-          {takaSigned(ed.eps_current as number)}{" "}
-          {!flat && <span className={good ? "text-up" : "text-down"}>{good ? "▲" : "▼"}</span>}
-        </span>
-      ),
-      sub: ed.period ? t(`news.period.${ed.period}`) : undefined,
-    });
+  if (n.category === "dividend") {
+    if (d.no_dividend) return bn ? "এ বছর কোনো লভ্যাংশ ঘোষণা হয়নি" : "No dividend declared this year";
+    const parts: string[] = [];
+    if (d.cash_pct != null) parts.push(bn ? `${d.cash_pct}% নগদ` : `${d.cash_pct}% cash`);
+    if (d.stock_pct != null) parts.push(bn ? `${d.stock_pct}% স্টক` : `${d.stock_pct}% stock`);
+    if (!parts.length) return null;
+    let head = bn ? `${parts.join(" + ")} লভ্যাংশ ঘোষণা` : `${parts.join(" + ")} dividend declared`;
+    if (d.per_share_cash != null)
+      head += bn ? ` — শেয়ারপ্রতি ৳${d.per_share_cash}` : ` — ৳${d.per_share_cash} per share`;
+    return head;
   }
-  if (earnings.length) {
-    cells.push({
-      label: t("news.digest.streak"),
-      value: fillT(t, "news.digest.streakVal", { n: upCount, m: earnings.length }),
-    });
+  if (n.category === "rating" && (d.long_term || d.short_term)) {
+    const parts: string[] = [];
+    if (d.long_term) parts.push(`${d.long_term} (${bn ? "দীর্ঘমেয়াদি" : "long-term"})`);
+    if (d.short_term) parts.push(`${d.short_term} (${bn ? "স্বল্পমেয়াদি" : "short-term"})`);
+    return (bn ? "ক্রেডিট রেটিং: " : "Credit rating: ") + parts.join(", ");
   }
-  if (rating) {
-    cells.push({
-      label: t("news.digest.rating"),
-      value: fillT(t, "news.digest.rated", { date: discMonth(rating.published_at) }),
-    });
+  return null;
+}
+
+// The fact-aware "মানে কী" — references the actual numbers, teaches without advising.
+function whatItMeans(n: NewsItem, bn: boolean): string | null {
+  const d = n.details;
+  if (n.category === "earnings" && d?.eps_current != null) {
+    const rising = d.eps_prior != null && d.eps_current > d.eps_prior;
+    if (bn)
+      return rising
+        ? "কোম্পানি গত বছরের একই সময়ের চেয়ে শেয়ারপ্রতি বেশি মুনাফা করেছে। ক্রমবর্ধমান EPS-ই দীর্ঘমেয়াদে দামকে সমর্থন করে — তবে এক প্রান্তিক একটি তথ্যবিন্দু, রায় নয়।"
+        : "শেয়ারপ্রতি আয় আগের বছরের চেয়ে কমেছে। কারণটি (খাত-ব্যাপী নাকি কোম্পানির নিজস্ব) যাচাই করা জরুরি — এক প্রান্তিক দিয়ে সিদ্ধান্ত নয়।";
+    return rising
+      ? "The company made more profit per share than the same period last year. Rising EPS is what supports a share price over time — but one period is a data point, not a verdict."
+      : "Profit per share fell versus last year. Worth checking whether the cause is sector-wide or company-specific — one period is never the whole story.";
   }
-  if (!cells.length) return null;
+  if (n.category === "dividend") {
+    if (d?.no_dividend)
+      return bn
+        ? "লভ্যাংশ না দেওয়ার অনেক কারণ থাকতে পারে — মুনাফা কম, নাকি টাকা ব্যবসায় পুনর্বিনিয়োগ? আর্থিক বিবরণী দেখুন।"
+        : "No dividend can mean weak profit or profits reinvested in the business — the financials tell you which. Worth checking.";
+    return bn
+      ? "রেকর্ড ডেটে শেয়ারটি আপনার BO-তে থাকলে লভ্যাংশ পাবেন। রেকর্ড ডেটের পর দাম সাধারণত লভ্যাংশের পরিমাণে সমন্বয় হয় — এটি ক্ষতি নয়, হিসাব।"
+      : "Own the share in your BO account on the record date to receive it. After the record date the price usually adjusts by roughly the dividend amount — that's arithmetic, not a loss.";
+  }
+  if (n.category === "rating")
+    return bn
+      ? "রেটিং কোম্পানির ঋণ শোধের সক্ষমতার মূল্যায়ন — শেয়ারের দাম কোথায় যাবে তার পূর্বাভাস নয়।"
+      : "A credit rating assesses the company's ability to repay debt — it is not a forecast of where the share price goes.";
+  if (n.category === "halt")
+    return bn
+      ? "মূল্য-সংবেদনশীল খবরের আগে লেনদেন সাময়িক বন্ধ রাখা হয় যাতে সবাই একসাথে খবরটি পায়। খবরটি কী ছিল, সেটাই আসল প্রশ্ন।"
+      : "Trading pauses so everyone receives price-sensitive news at the same time. The real question is what that news was.";
+  return null;
+}
+
+const TIER_ICON: Record<string, string> = {
+  earnings: "📊",
+  dividend: "💵",
+  rating: "🏷️",
+  halt: "⚠️",
+  corporate_action: "📋",
+  board_meeting: "🗓️",
+};
+
+function FactChips({ n, ltp, bn }: { n: NewsItem; ltp?: number | null; bn: boolean }) {
+  const d = n.details;
+  if (!d) return null;
+  const chips: { text: string; tone?: "up" | "down" | "accent" }[] = [];
+  if (n.category === "earnings" && d.eps_current != null) {
+    if (d.eps_prior != null && d.eps_prior > 0) {
+      const delta = ((d.eps_current - d.eps_prior) / d.eps_prior) * 100;
+      chips.push({
+        text: `EPS ${takaSigned(d.eps_current)} ${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(0)}%`,
+        tone: delta >= 0 ? "up" : "down",
+      });
+      chips.push({ text: bn ? `আগের বছর ${takaSigned(d.eps_prior)}` : `last year ${takaSigned(d.eps_prior)}` });
+    } else {
+      chips.push({ text: `EPS ${takaSigned(d.eps_current)}`, tone: d.eps_current >= 0 ? "up" : "down" });
+    }
+    if (d.nav != null) chips.push({ text: `NAV ${takaSigned(d.nav)}` });
+  }
+  if (n.category === "dividend") {
+    const days = daysUntil(d.record_date);
+    if (d.record_date)
+      chips.push({
+        text:
+          `${bn ? "রেকর্ড ডেট" : "record date"} ${shortDate(d.record_date)}` +
+          (days != null && days >= 0 ? (bn ? ` · ${days} দিন বাকি` : ` · in ${days} days`) : ""),
+        tone: "accent",
+      });
+    if (d.per_share_cash != null && ltp)
+      chips.push({
+        text: bn
+          ? `আজকের দামে ইল্ড ~${((d.per_share_cash / ltp) * 100).toFixed(1)}%`
+          : `yield ~${((d.per_share_cash / ltp) * 100).toFixed(1)}% at today's price`,
+      });
+    if (d.agm_date) chips.push({ text: `AGM ${shortDate(d.agm_date)}` });
+  }
+  if (n.category === "rating" && d.outlook) chips.push({ text: `${bn ? "আউটলুক" : "outlook"}: ${d.outlook}` });
+  if (!chips.length) return null;
+  const toneCls = (t?: string) =>
+    t === "up"
+      ? "text-up bg-up/10 border border-up/30"
+      : t === "down"
+        ? "text-down bg-down/10 border border-down/30"
+        : t === "accent"
+          ? "text-accent bg-accent/10 border border-accent/30"
+          : "text-muted bg-card";
   return (
-    <div>
-      <div className="text-[11px] text-muted mb-1.5 px-1">{t("news.digest.title")}</div>
-      <div className="grid grid-cols-2 gap-2">
-        {cells.map((c, i) => (
-          <div key={i} className="bg-bg/40 rounded-xl px-3 py-2">
-            <div className="text-[11px] text-muted">{c.label}</div>
-            <div className="text-sm font-bold">{c.value}</div>
-            {c.sub && <div className="text-[11px] text-muted">{c.sub}</div>}
-          </div>
-        ))}
-      </div>
+    <div className="mt-2.5 flex flex-wrap gap-1.5">
+      {chips.map((c, i) => (
+        <span key={i} className={`rounded-lg px-2 py-1 text-[11px] font-semibold tnum ${toneCls(c.tone)}`}>
+          {c.text}
+        </span>
+      ))}
     </div>
   );
 }
 
-export function NewsPanel({ items }: { items: NewsItem[] }) {
-  const { t } = useLang();
-  const [filter, setFilter] = useState<string>("all");
+function ImportantCard({ n, ltp }: { n: NewsItem; ltp?: number | null }) {
+  const { t, lang } = useLang();
+  const bn = lang === "bn";
+  const tier = newsTier(n);
+  const plain = plainHeadline(n, bn);
+  const meaning = whatItMeans(n, bn);
+  const border =
+    tier === "caution"
+      ? "border-down/40"
+      : n.category === "earnings" && (n.details?.eps_prior ?? 0) < (n.details?.eps_current ?? 0)
+        ? "border-up/30"
+        : "border-border";
+  return (
+    <div className={`bg-surface border rounded-2xl p-3.5 ${border}`}>
+      <div className="flex items-start gap-2.5">
+        <span className="text-lg leading-none pt-0.5" aria-hidden>
+          {TIER_ICON[n.category] ?? "📰"}
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-[10px]">
+            {tier === "caution" ? (
+              <span className="font-semibold rounded-full px-2 py-0.5 text-down bg-down/10">
+                {bn ? "সতর্কতা" : "Caution"} · {catName(n.category, t)}
+              </span>
+            ) : (
+              <span className="font-semibold rounded-full px-2 py-0.5 text-accent bg-accent/10">
+                {bn ? "গুরুত্বপূর্ণ" : "Important"} · {catName(n.category, t)}
+              </span>
+            )}
+            <span className="text-muted tnum">{shortDate(n.published_at)}</span>
+          </div>
+          <p lang={lang} className="text-sm font-semibold mt-1.5 leading-snug">
+            {plain ?? n.headline}
+          </p>
+          {plain && (
+            <p className="text-[10px] text-muted mt-0.5 truncate" title={n.headline}>
+              {bn ? "উৎস: DSE ঘোষণা" : "Source: DSE filing"} — {n.headline}
+            </p>
+          )}
+        </div>
+      </div>
+      <FactChips n={n} ltp={ltp} bn={bn} />
+      {meaning && <Explainer text={meaning} />}
+    </div>
+  );
+}
+
+export function NewsPanel({ items, ltp }: { items: NewsItem[]; ltp?: number | null }) {
+  const { t, lang } = useLang();
+  const bn = lang === "bn";
+  const [showRoutine, setShowRoutine] = useState(false);
   if (!items.length) return <Empty>{t("news.empty")}</Empty>;
-  const today = new Date().toISOString().slice(0, 10);
-  const upcoming = (n: NewsItem): boolean =>
+  const today = dhakaTodayIso();
+
+  const upcomingMeeting = (n: NewsItem): boolean =>
     (n.category === "board_meeting" && isFuture(n.details?.meeting_date, today)) ||
     ((n.category === "corporate_action" || n.category === "halt") &&
       isFuture(n.details?.record_date, today));
 
-  const FILTERS: [string, string][] = [
-    ["all", t("news.filter.all")],
-    ["earnings", t("news.filter.earnings")],
-    ["dividend", t("news.filter.dividend")],
-    ["board_meeting", t("news.filter.meeting")],
-    ["rating", t("news.filter.rating")],
-  ];
-  const timeline = items
-    .filter((n) => !upcoming(n))
-    .filter((n) => filter === "all" || n.category === filter);
+  const past = items.filter((n) => !upcomingMeeting(n));
+  const important = past.filter((n) => newsTier(n) !== "routine");
+  const routine = past.filter((n) => newsTier(n) === "routine");
+
+  const weekAgo = new Date(Date.parse(today) - 7 * 86_400_000).toISOString().slice(0, 10);
+  const thisWeek = important.filter((n) => n.published_at >= weekAgo);
+  const earlier = important.filter((n) => n.published_at < weekAgo);
+
+  const sectionLabel = (text: string) => (
+    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted px-1">{text}</div>
+  );
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5">
-        {FILTERS.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setFilter(key)}
-            className={`shrink-0 text-[12px] rounded-full px-3 py-1 border ${
-              filter === key ? "bg-text text-bg border-text font-semibold" : "text-muted border-border"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
+    <div className="flex flex-col gap-2.5">
       <UpcomingStrip items={items} today={today} />
-      <Digest items={items} />
 
-      <div className="flex flex-col gap-2">
-        {timeline.map((n, i) =>
-          n.category === "board_meeting" || !hasDecoded(n) ? (
-            <CompactRow key={i} n={n} />
-          ) : (
-            <div key={i} className="bg-surface border border-border rounded-2xl p-3">
-              <div className="flex items-center gap-2 text-[11px]">
-                <span className={`font-semibold rounded-full px-2 py-0.5 ${catChip(n.category)}`}>
-                  {catName(n.category, t)}
-                </span>
-                <span className="text-muted tnum">{n.published_at}</span>
-              </div>
-              <p className="text-sm font-semibold mt-2">{n.headline}</p>
-              <DecodedBody n={n} />
+      {important.length === 0 && (
+        <Empty>{bn ? "সাম্প্রতিক গুরুত্বপূর্ণ কোনো খবর নেই — এটাও তথ্য।" : "No important news recently — that's information too."}</Empty>
+      )}
+
+      {thisWeek.length > 0 && sectionLabel(bn ? "এই সপ্তাহ" : "This week")}
+      {thisWeek.map((n, i) => (
+        <ImportantCard key={`w${i}`} n={n} ltp={ltp} />
+      ))}
+
+      {earlier.length > 0 && sectionLabel(bn ? "আগে" : "Earlier")}
+      {earlier.map((n, i) => (
+        <ImportantCard key={`e${i}`} n={n} ltp={ltp} />
+      ))}
+
+      {routine.length > 0 && (
+        <div className="rounded-2xl border border-dashed border-border px-3.5 py-2.5">
+          <button
+            onClick={() => setShowRoutine((v) => !v)}
+            className="flex w-full items-center gap-2 text-left"
+          >
+            <span aria-hidden>🗂️</span>
+            <span className="text-xs text-muted">
+              {routine.length} {bn ? "টি রুটিন নোটিশ — বোর্ড সূচি, স্পট খবর" : "routine notices — board schedules, spot news"}
+            </span>
+            <span className="ml-auto text-[11px] font-semibold text-accent">
+              {showRoutine ? (bn ? "লুকান" : "Hide") : bn ? "দেখুন" : "Show"}
+            </span>
+          </button>
+          {showRoutine && (
+            <div className="mt-2 flex flex-col gap-1.5 border-t border-border/60 pt-2">
+              {routine.map((n, i) => (
+                <CompactRow key={i} n={n} />
+              ))}
             </div>
-          ),
-        )}
-      </div>
+          )}
+        </div>
+      )}
+
       <p className="text-[10px] text-muted">{t("news.footer")}</p>
     </div>
   );

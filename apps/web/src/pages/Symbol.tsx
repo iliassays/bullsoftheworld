@@ -433,7 +433,7 @@ export function SymbolPage() {
       )}
 
       {tab === "news" &&
-        (news === null ? <Spinner /> : <NewsPanel items={news} />)}
+        (news === null ? <Spinner /> : <NewsPanel items={news} ltp={q?.ltp} />)}
       {tab === "financials" &&
         (company ? (
           <>
