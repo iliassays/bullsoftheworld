@@ -278,11 +278,12 @@ function whatItMeans(n: NewsItem, bn: boolean): string | null {
         : "No dividend can mean weak profit or profits reinvested in the business — the financials tell you which. Worth checking.";
     // The most misread number on the DSE: the declared % is of the ৳10 face value,
     // never of the market price. Decode it with this filing's own numbers.
+    const per100 = d?.per_share_cash != null ? +(d.per_share_cash * 100).toFixed(2) : null;
     const conv =
       d?.cash_pct != null
         ? bn
-          ? `"${d.cash_pct}%" মানে ফেস ভ্যালু ৳১০-এর ${d.cash_pct}%${d.per_share_cash != null ? ` = শেয়ারপ্রতি ৳${d.per_share_cash}` : ""} — আজকের বাজারদরের ${d.cash_pct}% নয়। আপনার আসল রিটার্ন হলো ইল্ড: এই নগদ ÷ যে দামে আপনি কিনবেন। `
-          : `The "${d.cash_pct}%" means ${d.cash_pct}% of the ৳10 face value${d.per_share_cash != null ? ` = ৳${d.per_share_cash} per share` : ""} — not ${d.cash_pct}% of today's market price. Your real return is the yield: that cash ÷ the price you actually pay. `
+          ? `"${d.cash_pct}%" মানে ফেস ভ্যালু ৳১০-এর ${d.cash_pct}%${d.per_share_cash != null ? ` = শেয়ারপ্রতি ৳${d.per_share_cash}। অর্থাৎ ১০০ শেয়ার থাকলে পাবেন ৳${per100}` : ""} — আজকের বাজারদরের ${d.cash_pct}% নয়। `
+          : `The "${d.cash_pct}%" means ${d.cash_pct}% of the ৳10 face value${d.per_share_cash != null ? ` = ৳${d.per_share_cash} per share. So if you hold 100 shares, you receive ৳${per100}` : ""} — it is NOT ${d.cash_pct}% of today's market price. `
         : "";
     return (
       conv +
@@ -329,6 +330,23 @@ function FactChips({ n, ltp, bn }: { n: NewsItem; ltp?: number | null; bn: boole
     if (d.nav != null) chips.push({ text: `NAV ${takaSigned(d.nav)}` });
   }
   if (n.category === "dividend") {
+    // The realest possible number first: what 100 shares actually pays. This is what
+    // finally breaks the "10% dividend = 10% return" illusion for a new investor.
+    if (d.per_share_cash != null) {
+      const cash100 = +(d.per_share_cash * 100).toFixed(2);
+      chips.push({
+        text: bn
+          ? `১০০ শেয়ার থাকলে পাবেন ৳${cash100} (কর কাটার আগে)`
+          : `100 shares → ৳${cash100} cash (before tax)`,
+        tone: "up",
+      });
+      if (ltp) {
+        const y = ((d.per_share_cash / ltp) * 100).toFixed(1);
+        chips.push({
+          text: bn ? `আজকের দাম ৳${ltp}-এ রিটার্ন ~${y}%` : `~${y}% of today's ৳${ltp} price`,
+        });
+      }
+    }
     const days = daysUntil(d.record_date);
     if (d.record_date)
       chips.push({
@@ -337,16 +355,6 @@ function FactChips({ n, ltp, bn }: { n: NewsItem; ltp?: number | null; bn: boole
           (days != null && days >= 0 ? (bn ? ` · ${days} দিন বাকি` : ` · in ${days} days`) : ""),
         tone: "accent",
       });
-    if (d.per_share_cash != null && ltp) {
-      // Show the division, not just the result — the yield IS cash ÷ today's price,
-      // and seeing ৳1 ÷ ৳40 is what breaks the "10% dividend = 10% return" illusion.
-      const y = ((d.per_share_cash / ltp) * 100).toFixed(1);
-      chips.push({
-        text: bn
-          ? `ইল্ড ~${y}% (৳${d.per_share_cash} ÷ আজকের ৳${ltp})`
-          : `yield ~${y}% (৳${d.per_share_cash} ÷ today's ৳${ltp})`,
-      });
-    }
     if (d.agm_date) chips.push({ text: `AGM ${shortDate(d.agm_date)}` });
   }
   if (n.category === "rating" && d.outlook) chips.push({ text: `${bn ? "আউটলুক" : "outlook"}: ${d.outlook}` });
