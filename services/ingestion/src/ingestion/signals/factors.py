@@ -132,17 +132,19 @@ def detect_breakout(ta, change_pct: float | None, day: str) -> FactorSignal | No
 
 
 def detect_strength(
-    change_pct: float | None, dsex_change: float | None, day: str
+    change_pct: float | None, dsex_change_pct: float | None, day: str
 ) -> FactorSignal | None:
-    if change_pct is None or dsex_change is None:
+    """Stock up ≥2% on a day the index fell ≥0.3%. Takes the index move as a PERCENT —
+    the caller must convert DSE's point change first (index_change_pct)."""
+    if change_pct is None or dsex_change_pct is None:
         return None
-    if change_pct >= _STRENGTH_UP and dsex_change <= _STRENGTH_IDX:
+    if change_pct >= _STRENGTH_UP and dsex_change_pct <= _STRENGTH_IDX:
         return FactorSignal(
             "strength",
             "rel_strength",
             f"strength:{day}",
             3,
-            {"chg": round(change_pct, 1), "idx": round(dsex_change, 1)},
+            {"chg": round(change_pct, 1), "idx": round(dsex_change_pct, 2)},
         )
     return None
 

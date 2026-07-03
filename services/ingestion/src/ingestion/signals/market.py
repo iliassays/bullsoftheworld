@@ -6,6 +6,7 @@ feed, not on a symbol page. Descriptive close summary, no advice.
 
 from __future__ import annotations
 
+from bulls.analytics.indicators import index_change_pct
 from bulls.core.models import MarketSummary
 
 BEAT = "market"
@@ -14,7 +15,9 @@ MARKET_CODE = "MARKET"  # ledger code for the market-wide note (no cashtag)
 
 def render(summary: MarketSummary, advancers: int, decliners: int, locale: str) -> str:
     dsex = f"{summary.dsex:,.0f}" if summary.dsex is not None else "—"
-    chg = f"{summary.dsex_change:+.2f}%" if summary.dsex_change is not None else "—"
+    # dsex_change is the POINT change from the DSE summary page — convert before adding a % sign
+    pct = index_change_pct(summary.dsex, summary.dsex_change)
+    chg = f"{pct:+.2f}%" if pct is not None else "—"
     cr = f"৳{summary.total_value_mn / 10:,.0f} Cr" if summary.total_value_mn is not None else "—"
     if locale == "bn":
         return (

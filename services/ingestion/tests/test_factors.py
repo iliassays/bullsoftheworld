@@ -98,3 +98,34 @@ def test_breakout_needs_near_high_and_up_today():
 def test_bn_locale_renders():
     note = f.render(f.detect_momentum(_STRONG, "2026-06"), "GP", "bn")
     assert "পরামর্শ নয়" in note  # "not advice" in Bangla
+
+
+def test_index_change_pct_converts_points():
+    # The "DSEX fell 19.0%" incident: DSE reports the index change in POINTS. A 19-point
+    # fall on a ~5285 index is -0.36%, not -19%.
+    from bulls.analytics.indicators import index_change_pct
+
+    pct = index_change_pct(5285.0, -19.0)
+    assert pct is not None and round(pct, 2) == -0.36
+    assert index_change_pct(None, -19.0) is None
+    assert index_change_pct(5285.0, None) is None
+    assert index_change_pct(5285.0, -2000.0) is None  # >20%/day → implausible, omit
+
+
+def test_strength_takes_percent_not_points():
+    # -0.36% index day + stock up 2.2% → fires, and the note says the true tiny percent.
+    sig = f.detect_strength(2.2, -0.36, "2026-07-02")
+    assert sig is not None and sig.payload["idx"] == -0.36
+    note = f.render(sig, "UNIONCAP", "en")
+    assert "fell 0.36%" in note and "19" not in note
+    # A barely-red day (-0.1%) is not "the market fell" — no note.
+    assert f.detect_strength(2.2, -0.1, "2026-07-02") is None
+
+
+def test_market_wrap_renders_percent_from_points():
+    from bulls.core.models import MarketSummary
+    from ingestion.signals import market as mw
+
+    s = MarketSummary(market="DSE", dsex=5285.0, dsex_change=-19.0, total_value_mn=4200.0)
+    note = mw.render(s, 120, 210, "en")
+    assert "(-0.36%)" in note and "19.00%" not in note

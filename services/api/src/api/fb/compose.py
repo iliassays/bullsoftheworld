@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, or_, select
 
 from api.deps import visible_codes
 from api.fb import cards
+from bulls.analytics.indicators import index_change_pct
 from bulls.core.models import (
     Announcement,
     CompanyLogo,
@@ -107,15 +108,8 @@ def _movers_str(movers: list[cards.Mover]) -> str:
 
 
 def index_pct(dsex: float | None, points: float | None) -> float | None:
-    """MarketSummary.dsex_change is the day's POINT change, not a percent. Convert to %, and
-    omit (None) anything implausible for an index in a day — better blank than misleading."""
-    if dsex is None or points is None:
-        return None
-    prev = dsex - points
-    if not prev:
-        return None
-    pct = points / prev * 100
-    return pct if abs(pct) <= 20 else None
+    """MarketSummary.dsex_change is the day's POINT change, not a percent."""
+    return index_change_pct(dsex, points)
 
 
 def evening_bodies(d: cards.EveningWrapData) -> dict[str, str]:

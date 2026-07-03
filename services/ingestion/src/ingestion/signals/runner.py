@@ -15,6 +15,7 @@ import sys
 from sqlalchemy import func, or_, select
 
 from bulls.analytics import compute
+from bulls.analytics.indicators import index_change_pct
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
     DailyBar,
@@ -247,12 +248,17 @@ async def run_factor_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> 
     published = 0
     async with sm() as session:
         ids = await ensure_agents(session, tenant_id)
-        dsex_change = await session.scalar(
-            select(MarketSummary.dsex_change)
-            .where(MarketSummary.market == market, MarketSummary.dsex_change.isnot(None))
-            .order_by(MarketSummary.date.desc())
-            .limit(1)
-        )
+        # dsex_change is stored in POINTS (as DSE reports it) — convert to the day's % move
+        # before comparing against per-stock change_pct (the "DSEX fell 19.0%" incident).
+        idx_row = (
+            await session.execute(
+                select(MarketSummary.dsex, MarketSummary.dsex_change)
+                .where(MarketSummary.market == market, MarketSummary.dsex_change.isnot(None))
+                .order_by(MarketSummary.date.desc())
+                .limit(1)
+            )
+        ).first()
+        dsex_change_pct = index_change_pct(idx_row.dsex, idx_row.dsex_change) if idx_row else None
         rows = (
             await session.execute(
                 select(TickerAnalytics, QuoteSnapshot.change_pct)
@@ -282,7 +288,7 @@ async def run_factor_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> 
                 factors.detect_quality(ta, month_key),
                 factors.detect_smartmoney(ta, month_key),
                 factors.detect_accumulation(ta, month_key),
-                factors.detect_strength(change_pct, dsex_change, day),
+                factors.detect_strength(change_pct, dsex_change_pct, day),
                 # ta.last_close = latest EOD close ≈ today's reference price for the band tier.
                 factors.detect_circuit(change_pct, day, ta.last_close),
                 factors.detect_breakout(ta, change_pct, day),

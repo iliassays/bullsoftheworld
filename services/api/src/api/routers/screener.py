@@ -17,6 +17,7 @@ from sqlalchemy import ColumnElement, and_, case, func, or_, select
 
 from api.deps import CurrentTenant, DbSession, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
+from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
 from bulls.core.models import (
     Announcement,
@@ -1343,13 +1344,8 @@ class SectorRow(BaseModel):
 
 
 def _index_pct_from_points(level: float | None, points: float | None) -> float | None:
-    if level is None or points is None:
-        return None
-    prev = level - points
-    if not prev:
-        return None
-    pct = points / prev * 100
-    return round(pct, 2) if abs(pct) <= 20 else None
+    pct = index_change_pct(level, points)
+    return round(pct, 2) if pct is not None else None
 
 
 async def _breadth(session, market: str) -> tuple[int, int, int, int]:

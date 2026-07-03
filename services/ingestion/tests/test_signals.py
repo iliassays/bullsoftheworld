@@ -99,10 +99,15 @@ def test_volume_detect_threshold_and_floor():
 
 
 def test_market_render():
+    # dsex_change is POINTS (DSE convention): +43.4 points on 5420 = +0.81%.
     s = MarketSummary(
-        market="DSE", date=dt.date(2026, 6, 25), dsex=5420.0, dsex_change=0.8, total_value_mn=6200.0
+        market="DSE",
+        date=dt.date(2026, 6, 25),
+        dsex=5420.0,
+        dsex_change=43.4,
+        total_value_mn=6200.0,
     )
     en = market_wrap.render(s, 180, 95, "en")
     bn = market_wrap.render(s, 180, 95, "bn")
-    assert "DSEX 5,420" in en and "+0.80%" in en and "180 advancers" in en and "৳620 Cr" in en
+    assert "DSEX 5,420" in en and "+0.81%" in en and "180 advancers" in en and "৳620 Cr" in en
     assert "not advice" in en and "পরামর্শ নয়" in bn

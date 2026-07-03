@@ -19,6 +19,23 @@ from collections.abc import Sequence
 _TRADING_DAYS = 252  # ~1 year of sessions
 
 
+def index_change_pct(level: float | None, points: float | None) -> float | None:
+    """DSE's market summary reports the index change in POINTS; convert to the day's % change.
+
+    This is THE converter — use it everywhere MarketSummary.dsex_change/ds30_change is shown as
+    a percent. Three private copies used to exist and the composers without one printed the raw
+    points with a '%' sign (the "DSEX fell 19.0%" incident). Returns None for anything
+    implausible for an index in a day (>20%) — better blank than misleading.
+    """
+    if level is None or points is None:
+        return None
+    prev = level - points
+    if not prev:
+        return None
+    pct = points / prev * 100
+    return pct if abs(pct) <= 20 else None
+
+
 def momentum_12_1(closes: Sequence[float], *, lookback: int = 252, skip: int = 21) -> float | None:
     """12-minus-1-month price momentum (%): return from `lookback` days ago to `skip` days ago.
 
