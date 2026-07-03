@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bulls.analytics import AT_LIMIT_TOLERANCE_PP, circuit_band
+
 
 @dataclass
 class FactorSignal:
@@ -31,7 +33,6 @@ _STRENGTH_UP = 2.0  # stock up at least this % ...
 _STRENGTH_IDX = -0.3  # ... while DSEX fell at least this much
 _ACCUM_CMF = 0.10  # quiet accumulation: money inflow (Chaikin) ...
 _ACCUM_BAND = 0.10  # ... while price stays within ±10% of its 50-day base
-_CIRCUIT = 9.7  # DSE daily ±10% limit — locked stocks settle ~9.7-9.95 (tick rounding under 10%)
 _BREAKOUT_NEAR = -2.0  # within 2% of the 52-week high ...
 _BREAKOUT_UP = 1.0  # ... and up at least this much today (a fresh push, not just sitting there)
 
@@ -91,15 +92,27 @@ def detect_accumulation(ta, month_key: str) -> FactorSignal | None:
     return None
 
 
-def detect_circuit(change_pct: float | None, day: str) -> FactorSignal | None:
-    """Hit the DSE daily price limit — locked up (+~10%) or down (-~10%). Once per name per day."""
+def detect_circuit(
+    change_pct: float | None, day: str, reference_price: float | None = None
+) -> FactorSignal | None:
+    """Hit the DSE daily price limit — once per name per day.
+
+    Uses the BSEC tiered bands (10% under ৳200 down to 3.75% above ৳5,000) via the shared
+    circuit_band() helper: a flat ±10% check both missed real locks on pricier tiers and
+    over-focused on the cheap tier. Falls back to the 10% band without a reference price."""
     if change_pct is None:
         return None
-    if change_pct >= _CIRCUIT:
-        return FactorSignal("circuit", "circuit_up", f"circuit:{day}", 1, {"dir": "up", "chg": round(change_pct, 1)})
-    if change_pct <= -_CIRCUIT:
-        return FactorSignal("circuit", "circuit_down", f"circuit:{day}", 1, {"dir": "down", "chg": round(change_pct, 1)})
-    return None
+    band = circuit_band(reference_price) if reference_price else 10.0
+    if abs(change_pct) < band - AT_LIMIT_TOLERANCE_PP:
+        return None
+    direction = "up" if change_pct > 0 else "down"
+    return FactorSignal(
+        "circuit",
+        f"circuit_{direction}",
+        f"circuit:{day}",
+        1,
+        {"dir": direction, "chg": round(change_pct, 1)},
+    )
 
 
 def detect_breakout(ta, change_pct: float | None, day: str) -> FactorSignal | None:

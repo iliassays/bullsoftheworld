@@ -12,7 +12,7 @@ import asyncio
 import datetime as dt
 import sys
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from bulls.analytics import compute
 from bulls.core.db import get_sessionmaker
@@ -199,6 +199,8 @@ async def run_volume_agent(
                     QuoteSnapshot.market == market,
                     Symbol.is_active.is_(True),
                     Symbol.is_hidden.is_(False),
+                    # promotional-flavoured beats never post on Z junk (pump amplification)
+                    or_(Symbol.category.is_(None), Symbol.category != "Z"),
                 )
             )
         ).all()
@@ -277,6 +279,8 @@ async def run_factor_agents(
                     TickerAnalytics.market == market,
                     Symbol.is_active.is_(True),
                     Symbol.is_hidden.is_(False),
+                    # promotional-flavoured beats never post on Z junk (pump amplification)
+                    or_(Symbol.category.is_(None), Symbol.category != "Z"),
                 )
             )
         ).all()
@@ -287,7 +291,8 @@ async def run_factor_agents(
                 factors.detect_smartmoney(ta, month_key),
                 factors.detect_accumulation(ta, month_key),
                 factors.detect_strength(change_pct, dsex_change, day),
-                factors.detect_circuit(change_pct, day),
+                # ta.last_close = latest EOD close ≈ today's reference price for the band tier.
+                factors.detect_circuit(change_pct, day, ta.last_close),
                 factors.detect_breakout(ta, change_pct, day),
             ]
             for sig in sigs:
