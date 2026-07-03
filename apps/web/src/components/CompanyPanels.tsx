@@ -19,7 +19,7 @@ const F_HELP: Record<string, string> = {
     "This stock's P/E ÷ its sector's median P/E. Below 1.0× = cheaper than typical peers; above = pricier.",
   pb: "Price-to-Book: share price ÷ net asset value per share. Below 1.0 = trading under book value. e.g. price ৳100, NAV ৳80 → 1.25.",
   yield:
-    "Last year's cash dividend as a % of today's price. e.g. ৳1 cash on a ৳20 price = 5%. Bonus shares aren't counted.",
+    "Last year's cash dividend as a % of today's price — your real return. Note: DSE declares dividends as a % of the ৳10 face value, so a '10% dividend' = ৳1 cash; on a ৳40 price that's a 2.5% yield. Bonus shares aren't counted.",
   eps: "Earnings per share: yearly profit ÷ shares outstanding. e.g. ৳1.72 earned per share over the year.",
   eps_growth: "Change in EPS vs the prior year. e.g. -17.3% means earnings per share fell 17.3%.",
   nav: "Net Asset Value per share — the company's book value behind each share. e.g. ৳57 of net assets per share.",
@@ -30,7 +30,8 @@ const F_HELP_BN: Record<string, string> = {
   pe: "মূল্য-আয় অনুপাত: শেয়ারের দাম ÷ বার্ষিক EPS। যেমন দাম ৳১০০, EPS ৳৫ → P/E ২০। একই খাতে তুলনা করুন।",
   pe_sector: "এই শেয়ারের P/E ÷ খাতের মধ্যমা P/E। ১.০×-এর নিচে = সাধারণ সমকক্ষদের চেয়ে সস্তা; উপরে = দামি।",
   pb: "মূল্য-বইমূল্য অনুপাত: দাম ÷ শেয়ারপ্রতি নিট সম্পদমূল্য। ১.০-এর নিচে = বইমূল্যের নিচে লেনদেন। যেমন দাম ৳১০০, NAV ৳৮০ → ১.২৫।",
-  yield: "আজকের দামের শতাংশ হিসেবে গত বছরের নগদ লভ্যাংশ। যেমন ৳২০ দামে ৳১ নগদ = ৫%। বোনাস শেয়ার গণনা হয় না।",
+  yield:
+    "আজকের দামের শতাংশ হিসেবে গত বছরের নগদ লভ্যাংশ — আপনার আসল রিটার্ন। মনে রাখুন: DSE-তে লভ্যাংশ ঘোষণা হয় ফেস ভ্যালু ৳১০-এর শতাংশে, তাই '১০% লভ্যাংশ' = ৳১ নগদ; ৳৪০ দামে সেটা ২.৫% ইল্ড। বোনাস শেয়ার গণনা হয় না।",
   eps: "শেয়ারপ্রতি আয়: বার্ষিক মুনাফা ÷ মোট শেয়ার। যেমন বছরে শেয়ারপ্রতি ৳১.৭২ আয়।",
   eps_growth: "আগের বছরের তুলনায় EPS পরিবর্তন। যেমন -১৭.৩% মানে শেয়ারপ্রতি আয় ১৭.৩% কমেছে।",
   nav: "শেয়ারপ্রতি নিট সম্পদমূল্য — প্রতি শেয়ারের পেছনে কোম্পানির বইমূল্য। যেমন শেয়ারপ্রতি ৳৫৭ নিট সম্পদ।",
@@ -275,9 +276,20 @@ function whatItMeans(n: NewsItem, bn: boolean): string | null {
       return bn
         ? "লভ্যাংশ না দেওয়ার অনেক কারণ থাকতে পারে — মুনাফা কম, নাকি টাকা ব্যবসায় পুনর্বিনিয়োগ? আর্থিক বিবরণী দেখুন।"
         : "No dividend can mean weak profit or profits reinvested in the business — the financials tell you which. Worth checking.";
-    return bn
-      ? "রেকর্ড ডেটে শেয়ারটি আপনার BO-তে থাকলে লভ্যাংশ পাবেন। রেকর্ড ডেটের পর দাম সাধারণত লভ্যাংশের পরিমাণে সমন্বয় হয় — এটি ক্ষতি নয়, হিসাব।"
-      : "Own the share in your BO account on the record date to receive it. After the record date the price usually adjusts by roughly the dividend amount — that's arithmetic, not a loss.";
+    // The most misread number on the DSE: the declared % is of the ৳10 face value,
+    // never of the market price. Decode it with this filing's own numbers.
+    const conv =
+      d?.cash_pct != null
+        ? bn
+          ? `"${d.cash_pct}%" মানে ফেস ভ্যালু ৳১০-এর ${d.cash_pct}%${d.per_share_cash != null ? ` = শেয়ারপ্রতি ৳${d.per_share_cash}` : ""} — আজকের বাজারদরের ${d.cash_pct}% নয়। আপনার আসল রিটার্ন হলো ইল্ড: এই নগদ ÷ যে দামে আপনি কিনবেন। `
+          : `The "${d.cash_pct}%" means ${d.cash_pct}% of the ৳10 face value${d.per_share_cash != null ? ` = ৳${d.per_share_cash} per share` : ""} — not ${d.cash_pct}% of today's market price. Your real return is the yield: that cash ÷ the price you actually pay. `
+        : "";
+    return (
+      conv +
+      (bn
+        ? "রেকর্ড ডেটে শেয়ারটি আপনার BO-তে থাকলে লভ্যাংশ পাবেন। রেকর্ড ডেটের পর দাম সাধারণত লভ্যাংশের পরিমাণে সমন্বয় হয় — এটি ক্ষতি নয়, হিসাব।"
+        : "Own the share in your BO account on the record date to receive it. After the record date the price usually adjusts by roughly the dividend amount — that's arithmetic, not a loss.")
+    );
   }
   if (n.category === "rating")
     return bn
@@ -325,12 +337,16 @@ function FactChips({ n, ltp, bn }: { n: NewsItem; ltp?: number | null; bn: boole
           (days != null && days >= 0 ? (bn ? ` · ${days} দিন বাকি` : ` · in ${days} days`) : ""),
         tone: "accent",
       });
-    if (d.per_share_cash != null && ltp)
+    if (d.per_share_cash != null && ltp) {
+      // Show the division, not just the result — the yield IS cash ÷ today's price,
+      // and seeing ৳1 ÷ ৳40 is what breaks the "10% dividend = 10% return" illusion.
+      const y = ((d.per_share_cash / ltp) * 100).toFixed(1);
       chips.push({
         text: bn
-          ? `আজকের দামে ইল্ড ~${((d.per_share_cash / ltp) * 100).toFixed(1)}%`
-          : `yield ~${((d.per_share_cash / ltp) * 100).toFixed(1)}% at today's price`,
+          ? `ইল্ড ~${y}% (৳${d.per_share_cash} ÷ আজকের ৳${ltp})`
+          : `yield ~${y}% (৳${d.per_share_cash} ÷ today's ৳${ltp})`,
       });
+    }
     if (d.agm_date) chips.push({ text: `AGM ${shortDate(d.agm_date)}` });
   }
   if (n.category === "rating" && d.outlook) chips.push({ text: `${bn ? "আউটলুক" : "outlook"}: ${d.outlook}` });

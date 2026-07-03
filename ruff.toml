@@ -5,6 +5,8 @@ src = ["packages", "services"]
 [lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
 ignore = ["E501"]  # line length handled by the formatter
+# Bangla-first product: Bengali digits in user-facing strings are intentional, not typos.
+allowed-confusables = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"]
 
 [lint.isort]
 known-first-party = ["bulls", "api", "ingestion", "ai_worker"]

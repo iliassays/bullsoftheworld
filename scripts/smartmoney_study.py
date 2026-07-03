@@ -12,6 +12,7 @@ to be re-run as the weekly scrape accumulates monthly history.
 from __future__ import annotations
 
 import asyncio
+import itertools as it
 import statistics as st
 
 from sqlalchemy import select
@@ -54,7 +55,7 @@ async def _run():
         if not cl or len(sl) < 2:
             continue
         dates = [b.date for b in cl]
-        for prev, cur in zip(sl, sl[1:], strict=False):
+        for prev, cur in it.pairwise(sl):
             inst = (cur.institute or 0) - (prev.institute or 0)
             fgn = (cur.foreign_pct or 0) - (prev.foreign_pct or 0)
             # entry = first bar on/after as_of + LAG trading days; forward FWD bars
