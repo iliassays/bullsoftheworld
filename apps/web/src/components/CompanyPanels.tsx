@@ -547,12 +547,28 @@ function Card({
   );
 }
 
-export function FundamentalsPanel({ f }: { f: Company["fundamentals"] }) {
+export function FundamentalsPanel({
+  f,
+  earnings = [],
+}: {
+  f: Company["fundamentals"];
+  earnings?: Company["earnings"];
+}) {
   const { t, lang } = useLang();
+  const bn = lang === "bn";
+  // "Compared to what?" — the prior fiscal year, inline, so a lone number gets context
+  // without leaving the row. earnings[0] = latest FY, [1] = the one before.
+  const prior = earnings[1];
+  const lastFY = (v: number | null | undefined) =>
+    v == null ? undefined : bn ? `(গত অর্থবছর ৳${v})` : `(last FY ৳${v})`;
   const yoy =
     f.eps_growth_yoy == null
       ? dash
       : `${f.eps_growth_yoy > 0 ? "+" : ""}${f.eps_growth_yoy.toFixed(1)}%`;
+  const yoyHint =
+    prior?.eps != null && earnings[0]?.eps != null
+      ? `(৳${prior.eps} → ৳${earnings[0].eps})`
+      : undefined;
   return (
     <Card title={t("tab.fundamentals")}>
       <Row label={t("f.marketCap")} value={crore(f.market_cap_mn)} help={fhelp("market_cap", lang)} />
@@ -564,9 +580,19 @@ export function FundamentalsPanel({ f }: { f: Company["fundamentals"] }) {
       />
       <Row label={t("f.pb")} value={ratio(f.pb_ratio)} help={fhelp("pb", lang)} />
       <Row label={t("f.divYield")} value={pct(f.dividend_yield)} help={fhelp("yield", lang)} />
-      <Row label={t("f.epsAnnual")} value={taka(f.eps)} help={fhelp("eps", lang)} />
-      <Row label={t("f.epsGrowthYoY")} value={yoy} help={fhelp("eps_growth", lang)} />
-      <Row label={t("f.navShare")} value={taka(f.nav_per_share)} help={fhelp("nav", lang)} />
+      <Row
+        label={t("f.epsAnnual")}
+        value={taka(f.eps)}
+        hint={lastFY(prior?.eps)}
+        help={fhelp("eps", lang)}
+      />
+      <Row label={t("f.epsGrowthYoY")} value={yoy} hint={yoyHint} help={fhelp("eps_growth", lang)} />
+      <Row
+        label={t("f.navShare")}
+        value={taka(f.nav_per_share)}
+        hint={lastFY(prior?.nav_per_share)}
+        help={fhelp("nav", lang)}
+      />
       <Row
         label={t("range.52w")}
         value={`${taka(f.week52_low)} – ${taka(f.week52_high)}`}

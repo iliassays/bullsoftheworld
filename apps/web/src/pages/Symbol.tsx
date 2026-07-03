@@ -437,7 +437,7 @@ export function SymbolPage() {
       {tab === "financials" &&
         (company ? (
           <>
-            <FundamentalsPanel f={company.fundamentals} />
+            <FundamentalsPanel f={company.fundamentals} earnings={company.earnings} />
             <EarningsPanel
               earnings={company.earnings}
               dividends={company.dividends}
