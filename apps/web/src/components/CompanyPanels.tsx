@@ -177,7 +177,12 @@ type NewsTier = "caution" | "important" | "routine";
 
 function newsTier(n: NewsItem): NewsTier {
   if (n.category === "halt") return "caution";
-  if (hasDecoded(n) && ["earnings", "dividend", "rating"].includes(n.category)) return "important";
+  // Dividend/earnings/rating notices earn "Important" ONLY when the decode extracted real
+  // substance (a %, an EPS, a grade). An undecoded one — e.g. "dividend by a subsidiary
+  // company" — can't be presented helpfully, and a big badge on it is noise pretending to
+  // be signal. Those fold into the routine drawer.
+  if (["earnings", "dividend", "rating"].includes(n.category))
+    return hasDecoded(n) ? "important" : "routine";
   return n.strength >= 60 ? "important" : "routine";
 }
 
