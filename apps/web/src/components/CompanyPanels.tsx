@@ -604,6 +604,17 @@ function smartMoneyRead(o: Company["ownership"]): string {
 
 const OWN_GREEN = "#2fbf71";
 
+// Who each holder group actually is — the labels are meaningless to a first-time investor.
+const OWN_WHO: Record<string, string> = {
+  sponsor:
+    "The company's founders, directors and their families — the insiders. A large stake means their own money sits next to yours; a steady fall is worth reading into.",
+  institute:
+    "Banks, mutual funds, insurers and other professional investors. They research before they buy, so changes here are watched closely.",
+  foreign:
+    "Overseas funds investing in the DSE — often the most selective money in the market.",
+  public: "Everyone else — ordinary retail investors like most people using this app.",
+};
+
 export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   const cats = [
     { key: "sponsor", label: "Sponsor / Director", color: "var(--color-accent)", v: o.sponsor_pct },
@@ -624,6 +635,14 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   const smartNow = (o.institute_pct ?? 0) + (o.foreign_pct ?? 0);
   const smartThen = first ? (first.institute ?? 0) + (first.foreign ?? 0) : null;
   const smartGrew = !stale && smartThen != null && smartNow - smartThen >= 0.5;
+  // Latest step of the same combined series — surfaced as a caveat when it disagrees with
+  // the long-run rise, so the banner never contradicts the ▼ chips right below it.
+  const smartStep =
+    hist.length >= 2
+      ? (hist[hist.length - 1].institute ?? 0) +
+        (hist[hist.length - 1].foreign ?? 0) -
+        ((hist[hist.length - 2].institute ?? 0) + (hist[hist.length - 2].foreign ?? 0))
+      : null;
 
   // Sponsor falling streak — same rule as the backend agent (≥3 consecutive declining
   // disclosures, ≥1.0pp cumulative). Insiders steadily reducing is the one ownership story
@@ -682,11 +701,14 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
           style={{ backgroundColor: "rgba(22,199,132,0.10)", border: "1px solid rgba(22,199,132,0.35)" }}
         >
           <div className="text-[13px] leading-snug font-semibold text-up">
-            🚀 Smart money is building a stake
+            🏦 Big investors hold more than before
           </div>
           <div className="text-[12px] text-muted mt-0.5">
-            Institutions + foreign investors now hold <b className="text-fg">{smartNow.toFixed(1)}%</b>,
-            up from {smartThen.toFixed(1)}% in {discMonth(first.as_of)}.
+            Institutions + foreign investors hold <b className="text-fg">{smartNow.toFixed(1)}%</b>,
+            up from {smartThen.toFixed(1)}% in {discMonth(first.as_of)}
+            {smartStep != null && smartStep <= -0.1
+              ? ` — though the latest disclosure shows a small dip (−${Math.abs(smartStep).toFixed(2)}pp).`
+              : "."}
           </div>
         </div>
       ) : (
@@ -716,6 +738,7 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
           <span className="flex items-center gap-2 flex-1 min-w-0">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
             <span className="text-xs text-muted truncate">{c.label}</span>
+            <InfoTip text={OWN_WHO[c.key]} />
           </span>
           {chip(stepDelta(c.key))}
           <span className="text-sm font-semibold tnum w-16 text-right">{pct(c.v)}</span>
@@ -725,7 +748,8 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
       <p className="text-[10px] text-muted mt-2">
         Free float ~{freeFloat.toFixed(0)}%.{" "}
         {hist.length > 1 ? `${hist.length} disclosures, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}. ` : ""}
-        ▲▼ = change vs the prior disclosure. Descriptive, not advice.
+        ▲▼ = change vs the prior disclosure, in percentage points (0.65pp = the group&apos;s
+        share of the company moved by 0.65). Descriptive, not advice.
       </p>
     </Card>
   );
