@@ -484,7 +484,7 @@ async def compose_earnings_week(session, market: str) -> ComposedPost:
     ][:5]
     first = dt.date.fromisoformat(min(by_day))
     last = dt.date.fromisoformat(max(by_day))
-    date_label = f"{first.day}–{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
+    date_label = f"{first.day}-{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
 
     total = len(by_code)
     caption = (
@@ -508,7 +508,6 @@ async def compose_mood_card(session, market: str) -> ComposedPost:
     """Evening prime-time mood gauge. English on the card (librsvg has no Bangla face);
     the bilingual read lives in the caption."""
     from api.routers.market import _mood_inputs  # same package; reuse the one mood pipeline
-
     from bulls.analytics import build_mood
 
     mood = build_mood(locale="en", **await _mood_inputs(session, market))

@@ -452,7 +452,7 @@ class EarningsDay:
 
 @dataclass
 class EarningsWeekData:
-    date_label: str  # "6–10 JUL 2026"
+    date_label: str  # "6-10 JUL 2026"
     days: list[EarningsDay]  # trading days that actually have meetings (≤5)
 
 
