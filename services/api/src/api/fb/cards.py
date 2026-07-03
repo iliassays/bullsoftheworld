@@ -18,13 +18,13 @@ _ASSETS = Path(__file__).parent / "assets"
 _MARK = _ASSETS / "mark.png"
 _FONT = "Inter"
 # Palette mirrors the web app's @theme tokens (apps/web/src/index.css) so cards match the in-app UI.
-_GOLD = "#f5b82e"  # --color-accent
-_GREEN = "#16c784"  # --color-up
-_RED = "#ea3943"  # --color-down
-_WHITE = "#e8edf2"  # --color-text
-_GREY = "#8b97a6"  # --color-muted
-_BG = "#0b0e11"  # --color-bg
-_PANEL = "#07111d"  # panel fill, rendered at 0.8 opacity
+_GOLD = "#e3b341"  # --color-accent
+_GREEN = "#2fbf71"  # --color-up
+_RED = "#f0564a"  # --color-down
+_WHITE = "#e9eef7"  # --color-text
+_GREY = "#8fa0b8"  # --color-muted
+_BG = "#0d1524"  # --color-bg
+_PANEL = "#101a2e"  # panel fill, rendered at 0.8 opacity
 _BORDER = _GOLD  # at 0.35 opacity — one border style everywhere
 _SEP = "#ffffff"  # at 0.08 opacity — one separator style everywhere
 _W, _H = 1600, 900
@@ -213,7 +213,7 @@ def _mover_row(
     color: str = _GREEN,
 ) -> str:
     return (
-        f'<rect x="{badge_x}" y="{y - 25}" width="40" height="40" rx="9" fill="#1b2230"/>'
+        f'<rect x="{badge_x}" y="{y - 25}" width="40" height="40" rx="9" fill="#1b2842"/>'
         f'<text x="{badge_x + 20}" y="{y - 1}" font-size="22" font-family="{_FONT}" '
         f'font-weight="500" fill="{_GREY}" text-anchor="middle">{idx}</text>'
         f'<text x="{code_x}" y="{y}" font-size="36" font-family="{_FONT}" '
@@ -242,7 +242,7 @@ def _frame(subtitle: str, date_label: str, inner: str) -> str:
     """Common card chrome (defs, background, header, footer); pillars supply `inner`."""
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{_W}" height="{_H}" viewBox="0 0 {_W} {_H}">
   <defs>{_font_face()}
-    <linearGradient id="bg" x1="0" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#0d1320"/><stop offset="1" stop-color="#05080e"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#121d33"/><stop offset="1" stop-color="#0a1120"/></linearGradient>
     <radialGradient id="glow" cx="0.8" cy="0.12" r="0.6"><stop offset="0" stop-color="{_GOLD}" stop-opacity="0.20"/><stop offset="1" stop-color="{_GOLD}" stop-opacity="0"/></radialGradient>
     <linearGradient id="goldline" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="{_GOLD}" stop-opacity="0"/><stop offset="1" stop-color="{_GOLD}" stop-opacity="0.85"/></linearGradient>
   </defs>
@@ -360,7 +360,7 @@ def morning_watch_card(d: MorningWatchData) -> bytes:
         for j, (code, value, unit) in enumerate(g.items[:3]):
             ry = y + 150 + j * 42
             panels += (
-                f'<rect x="{x + 30}" y="{ry - 25}" width="38" height="38" rx="9" fill="#1b2230"/>'
+                f'<rect x="{x + 30}" y="{ry - 25}" width="38" height="38" rx="9" fill="#1b2842"/>'
                 f'<text x="{x + 49}" y="{ry - 1}" font-size="20" font-family="{_FONT}" '
                 f'font-weight="500" fill="{_GREY}" text-anchor="middle">{j + 1}</text>'
                 f'<text x="{x + 88}" y="{ry}" font-size="32" font-family="{_FONT}" '
@@ -395,7 +395,7 @@ def _recap_rows(items: list[Mover], color: str, bx: int, cx: int, px: int) -> st
     for i, m in enumerate(items[:3]):
         y = ys[i]
         out += (
-            f'<rect x="{bx}" y="{y - 25}" width="40" height="40" rx="9" fill="#1b2230"/>'
+            f'<rect x="{bx}" y="{y - 25}" width="40" height="40" rx="9" fill="#1b2842"/>'
             f'<text x="{bx + 20}" y="{y - 1}" font-size="22" font-family="{_FONT}" '
             f'font-weight="500" fill="{_GREY}" text-anchor="middle">{i + 1}</text>'
             f'<text x="{cx}" y="{y}" font-size="36" font-family="{_FONT}" '
@@ -434,3 +434,152 @@ def weekly_recap_card(d: WeeklyRecapData) -> bytes:
   {_recap_rows(d.losers, _RED, 832, 892, 1480)}
   {sector}"""
     return render(_frame("WEEK IN REVIEW", d.range_label, inner))
+
+
+# --- Earnings This Week (logo calendar, Earnings-Whispers style) --------------
+@dataclass
+class EarningsEntry:
+    code: str
+    logo_b64: str | None = None  # base64 image bytes; None → monogram fallback
+    logo_type: str = "image/png"
+
+
+@dataclass
+class EarningsDay:
+    label: str  # "SUN 6 JUL"
+    items: list[EarningsEntry]
+
+
+@dataclass
+class EarningsWeekData:
+    date_label: str  # "6–10 JUL 2026"
+    days: list[EarningsDay]  # trading days that actually have meetings (≤5)
+
+
+_EW_PER_COL = 4  # logo cells per day column; overflow becomes "+N more"
+
+
+def _logo_cell(e: EarningsEntry, cx: int, y: int, idx: str) -> str:
+    """One calendar cell: the company logo (or monogram) with the $CODE beneath — the logo IS
+    the content, Earnings-Whispers style."""
+    box = 84
+    x = cx - box // 2
+    clip = f"ewclip{idx}"
+    if e.logo_b64:
+        img = (
+            f'<clipPath id="{clip}"><rect x="{x}" y="{y}" width="{box}" height="{box}" rx="16"/></clipPath>'
+            f'<rect x="{x}" y="{y}" width="{box}" height="{box}" rx="16" fill="#ffffff"/>'
+            f'<image href="data:{e.logo_type};base64,{e.logo_b64}" x="{x + 6}" y="{y + 6}" '
+            f'width="{box - 12}" height="{box - 12}" clip-path="url(#{clip})" '
+            f'preserveAspectRatio="xMidYMid meet"/>'
+            f'<rect x="{x}" y="{y}" width="{box}" height="{box}" rx="16" fill="none" '
+            f'stroke="{_SEP}" stroke-opacity="0.15"/>'
+        )
+    else:
+        img = (
+            f'<rect x="{x}" y="{y}" width="{box}" height="{box}" rx="16" fill="#1b2842"/>'
+            f'<text x="{cx}" y="{y + box // 2 + 12}" font-size="34" font-family="{_FONT}" '
+            f'font-weight="800" fill="{_GOLD}" text-anchor="middle">{_esc(e.code[:2])}</text>'
+        )
+    code = (
+        f'<text x="{cx}" y="{y + box + 34}" font-size="25" font-family="{_FONT}" '
+        f'font-weight="700" fill="{_WHITE}" text-anchor="middle">${_esc(e.code)}</text>'
+    )
+    return img + code
+
+
+def earnings_week_card(d: EarningsWeekData) -> bytes:
+    n = max(1, len(d.days))
+    col_w = 1472 // n
+    top, bottom = 208, 820
+    inner = ""
+    for ci, day in enumerate(d.days):
+        cx = 64 + ci * col_w + col_w // 2
+        if ci:
+            x = 64 + ci * col_w
+            inner += (
+                f'<line x1="{x}" y1="{top + 6}" x2="{x}" y2="{bottom}" '
+                f'stroke="{_SEP}" stroke-opacity="0.08"/>'
+            )
+        inner += (
+            f'<text x="{cx}" y="{top + 28}" font-size="30" font-family="{_FONT}" '
+            f'font-weight="800" fill="{_GOLD}" letter-spacing="4" text-anchor="middle">'
+            f"{_esc(day.label)}</text>"
+        )
+        shown = day.items[:_EW_PER_COL]
+        extra = len(day.items) - len(shown)
+        y = top + 62
+        for ri, e in enumerate(shown):
+            inner += _logo_cell(e, cx, y, f"{ci}_{ri}")
+            y += 138
+        if extra > 0:
+            inner += (
+                f'<text x="{cx}" y="{y + 30}" font-size="26" font-family="{_FONT}" '
+                f'font-weight="700" fill="{_GREY}" text-anchor="middle">+{extra} more</text>'
+            )
+    if not d.days:
+        raise CardError("no earnings days to draw")
+    return render(_frame("EARNINGS THIS WEEK", d.date_label, inner))
+
+
+# --- Dhaka Mood (daily fear/greed gauge) --------------------------------------
+@dataclass
+class MoodCardData:
+    date_label: str
+    score: int  # 0-100
+    band_label: str  # "Greed"
+    dsex: float | None
+    dsex_change_pct: float | None
+    turnover_cr: float | None
+    advancers: int
+    decliners: int
+
+
+_MOOD_SEGMENTS = (  # (start_deg, end_deg, colour) sweeping left(180°) → right(0°)
+    (180.0, 135.0, "#f0564a"),  # extreme fear
+    (131.0, 95.0, "#e0813f"),  # fear
+    (91.0, 55.0, _GOLD),  # neutral→greed
+    (51.0, 0.0, "#2fbf71"),  # greed
+)
+
+
+def _polar(cx: float, cy: float, r: float, deg: float) -> tuple[float, float]:
+    import math
+
+    rad = math.radians(deg)
+    return cx + r * math.cos(rad), cy - r * math.sin(rad)
+
+
+def _gauge(cx: int, cy: int, r: int, score: int) -> str:
+    parts = ""
+    for a0, a1, colour in _MOOD_SEGMENTS:
+        x0, y0 = _polar(cx, cy, r, a0)
+        x1, y1 = _polar(cx, cy, r, a1)
+        parts += (
+            f'<path d="M{x0:.1f} {y0:.1f} A{r} {r} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" '
+            f'stroke="{colour}" stroke-width="34" stroke-linecap="round"/>'
+        )
+    needle_deg = 180.0 - (max(0, min(100, score)) * 1.8)
+    nx, ny = _polar(cx, cy, r - 44, needle_deg)
+    parts += (
+        f'<line x1="{cx}" y1="{cy}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="{_WHITE}" '
+        f'stroke-width="9" stroke-linecap="round"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="17" fill="{_GOLD}"/>'
+    )
+    return parts
+
+
+def mood_card(d: MoodCardData) -> bytes:
+    chg = d.dsex_change_pct
+    chg_color = _GREEN if (chg or 0) >= 0 else _RED
+    chg_txt = "—" if chg is None else f"{chg:+.2f}%"
+    turnover = "—" if d.turnover_cr is None else f"Tk {_fmt(d.turnover_cr)} cr"
+    inner = f"""
+  {_gauge(430, 640, 300, d.score)}
+  <text x="930" y="452" font-size="200" font-family="{_FONT}" font-weight="800" fill="{_WHITE}">{d.score}</text>
+  <text x="934" y="540" font-size="66" font-family="{_FONT}" font-weight="800" fill="{_GOLD}">{_esc(d.band_label.upper())}</text>
+  {_panel(930, 590, 606, 230)}
+  <text x="966" y="654" font-size="34" font-family="{_FONT}"><tspan font-weight="500" fill="{_GREY}">DSEX</tspan><tspan dx="14" font-weight="800" fill="{_WHITE}">{_fmt(d.dsex, 2)}</tspan><tspan dx="14" font-weight="800" fill="{chg_color}">{chg_txt}</tspan></text>
+  <text x="966" y="716" font-size="32" font-family="{_FONT}"><tspan font-weight="500" fill="{_GREY}">Turnover</tspan><tspan dx="12" font-weight="800" fill="{_WHITE}">{_esc(turnover)}</tspan></text>
+  <text x="966" y="778" font-size="32" font-family="{_FONT}"><tspan font-weight="800" fill="{_GREEN}">{d.advancers} up</tspan><tspan dx="14" font-weight="800" fill="{_RED}">{d.decliners} down</tspan><tspan dx="14" font-weight="500" fill="{_GREY}">breadth</tspan></text>"""
+    return render(_frame("DHAKA MOOD", d.date_label, inner))

@@ -43,6 +43,15 @@ export function EarningsWeek() {
   const shown = expanded ? events : events.slice(0, GRID);
   const hidden = events.length - shown.length;
 
+  // Earnings-Whispers style, turned vertical for 480px: a day header, then that day's
+  // companies as a logo row — the logo is the content.
+  const byDay: { date: string; items: EarningsEvent[] }[] = [];
+  for (const e of shown) {
+    const last = byDay[byDay.length - 1];
+    if (last && last.date === e.meeting_date) last.items.push(e);
+    else byDay.push({ date: e.meeting_date, items: [e] });
+  }
+
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-2">
@@ -54,24 +63,28 @@ export function EarningsWeek() {
           {events.length}
         </span>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {shown.map((e) => {
-          const { day, weekday } = fmt(e.meeting_date, bn);
-          return (
-            <Link
-              key={`${e.code}-${e.meeting_date}`}
-              to={`/s/${e.code}`}
-              className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/50 px-1.5 py-2.5 text-center hover:border-accent"
-            >
-              <CompanyLogo code={e.code} size={30} />
-              <div className="w-full truncate text-[11px] font-bold">${e.code}</div>
-              <div className="text-[10px] text-accent font-semibold tnum">
-                {weekday} · {day}
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+      {byDay.map((g) => {
+        const { day, weekday } = fmt(g.date, bn);
+        return (
+          <div key={g.date} className="mt-3">
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
+              {weekday} · {day}
+            </div>
+            <div className="mt-1.5 grid grid-cols-3 gap-2">
+              {g.items.map((e) => (
+                <Link
+                  key={e.code}
+                  to={`/s/${e.code}`}
+                  className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/50 px-1.5 py-2.5 text-center hover:border-accent"
+                >
+                  <CompanyLogo code={e.code} size={34} />
+                  <div className="w-full truncate text-[11px] font-bold">${e.code}</div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        );
+      })}
       {hidden > 0 && (
         <button
           onClick={() => setExpanded(true)}

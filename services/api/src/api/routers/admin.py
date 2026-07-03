@@ -25,6 +25,8 @@ _FB_COMPOSERS = {
     "evening_wrap": fbcompose.compose_evening_wrap,
     "morning_watch": fbcompose.compose_morning_watch,
     "weekly_recap": fbcompose.compose_weekly_recap,
+    "earnings_week": fbcompose.compose_earnings_week,
+    "mood": fbcompose.compose_mood_card,
 }
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])

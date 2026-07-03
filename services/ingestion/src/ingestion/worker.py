@@ -98,7 +98,12 @@ async def run_trending(ctx) -> str:
     if not is_trading_day(today):
         return "skipped: non-trading day"
     stats = await compute_trending(MARKET)
-    log.info("trending: stored %s of %s eligible (as_of %s)", stats["stored"], stats["eligible"], stats["as_of"])
+    log.info(
+        "trending: stored %s of %s eligible (as_of %s)",
+        stats["stored"],
+        stats["eligible"],
+        stats["as_of"],
+    )
     return f"trending={stats['stored']}"
 
 
@@ -148,7 +153,9 @@ async def pull_news(ctx) -> str:
     """Onboard DSE news (classify + score, drop noise), then fire the news agents on new items."""
     counts = await news.collect(MARKET, days=news.DAILY_LOOKBACK_DAYS)
     sig = await run_news_agents(MARKET)
-    log.info("news: kept %s / %s fetched, %s notes", counts["kept"], counts["fetched"], sig["published"])
+    log.info(
+        "news: kept %s / %s fetched, %s notes", counts["kept"], counts["fetched"], sig["published"]
+    )
     return f"news_kept={counts['kept']} notes={sig['published']}"
 
 
@@ -179,7 +186,9 @@ async def _trigger_publish(paths: list[str]) -> dict[str, str]:
             name = p.rsplit("=", 1)[-1] + ("·feed" if "publish-feed" in p else "")
             try:
                 r = await client.post(f"{base}{p}", headers=headers)
-                out[name] = r.json().get("status", "ok") if r.status_code < 300 else f"err{r.status_code}"
+                out[name] = (
+                    r.json().get("status", "ok") if r.status_code < 300 else f"err{r.status_code}"
+                )
             except Exception as e:
                 out[name] = f"error: {type(e).__name__}"
     return out
@@ -203,6 +212,23 @@ async def run_morning_watch(ctx) -> str:
     res = await _trigger_publish(["/admin/fb/publish?kind=morning_watch"])
     log.info("morning watch auto-post: %s", res)
     return f"morning {res}"
+
+
+async def run_earnings_week(ctx) -> str:
+    """Sunday-morning earnings-calendar card → Facebook, before the trading week opens.
+    The composer skips (CardError) when no earnings are scheduled — no filler posts."""
+    res = await _trigger_publish(["/admin/fb/publish?kind=earnings_week"])
+    log.info("earnings week auto-post: %s", res)
+    return f"earnings_week {res}"
+
+
+async def run_mood_card(ctx) -> str:
+    """Dhaka Mood gauge card → Facebook at evening prime time. Trading days only."""
+    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+        return "skipped: non-trading day"
+    res = await _trigger_publish(["/admin/fb/publish?kind=mood"])
+    log.info("mood card auto-post: %s", res)
+    return f"mood {res}"
 
 
 async def run_weekly_recap(ctx) -> str:
@@ -243,6 +269,8 @@ class WorkerSettings:
         run_factor_signals,
         pull_news,
         pull_block_trades,
+        run_earnings_week,
+        run_mood_card,
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
@@ -280,6 +308,10 @@ class WorkerSettings:
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
         # and after the close (13:35 UTC) to catch intraday postings.
         cron(pull_news, hour={3, 13}, minute=35, run_at_startup=False),
+        # Earnings-week logo calendar: Sunday 08:45 Dhaka, before the week opens.
+        cron(run_earnings_week, weekday="sun", hour=2, minute=45, run_at_startup=False),
+        # Dhaka Mood gauge: 21:00 Dhaka — Bangladesh Facebook prime time, clear of the wrap.
+        cron(run_mood_card, hour=15, minute=0, run_at_startup=False),
         # Block-market list, once after the close (session ends 08:30 UTC); internal dataset.
         # No weekday filter — arq only accepts a single weekday string (a comma-joined list
         # crash-loops the whole worker); the task itself skips non-trading days.

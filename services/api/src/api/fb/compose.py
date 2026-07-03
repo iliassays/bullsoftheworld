@@ -6,6 +6,7 @@ Deterministic — no LLM — so it's free, reliable, and stays on the descriptiv
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 from dataclasses import dataclass
 
@@ -13,7 +14,15 @@ from sqlalchemy import and_, func, or_, select
 
 from api.deps import visible_codes
 from api.fb import cards
-from bulls.core.models import DailyBar, MarketSummary, QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.core.models import (
+    Announcement,
+    CompanyLogo,
+    DailyBar,
+    MarketSummary,
+    QuoteSnapshot,
+    Symbol,
+    TickerAnalytics,
+)
 from bulls.market_data.calendar import to_market_tz
 
 LINK = "https://bullsofdhaka.com"
@@ -408,4 +417,141 @@ async def compose_weekly_recap(session, market: str) -> ComposedPost:
         caption,
         cards.weekly_recap_card(data),
         _campaign_link("weekly_recap"),
+    )
+
+
+# --- Earnings This Week --------------------------------------------------------
+_WEEKDAY_SHORT = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+_MONTH_SHORT = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
+
+
+def _day_label(d: dt.date) -> str:
+    return f"{_WEEKDAY_SHORT[d.weekday()]} {d.day} {_MONTH_SHORT[d.month - 1]}"
+
+
+async def compose_earnings_week(session, market: str) -> ComposedPost:
+    """Sunday-morning logo calendar: who reports this week (board meetings on financials),
+    Earnings-Whispers style. Skips (CardError) when the week is empty — no filler posts."""
+    today = dt.datetime.now(dt.UTC).date()
+    until = today + dt.timedelta(days=6)
+    meeting_date = Announcement.details["meeting_date"].astext
+    rows = list(
+        await session.scalars(
+            select(Announcement)
+            .where(
+                Announcement.market == market,
+                Announcement.category == "board_meeting",
+                meeting_date >= today.isoformat(),
+                meeting_date <= until.isoformat(),
+            )
+            .order_by(meeting_date.asc(), Announcement.strength.desc())
+        )
+    )
+    by_code: dict[str, Announcement] = {}
+    for a in rows:
+        if (a.details or {}).get("financials") is not False and a.code not in by_code:
+            by_code[a.code] = a
+    if not by_code:
+        raise cards.CardError("no earnings scheduled this week")
+
+    # Logos for every code in one query; missing/failed rows fall back to the card's monogram.
+    # librsvg rasterises only PNG/JPEG inside <image> — an .ico/.webp logo would render as a
+    # blank white square, so anything else falls back to the card's monogram.
+    logos = {
+        lg.code: lg
+        for lg in await session.scalars(
+            select(CompanyLogo).where(
+                CompanyLogo.market == market,
+                CompanyLogo.code.in_(list(by_code)),
+                CompanyLogo.status == "ok",
+            )
+        )
+        if lg.image and (lg.content_type or "") in ("image/png", "image/jpeg")
+    }
+    by_day: dict[str, list[cards.EarningsEntry]] = {}
+    for code, a in sorted(by_code.items(), key=lambda kv: (kv[1].details or {})["meeting_date"]):
+        lg = logos.get(code)
+        by_day.setdefault((a.details or {})["meeting_date"], []).append(
+            cards.EarningsEntry(
+                code=code,
+                logo_b64=base64.b64encode(lg.image).decode() if lg else None,
+                logo_type=(lg.content_type if lg and lg.content_type else "image/png"),
+            )
+        )
+    days = [
+        cards.EarningsDay(label=_day_label(dt.date.fromisoformat(day)), items=items)
+        for day, items in sorted(by_day.items())
+    ][:5]
+    first = dt.date.fromisoformat(min(by_day))
+    last = dt.date.fromisoformat(max(by_day))
+    date_label = f"{first.day}–{last.day} {_MONTH_SHORT[last.month - 1]} {last.year}"
+
+    total = len(by_code)
+    caption = (
+        f"📅 এ সপ্তাহের আয় — {total}টি কোম্পানির বোর্ড সভা এই সপ্তাহে (আর্থিক ফলাফল)।\n"
+        f"তারিখ DSE ঘোষণা অনুযায়ী — বোর্ড পুনঃনির্ধারণ করতে পারে।\n"
+        f"📅 Earnings this week — {total} companies report. "
+        f"Dates per DSE announcements; boards can reschedule.\n"
+        f"{_NO_ADVICE_BN}\n\n{_market_cta('earnings_week')}"
+    )
+    return ComposedPost(
+        kind="earnings_week",
+        ref_date=today.isoformat(),
+        caption=caption,
+        png=cards.earnings_week_card(cards.EarningsWeekData(date_label=date_label, days=days)),
+        link=_campaign_link("earnings_week"),
+    )
+
+
+# --- Dhaka Mood -----------------------------------------------------------------
+async def compose_mood_card(session, market: str) -> ComposedPost:
+    """Evening prime-time mood gauge. English on the card (librsvg has no Bangla face);
+    the bilingual read lives in the caption."""
+    from api.routers.market import _mood_inputs  # same package; reuse the one mood pipeline
+
+    from bulls.analytics import build_mood
+
+    mood = build_mood(locale="en", **await _mood_inputs(session, market))
+    if mood.score is None:
+        raise cards.CardError("mood not computable today")
+    mood_bn = build_mood(locale="bn", **await _mood_inputs(session, market))
+
+    summary = await session.scalar(
+        select(MarketSummary)
+        .where(MarketSummary.market == market)
+        .order_by(MarketSummary.date.desc())
+        .limit(1)
+    )
+    adv = await session.scalar(
+        select(func.count()).where(QuoteSnapshot.market == market, QuoteSnapshot.change_pct > 0)
+    )
+    dec = await session.scalar(
+        select(func.count()).where(QuoteSnapshot.market == market, QuoteSnapshot.change_pct < 0)
+    )
+    dsex = summary.dsex if summary else None
+    pct = index_pct(dsex, summary.dsex_change if summary else None)
+    turnover_cr = (summary.total_value_mn / 10) if summary and summary.total_value_mn else None
+    today = dt.datetime.now(dt.UTC).date()
+
+    d = cards.MoodCardData(
+        date_label=_day_label(today).title(),
+        score=mood.score,
+        band_label=mood.label,
+        dsex=dsex,
+        dsex_change_pct=pct,
+        turnover_cr=turnover_cr,
+        advancers=adv or 0,
+        decliners=dec or 0,
+    )
+    caption = (
+        f"আজকের Dhaka Mood: {mood.score} — {mood_bn.label}। {mood_bn.caption}\n"
+        f"Today's Dhaka Mood: {mood.score} — {mood.label}. {mood.caption}\n"
+        f"{_NO_ADVICE_BN}\n\n{_market_cta('mood')}"
+    )
+    return ComposedPost(
+        kind="mood",
+        ref_date=today.isoformat(),
+        caption=caption,
+        png=cards.mood_card(d),
+        link=_campaign_link("mood"),
     )
