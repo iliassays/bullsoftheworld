@@ -1,6 +1,14 @@
 <!doctype html>
 <html lang="bn">
   <head>
+    <!-- Content-Security-Policy: the real XSS defence for browser-stored tokens — only our own
+         bundles + the two hashed GTM/GA snippets may execute; scripts can only talk to our APIs
+         and Google Analytics. ⚠ Editing either inline script below breaks its sha256 hash (GA
+         silently stops — check the console); future ad networks need their domains added here. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://www.googletagmanager.com 'sha256-WXvrJlZtx5sn3mHglbOx4Zthv2U6QbDqrkthOiChtUI=' 'sha256-SSnlW61bkaqUX2h6xxHMbtN5fAYDx+O3lrUQuVAgKQg='; connect-src 'self' https://api.bullsofdhaka.com https://bullsofdhaka-api.bullstreetai.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://www.googletagmanager.com"
+    />
     <!-- Google Tag Manager -->
     <script>
       (function (w, d, s, l, i) {
