@@ -24,6 +24,35 @@ def test_every_ownership_event_has_a_title_and_kind() -> None:
         assert note_alert_kind(event_type) == "ownership"
 
 
+# Every event type any desk can publish with a cashtag. A new agent event MUST be added here
+# and to NOTE_ALERT_TITLES — otherwise watchers get the generic "New data note" headline.
+ALL_AGENT_EVENTS = {
+    # volume desk
+    "unusual_volume": "signal",
+    # factor desks
+    "momentum_strong": "signal",
+    "quality_value": "signal",
+    "smart_money_both": "signal",
+    "quiet_accumulation": "signal",
+    "rel_strength": "signal",
+    "circuit_up": "signal",
+    "circuit_down": "signal",
+    "new_52w_high": "signal",  # shared by levels + the factor breakout
+    # news desks
+    "news_earnings": "earnings",
+    "news_dividend": "earnings",
+    "news_rating": "signal",
+}
+
+
+def test_every_agent_event_has_a_specific_title_and_kind() -> None:
+    for event_type, kind in ALL_AGENT_EVENTS.items():
+        assert event_type in NOTE_ALERT_TITLES, f"missing alert title for {event_type}"
+        assert note_alert_kind(event_type) == kind, event_type
+        t = note_alert_title(event_type, "GP")
+        assert "GP" in t["en"] and "GP" in t["bn"]
+
+
 def test_title_renders_code_in_both_languages() -> None:
     t = note_alert_title("new_52w_high", "GP")
     assert t["en"] == "$GP hit a new 52-week high"

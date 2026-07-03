@@ -41,8 +41,8 @@ STALE_AFTER = dt.timedelta(minutes=35)  # poll is every 15 min; 35 tolerates one
 # on a single hiccup or a deploy-restart landing on a poll boundary.
 COOLDOWN_SECONDS = 60 * 60  # page at most once an hour for an ongoing incident
 _COOLDOWN_KEY = "watchdog:alerted"
-# The EOD chain runs 13:00–13:50 UTC. After it should be done, on a trading day, today's bars +
-# trending must exist. Check window 14:00–17:59 UTC (20:00–23:59 Dhaka): after the chain completes,
+# The EOD chain runs 13:00-13:50 UTC. After it should be done, on a trading day, today's bars +
+# trending must exist. Check window 14:00-17:59 UTC (20:00-23:59 Dhaka): after the chain completes,
 # before the Dhaka date rolls. Catches a hung cron loop (the 2026-06-29 incident) that the intraday
 # quote-freshness check can't see, because it's silent once the market is closed.
 EOD_CHECK_FROM_UTC_HOUR = 14
@@ -69,7 +69,7 @@ def _restart_unit(unit: str) -> str:
         if r.returncode == 0:
             return f"restart of {unit} issued"
         return f"restart of {unit} FAILED (rc={r.returncode}: {r.stderr.strip()[:120]})"
-    except Exception as e:  # noqa: BLE001 — surfaced in the alert, never raises
+    except Exception as e:  # surfaced in the alert, never raises
         return f"restart of {unit} errored: {type(e).__name__}"
 
 

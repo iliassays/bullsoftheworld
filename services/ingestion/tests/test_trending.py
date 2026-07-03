@@ -15,7 +15,7 @@ def test_week52_position_requires_full_year():
 
 
 def test_week52_position_uses_252_session_window():
-    closes = np.array([500.0] + list(range(1, 253)), dtype=float)
+    closes = np.array([500.0, *range(1, 253)], dtype=float)
     pct_high, pct_low = _week52_position(closes, 252.0)
 
     assert pct_high == 0.0

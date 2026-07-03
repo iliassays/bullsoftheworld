@@ -43,10 +43,56 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
 }
 
 
-def render(category: str, headline: str, code: str, locale: str) -> str:
+def _decoded_fact(category: str, details: dict | None, locale: str) -> str | None:
+    """The decoded numbers as one readable clause — the note leads with these, not the raw
+    headline. Omit-over-mislead: any missing field simply drops out; no decode → None."""
+    d = details or {}
+    bn = locale == "bn"
+    if category == "earnings" and d.get("eps_current") is not None:
+        cur = d["eps_current"]
+        period = f"{d['period']} " if d.get("period") else ""
+        fact = f"{period}EPS ৳{cur:g}"
+        prior = d.get("eps_prior")
+        if prior is not None:
+            fact += f" (আগের বছর ৳{prior:g})" if bn else f" vs ৳{prior:g} a year earlier"
+            if prior > 0:
+                pct = (cur - prior) / prior * 100
+                fact += f" ({pct:+.0f}%)"
+        if d.get("nav") is not None:
+            fact += f"; NAV ৳{d['nav']:g}"
+        return fact
+    if category == "dividend":
+        if d.get("no_dividend"):
+            return "এ বছরের জন্য কোনো লভ্যাংশ ঘোষণা হয়নি" if bn else "no dividend declared"
+        parts = []
+        if d.get("cash_pct") is not None:
+            parts.append(f"{d['cash_pct']:g}% {'নগদ' if bn else 'cash'}")
+        if d.get("stock_pct") is not None:
+            parts.append(f"{d['stock_pct']:g}% {'স্টক' if bn else 'stock'}")
+        if not parts:
+            return None
+        fact = " + ".join(parts) + (" লভ্যাংশ ঘোষণা" if bn else " dividend declared")
+        if d.get("record_date"):
+            fact += f"; {'রেকর্ড ডেট' if bn else 'record date'} {d['record_date']}"
+        return fact
+    if category == "rating":
+        parts = []
+        if d.get("long_term"):
+            parts.append(f"{d['long_term']} ({'দীর্ঘমেয়াদি' if bn else 'long-term'})")
+        if d.get("short_term"):
+            parts.append(f"{d['short_term']} ({'স্বল্পমেয়াদি' if bn else 'short-term'})")
+        if not parts:
+            return None
+        return ("রেটিং: " if bn else "rated ") + ", ".join(parts)
+    return None
+
+
+def render(category: str, headline: str, code: str, locale: str, details: dict | None = None) -> str:
     en, bn = _TEMPLATES[category]
     tmpl = bn if locale == "bn" else en
-    return f"{code} — " + tmpl.format(headline=headline)
+    # Decoded numbers beat the raw exchange headline; the headline is the fallback only.
+    fact = _decoded_fact(category, details, locale)
+    return f"{code} — " + tmpl.format(headline=fact or headline)
 
 
 async def run_news_agents(
@@ -92,8 +138,8 @@ async def run_news_agents(
                 event_type=event_type,
                 occurrence_key=a.key,
                 body_i18n={
-                    "bn": render(a.category, a.headline, a.code, "bn"),
-                    "en": render(a.category, a.headline, a.code, "en"),
+                    "bn": render(a.category, a.headline, a.code, "bn", a.details),
+                    "en": render(a.category, a.headline, a.code, "en", a.details),
                 },
                 as_of=a.published_at,
             )

@@ -108,7 +108,13 @@ def detect_breakout(ta, change_pct: float | None, day: str) -> FactorSignal | No
     if pfh is None or change_pct is None:
         return None
     if pfh >= _BREAKOUT_NEAR and change_pct >= _BREAKOUT_UP:
-        return FactorSignal("breakout", "new_52w_high", f"breakout:{day}", 7, {})
+        return FactorSignal(
+            "breakout",
+            "new_52w_high",
+            f"breakout:{day}",
+            7,
+            {"close": getattr(ta, "last_close", None), "chg": round(change_pct, 1)},
+        )
     return None
 
 
@@ -171,10 +177,10 @@ _T = {
         "পরামর্শ নয়।",
     ),
     "breakout": (
-        "{code} is pushing to a new 52-week high. Strength — but extended moves can pull back, so "
-        "check the volume behind it. Descriptive, not advice.",
-        "{code} নতুন ৫২-সপ্তাহের সর্বোচ্চে উঠছে। শক্তি — তবে বেশি বেড়ে গেলে পিছিয়ে আসতে পারে, তাই পেছনের "
-        "ভলিউম দেখুন। তথ্যমূলক, পরামর্শ নয়।",
+        "{code} is pushing to a new 52-week high — ৳{close} after +{chg}% today. Strength — but "
+        "extended moves can pull back, so check the volume behind it. Descriptive, not advice.",
+        "{code} নতুন ৫২-সপ্তাহের সর্বোচ্চে উঠছে — আজ +{chg}% বেড়ে ৳{close}। শক্তি — তবে বেশি বেড়ে গেলে "
+        "পিছিয়ে আসতে পারে, তাই পেছনের ভলিউম দেখুন। তথ্যমূলক, পরামর্শ নয়।",
     ),
 }
 

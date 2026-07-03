@@ -68,13 +68,53 @@ NOTE_ALERT_TITLES: dict[str, dict[str, str]] = {
         "en": "${code} sponsor holding falling for months",
         "bn": "${code} স্পনসরদের শেয়ার মাসের পর মাস কমছে",
     },
+    # Volume desk
+    "unusual_volume": {
+        "en": "${code} is unusually active today",
+        "bn": "${code} আজ অস্বাভাবিক সক্রিয়",
+    },
+    # Factor desks
+    "momentum_strong": {
+        "en": "${code} is one of the strongest 12-month trends",
+        "bn": "${code} সবচেয়ে শক্তিশালী ১২-মাসের প্রবণতার একটি",
+    },
+    "quality_value": {
+        "en": "${code} trades cheap vs its sector with strong ROE",
+        "bn": "${code} খাতের তুলনায় সস্তা, ROE শক্তিশালী",
+    },
+    "smart_money_both": {
+        "en": "${code}: institutions and foreign investors both raised stakes",
+        "bn": "${code}: প্রতিষ্ঠান ও বিদেশি উভয়েই অংশ বাড়িয়েছে",
+    },
+    "quiet_accumulation": {
+        "en": "${code} shows quiet accumulation",
+        "bn": "${code}-তে নীরব সঞ্চয়ের ছাপ",
+    },
+    "rel_strength": {
+        "en": "${code} rose while the market fell",
+        "bn": "বাজার পড়লেও ${code} বেড়েছে",
+    },
+    "circuit_up": {
+        "en": "${code} hit its upper price limit",
+        "bn": "${code} ঊর্ধ্ব দামসীমা ছুঁয়েছে",
+    },
+    "circuit_down": {
+        "en": "${code} hit its lower price limit",
+        "bn": "${code} নিম্ন দামসীমা ছুঁয়েছে",
+    },
+    # News desks
+    "news_earnings": {"en": "${code} earnings update", "bn": "${code} আয়ের আপডেট"},
+    "news_dividend": {"en": "${code} dividend update", "bn": "${code} লভ্যাংশ আপডেট"},
+    "news_rating": {"en": "${code} credit rating update", "bn": "${code} ক্রেডিট রেটিং আপডেট"},
 }
 _FALLBACK_TITLE = {"en": "New data note for ${code}", "bn": "${code} নিয়ে নতুন ডেটা নোট"}
 
-# Ownership events are alert kind "ownership"; everything else from agents is "signal".
+# Ownership events are alert kind "ownership"; earnings/dividend news get the calendar kind;
+# everything else from agents is "signal". Kinds drive the inbox icon.
 _OWNERSHIP_EVENTS = frozenset(
     {"sponsor_change", "institution_change", "foreign_change", "sponsor_falling_streak"}
 )
+_EARNINGS_EVENTS = frozenset({"news_earnings", "news_dividend"})
 
 
 def note_alert_title(event_type: str, code: str) -> dict[str, str]:
@@ -83,7 +123,11 @@ def note_alert_title(event_type: str, code: str) -> dict[str, str]:
 
 
 def note_alert_kind(event_type: str) -> str:
-    return "ownership" if event_type in _OWNERSHIP_EVENTS else "signal"
+    if event_type in _OWNERSHIP_EVENTS:
+        return "ownership"
+    if event_type in _EARNINGS_EVENTS:
+        return "earnings"
+    return "signal"
 
 
 def should_trigger(direction: str, level: float, ltp: float) -> bool:
@@ -129,16 +173,20 @@ async def fan_out_note_alert(
     return len(user_ids)
 
 
-def _price_cross_texts(code: str, direction: str, level: float, ltp: float) -> tuple[dict, dict]:
+def _price_cross_texts(
+    code: str, direction: str, level: float, ltp: float, set_on: object = None
+) -> tuple[dict, dict]:
     arrow = "above" if direction == "above" else "below"
     arrow_bn = "উপরে" if direction == "above" else "নিচে"
+    when = f" on {set_on:%d %b}" if set_on else ""
+    when_bn = f" {set_on:%d %b} তারিখে" if set_on else ""
     title = {
-        "en": f"Price alert: ${code} {arrow} ৳{level:g}",
-        "bn": f"দামের অ্যালার্ট: ${code} ৳{level:g} এর {arrow_bn}",
+        "en": f"Price alert: ${code} crossed {arrow} ৳{level:g}",
+        "bn": f"দামের অ্যালার্ট: ${code} ৳{level:g} এর {arrow_bn} গেছে",
     }
     body = {
-        "en": f"Your level. Now ৳{ltp:g}.",
-        "bn": f"আপনার সেট করা দাম। এখন ৳{ltp:g}।",
+        "en": f"The level you set{when}. Now ৳{ltp:g}.",
+        "bn": f"আপনি{when_bn} এই দাম সেট করেছিলেন। এখন ৳{ltp:g}।",
     }
     return title, body
 
@@ -162,7 +210,9 @@ async def check_price_alerts(session, market: str, prices: dict[str, float]) -> 
         if ltp is None or not should_trigger(alert.direction, alert.level, ltp):
             continue
         alert.triggered_at = func.now()
-        title, body = _price_cross_texts(alert.code, alert.direction, alert.level, ltp)
+        title, body = _price_cross_texts(
+            alert.code, alert.direction, alert.level, ltp, alert.created_at
+        )
         session.add(
             AlertEvent(
                 user_id=alert.user_id,
