@@ -15,7 +15,10 @@ import { Spinner } from "../components/ui";
 
 // Redesign 2026-07: the Bulls tab lives here now, as a feed filter. Each chip maps straight onto
 // the /posts query params the backend already supports — no new endpoint needed.
-type Chip = "all" | "desks" | "people" | "myStocks";
+// "myStocks" = watchlist (WatchlistItem) — a stock you're following, not one you own. "portfolio"
+// is the distinct, actually-held-shares filter; the chip LABEL says which is which since the two
+// are easy to conflate (2026-07-04 user report: the old "My stocks" label read as portfolio).
+type Chip = "all" | "desks" | "people" | "myStocks" | "portfolio";
 
 export function Feed() {
   const { user } = useAuth();
@@ -38,12 +41,15 @@ export function Feed() {
     };
   }, [chip]);
 
-  const chips: Chip[] = user ? ["all", "desks", "people", "myStocks"] : ["desks", "people"];
+  const chips: Chip[] = user
+    ? ["all", "desks", "people", "myStocks", "portfolio"]
+    : ["desks", "people"];
   const chipLabel: Record<Chip, string> = {
     all: t("feedchip.all"),
     desks: t("feedchip.desks"),
     people: t("feedchip.people"),
     myStocks: t("feedchip.myStocks"),
+    portfolio: t("feedchip.portfolio"),
   };
 
   const { items, setItems, loading, sentinelRef } = useInfiniteFeed(
@@ -52,6 +58,7 @@ export function Feed() {
       if (chip === "desks") return api.feed(undefined, "note", l, o, desk);
       if (chip === "people") return api.feed(undefined, "user", l, o);
       if (chip === "myStocks") return api.feed(undefined, "user", l, o, undefined, true);
+      if (chip === "portfolio") return api.feed(undefined, "user", l, o, undefined, false, true);
       return user ? api.feed(undefined, undefined, l, o, undefined, true) : Promise.resolve([]);
     },
   );

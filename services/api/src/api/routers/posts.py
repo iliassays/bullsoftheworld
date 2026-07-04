@@ -27,6 +27,7 @@ from bulls.core.models import (
     Cashtag,
     Follow,
     ModerationEvent,
+    PortfolioHolding,
     Post,
     PostReaction,
     QuoteSnapshot,
@@ -261,6 +262,11 @@ async def feed(
     watched: bool = Query(
         False, description="Only posts tagging the signed-in user's watchlist (ignored if no user)"
     ),
+    portfolio: bool = Query(
+        False,
+        description="Only posts tagging a stock the signed-in user actually holds "
+        "(distinct from watched — a watchlist entry isn't an owned position)",
+    ),
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[PostOut]:
@@ -298,6 +304,18 @@ async def feed(
                         Cashtag.market == tenant.market, Cashtag.code.in_(watched_codes)
                     )
                 ),
+            )
+        )
+    if portfolio and viewer is not None:
+        # A holding, not a watch — "what's the community saying about stocks I actually own."
+        held_codes = select(PortfolioHolding.code).where(
+            PortfolioHolding.user_id == viewer.id, PortfolioHolding.market == tenant.market
+        )
+        stmt = stmt.where(
+            Post.id.in_(
+                select(Cashtag.post_id).where(
+                    Cashtag.market == tenant.market, Cashtag.code.in_(held_codes)
+                )
             )
         )
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)

@@ -168,7 +168,10 @@ const STRINGS: Record<string, Entry> = {
   "feedchip.all": { en: "All", bn: "সব" },
   "feedchip.desks": { en: "🐂 Desks", bn: "🐂 ডেস্ক" },
   "feedchip.people": { en: "People", bn: "মানুষ" },
-  "feedchip.myStocks": { en: "My stocks", bn: "আমার শেয়ার" },
+  // Watchlist, not holdings — was labelled "My stocks" until a user report (2026-07-04) pointed
+  // out that read as portfolio. "portfolio" below is the genuinely holdings-scoped chip.
+  "feedchip.myStocks": { en: "☆ Watchlist", bn: "☆ ওয়াচলিস্ট" },
+  "feedchip.portfolio": { en: "💼 Portfolio", bn: "💼 পোর্টফোলিও" },
   "feedchip.allDesks": { en: "All desks", bn: "সব ডেস্ক" },
   "search.placeholder": {
     en: "Search ticker… e.g. GP, Grameenphone",

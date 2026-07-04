@@ -685,12 +685,14 @@ export const api = {
     offset?: number,
     author?: string,
     watched?: boolean,
+    portfolio?: boolean,
   ) => {
     const q = new URLSearchParams();
     if (code) q.set("code", code);
     if (kind) q.set("kind", kind);
     if (author) q.set("author", author);
     if (watched) q.set("watched", "true");
+    if (portfolio) q.set("portfolio", "true");
     if (limit != null) q.set("limit", String(limit));
     if (offset != null) q.set("offset", String(offset));
     const s = q.toString();
