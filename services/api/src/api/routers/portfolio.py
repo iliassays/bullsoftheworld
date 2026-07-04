@@ -13,12 +13,18 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, CurrentUser, DbSession
-from bulls.core.models import PortfolioHolding, QuoteSnapshot, Symbol
+from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession
+from bulls.core.models import AlertEvent, PortfolioHolding, PriceAlert, QuoteSnapshot, Symbol
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 MAX_HOLDINGS_PER_USER = 100
+
+
+def _pick(i18n: dict | None, locale: str) -> str | None:
+    if not i18n:
+        return None
+    return i18n.get(locale) or i18n.get("en") or next(iter(i18n.values()), None)
 
 
 class HoldingIn(BaseModel):
@@ -38,6 +44,11 @@ class HoldingOut(BaseModel):
     day_change_pct: float | None
     pnl: float | None
     pnl_pct: float | None
+    # "What's happening" — not just P&L. The latest inbox alert for this code (already fanned
+    # out to holders, so this is a read, not a new computation) + whether a price alert is set.
+    latest_alert_title: str | None = None
+    latest_alert_at: dt.datetime | None = None
+    has_price_alert: bool = False
 
 
 class PortfolioOut(BaseModel):
@@ -60,11 +71,23 @@ class QuoteView:
     as_of: dt.datetime | None
 
 
+@dataclass
+class AlertView:
+    """The slice of a user's latest alert for one code that the portfolio view needs."""
+
+    title: str | None
+    created_at: dt.datetime
+
+
 def compute_portfolio(
     holdings: list[PortfolioHolding],
     quotes: dict[str, QuoteView],
     names: dict[str, str | None] | None = None,
+    latest_alerts: dict[str, AlertView] | None = None,
+    alert_codes: set[str] | None = None,
 ) -> PortfolioOut:
+    latest_alerts = latest_alerts or {}
+    alert_codes = alert_codes or set()
     out: list[HoldingOut] = []
     total_value = 0.0
     total_cost = 0.0
@@ -74,6 +97,7 @@ def compute_portfolio(
     for h in holdings:
         cost = h.quantity * h.avg_cost
         total_cost += cost
+        la = latest_alerts.get(h.code)
         q = quotes.get(h.code)
         if q is None:
             out.append(
@@ -88,6 +112,9 @@ def compute_portfolio(
                     day_change_pct=None,
                     pnl=None,
                     pnl_pct=None,
+                    latest_alert_title=la.title if la else None,
+                    latest_alert_at=la.created_at if la else None,
+                    has_price_alert=h.code in alert_codes,
                 )
             )
             continue
@@ -109,6 +136,9 @@ def compute_portfolio(
                 day_change_pct=q.change_pct,
                 pnl=round(pnl, 2),
                 pnl_pct=round(pnl / cost * 100, 2) if cost else None,
+                latest_alert_title=la.title if la else None,
+                latest_alert_at=la.created_at if la else None,
+                has_price_alert=h.code in alert_codes,
             )
         )
     prev_value = total_value - day_pnl
@@ -127,9 +157,13 @@ def compute_portfolio(
     )
 
 
+# A holding's "what's happening" only looks at recent alerts — a 6-month-old note isn't news.
+_LATEST_ALERT_WINDOW = dt.timedelta(days=21)
+
+
 @router.get("")
 async def get_portfolio(
-    user: CurrentUser, tenant: CurrentTenant, session: DbSession
+    user: CurrentUser, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> PortfolioOut:
     holdings = (
         await session.scalars(
@@ -141,6 +175,8 @@ async def get_portfolio(
     codes = [h.code for h in holdings]
     quotes: dict[str, QuoteView] = {}
     names: dict[str, str | None] = {}
+    latest_alerts: dict[str, AlertView] = {}
+    alert_codes: set[str] = set()
     if codes:
         for q in await session.scalars(
             select(QuoteSnapshot).where(
@@ -156,7 +192,32 @@ async def get_portfolio(
             )
         ):
             names[code] = name
-    return compute_portfolio(list(holdings), quotes, names)
+        # Reuses the same alert fan-out already written for the bell inbox (holders are already
+        # in its audience) — one row per code, newest first, via Postgres DISTINCT ON.
+        since = dt.datetime.now(dt.UTC) - _LATEST_ALERT_WINDOW
+        for code, title_i18n, created_at in await session.execute(
+            select(AlertEvent.code, AlertEvent.title_i18n, AlertEvent.created_at)
+            .where(
+                AlertEvent.user_id == user.id,
+                AlertEvent.market == tenant.market,
+                AlertEvent.code.in_(codes),
+                AlertEvent.created_at >= since,
+            )
+            .distinct(AlertEvent.code)
+            .order_by(AlertEvent.code, AlertEvent.created_at.desc())
+        ):
+            latest_alerts[code] = AlertView(title=_pick(title_i18n, locale), created_at=created_at)
+        alert_codes = set(
+            await session.scalars(
+                select(PriceAlert.code).where(
+                    PriceAlert.user_id == user.id,
+                    PriceAlert.market == tenant.market,
+                    PriceAlert.code.in_(codes),
+                    PriceAlert.triggered_at.is_(None),
+                )
+            )
+        )
+    return compute_portfolio(list(holdings), quotes, names, latest_alerts, alert_codes)
 
 
 @router.post("/holdings", status_code=201)

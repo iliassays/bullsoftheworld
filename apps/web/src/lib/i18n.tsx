@@ -110,6 +110,13 @@ const STRINGS: Record<string, Entry> = {
     en: "Prices delayed 15 min. We describe your entries — we never advise, and we never see your broker account.",
     bn: "দাম ১৫ মিনিট বিলম্বিত। আমরা শুধু আপনার এন্ট্রি দেখাই — পরামর্শ দিই না, ব্রোকার অ্যাকাউন্টও দেখি না।",
   },
+  "pf.alertSet": { en: "Alert set", bn: "অ্যালার্ট সেট করা" },
+  "pf.setAlert": { en: "+ Set alert", bn: "+ অ্যালার্ট" },
+  "pf.postAddPrompt": {
+    en: "Bought it in real life? Get pinged if it moves.",
+    bn: "বাস্তবে কিনেছেন? দাম নড়লে জানতে চান?",
+  },
+  "pf.notNow": { en: "Not now", bn: "এখন না" },
   // Daily quiz
   "quiz.title": { en: "Daily quiz", bn: "দৈনিক কুইজ" },
   "quiz.dayStreak": { en: "day streak", bn: "দিনের স্ট্রিক" },

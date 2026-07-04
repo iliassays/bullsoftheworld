@@ -4,7 +4,17 @@ import { api, type Portfolio as PortfolioData } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { PriceAlertSheet } from "../components/PriceAlertSheet";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
+
+// "3d", "5h" — same short form as PostCard's feed timestamps.
+const ago = (iso: string) => {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+};
 
 // Manual holdings only: quantity + average buy price, typed in by the user. We never connect to a
 // broker account — this is a notebook with live (delayed) prices, not a trading surface.
@@ -17,6 +27,10 @@ export function Portfolio() {
   const [qty, setQty] = useState("");
   const [cost, setCost] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [alertSheetFor, setAlertSheetFor] = useState<string | null>(null);
+  // Closing the loop: right after a NEW holding is added (not an edit of an existing one),
+  // nudge the user toward a price alert — a real DSE order becomes a watched position.
+  const [justAdded, setJustAdded] = useState<string | null>(null);
 
   const load = () =>
     api
@@ -36,11 +50,16 @@ export function Portfolio() {
       return;
     }
     try {
-      await api.holdingUpsert({ code: code.trim().toUpperCase(), quantity: q, avg_cost: c });
+      const upserted = await api.holdingUpsert({
+        code: code.trim().toUpperCase(),
+        quantity: q,
+        avg_cost: c,
+      });
       setAdding(false);
       setCode("");
       setQty("");
       setCost("");
+      if (upserted.status === "created") setJustAdded(upserted.code);
       load();
     } catch {
       setErr(t("pf.unknownCode"));
@@ -102,28 +121,88 @@ export function Portfolio() {
             {t("pf.holdings")} · {pf.holdings.length}
           </div>
           {pf.holdings.map((h) => (
-            <Link
-              key={h.code}
-              to={`/s/${h.code}`}
-              className="flex items-center gap-2.5 py-2.5 border-t border-border first:border-t-0"
-            >
-              <CompanyLogo code={h.code} size={30} />
-              <div className="min-w-0">
-                <div className="text-sm font-bold">${h.code}</div>
-                <div className="text-[11px] text-muted tnum">
-                  {h.quantity.toLocaleString()} × {taka(h.avg_cost)}
-                </div>
-              </div>
-              <div className="ml-auto text-right tnum">
-                <div className="text-sm font-semibold">{h.value != null ? taka(h.value) : "—"}</div>
-                {h.pnl_pct != null && (
-                  <div className="text-xs font-semibold">
-                    <Pct value={h.pnl_pct} />
+            <div key={h.code} className="py-2.5 border-t border-border first:border-t-0">
+              <Link to={`/s/${h.code}`} className="flex items-center gap-2.5">
+                <CompanyLogo code={h.code} size={30} />
+                <div className="min-w-0">
+                  <div className="text-sm font-bold">${h.code}</div>
+                  <div className="text-[11px] text-muted tnum">
+                    {h.quantity.toLocaleString()} × {taka(h.avg_cost)}
                   </div>
+                </div>
+                <div className="ml-auto text-right tnum">
+                  <div className="text-sm font-semibold">
+                    {h.value != null ? taka(h.value) : "—"}
+                  </div>
+                  {h.pnl_pct != null && (
+                    <div className="text-xs font-semibold">
+                      <Pct value={h.pnl_pct} />
+                    </div>
+                  )}
+                </div>
+              </Link>
+
+              {/* What's happening — not just P&L. The same alert already sitting in the bell
+                  inbox (holders are already fanned out to), resurfaced right where it's useful. */}
+              {h.latest_alert_title && (
+                <Link
+                  to={`/s/${h.code}`}
+                  className="block mt-1.5 ml-[38px] text-[11px] text-muted leading-snug hover:text-fg"
+                >
+                  📌 {h.latest_alert_title}
+                  {h.latest_alert_at && <span className="tnum"> · {ago(h.latest_alert_at)}</span>}
+                </Link>
+              )}
+              <div className="mt-1.5 ml-[38px]">
+                {h.has_price_alert ? (
+                  <button
+                    onClick={() => setAlertSheetFor(h.code)}
+                    className="text-[11px] font-semibold text-accent"
+                  >
+                    🔔 {t("pf.alertSet")}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setAlertSheetFor(h.code)}
+                    className="text-[11px] font-semibold text-muted hover:text-accent"
+                  >
+                    {t("pf.setAlert")}
+                  </button>
                 )}
               </div>
-            </Link>
+              {alertSheetFor === h.code && (
+                <div className="mt-2">
+                  <PriceAlertSheet
+                    code={h.code}
+                    onClose={() => setAlertSheetFor(null)}
+                    onChange={load}
+                  />
+                </div>
+              )}
+            </div>
           ))}
+        </div>
+      )}
+
+      {justAdded && (
+        <div className="bg-surface border border-accent/40 rounded-2xl p-3.5 flex items-center gap-3">
+          <span className="text-lg">🔔</span>
+          <p className="text-xs text-muted flex-1">{t("pf.postAddPrompt")}</p>
+          <button
+            onClick={() => {
+              setAlertSheetFor(justAdded);
+              setJustAdded(null);
+            }}
+            className="rounded-full px-3 py-1.5 text-xs font-bold bg-accent text-bg shrink-0"
+          >
+            {t("pf.setAlert")}
+          </button>
+          <button
+            onClick={() => setJustAdded(null)}
+            className="text-xs text-muted shrink-0"
+          >
+            {t("pf.notNow")}
+          </button>
         </div>
       )}
 

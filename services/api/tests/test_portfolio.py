@@ -5,13 +5,14 @@ DB_TESTS=1 uv run pytest -k portfolio
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api.routers.portfolio import QuoteView, compute_portfolio
+from api.routers.portfolio import AlertView, QuoteView, compute_portfolio
 from bulls.core.models import PortfolioHolding
 
 
@@ -48,6 +49,33 @@ def test_compute_portfolio_missing_quote_is_honest() -> None:
     assert pf.total_value == pytest.approx(100 * 260.0)
     assert pf.total_pnl == pytest.approx(100 * (260.0 - 250.0))
     assert pf.total_cost == pytest.approx(100 * 250.0 + 50 * 10.0)
+
+
+def test_compute_portfolio_alert_enrichment() -> None:
+    """A holding gets 'what's happening' context: its latest inbox alert (already fanned out to
+    holders) and whether the user has a price alert set — never just P&L (principle: portfolio
+    should add value beyond a bare valuation)."""
+    holdings = [_h("GP", 100, 250.0), _h("OLYMPIC", 10, 100.0)]
+    quotes = {
+        "GP": QuoteView(ltp=260.0, change=1.0, change_pct=0.4, as_of=None),
+        "OLYMPIC": QuoteView(ltp=105.0, change=0.5, change_pct=0.5, as_of=None),
+    }
+    when = dt.datetime(2026, 7, 1, tzinfo=dt.UTC)
+    pf = compute_portfolio(
+        holdings,
+        quotes,
+        latest_alerts={
+            "GP": AlertView(title="GP sponsor holding falling for months", created_at=when)
+        },
+        alert_codes={"GP"},
+    )
+    gp = next(h for h in pf.holdings if h.code == "GP")
+    olympic = next(h for h in pf.holdings if h.code == "OLYMPIC")
+    assert gp.latest_alert_title == "GP sponsor holding falling for months"
+    assert gp.latest_alert_at == when
+    assert gp.has_price_alert is True
+    # a holding with no recent alert / no price alert stays honestly empty, not a fake default
+    assert olympic.latest_alert_title is None and olympic.has_price_alert is False
 
 
 def test_compute_portfolio_empty() -> None:
@@ -93,6 +121,18 @@ def test_portfolio_endpoint_flow() -> None:
         pf = c.get("/portfolio", headers=hdr).json()
         assert len(pf["holdings"]) == 1
         assert pf["holdings"][0]["quantity"] == 150
+        # no alert yet — fields present and honestly empty, not defaulted to something misleading
+        assert pf["holdings"][0]["has_price_alert"] is False
+        assert pf["holdings"][0]["latest_alert_title"] is None
+
+        r = c.post(
+            "/alerts/price",
+            json={"code": "GP", "level": 300.0, "direction": "above"},
+            headers=hdr,
+        )
+        assert r.status_code == 201, r.text
+        pf = c.get("/portfolio", headers=hdr).json()
+        assert pf["holdings"][0]["has_price_alert"] is True
 
         assert (
             c.post(

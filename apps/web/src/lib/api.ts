@@ -745,7 +745,7 @@ export const api = {
   // portfolio — manual entries only; we never touch a broker account
   portfolio: () => request<Portfolio>("/portfolio"),
   holdingUpsert: (b: { code: string; quantity: number; avg_cost: number }) =>
-    request<PortfolioHoldingOut>("/portfolio/holdings", {
+    request<{ status: "created" | "updated"; code: string }>("/portfolio/holdings", {
       method: "POST",
       body: JSON.stringify(b),
     }),
@@ -806,6 +806,9 @@ export type PortfolioHoldingOut = {
   day_change_pct: number | null;
   pnl: number | null;
   pnl_pct: number | null;
+  latest_alert_title: string | null;
+  latest_alert_at: string | null;
+  has_price_alert: boolean;
 };
 export type Portfolio = {
   holdings: PortfolioHoldingOut[];
