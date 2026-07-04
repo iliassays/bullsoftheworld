@@ -162,6 +162,7 @@ const STRINGS: Record<string, Entry> = {
   "feedchip.desks": { en: "🐂 Desks", bn: "🐂 ডেস্ক" },
   "feedchip.people": { en: "People", bn: "মানুষ" },
   "feedchip.myStocks": { en: "My stocks", bn: "আমার শেয়ার" },
+  "feedchip.allDesks": { en: "All desks", bn: "সব ডেস্ক" },
   "search.placeholder": {
     en: "Search ticker… e.g. GP, Grameenphone",
     bn: "টিকার খুঁজুন… যেমন GP, গ্রামীণফোন",

@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, type NoteBeat } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
@@ -23,6 +24,19 @@ export function Feed() {
   // /bulls redirects to /?feed=desks so old links (and the FB page) keep working.
   const requested = params.get("feed") as Chip | null;
   const chip: Chip = requested ?? (user ? "all" : "desks");
+  // Which single desk to narrow to within the combined "Desks" stream — restored per user
+  // request after the redesign merged per-beat chips into one; a dropdown (not a chip row)
+  // avoids the header clutter that merge was meant to fix (docs/redesign/2026-07-drops.md).
+  const desk = params.get("desk") || undefined;
+  const [beats, setBeats] = useState<NoteBeat[] | null>(null);
+  useEffect(() => {
+    if (chip !== "desks") return;
+    let alive = true;
+    api.noteBeats().then((b) => alive && setBeats(b)).catch(() => alive && setBeats([]));
+    return () => {
+      alive = false;
+    };
+  }, [chip]);
 
   const chips: Chip[] = user ? ["all", "desks", "people", "myStocks"] : ["desks", "people"];
   const chipLabel: Record<Chip, string> = {
@@ -33,9 +47,9 @@ export function Feed() {
   };
 
   const { items, setItems, loading, sentinelRef } = useInfiniteFeed(
-    `home:${!!user}:${chip}`,
+    `home:${!!user}:${chip}:${desk ?? ""}`,
     (l, o) => {
-      if (chip === "desks") return api.feed(undefined, "note", l, o);
+      if (chip === "desks") return api.feed(undefined, "note", l, o, desk);
       if (chip === "people") return api.feed(undefined, "user", l, o);
       if (chip === "myStocks") return api.feed(undefined, "user", l, o, undefined, true);
       return user ? api.feed(undefined, undefined, l, o, undefined, true) : Promise.resolve([]);
@@ -49,6 +63,12 @@ export function Feed() {
   );
 
   const pick = (c: Chip) => setParams(c === (user ? "all" : "desks") ? {} : { feed: c });
+  const pickDesk = (handle: string) => {
+    const next = new URLSearchParams(params);
+    if (handle) next.set("desk", handle);
+    else next.delete("desk");
+    setParams(next);
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -77,6 +97,21 @@ export function Feed() {
           </button>
         ))}
       </div>
+
+      {chip === "desks" && beats && beats.length > 0 && (
+        <select
+          value={desk ?? ""}
+          onChange={(e) => pickDesk(e.target.value)}
+          className="mx-1 rounded-full border border-border bg-card text-xs font-semibold text-fg px-3 py-1.5"
+        >
+          <option value="">{t("feedchip.allDesks")}</option>
+          {beats.map((b) => (
+            <option key={b.handle} value={b.handle}>
+              {b.name} ({b.count})
+            </option>
+          ))}
+        </select>
+      )}
 
       {!user && (
         // Logged out: desk notes stay fully browsable; sell the personalized feed alongside.
