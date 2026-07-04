@@ -60,7 +60,19 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
   }, [scope]);
 
   if (!events) return null;
-  if (scope === "today" && events.length === 0) return null; // silent on quiet days
+  // A DSE day with zero earnings meetings is the common case (results cluster into a handful of
+  // weeks a year) — going fully silent here made the whole feature invisible most days (2026-07-04
+  // user report: "where is earnings today?"). Stay present with a way to see the fuller picture.
+  if (scope === "today" && events.length === 0)
+    return (
+      <Link
+        to="/markets"
+        className="bg-surface border border-border rounded-2xl px-4 py-3 flex items-center justify-between hover:border-accent"
+      >
+        <span className="text-sm text-muted">📅 {t("home.earningsTodayEmpty")}</span>
+        <span className="text-xs font-semibold text-accent shrink-0">{t("home.earningsWeek")} →</span>
+      </Link>
+    );
 
   if (scope === "week") {
     // Earnings-Whispers calendar: five fixed Sun–Thu columns. Empty columns stay empty —

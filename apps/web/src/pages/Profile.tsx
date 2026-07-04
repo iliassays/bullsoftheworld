@@ -181,6 +181,12 @@ export function Profile() {
           </div>
         </div>
         <AccountSection user={user} />
+        <Link
+          to="/watchlist"
+          className="bg-surface border border-border rounded-2xl py-3 text-center text-sm font-semibold hover:border-accent hover:text-accent"
+        >
+          {t("profile.watchlist")}
+        </Link>
         <button
           onClick={logout}
           className="text-down border border-border rounded-xl py-2.5 text-sm font-semibold"

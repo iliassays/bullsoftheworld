@@ -10,7 +10,6 @@ import { EarningsWeek } from "../components/EarningsWeek";
 import { PostCard } from "../components/PostCard";
 import { QuizCard } from "../components/QuizCard";
 import { TodaysWatch } from "../components/TodaysWatch";
-import { WatchlistHome } from "../components/WatchlistHome";
 import { Spinner } from "../components/ui";
 
 // Redesign 2026-07: the Bulls tab lives here now, as a feed filter. Each chip maps straight onto
@@ -79,11 +78,12 @@ export function Feed() {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Today — one glance: mood, my stocks, what stands out. (Ticker strip and the earnings
-          calendar moved out — Markets carries the calendar; see docs/redesign/2026-07-drops.md) */}
+      {/* Today — one glance: mood, what stands out, today's earnings, a quiz question.
+          (Ticker strip dropped and the personalized "Your Watchlist" card removed 2026-07-04 —
+          it duplicated /watchlist with a subtly unscoped 'latest note' lookup; the ☆ Watchlist
+          feed chip below covers the same job better. See docs/redesign/2026-07-drops.md.) */}
       {sectionLabel(t("home.today"))}
       <DhakaMood />
-      <WatchlistHome />
       <TodaysWatch />
       <EarningsWeek scope="today" />
       <QuizCard />

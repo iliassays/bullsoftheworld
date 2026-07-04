@@ -58,6 +58,10 @@ const STRINGS: Record<string, Entry> = {
   },
   "nav.me": { en: "Me", bn: "আমি" },
   "home.earningsToday": { en: "Earnings today", bn: "আজকের আয়" },
+  "home.earningsTodayEmpty": {
+    en: "No earnings meetings today",
+    bn: "আজ কোনো আয়-সংক্রান্ত সভা নেই",
+  },
   // Alerts inbox
   "alerts.title": { en: "Alerts", bn: "অ্যালার্ট" },
   "alerts.subtitle": {
@@ -686,9 +690,6 @@ const STRINGS: Record<string, Entry> = {
   },
   "post.reply": { en: "reply", bn: "রিপ্লাই" },
   "post.replies": { en: "replies", bn: "রিপ্লাই" },
-  // Watchlist home
-  "watchlist.your": { en: "Your watchlist", bn: "আপনার ওয়াচলিস্ট" },
-  seeAll: { en: "See all →", bn: "সব দেখুন →" },
   // Today's standouts
   "standouts.title": { en: "Today's standouts", bn: "আজকের আলোচিত" },
   "standouts.subtitle": {
@@ -871,6 +872,7 @@ const STRINGS: Record<string, Entry> = {
     bn: "আপনার ওয়াচলিস্ট খালি। যেকোনো শেয়ারে ☆ ট্যাপ করুন।",
   },
   "profile.logout": { en: "Log out", bn: "লগ আউট" },
+  "profile.watchlist": { en: "☆ Your watchlist", bn: "☆ আপনার ওয়াচলিস্ট" },
   "profile.error": { en: "Something went wrong", bn: "কিছু ভুল হয়েছে" },
   "profile.welcomeBack": { en: "Welcome back", bn: "আবার স্বাগতম" },
   "profile.join": {
