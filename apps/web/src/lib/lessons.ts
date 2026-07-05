@@ -1,6 +1,7 @@
 // Short, example-driven lessons: not "what is X" (the tooltip covers that) but "how do traders
 // actually USE X to decide" — with a worked, real-ticker example. Descriptive education, never advice.
 import type { Lang } from "./i18n";
+import { PATTERN_LABEL, PATTERN_LESSON_ID, PATTERN_ORDER } from "./patterns";
 
 export interface Lesson {
   title: string;
@@ -311,5 +312,11 @@ export const SCREEN_BN: Record<string, { t: string; d: string }> = {
   most_watched: { t: "সর্বাধিক ওয়াচড", d: "যাদের সবচেয়ে বেশি ওয়াচ করা হচ্ছে" },
   most_discussed: { t: "সর্বাধিক আলোচিত", d: "যাদের নিয়ে সবচেয়ে বেশি আলোচনা" },
   attention_rising: { t: "আলোচনা বাড়ছে", d: "স্বাভাবিকের চেয়ে অনেক বেশি আলোচনা" },
-  chart_patterns: { t: "চার্ট প্যাটার্ন", d: "নিশ্চিত সুইং থেকে তৈরি ক্লাসিক চার্ট আকার (ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম)" },
 };
+for (const type of PATTERN_ORDER) {
+  SCREEN_BN[`chart_pattern_${type}`] = {
+    t: PATTERN_LABEL[type].bn,
+    d: "নিশ্চিত সুইং হাই/লো থেকে তৈরি একটি নির্দিষ্ট ক্লাসিক চার্ট আকার",
+  };
+  SCREEN_LESSON[`chart_pattern_${type}`] = PATTERN_LESSON_ID[type];
+}

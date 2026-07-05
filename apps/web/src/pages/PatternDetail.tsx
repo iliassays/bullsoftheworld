@@ -3,15 +3,10 @@ import { Link, useParams } from "react-router-dom";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceNote } from "../components/EvidenceChip";
 import { Pct, Spinner, taka } from "../components/ui";
-import { api, type PatternType, type Screen, type ScreenItem } from "../lib/api";
+import { api, type PatternType, type Screen } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { getLesson } from "../lib/lessons";
-import {
-  PATTERN_LABEL,
-  PATTERN_LESSON_ID,
-  PATTERN_ORDER,
-  patternTypeFromNote,
-} from "../lib/patterns";
+import { PATTERN_LABEL, PATTERN_LESSON_ID, PATTERN_ORDER } from "../lib/patterns";
 
 const VALID_TYPES = new Set<string>(PATTERN_ORDER);
 
@@ -23,11 +18,13 @@ export function PatternDetail() {
   const [screen, setScreen] = useState<Screen | null>(null);
 
   useEffect(() => {
+    if (!VALID_TYPES.has(type)) return;
+    setScreen(null);
     api
-      .screen("chart_patterns", 200)
+      .screen(`chart_pattern_${type}`, 200)
       .then(setScreen)
       .catch(() => setScreen(null));
-  }, []);
+  }, [type]);
 
   if (!VALID_TYPES.has(type)) {
     return (
@@ -50,8 +47,7 @@ export function PatternDetail() {
       ]
     : [];
 
-  const matches: ScreenItem[] =
-    screen?.items.filter((it) => patternTypeFromNote(it.note) === patternType) ?? [];
+  const matches = screen?.items ?? [];
 
   return (
     <div className="flex flex-col gap-3">

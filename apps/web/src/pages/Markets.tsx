@@ -19,7 +19,7 @@ import { SectorHeat } from "../components/SectorHeat";
 import { WatchToday } from "../components/WatchToday";
 import { type Lang, useLang } from "../lib/i18n";
 import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
-import { PATTERN_LABEL, PATTERN_ORDER, PATTERN_STATUS_LABEL } from "../lib/patterns";
+import { PATTERN_ORDER, PATTERN_STATUS_LABEL } from "../lib/patterns";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
 export const SCREEN_HELP: Record<string, string> = {
@@ -74,9 +74,13 @@ export const SCREEN_HELP: Record<string, string> = {
     "Return on equity = profit ÷ shareholder capital (EPS ÷ NAV per share). Higher = more profit per taka of book value. e.g. 25% ≈ ৳25 earned a year per ৳100 of net worth. A quality marker, not a buy signal.",
   low_volatility:
     "Annualised size of daily price swings over the past year. Lower = steadier. e.g. 15% is calm, 60% is wild. Steadier doesn't mean higher returns — just a smoother ride.",
-  chart_patterns:
-    "Classic technical shapes (triangles, channels, double top/bottom) built from confirmed swing highs/lows. This is textbook technical analysis — not proven to predict DSE moves (our own study found the related momentum factor actually hurt returns here). Descriptive geometry, never a signal. Tap a row's pattern name for what it means and what 'usually happens' does and doesn't tell you.",
 };
+// One board per pattern type (chart_pattern_ascending_triangle, etc.) — same explanatory text for
+// all 7 since the "how to read this" logic is identical regardless of which specific shape it is.
+for (const type of PATTERN_ORDER) {
+  SCREEN_HELP[`chart_pattern_${type}`] =
+    "Built from confirmed swing highs/lows. This is textbook technical analysis — not proven to predict DSE moves (our own study found the related momentum factor actually hurt returns here). Descriptive geometry, never a signal. Tap the board title for what this pattern means and what 'usually happens' does and doesn't tell you.";
+}
 
 // Bangla tooltip text — clear, simple retail phrasing (reviewed, not literal MT). Examples kept.
 const SCREEN_HELP_BN: Record<string, string> = {
@@ -129,9 +133,11 @@ const SCREEN_HELP_BN: Record<string, string> = {
     "রিটার্ন অন ইকুইটি = মুনাফা ÷ শেয়ারহোল্ডার মূলধন (EPS ÷ শেয়ারপ্রতি NAV)। বেশি = বইমূল্যের প্রতি টাকায় বেশি মুনাফা। যেমন ২৫% ≈ ৳১০০ নিট সম্পদে বছরে ৳২৫ আয়। মানের চিহ্ন, কেনার সংকেত নয়।",
   low_volatility:
     "গত এক বছরে দৈনিক দামের ওঠানামার বার্ষিক আকার। কম = বেশি স্থির। যেমন ১৫% শান্ত, ৬০% বুনো। স্থির মানে বেশি রিটার্ন নয় — শুধু মসৃণ যাত্রা।",
-  chart_patterns:
-    "নিশ্চিত সুইং হাই/লো থেকে তৈরি ক্লাসিক প্রযুক্তিগত আকার (ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম)। এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস — DSE-তে দাম পূর্বাভাসে প্রমাণিত নয় (আমাদের নিজস্ব গবেষণায় সম্পর্কিত মোমেন্টাম ফ্যাক্টর বরং ক্ষতি করেছে)। বর্ণনামূলক জ্যামিতি, কখনো সংকেত নয়। কোনো সারির প্যাটার্নের নামে ট্যাপ করুন এর মানে ও 'সাধারণত কী হয়' কী বলে আর কী বলে না তা জানতে।",
 };
+for (const type of PATTERN_ORDER) {
+  SCREEN_HELP_BN[`chart_pattern_${type}`] =
+    "নিশ্চিত সুইং হাই/লো থেকে তৈরি। এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস — DSE-তে দাম পূর্বাভাসে প্রমাণিত নয় (আমাদের নিজস্ব গবেষণায় সম্পর্কিত মোমেন্টাম ফ্যাক্টর বরং ক্ষতি করেছে)। বর্ণনামূলক জ্যামিতি, কখনো সংকেত নয়। বোর্ডের শিরোনামে ট্যাপ করুন এই প্যাটার্নের মানে ও 'সাধারণত কী হয়' কী বলে আর কী বলে না তা জানতে।";
+}
 
 // Localized tooltip text for a screen (falls back to English, then to the screen's own description).
 export function screenHelp(key: string, lang: Lang): string | undefined {
@@ -288,14 +294,11 @@ const NOTE_BN: Record<string, string> = {
   Buying: "কিনছে",
   Selling: "বিক্রি করছে",
 };
-// Generated from lib/patterns.ts (single source of truth for pattern names) rather than
-// hand-typed, so the chart_patterns board's "{Pattern} · {status}" note translates consistently
-// with the chart badge and the education page.
-for (const type of PATTERN_ORDER) {
-  for (const status of ["forming", "confirmed_breakout_up", "confirmed_breakout_down"] as const) {
-    NOTE_BN[`${PATTERN_LABEL[type].en} · ${PATTERN_STATUS_LABEL[status].en}`] =
-      `${PATTERN_LABEL[type].bn} · ${PATTERN_STATUS_LABEL[status].bn}`;
-  }
+// Each chart_pattern_* board is now titled by the specific shape (e.g. "Ascending Triangle"), so
+// a row's note is just its status ("forming" / "broke out up" / "broke out down") — generated from
+// lib/patterns.ts (single source of truth) rather than hand-typed.
+for (const status of ["forming", "confirmed_breakout_up", "confirmed_breakout_down"] as const) {
+  NOTE_BN[PATTERN_STATUS_LABEL[status].en] = PATTERN_STATUS_LABEL[status].bn;
 }
 const noteWord = (note: string, lang: Lang) => (lang === "bn" ? (NOTE_BN[note] ?? note) : note);
 
@@ -1129,7 +1132,9 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
     icon: "📐",
     labelKey: "lens.patterns",
     blurbKey: "lens.patterns.blurb",
-    keys: ["chart_patterns"],
+    // One board per shape (not a single combined list) — a user asked for this split so each
+    // pattern reads as its own thing rather than everything blended into one strength-sorted list.
+    keys: PATTERN_ORDER.map((type) => `chart_pattern_${type}`),
   },
 ];
 

@@ -2,28 +2,29 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { EvidenceNote } from "../components/EvidenceChip";
 import { Spinner } from "../components/ui";
-import { api, type Screen } from "../lib/api";
+import { api, type ScreensResponse } from "../lib/api";
 import { useLang } from "../lib/i18n";
-import { PATTERN_LABEL, PATTERN_ORDER, patternTypeFromNote } from "../lib/patterns";
+import { PATTERN_LABEL, PATTERN_ORDER } from "../lib/patterns";
 
 // Index of every chart pattern this site detects — "what is it, and who's showing it right now."
-// Framework evidence throughout: classic technical analysis, not proven on DSE (see the
-// chart_patterns screen's description and each pattern's lesson for the full reasoning).
+// One board per shape (chart_pattern_<type>), not a single combined list — a user asked for this
+// split so each pattern reads as its own thing. Framework evidence throughout: classic technical
+// analysis, not proven on DSE (see each pattern's lesson for the full reasoning).
 export function PatternLibrary() {
   const { t, lang } = useLang();
-  const [screen, setScreen] = useState<Screen | null>(null);
+  const [data, setData] = useState<ScreensResponse | null>(null);
 
   useEffect(() => {
     api
-      .screen("chart_patterns", 200)
-      .then(setScreen)
-      .catch(() => setScreen(null));
+      .screens()
+      .then(setData)
+      .catch(() => setData(null));
   }, []);
 
+  const byKey = new Map((data?.screens ?? []).map((s) => [s.key, s]));
   const counts: Record<string, number> = {};
-  for (const item of screen?.items ?? []) {
-    const type = patternTypeFromNote(item.note);
-    if (type) counts[type] = (counts[type] ?? 0) + 1;
+  for (const type of PATTERN_ORDER) {
+    counts[type] = byKey.get(`chart_pattern_${type}`)?.items.length ?? 0;
   }
 
   return (
@@ -42,7 +43,7 @@ export function PatternLibrary() {
         </div>
       </div>
 
-      {screen === null ? (
+      {data === null ? (
         <Spinner />
       ) : (
         <div className="flex flex-col gap-2">

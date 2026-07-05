@@ -312,7 +312,8 @@ _SCREEN_EVIDENCE: dict[str, str] = {
     "value_vs_sector": "utility",
     "quality_roe": "utility",
     "most_discussed": "utility",
-    "chart_patterns": "framework",  # classic TA, not proven on DSE — see patterns.py docstring
+    # chart_pattern_* (one board per pattern type — ascending_triangle, double_top, etc.) are
+    # handled by prefix below, not listed individually here.
 }
 
 
@@ -805,6 +806,10 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
         and item.adtv_mn >= 20
         and (
             item.catalyst
+            or screen.key.startswith(_CHART_PATTERN_PREFIX)  # plain descriptive geometry per
+            # type — unlike sponsor_selling, none of these assert a real disclosed negative fact
+            # (they're explicitly "framework, not a signal"), so a liquidity-based Clean read
+            # applies the same way regardless of whether the shape leans bullish or bearish.
             or screen.key
             in {
                 # institutional_selling/sponsor_selling are deliberately NOT here — a green "Clean
@@ -820,9 +825,6 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
                 "dividend_yield",
                 "beating_market",
                 "quiet_accumulation",
-                "chart_patterns",  # plain descriptive geometry, not one-directional like
-                # sponsor_selling — bullish and bearish-leaning shapes both appear on this board,
-                # so a liquidity-based Clean read is appropriate here.
             }
         )
     ):
@@ -1214,12 +1216,15 @@ _PATTERN_STATUS_TITLE = {
     "confirmed_breakout_up": "broke out up",
     "confirmed_breakout_down": "broke out down",
 }
+_CHART_PATTERN_PREFIX = "chart_pattern_"  # e.g. "chart_pattern_ascending_triangle"
 
 
-async def _chart_patterns(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
-    """Stocks currently showing a classic chart pattern (Finviz-style: triangles, channels,
-    double top/bottom), precomputed nightly alongside ticker_analytics —
-    see bulls.analytics.patterns.detect_patterns for the geometry.
+async def _chart_pattern_board(session, market: str, pattern_type: str, limit: int = PER_SCREEN) -> ScreenOut:
+    """Stocks currently showing ONE specific classic chart pattern (Finviz-style: e.g. just
+    ascending triangles, or just double tops), precomputed nightly alongside ticker_analytics —
+    see bulls.analytics.patterns.detect_patterns for the geometry. One board per pattern type
+    (not a single combined list) — a user asked for this split so each shape reads as its own
+    thing rather than everything blended into one list sorted only by strength score.
 
     Framework evidence, not backtested: this is textbook technical analysis, and our own factor
     study found the conceptually-related momentum factor actually hurt returns on DSE — see that
@@ -1229,13 +1234,13 @@ async def _chart_patterns(session, market: str, limit: int = PER_SCREEN) -> Scre
             select(
                 TickerPattern.code,
                 T.last_close,
-                TickerPattern.pattern_type,
                 TickerPattern.status,
                 TickerPattern.strength_score,
             )
             .join(T, and_(T.market == TickerPattern.market, T.code == TickerPattern.code))
             .where(
                 TickerPattern.market == market,
+                TickerPattern.pattern_type == pattern_type,
                 TickerPattern.status != "invalidated",
                 T.code.in_(_screenable_codes(market)),
                 _LIQUID,
@@ -1249,21 +1254,19 @@ async def _chart_patterns(session, market: str, limit: int = PER_SCREEN) -> Scre
             code=code,
             last_close=lc,
             value=round(strength, 0),
-            note=f"{_PATTERN_TITLE[pattern_type]} · {_PATTERN_STATUS_TITLE[status]}",
-            why=(
-                f"{_PATTERN_TITLE[pattern_type]}, {_PATTERN_STATUS_TITLE[status]} "
-                f"(strength {strength:.0f}/100)."
-            ),
+            note=_PATTERN_STATUS_TITLE[status],
+            why=f"{_PATTERN_TITLE[pattern_type]}, {_PATTERN_STATUS_TITLE[status]} (strength {strength:.0f}/100).",
         )
-        for code, lc, pattern_type, status, strength in rows
+        for code, lc, status, strength in rows
     ]
+    title = _PATTERN_TITLE[pattern_type]
     return ScreenOut(
-        key="chart_patterns",
-        title="Chart Patterns",
+        key=f"{_CHART_PATTERN_PREFIX}{pattern_type}",
+        title=title,
         description=(
-            "Classic technical shapes (triangles, channels, double top/bottom) currently forming "
-            "or just resolved. Descriptive geometry, not a signal — see the lesson for what "
-            "'usually happens' means and doesn't mean."
+            f"Stocks currently forming or just resolving a {title.lower()}. Descriptive "
+            "geometry, not a signal — see the lesson for what 'usually happens' means and "
+            "doesn't mean."
         ),
         value_label="score",
         group="technical",
@@ -1284,7 +1287,8 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     context = await _execution_context(session, market, codes)
     catalysts = await _recent_catalysts(session, market, codes)
     for s in screens_list:
-        s.evidence = s.evidence or _SCREEN_EVIDENCE.get(s.key)
+        default_evidence = "framework" if s.key.startswith(_CHART_PATTERN_PREFIX) else None
+        s.evidence = s.evidence or _SCREEN_EVIDENCE.get(s.key) or default_evidence
         for it in s.items:
             it.name = names.get(it.code, "")
             it.change_1d = None if s.key in _NO_1D else changes.get(it.code)
@@ -1344,8 +1348,10 @@ async def build_screen(
         return await _ownership(session, market, kind="institute", direction="sell", limit=limit)
     if key == "sponsor_selling":
         return await _sponsor_selling(session, market, limit=limit)
-    if key == "chart_patterns":
-        return await _chart_patterns(session, market, limit=limit)
+    if key.startswith(_CHART_PATTERN_PREFIX):
+        return await _chart_pattern_board(
+            session, market, pattern_type=key.removeprefix(_CHART_PATTERN_PREFIX), limit=limit
+        )
     if key == "most_watched":
         return await _most_watched(session, market, tenant_id=tenant_id, limit=limit)
     if key == "most_discussed":
@@ -1378,7 +1384,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
     # changes — the key folds in data freshness, but only a version bump invalidates on code
     # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
-    key = f"screens:v7:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v8:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1408,7 +1414,8 @@ async def _build_screens(
     out.append(await _ownership(session, tenant.market, kind="institute"))
     out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
     out.append(await _sponsor_selling(session, tenant.market))
-    out.append(await _chart_patterns(session, tenant.market))
+    for pattern_type in _PATTERN_TITLE:
+        out.append(await _chart_pattern_board(session, tenant.market, pattern_type=pattern_type))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
     out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))
     out.append(await _attention_rising(session, tenant.market))

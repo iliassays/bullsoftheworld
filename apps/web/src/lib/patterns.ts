@@ -38,14 +38,6 @@ export function patternStatusLabel(status: PatternStatus, lang: Lang): string {
   return lang === "bn" ? PATTERN_STATUS_LABEL[status].bn : PATTERN_STATUS_LABEL[status].en;
 }
 
-// The chart_patterns screen's ScreenItem.note is always "{English pattern title} · {status}"
-// (backend-generated, screener.py::_chart_patterns) — there's no dedicated pattern_type field on
-// ScreenItem, so this is how the education pages match a board row back to its pattern type.
-export function patternTypeFromNote(note: string | null | undefined): PatternType | null {
-  if (!note) return null;
-  return PATTERN_ORDER.find((type) => note.startsWith(PATTERN_LABEL[type].en)) ?? null;
-}
-
 export const PATTERN_LESSON_ID: Record<PatternType, string> = {
   ascending_triangle: "pattern_ascending_triangle",
   descending_triangle: "pattern_descending_triangle",
