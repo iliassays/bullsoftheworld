@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type MarketPulse as MarketPulseData } from "../lib/api";
+import { FreshnessTag } from "./FreshnessTag";
 import { useLang } from "../lib/i18n";
 import { Pct } from "./ui";
 
@@ -55,11 +56,17 @@ export function MarketPulse() {
           <div className="font-bold text-sm">{t("marketPulse.title")}</div>
           <div className="text-[11px] text-muted">{t("marketPulse.subtitle")}</div>
         </div>
-        <span
-          className={`shrink-0 border rounded-full px-2.5 py-1 text-[11px] font-semibold ${riskClass[pulse.risk_mode]}`}
-        >
-          {t(`risk.${pulse.risk_mode}`)}
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span
+            className={`border rounded-full px-2.5 py-1 text-[11px] font-semibold ${riskClass[pulse.risk_mode]}`}
+          >
+            {t(`risk.${pulse.risk_mode}`)}
+          </span>
+          {/* DSEX is EOD-anchored (one row/day) even though breadth/sectors below track the
+              live 15-min quote poll — this card mixes both, so the anchor is worth calling out
+              here specifically, not just relying on the page-level FreshnessTag elsewhere. */}
+          <FreshnessTag asOf={pulse.as_of} quoteAsOf={pulse.quote_as_of} className="" />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-3">

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceChip, evidenceExplain } from "../components/EvidenceChip";
+import { FreshnessTag } from "../components/FreshnessTag";
 import { Link } from "react-router-dom";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 import { api, type ScannerResponse, type Screen, type ScreenItem } from "../lib/api";
@@ -575,6 +576,13 @@ function Boards({
   }
   return (
     <div className="flex flex-col gap-3">
+      {/* Same freshness anchor Markets already shows — these boards are EOD-analytics-anchored
+          (rankings frozen since the last close) even while the market is currently open; a bare
+          per-row '1D' tag with no date anywhere on the page invited "is this today?" confusion. */}
+      <div className="flex items-center justify-end px-1 -mb-1.5">
+        <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} />
+      </div>
+      <div className="text-[10px] text-muted px-1 -mb-1">{t("mkt.rankNote")}</div>
       {data.boards.map((board) => (
         <BoardCard key={board.key} board={board} regime={data.market_regime} onPick={onPick} />
       ))}

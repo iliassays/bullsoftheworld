@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type TrendingReason, type TrendingStock } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { CompanyLogo } from "./CompanyLogo";
+import { FreshnessTag } from "./FreshnessTag";
 import { InfoTip } from "./InfoTip";
 import { Pct } from "./ui";
 
@@ -15,7 +16,14 @@ function takaMn(mn: number | null | undefined): string {
 
 // The precomputed daily activity ranking (see ingestion.trending). The frontend just renders the
 // ordered list + the language-neutral reason chips. Descriptive — activity, never a recommendation.
-export function WatchToday() {
+//
+// `asOf` is optional and comes from the PARENT page's own /screens fetch (Markets.tsx) rather
+// than a new backend field here — run_trending computes this ranking in the same nightly EOD
+// chain as refresh_analytics (13:15/13:25 UTC), so they share the same calendar date in practice.
+// Each row's % move is frozen at that same computation, not the live 15-min quote (only the
+// price shown alongside is live) — the same "which timestamp does this number mean" gap a user
+// flagged on the Ideas page.
+export function WatchToday({ asOf }: { asOf?: string | null } = {}) {
   const { t } = useLang();
   const [rows, setRows] = useState<TrendingStock[] | null>(null);
 
@@ -62,6 +70,7 @@ export function WatchToday() {
         <span aria-hidden>🔥</span>
         <span className="font-bold text-sm">{t("watch.title")}</span>
         <InfoTip text={t("watch.subtitle")} lessonId="active_today" />
+        {asOf && <FreshnessTag asOf={asOf} className="ml-auto" />}
       </div>
       <p className="text-[11px] text-muted mt-0.5">{t("watch.subtitle")}</p>
 
