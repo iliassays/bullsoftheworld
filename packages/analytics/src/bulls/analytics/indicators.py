@@ -176,6 +176,26 @@ def on_balance_volume(closes: Sequence[float], volumes: Sequence[float]) -> list
     return obv
 
 
+def linreg(xs: Sequence[float], ys: Sequence[float]) -> tuple[float, float] | None:
+    """Least-squares line y = slope*x + intercept through (xs, ys).
+
+    None for degenerate input (fewer than 2 points, or all xs identical — a vertical "line" has no
+    slope). General-purpose: `obv_slope` uses it with evenly-spaced xs; the chart-pattern trendline
+    fit (patterns.py) uses it with actual pivot bar indices, which are NOT evenly spaced.
+    """
+    n = len(xs)
+    if n < 2 or n != len(ys):
+        return None
+    xbar = statistics.fmean(xs)
+    ybar = statistics.fmean(ys)
+    den = sum((x - xbar) ** 2 for x in xs)
+    if den == 0:
+        return None
+    num = sum((x - xbar) * (y - ybar) for x, y in zip(xs, ys, strict=True))
+    slope = num / den
+    return slope, ybar - slope * xbar
+
+
 def obv_slope(
     closes: Sequence[float], volumes: Sequence[float], *, period: int = 20
 ) -> float | None:
@@ -189,15 +209,12 @@ def obv_slope(
         return None
     obv = on_balance_volume(closes, volumes)
     window = obv[-period:]
-    n = len(window)
-    xbar = (n - 1) / 2
-    ybar = statistics.fmean(window)
-    num = sum((i - xbar) * (y - ybar) for i, y in enumerate(window))
-    den = sum((i - xbar) ** 2 for i in range(n))
+    fit = linreg(range(len(window)), window)
     avg_vol = statistics.fmean(volumes[-period:])
-    if den == 0 or not avg_vol:
+    if fit is None or not avg_vol:
         return None
-    return (num / den) / avg_vol
+    slope, _ = fit
+    return slope / avg_vol
 
 
 def swing_high_indices(highs: Sequence[float], k: int = 5) -> list[int]:

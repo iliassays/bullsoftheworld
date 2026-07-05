@@ -30,6 +30,7 @@ from bulls.core.models import (
     Symbol,
     TickerAnalytics,
     TickerBuzzDaily,
+    TickerPattern,
     User,
     WatchlistItem,
 )
@@ -311,6 +312,7 @@ _SCREEN_EVIDENCE: dict[str, str] = {
     "value_vs_sector": "utility",
     "quality_roe": "utility",
     "most_discussed": "utility",
+    "chart_patterns": "framework",  # classic TA, not proven on DSE — see patterns.py docstring
 }
 
 
@@ -818,6 +820,9 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
                 "dividend_yield",
                 "beating_market",
                 "quiet_accumulation",
+                "chart_patterns",  # plain descriptive geometry, not one-directional like
+                # sponsor_selling — bullish and bearish-leaning shapes both appear on this board,
+                # so a liquidity-based Clean read is appropriate here.
             }
         )
     ):
@@ -1195,6 +1200,77 @@ async def _sponsor_selling(session, market: str, limit: int = PER_SCREEN) -> Scr
     )
 
 
+_PATTERN_TITLE = {
+    "ascending_triangle": "Ascending Triangle",
+    "descending_triangle": "Descending Triangle",
+    "channel_up": "Rising Channel",
+    "channel_down": "Falling Channel",
+    "channel_horizontal": "Horizontal Channel",
+    "double_top": "Double Top",
+    "double_bottom": "Double Bottom",
+}
+_PATTERN_STATUS_TITLE = {
+    "forming": "forming",
+    "confirmed_breakout_up": "broke out up",
+    "confirmed_breakout_down": "broke out down",
+}
+
+
+async def _chart_patterns(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+    """Stocks currently showing a classic chart pattern (Finviz-style: triangles, channels,
+    double top/bottom), precomputed nightly alongside ticker_analytics —
+    see bulls.analytics.patterns.detect_patterns for the geometry.
+
+    Framework evidence, not backtested: this is textbook technical analysis, and our own factor
+    study found the conceptually-related momentum factor actually hurt returns on DSE — see that
+    module's docstring for the full reasoning."""
+    rows = (
+        await session.execute(
+            select(
+                TickerPattern.code,
+                T.last_close,
+                TickerPattern.pattern_type,
+                TickerPattern.status,
+                TickerPattern.strength_score,
+            )
+            .join(T, and_(T.market == TickerPattern.market, T.code == TickerPattern.code))
+            .where(
+                TickerPattern.market == market,
+                TickerPattern.status != "invalidated",
+                T.code.in_(_screenable_codes(market)),
+                _LIQUID,
+            )
+            .order_by(TickerPattern.strength_score.desc())
+            .limit(limit)
+        )
+    ).all()
+    items = [
+        ScreenItem(
+            code=code,
+            last_close=lc,
+            value=round(strength, 0),
+            note=f"{_PATTERN_TITLE[pattern_type]} · {_PATTERN_STATUS_TITLE[status]}",
+            why=(
+                f"{_PATTERN_TITLE[pattern_type]}, {_PATTERN_STATUS_TITLE[status]} "
+                f"(strength {strength:.0f}/100)."
+            ),
+        )
+        for code, lc, pattern_type, status, strength in rows
+    ]
+    return ScreenOut(
+        key="chart_patterns",
+        title="Chart Patterns",
+        description=(
+            "Classic technical shapes (triangles, channels, double top/bottom) currently forming "
+            "or just resolved. Descriptive geometry, not a signal — see the lesson for what "
+            "'usually happens' means and doesn't mean."
+        ),
+        value_label="score",
+        group="technical",
+        items=items,
+    )
+
+
 async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     """Fill name + 1d change + sparkline on every item, batched across all screens."""
     codes = sorted({it.code for s in screens_list for it in s.items})
@@ -1268,6 +1344,8 @@ async def build_screen(
         return await _ownership(session, market, kind="institute", direction="sell", limit=limit)
     if key == "sponsor_selling":
         return await _sponsor_selling(session, market, limit=limit)
+    if key == "chart_patterns":
+        return await _chart_patterns(session, market, limit=limit)
     if key == "most_watched":
         return await _most_watched(session, market, tenant_id=tenant_id, limit=limit)
     if key == "most_discussed":
@@ -1300,7 +1378,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
     # changes — the key folds in data freshness, but only a version bump invalidates on code
     # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
-    key = f"screens:v6:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v7:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1330,6 +1408,7 @@ async def _build_screens(
     out.append(await _ownership(session, tenant.market, kind="institute"))
     out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
     out.append(await _sponsor_selling(session, tenant.market))
+    out.append(await _chart_patterns(session, tenant.market))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
     out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))
     out.append(await _attention_rising(session, tenant.market))

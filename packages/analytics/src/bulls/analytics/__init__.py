@@ -28,6 +28,7 @@ from bulls.analytics.investor_lens import (
     technical_score,
 )
 from bulls.analytics.mood import MoodComponent, MoodIndex, build_mood
+from bulls.analytics.patterns import PatternMatch, PatternType, detect_patterns
 from bulls.analytics.plain_read import PlainRead, ReadPoint, build_plain_read
 from bulls.analytics.scenarios import LevelsInsight, build_levels
 from bulls.analytics.scorecard import (
@@ -51,6 +52,8 @@ __all__ = [
     "LevelsInsight",
     "MoodComponent",
     "MoodIndex",
+    "PatternMatch",
+    "PatternType",
     "PlainRead",
     "ReadPoint",
     "RedFlag",
@@ -70,6 +73,7 @@ __all__ = [
     "circuit_band",
     "compute",
     "compute_valuation",
+    "detect_patterns",
     "dividend_score",
     "ema",
     "graham_score",

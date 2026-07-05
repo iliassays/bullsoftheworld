@@ -19,6 +19,7 @@ import { SectorHeat } from "../components/SectorHeat";
 import { WatchToday } from "../components/WatchToday";
 import { type Lang, useLang } from "../lib/i18n";
 import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
+import { PATTERN_LABEL, PATTERN_ORDER, PATTERN_STATUS_LABEL } from "../lib/patterns";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
 export const SCREEN_HELP: Record<string, string> = {
@@ -73,6 +74,8 @@ export const SCREEN_HELP: Record<string, string> = {
     "Return on equity = profit ÷ shareholder capital (EPS ÷ NAV per share). Higher = more profit per taka of book value. e.g. 25% ≈ ৳25 earned a year per ৳100 of net worth. A quality marker, not a buy signal.",
   low_volatility:
     "Annualised size of daily price swings over the past year. Lower = steadier. e.g. 15% is calm, 60% is wild. Steadier doesn't mean higher returns — just a smoother ride.",
+  chart_patterns:
+    "Classic technical shapes (triangles, channels, double top/bottom) built from confirmed swing highs/lows. This is textbook technical analysis — not proven to predict DSE moves (our own study found the related momentum factor actually hurt returns here). Descriptive geometry, never a signal. Tap a row's pattern name for what it means and what 'usually happens' does and doesn't tell you.",
 };
 
 // Bangla tooltip text — clear, simple retail phrasing (reviewed, not literal MT). Examples kept.
@@ -126,6 +129,8 @@ const SCREEN_HELP_BN: Record<string, string> = {
     "রিটার্ন অন ইকুইটি = মুনাফা ÷ শেয়ারহোল্ডার মূলধন (EPS ÷ শেয়ারপ্রতি NAV)। বেশি = বইমূল্যের প্রতি টাকায় বেশি মুনাফা। যেমন ২৫% ≈ ৳১০০ নিট সম্পদে বছরে ৳২৫ আয়। মানের চিহ্ন, কেনার সংকেত নয়।",
   low_volatility:
     "গত এক বছরে দৈনিক দামের ওঠানামার বার্ষিক আকার। কম = বেশি স্থির। যেমন ১৫% শান্ত, ৬০% বুনো। স্থির মানে বেশি রিটার্ন নয় — শুধু মসৃণ যাত্রা।",
+  chart_patterns:
+    "নিশ্চিত সুইং হাই/লো থেকে তৈরি ক্লাসিক প্রযুক্তিগত আকার (ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম)। এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস — DSE-তে দাম পূর্বাভাসে প্রমাণিত নয় (আমাদের নিজস্ব গবেষণায় সম্পর্কিত মোমেন্টাম ফ্যাক্টর বরং ক্ষতি করেছে)। বর্ণনামূলক জ্যামিতি, কখনো সংকেত নয়। কোনো সারির প্যাটার্নের নামে ট্যাপ করুন এর মানে ও 'সাধারণত কী হয়' কী বলে আর কী বলে না তা জানতে।",
 };
 
 // Localized tooltip text for a screen (falls back to English, then to the screen's own description).
@@ -147,6 +152,7 @@ export function fmtValue(label: string, v: number): string {
   if (label.includes("avg vol") || label.includes("usual"))
     return `${v.toFixed(1)}x`;
   if (label === "watchers" || label === "posts") return v.toFixed(0);
+  if (label === "score") return `${v.toFixed(0)}/100`;
   if (label === "turnover")
     return `৳${v.toLocaleString(undefined, { maximumFractionDigits: v >= 10 ? 0 : 1 })} Cr`;
   if (label === "pp") return `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`;
@@ -191,6 +197,9 @@ function liquidityLabel(liquidity: string | null | undefined, t: Tr): string | n
 // Tone for a per-row note. Selling/pump = caution, buying/climb = positive, the rest neutral.
 function noteTone(note: string): Chip["tone"] {
   const n = note.toLowerCase();
+  if (n.includes("broke out down")) return "down";
+  if (n.includes("broke out up")) return "up";
+  if (n.includes("forming")) return "neutral"; // chart pattern not yet resolved either way
   if (n.includes("pump") || n.includes("selling")) return "down";
   if (n.includes("buying")) return "up";
   if (n.includes("volatile") || n === "heavy volume") return "neutral";
@@ -255,6 +264,7 @@ export function metricHeader(label: string, t: Tr): string {
   if (label === "vs market") return t("mh.vsDsex");
   if (label === "ROE") return t("mh.roe") === "mh.roe" ? "ROE" : t("mh.roe");
   if (label === "volatility") return t("mh.volatility");
+  if (label === "score") return t("mh.strength");
   if (label.includes("%")) return t("mh.change");
   return label;
 }
@@ -278,6 +288,15 @@ const NOTE_BN: Record<string, string> = {
   Buying: "কিনছে",
   Selling: "বিক্রি করছে",
 };
+// Generated from lib/patterns.ts (single source of truth for pattern names) rather than
+// hand-typed, so the chart_patterns board's "{Pattern} · {status}" note translates consistently
+// with the chart badge and the education page.
+for (const type of PATTERN_ORDER) {
+  for (const status of ["forming", "confirmed_breakout_up", "confirmed_breakout_down"] as const) {
+    NOTE_BN[`${PATTERN_LABEL[type].en} · ${PATTERN_STATUS_LABEL[status].en}`] =
+      `${PATTERN_LABEL[type].bn} · ${PATTERN_STATUS_LABEL[status].bn}`;
+  }
+}
 const noteWord = (note: string, lang: Lang) => (lang === "bn" ? (NOTE_BN[note] ?? note) : note);
 
 // One row, shared by the Markets cards and the explore page so they read identically.
@@ -1104,6 +1123,13 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
     labelKey: "lens.steady",
     blurbKey: "lens.steady.blurb",
     keys: ["low_volatility", "quality_roe", "uptrend", "dividend_yield"],
+  },
+  {
+    id: "patterns",
+    icon: "📐",
+    labelKey: "lens.patterns",
+    blurbKey: "lens.patterns.blurb",
+    keys: ["chart_patterns"],
   },
 ];
 

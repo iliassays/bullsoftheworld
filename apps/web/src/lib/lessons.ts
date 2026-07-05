@@ -81,6 +81,55 @@ export const LESSONS: Record<string, Lesson> = {
     watch: "Disclosures are monthly and backward-looking — it's history, not a live signal, big players can be wrong too, and funds sell for many routine reasons besides a change of view.",
     example: "Institutions adding 5 pp over a month suggests growing conviction; trimming 5 pp suggests the opposite — but either way the data is already a few weeks old.",
   },
+  pattern_ascending_triangle: {
+    title: "Ascending Triangle",
+    what: "A flat resistance line capping the price, while the lows keep stepping higher — buyers stepping in earlier each time, sellers holding the same ceiling.",
+    use: "Classic textbook reading: rising demand pressing against a fixed supply level often resolves upward when that ceiling finally gives way, ideally on stronger-than-usual volume.",
+    watch: "This is textbook technical analysis, not proven on DSE — our own study found the related momentum factor actually hurt returns here. A flat ceiling can just as easily reject price repeatedly and never break. Confirm with the news, not the shape alone.",
+    example: "A stock bouncing between a steady ৳110 ceiling and lows of ৳90, ৳95, ৳100 over a few months is textbook — if it later closes above ৳110 on above-average volume, that's the 'breakout' this pattern is named for.",
+  },
+  pattern_descending_triangle: {
+    title: "Descending Triangle",
+    what: "A flat support line holding the price up, while the highs keep stepping lower — sellers pressing in earlier each time, buyers holding the same floor.",
+    use: "Classic textbook reading: the mirror of an ascending triangle — persistent selling pressure against a fixed floor often resolves downward when that floor gives way.",
+    watch: "Same caveat as every pattern here: unproven on DSE data, and a floor can hold for a long time before it ever breaks, if it breaks at all. Don't treat 'shape' as destiny.",
+    example: "A stock making lower highs of ৳150, ৳145, ৳140 while repeatedly finding buyers near ৳130 is a descending triangle — a later close below ৳130 is what this pattern calls a breakdown.",
+  },
+  pattern_channel_up: {
+    title: "Rising Channel",
+    what: "Two roughly parallel, rising lines — a support line and a resistance line both climbing at a similar pace, with price oscillating between them.",
+    use: "Traders sometimes buy near the lower (support) line and expect a bounce toward the upper line, within an intact uptrend — as long as the channel holds.",
+    watch: "A channel is just a description of recent behaviour, not a promise it continues. Prices break out of channels in both directions, and 'buy the dip' inside a channel is exactly the kind of trend-following our own DSE study found didn't pay off.",
+    example: "A stock whose lows and highs have both climbed steadily for two months, staying within a consistent band, is in a rising channel.",
+  },
+  pattern_channel_down: {
+    title: "Falling Channel",
+    what: "Two roughly parallel, falling lines — support and resistance both declining at a similar pace, with price oscillating between them.",
+    use: "The mirror of a rising channel: some traders watch for a break above the upper line as a possible sign the decline is stalling.",
+    watch: "A persistent falling channel is still a downtrend — 'it's due for a bounce' is a feeling, not a fact this shape proves.",
+    example: "A stock whose lows and highs have both declined steadily for two months, staying within a consistent band, is in a falling channel.",
+  },
+  pattern_channel_horizontal: {
+    title: "Horizontal Channel",
+    what: "Price bouncing between a roughly flat resistance level and a roughly flat support level — a trading range, not a trend.",
+    use: "This is simply 'the stock isn't trending right now' — some traders watch the range edges for a bounce, others wait for a breakout in either direction before acting.",
+    watch: "A range can persist for a very long time, and a range can also be quietly building toward a breakout — the shape alone doesn't tell you which.",
+    example: "A stock trading between ৳100 and ৳120 for several months, repeatedly bouncing off both levels, is in a horizontal channel.",
+  },
+  pattern_double_top: {
+    title: "Double Top",
+    what: "Two comparable price peaks with a meaningful pullback between them — the price tested a level twice and couldn't clear it either time.",
+    use: "Classic bearish-reversal reading: failing to make a new high twice in a row, at the same level, is read as fading momentum. The 'neckline' (the low between the two peaks) is the level some traders watch for a confirming break.",
+    watch: "Two peaks can also just be normal back-and-forth in a healthy uptrend — this shape is famously prone to being read into charts after the fact. Never proven on DSE data.",
+    example: "A stock rallying to ৳120, pulling back to ৳100, rallying again to ৳121, then falling — a later close below ৳100 (the neckline) is what this pattern calls a breakdown.",
+  },
+  pattern_double_bottom: {
+    title: "Double Bottom",
+    what: "Two comparable price troughs with a meaningful bounce between them — the price tested a floor twice and held both times. The mirror of a double top.",
+    use: "Classic bullish-reversal reading: holding the same floor twice is read as fading selling pressure. The 'neckline' (the high between the two troughs) is the level some traders watch for a confirming break.",
+    watch: "Same caveat, mirrored: two troughs can be normal noise in a downtrend, and this is not proven to predict anything on DSE data.",
+    example: "A stock falling to ৳100, bouncing to ৳120, falling again to ৳99, then rising — a later close above ৳120 (the neckline) is what this pattern calls a breakout.",
+  },
 };
 
 // Bangla lessons — clear, simple retail phrasing (not literal MT). Tickers stay in English.
@@ -155,6 +204,55 @@ export const LESSONS_BN: Record<string, Lesson> = {
     watch: "প্রকাশ মাসিক ও পেছনমুখী — এটি ইতিহাস, লাইভ সংকেত নয়, বড় খেলোয়াড়রাও ভুল হতে পারে, আর ফান্ড অনেক সময় সাধারণ কারণেও (দৃষ্টিভঙ্গি বদল ছাড়াই) বিক্রি করে।",
     example: "এক মাসে প্রতিষ্ঠান ৫ pp যোগ করা ক্রমবর্ধমান আস্থার ইঙ্গিত; ৫ pp কমানো বিপরীত ইঙ্গিত — তবে দুই ক্ষেত্রেই ডেটা ইতিমধ্যে কয়েক সপ্তাহ পুরনো।",
   },
+  pattern_ascending_triangle: {
+    title: "ঊর্ধ্বমুখী ত্রিভুজ",
+    what: "দাম একটি নির্দিষ্ট রেজিস্ট্যান্স লেভেলে বাধা পাচ্ছে, অথচ প্রতিটি নিম্নমুখী ধাপ আগেরটির চেয়ে উঁচুতে হচ্ছে — ক্রেতারা আগেভাগে ঢুকছে, বিক্রেতারা একই সিলিং ধরে আছে।",
+    use: "প্রথাগত পাঠ: বাড়ন্ত চাহিদা একটি স্থির সরবরাহ লেভেলের বিরুদ্ধে চাপ দিলে, সেই সিলিং ভাঙলে প্রায়ই ঊর্ধ্বমুখী সমাধান হয় — বিশেষত বাড়তি ভলিউমে।",
+    watch: "এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস, DSE-তে প্রমাণিত নয় — আমাদের নিজস্ব গবেষণায় সম্পর্কিত মোমেন্টাম ফ্যাক্টর বরং ক্ষতি করেছে। একটি ফ্ল্যাট সিলিং বারবার প্রত্যাখ্যানও করতে পারে, কখনো নাও ভাঙতে পারে। আকৃতি একা নয়, খবরও যাচাই করুন।",
+    example: "একটি শেয়ার ৳১১০ সিলিং ও ক্রমবর্ধমান লো (৳৯০, ৳৯৫, ৳১০০) এর মধ্যে দোলাচ্ছে — এটিই এই প্যাটার্ন। পরে ৳১১০-এর উপরে বাড়তি ভলিউমে ক্লোজ করলে সেটিই 'ব্রেকআউট'।",
+  },
+  pattern_descending_triangle: {
+    title: "নিম্নমুখী ত্রিভুজ",
+    what: "দাম একটি নির্দিষ্ট সাপোর্ট লেভেলে ধরে থাকছে, অথচ প্রতিটি ঊর্ধ্বমুখী ধাপ আগেরটির চেয়ে নিচুতে হচ্ছে — বিক্রেতারা আগেভাগে ঢুকছে, ক্রেতারা একই ফ্লোর ধরে আছে।",
+    use: "প্রথাগত পাঠ: ঊর্ধ্বমুখী ত্রিভুজের বিপরীত — একটি স্থির ফ্লোরের বিরুদ্ধে ধারাবাহিক বিক্রয়চাপ সেই ফ্লোর ভাঙলে প্রায়ই নিম্নমুখী সমাধান হয়।",
+    watch: "একই সতর্কতা: DSE-তে অপ্রমাণিত, আর একটি ফ্লোর ভাঙার আগে অনেকদিন টিকে থাকতে পারে, কখনো নাও ভাঙতে পারে। 'আকৃতি' নিয়তি নয়।",
+    example: "একটি শেয়ার ক্রমহ্রাসমান হাই (৳১৫০, ৳১৪৫, ৳১৪০) করছে অথচ বারবার ৳১৩০-এর কাছে ক্রেতা পাচ্ছে — এটি নিম্নমুখী ত্রিভুজ। পরে ৳১৩০-এর নিচে ক্লোজ করলে এই প্যাটার্ন তাকে 'ব্রেকডাউন' বলে।",
+  },
+  pattern_channel_up: {
+    title: "ঊর্ধ্বমুখী চ্যানেল",
+    what: "প্রায় সমান্তরাল দুটি ঊর্ধ্বমুখী লাইন — সাপোর্ট ও রেজিস্ট্যান্স একই গতিতে বাড়ছে, দাম দুইয়ের মাঝে দোলাচ্ছে।",
+    use: "কিছু ট্রেডার নিচের (সাপোর্ট) লাইনের কাছে কেনেন এবং উপরের লাইনের দিকে বাউন্সের আশা করেন — যতক্ষণ চ্যানেল অক্ষত থাকে।",
+    watch: "চ্যানেল শুধু সাম্প্রতিক আচরণের বর্ণনা, ভবিষ্যতের প্রতিশ্রুতি নয়। দাম দুই দিকেই চ্যানেল ভাঙতে পারে, আর চ্যানেলের ভেতরে 'ডিপে কেনা' ঠিক সেই ট্রেন্ড-অনুসরণ যা আমাদের DSE গবেষণায় লাভজনক পাওয়া যায়নি।",
+    example: "একটি শেয়ারের লো ও হাই দুটোই দুই মাস ধরে স্থিরভাবে বেড়েছে, একটি সামঞ্জস্যপূর্ণ ব্যান্ডে থেকে — এটি ঊর্ধ্বমুখী চ্যানেল।",
+  },
+  pattern_channel_down: {
+    title: "নিম্নমুখী চ্যানেল",
+    what: "প্রায় সমান্তরাল দুটি নিম্নমুখী লাইন — সাপোর্ট ও রেজিস্ট্যান্স একই গতিতে কমছে, দাম দুইয়ের মাঝে দোলাচ্ছে।",
+    use: "ঊর্ধ্বমুখী চ্যানেলের বিপরীত: কিছু ট্রেডার উপরের লাইন ভাঙাকে পতন থেমে যাওয়ার সম্ভাব্য ইঙ্গিত হিসেবে দেখেন।",
+    watch: "একটি ধারাবাহিক নিম্নমুখী চ্যানেল আসলে একটি ডাউনট্রেন্ডই — 'বাউন্স করার সময় হয়েছে' একটি অনুভূতি, এই আকৃতির প্রমাণিত সত্য নয়।",
+    example: "একটি শেয়ারের লো ও হাই দুটোই দুই মাস ধরে স্থিরভাবে কমেছে, একটি সামঞ্জস্যপূর্ণ ব্যান্ডে থেকে — এটি নিম্নমুখী চ্যানেল।",
+  },
+  pattern_channel_horizontal: {
+    title: "আনুভূমিক চ্যানেল",
+    what: "দাম প্রায়-ফ্ল্যাট রেজিস্ট্যান্স ও প্রায়-ফ্ল্যাট সাপোর্টের মধ্যে দোলাচ্ছে — একটি ট্রেডিং রেঞ্জ, ট্রেন্ড নয়।",
+    use: "এর মানে মূলত 'শেয়ারটি এখন ট্রেন্ডে নেই' — কিছু ট্রেডার রেঞ্জের প্রান্তে বাউন্সের জন্য নজর রাখেন, অন্যরা যেকোনো দিকে ব্রেকআউটের অপেক্ষা করেন।",
+    watch: "একটি রেঞ্জ অনেকদিন টিকে থাকতে পারে, আবার নীরবে ব্রেকআউটের দিকেও এগোতে পারে — শুধু আকৃতি দেখে কোনটি বলা যায় না।",
+    example: "একটি শেয়ার কয়েক মাস ধরে ৳১০০ থেকে ৳১২০-এর মধ্যে লেনদেন হচ্ছে, বারবার দুই লেভেলেই বাউন্স করছে — এটি আনুভূমিক চ্যানেল।",
+  },
+  pattern_double_top: {
+    title: "ডাবল টপ",
+    what: "তুলনীয় দুটি শিখর, মাঝে একটি অর্থপূর্ণ পতনসহ — দাম একই লেভেল দুইবার পরীক্ষা করেছে এবং কোনোবারই পার হতে পারেনি।",
+    use: "ক্লাসিক বিয়ারিশ-রিভার্সাল পাঠ: টানা দুইবার একই লেভেলে নতুন হাই করতে ব্যর্থ হওয়াকে দুর্বল হয়ে আসা মোমেন্টাম হিসেবে পড়া হয়। 'নেকলাইন' (দুই শিখরের মাঝের লো) হলো সেই লেভেল যা কিছু ট্রেডার নিশ্চিতকরণ ব্রেকের জন্য দেখেন।",
+    watch: "দুটি শিখর একটি সুস্থ আপট্রেন্ডেও স্বাভাবিক ওঠানামা হতে পারে — এই আকৃতি ঘটনার পরে চার্টে 'দেখতে পাওয়ার' জন্য কুখ্যাত। DSE-তে কখনো প্রমাণিত নয়।",
+    example: "একটি শেয়ার ৳১২০-এ উঠে, ৳১০০-এ নেমে, আবার ৳১২১-এ উঠে, তারপর পড়ছে — পরে ৳১০০ (নেকলাইন) এর নিচে ক্লোজ করলে এই প্যাটার্ন তাকে 'ব্রেকডাউন' বলে।",
+  },
+  pattern_double_bottom: {
+    title: "ডাবল বটম",
+    what: "তুলনীয় দুটি তলদেশ, মাঝে একটি অর্থপূর্ণ বাউন্সসহ — দাম একই ফ্লোর দুইবার পরীক্ষা করেছে এবং দুইবারই টিকেছে। ডাবল টপের বিপরীত।",
+    use: "ক্লাসিক বুলিশ-রিভার্সাল পাঠ: একই ফ্লোর দুইবার ধরে রাখাকে দুর্বল হয়ে আসা বিক্রয়চাপ হিসেবে পড়া হয়। 'নেকলাইন' (দুই তলদেশের মাঝের হাই) হলো সেই লেভেল যা কিছু ট্রেডার নিশ্চিতকরণ ব্রেকের জন্য দেখেন।",
+    watch: "একই সতর্কতা, বিপরীতভাবে: দুটি তলদেশ একটি ডাউনট্রেন্ডে স্বাভাবিক শব্দ হতে পারে, আর এটি DSE ডেটায় কিছু পূর্বাভাস দেয় বলে প্রমাণিত নয়।",
+    example: "একটি শেয়ার ৳১০০-এ নেমে, ৳১২০-এ বাউন্স করে, আবার ৳৯৯-এ নেমে, তারপর উঠছে — পরে ৳১২০ (নেকলাইন) এর উপরে ক্লোজ করলে এই প্যাটার্ন তাকে 'ব্রেকআউট' বলে।",
+  },
 };
 
 export const getLesson = (id: string, lang: Lang): Lesson | undefined =>
@@ -213,4 +311,5 @@ export const SCREEN_BN: Record<string, { t: string; d: string }> = {
   most_watched: { t: "সর্বাধিক ওয়াচড", d: "যাদের সবচেয়ে বেশি ওয়াচ করা হচ্ছে" },
   most_discussed: { t: "সর্বাধিক আলোচিত", d: "যাদের নিয়ে সবচেয়ে বেশি আলোচনা" },
   attention_rising: { t: "আলোচনা বাড়ছে", d: "স্বাভাবিকের চেয়ে অনেক বেশি আলোচনা" },
+  chart_patterns: { t: "চার্ট প্যাটার্ন", d: "নিশ্চিত সুইং থেকে তৈরি ক্লাসিক চার্ট আকার (ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম)" },
 };

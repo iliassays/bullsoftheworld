@@ -175,6 +175,46 @@ export interface Level {
   value: number;
   date: string;
 }
+// A detected chart pattern (Finviz-style: triangles, channels, double top/bottom) — classic
+// technical analysis, not proven to have an edge on DSE. Always shown with evidence="framework".
+export interface PricePoint {
+  date: string;
+  price: number;
+}
+export interface PatternPoint extends PricePoint {
+  kind: "high" | "low";
+}
+export interface LineSeg {
+  start: PricePoint;
+  end: PricePoint;
+}
+export type PatternType =
+  | "double_top"
+  | "double_bottom"
+  | "ascending_triangle"
+  | "descending_triangle"
+  | "channel_up"
+  | "channel_down"
+  | "channel_horizontal";
+export type PatternStatus =
+  | "forming"
+  | "confirmed_breakout_up"
+  | "confirmed_breakout_down"
+  | "invalidated";
+export interface PatternMatch {
+  pattern_type: PatternType;
+  status: PatternStatus;
+  start_date: string;
+  end_date: string;
+  breakout_date: string | null;
+  pivots: PatternPoint[];
+  resistance_line: LineSeg | null;
+  support_line: LineSeg | null;
+  key_levels: number[];
+  strength_score: number;
+  touches_resistance: number;
+  touches_support: number;
+}
 // Deterministic technical-analysis snapshot — descriptive facts only, never a recommendation.
 export interface Analytics {
   market: string;
@@ -201,6 +241,7 @@ export interface Analytics {
   last_volume: number;
   avg_volume_20: number | null;
   relative_volume: number | null;
+  patterns: PatternMatch[];
 }
 export interface WatchItem {
   code: string;

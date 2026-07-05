@@ -12,10 +12,10 @@ from __future__ import annotations
 import asyncio
 import sys
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from bulls.analytics import compute, compute_valuation
+from bulls.analytics import compute, compute_valuation, detect_patterns
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
     AnnualFinancial,
@@ -26,6 +26,7 @@ from bulls.core.models import (
     ShareholdingSnapshot,
     Symbol,
     TickerAnalytics,
+    TickerPattern,
 )
 
 _LOOKBACK = 300  # enough for the 200-day SMA and 12-1 month momentum (needs ~253 bars)
@@ -216,6 +217,7 @@ async def compute_all(market: str) -> dict[str, int]:
         cash_dividends = await _load_latest_cash_dividend(session, market)
 
     computed = 0
+    patterns_found = 0
     async with sm() as session:
         for code in codes:
             bars = list(
@@ -228,7 +230,8 @@ async def compute_all(market: str) -> dict[str, int]:
             )
             if not bars:
                 continue
-            result = compute(list(reversed(bars)))
+            ascending = list(reversed(bars))
+            result = compute(ascending)
             profile = profiles.get(code)
             row = {"market": market, "code": code, "as_of_date": result.as_of_date}
             row.update({f: getattr(result, f) for f in _FIELDS})
@@ -249,14 +252,52 @@ async def compute_all(market: str) -> dict[str, int]:
             stmt = stmt.on_conflict_do_update(index_elements=["market", "code"], set_=update_cols)
             await session.execute(stmt)
             computed += 1
+
+            # Chart patterns reuse the same bars fetched above — no extra DB read. A stock that no
+            # longer shows a qualifying pattern loses its row entirely (never a stale leftover).
+            matches = detect_patterns(ascending)
+            if matches:
+                m = matches[0]
+                pattern_row = {
+                    "market": market,
+                    "code": code,
+                    "as_of_date": result.as_of_date,
+                    "pattern_type": m.pattern_type,
+                    "status": m.status,
+                    "start_date": m.start_date,
+                    "end_date": m.end_date,
+                    "breakout_date": m.breakout_date,
+                    "strength_score": m.strength_score,
+                    "payload": m.model_dump(mode="json"),
+                }
+                pstmt = pg_insert(TickerPattern).values(pattern_row)
+                pupdate_cols = {
+                    c: getattr(pstmt.excluded, c)
+                    for c in pattern_row
+                    if c not in ("market", "code")
+                }
+                pstmt = pstmt.on_conflict_do_update(
+                    index_elements=["market", "code"], set_=pupdate_cols
+                )
+                await session.execute(pstmt)
+                patterns_found += 1
+            else:
+                await session.execute(
+                    delete(TickerPattern).where(
+                        TickerPattern.market == market, TickerPattern.code == code
+                    )
+                )
         await session.commit()
 
-    return {"symbols": len(codes), "computed": computed}
+    return {"symbols": len(codes), "computed": computed, "patterns": patterns_found}
 
 
 async def _run(market: str) -> None:
     counts = await compute_all(market)
-    print(f"[analytics] {market}: computed {counts['computed']}/{counts['symbols']} symbols")
+    print(
+        f"[analytics] {market}: computed {counts['computed']}/{counts['symbols']} symbols, "
+        f"{counts['patterns']} chart patterns"
+    )
 
 
 def main() -> None:

@@ -11,11 +11,18 @@ from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession, visible_codes
-from bulls.analytics import AnalyticsResult, MoodIndex, build_mood, compute
+from bulls.analytics import (
+    AnalyticsResult,
+    MoodIndex,
+    PatternMatch,
+    build_mood,
+    compute,
+    detect_patterns,
+)
 from bulls.core.config import get_settings
 from bulls.core.models import (
     Announcement,
@@ -379,8 +386,21 @@ async def get_bars(
     return out
 
 
+class AnalyticsWithPatterns(AnalyticsResult):
+    """AnalyticsResult + any currently-active chart pattern, computed live over the same bars —
+    cheap for a single symbol, unlike the Ideas board's market-wide scan (which reads the
+    precomputed ticker_patterns table instead; see screener.py::_chart_patterns).
+
+    evidence is always "framework": classic technical analysis, not proven to have an edge on
+    DSE (see bulls.analytics.patterns' module docstring)."""
+
+    patterns: list[PatternMatch] = Field(default_factory=list)
+
+
 @router.get("/symbols/{code}/analytics")
-async def get_analytics(code: str, tenant: CurrentTenant, session: DbSession) -> AnalyticsResult:
+async def get_analytics(
+    code: str, tenant: CurrentTenant, session: DbSession
+) -> AnalyticsWithPatterns:
     """Deterministic technical-analysis snapshot for a symbol (descriptive facts only).
 
     Pure computation over end-of-day bars — trend, momentum, levels, volume. No recommendation.
@@ -400,7 +420,8 @@ async def get_analytics(code: str, tenant: CurrentTenant, session: DbSession) ->
     if not rows:
         raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
     rows.reverse()  # engine expects oldest-first
-    return compute(rows)
+    result = compute(rows)
+    return AnalyticsWithPatterns(**result.model_dump(), patterns=detect_patterns(rows))
 
 
 async def _mood_inputs(session, market: str) -> dict[str, Any]:

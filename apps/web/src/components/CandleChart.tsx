@@ -6,8 +6,10 @@ import {
   type Time,
   createChart,
 } from "lightweight-charts";
-import { api, type Bar } from "../lib/api";
+import { Link } from "react-router-dom";
+import { api, type Bar, type PatternMatch } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { patternLabel, patternStatusLabel } from "../lib/patterns";
 
 const C = {
   up: "#2fbf71",
@@ -15,6 +17,7 @@ const C = {
   ema9: "#e3b341",
   ema20: "#5b9cf5",
   vwap: "#a78bfa",
+  pattern: "#e3b341",
   grid: "#161b22",
   axis: "#232b36",
   text: "#8b97a6",
@@ -62,6 +65,24 @@ function lineData(bars: Bar[], series: (number | null)[]) {
     .filter((p): p is { time: Time; value: number } => p.value != null);
 }
 
+// Names the currently-active chart pattern (if any) and links to its plain-language lesson.
+// Framework evidence, not backtested — see the lesson for why (a user asked for this after
+// noticing patterns like this get shown elsewhere without saying whether they've been proven).
+function PatternBadge({ pattern }: { pattern: PatternMatch }) {
+  const { lang } = useLang();
+  const tone = pattern.status === "confirmed_breakout_down" ? "text-down" : pattern.status === "confirmed_breakout_up" ? "text-up" : "text-accent";
+  return (
+    <Link
+      to={`/learn/patterns/${pattern.pattern_type}`}
+      className="flex items-center gap-1.5 mb-2 text-[11px] font-semibold bg-card border border-border rounded-full px-2.5 py-1 w-fit"
+    >
+      <span aria-hidden>📐</span>
+      {patternLabel(pattern.pattern_type, lang)}
+      <span className={`font-normal ${tone}`}>· {patternStatusLabel(pattern.status, lang)}</span>
+    </Link>
+  );
+}
+
 function Legend() {
   const { t } = useLang();
   const items: [string, string][] = [
@@ -91,6 +112,7 @@ export function CandleChart({ code }: { code: string }) {
   const barsRef = useRef<Bar[]>([]);
   const [empty, setEmpty] = useState(false);
   const [tf, setTf] = useState("3M");
+  const [pattern, setPattern] = useState<PatternMatch | null>(null);
 
   // Apply a timeframe by zooming the visible range (indicators stay computed on full history).
   const applyTf = (label: string) => {
@@ -149,6 +171,8 @@ export function CandleChart({ code }: { code: string }) {
     const ema9 = overlay(C.ema9);
     const ema20 = overlay(C.ema20);
     const vwap = overlay(C.vwap, true);
+    const patResistance = overlay(C.pattern);
+    const patSupport = overlay(C.pattern);
 
     let alive = true;
     Promise.all([api.bars(code, 300), api.analytics(code).catch(() => null)])
@@ -212,6 +236,34 @@ export function CandleChart({ code }: { code: string }) {
             text: "SL",
           });
         }
+        // The single strongest currently-active chart pattern (framework evidence — see the
+        // patterns lesson), drawn as trendlines/neckline on top of everything else above.
+        const active = analytics?.patterns?.[0] ?? null;
+        setPattern(active);
+        if (active?.resistance_line) {
+          patResistance.setData([
+            { time: active.resistance_line.start.date as Time, value: active.resistance_line.start.price },
+            { time: active.resistance_line.end.date as Time, value: active.resistance_line.end.price },
+          ]);
+        }
+        if (active?.support_line) {
+          patSupport.setData([
+            { time: active.support_line.start.date as Time, value: active.support_line.start.price },
+            { time: active.support_line.end.date as Time, value: active.support_line.end.price },
+          ]);
+        }
+        if (active?.key_levels?.length) {
+          for (const level of active.key_levels) {
+            candles.createPriceLine({
+              price: level,
+              color: C.pattern,
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: "N",
+            });
+          }
+        }
         if (markers.length) candles.setMarkers(markers.sort((a, b) => (a.time < b.time ? -1 : 1)));
 
         applyTf("3M");
@@ -243,6 +295,7 @@ export function CandleChart({ code }: { code: string }) {
       alive = false;
       chart.remove();
       chartRef.current = null;
+      setPattern(null);
     };
   }, [code]);
 
@@ -252,6 +305,7 @@ export function CandleChart({ code }: { code: string }) {
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-3">
+      {pattern && <PatternBadge pattern={pattern} />}
       <div className="flex justify-end gap-1">
         {TIMEFRAMES.map((t) => (
           <button

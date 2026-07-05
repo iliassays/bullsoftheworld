@@ -493,6 +493,19 @@ const STRINGS: Record<string, Entry> = {
     bn: "তথ্যমূলক স্ক্রিন — সুপারিশ নয়।",
   },
   backToMarkets: { en: "← Markets", bn: "← মার্কেট" },
+  backToPatterns: { en: "← Chart patterns", bn: "← চার্ট প্যাটার্ন" },
+  "patterns.title": { en: "Chart Patterns", bn: "চার্ট প্যাটার্ন" },
+  "patterns.intro": {
+    en: "Classic technical shapes built from confirmed swing highs/lows. Tap a pattern to see what it means, what textbook technical analysis says usually happens next, and which DSE stocks are showing it right now.",
+    bn: "নিশ্চিত সুইং হাই/লো থেকে তৈরি ক্লাসিক টেকনিক্যাল আকার। কোনো প্যাটার্নে ট্যাপ করে দেখুন এর মানে কী, প্রথাগত টেকনিক্যাল অ্যানালাইসিস অনুযায়ী সাধারণত এরপর কী হয়, আর এখন কোন DSE শেয়ার এটি দেখাচ্ছে।",
+  },
+  "patterns.showingCount": {
+    en: "{n} DSE stocks showing this now",
+    bn: "এখন {n}টি DSE শেয়ার এটি দেখাচ্ছে",
+  },
+  "patterns.showingNone": { en: "No DSE stocks showing this right now", bn: "এখন কোনো DSE শেয়ার এটি দেখাচ্ছে না" },
+  "patterns.showingNow": { en: "Showing this now", bn: "এখন যা দেখাচ্ছে" },
+  "patterns.unknown": { en: "Unknown pattern.", bn: "অজানা প্যাটার্ন।" },
   "explore.moverReversal": {
     en: "1-month moves often reverse. For a lasting trend, see “Strongest trend”.",
     bn: "১-মাসের মুভ প্রায়ই উল্টে যায়। টেকসই প্রবণতার জন্য “সবচেয়ে শক্তিশালী প্রবণতা” দেখুন।",
@@ -509,6 +522,7 @@ const STRINGS: Record<string, Entry> = {
   "lens.smart": { en: "Smart money", bn: "স্মার্ট মানি" },
   "lens.dividend": { en: "Dividend", bn: "লভ্যাংশ" },
   "lens.steady": { en: "Steady", bn: "স্থির" },
+  "lens.patterns": { en: "Chart patterns", bn: "চার্ট প্যাটার্ন" },
   "lens.momentum.blurb": {
     en: "Stocks moving and trending — for traders who want strength.",
     bn: "যেসব শেয়ার নড়ছে ও প্রবণতায় আছে — শক্তি খোঁজা ট্রেডারদের জন্য।",
@@ -529,6 +543,10 @@ const STRINGS: Record<string, Entry> = {
     en: "Low-swing, quality names — for a calmer ride.",
     bn: "কম ওঠানামা, মানসম্পন্ন — শান্ত যাত্রার জন্য।",
   },
+  "lens.patterns.blurb": {
+    en: "Classic chart shapes currently forming — textbook technical analysis, not proven on DSE.",
+    bn: "এখন গঠিত হচ্ছে এমন ক্লাসিক চার্ট আকার — প্রথাগত টেকনিক্যাল অ্যানালাইসিস, DSE-তে প্রমাণিত নয়।",
+  },
   // Group labels
   "group.movers": { en: "Movers", bn: "মুভার" },
   "group.community": { en: "Community", bn: "কমিউনিটি" },
@@ -548,6 +566,7 @@ const STRINGS: Record<string, Entry> = {
   "mh.trend": { en: "Trend", bn: "প্রবণতা" },
   "mh.vsDsex": { en: "vs DSEX", bn: "DSEX-এর তুলনায়" },
   "mh.volatility": { en: "Volatility", bn: "অস্থিরতা" },
+  "mh.strength": { en: "Strength", bn: "শক্তি" },
   "mh.change": { en: "Change", bn: "পরিবর্তন" },
   // Metric chip words
   "mc.strongInflow": { en: "Strong inflow", bn: "জোরালো প্রবাহ" },

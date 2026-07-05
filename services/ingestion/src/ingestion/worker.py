@@ -89,8 +89,13 @@ async def refresh_analytics(ctx) -> str:
     if not is_trading_day(today):
         return "skipped: non-trading day"
     counts = await compute_all(MARKET)
-    log.info("analytics refresh: %s/%s symbols", counts["computed"], counts["symbols"])
-    return f"analytics={counts['computed']}"
+    log.info(
+        "analytics refresh: %s/%s symbols, %s chart patterns",
+        counts["computed"],
+        counts["symbols"],
+        counts["patterns"],
+    )
+    return f"analytics={counts['computed']} patterns={counts['patterns']}"
 
 
 async def snapshot_portfolios(ctx) -> str:

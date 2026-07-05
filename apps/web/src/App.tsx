@@ -6,6 +6,8 @@ import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AuthFlows";
 import { DeskProfile } from "./pages/DeskProfile";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
+import { PatternDetail } from "./pages/PatternDetail";
+import { PatternLibrary } from "./pages/PatternLibrary";
 import { Portfolio } from "./pages/Portfolio";
 import { Scanner } from "./pages/Scanner";
 import { Profile } from "./pages/Profile";
@@ -22,6 +24,8 @@ export function App() {
         <Route index element={<Feed />} />
         <Route path="markets" element={<Markets />} />
         <Route path="markets/:key" element={<ScreenExplore />} />
+        <Route path="learn/patterns" element={<PatternLibrary />} />
+        <Route path="learn/patterns/:type" element={<PatternDetail />} />
         <Route path="ideas" element={<Scanner />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="alerts" element={<Alerts />} />

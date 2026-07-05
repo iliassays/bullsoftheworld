@@ -15,8 +15,8 @@ const EVIDENCE_EXPLAIN: Record<string, Record<Lang, string>> = {
     bn: "এই প্যাটার্নটি আমরা DSE-র ২ বছরের আসল দামের ইতিহাসে পরীক্ষা করেছি — সেখানে সত্যিকারের এজ দেখা গেছে। অতীতের ফল কখনোই ভবিষ্যতের নিশ্চয়তা নয়।",
   },
   framework: {
-    en: "A classic investing method (Buffett/Graham style). Sensible thinking — but we have not separately proven it on DSE data.",
-    bn: "ক্লাসিক বিনিয়োগ পদ্ধতি (Buffett/Graham ধাঁচের)। যুক্তিসঙ্গত চিন্তা — তবে DSE-র ডেটায় আলাদাভাবে প্রমাণিত নয়।",
+    en: "A classic, widely-used method (e.g. Buffett/Graham-style value investing, or textbook chart-pattern reading). Sensible thinking — but we have not separately proven it on DSE data.",
+    bn: "একটি ক্লাসিক, ব্যাপক-ব্যবহৃত পদ্ধতি (যেমন Buffett/Graham ধাঁচের ভ্যালু বিনিয়োগ, বা প্রথাগত চার্ট-প্যাটার্ন পাঠ)। যুক্তিসঙ্গত চিন্তা — তবে DSE-র ডেটায় আলাদাভাবে প্রমাণিত নয়।",
   },
   utility: {
     en: "A useful information list — it makes no claim of predicting anything.",
