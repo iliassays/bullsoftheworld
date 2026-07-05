@@ -45,7 +45,7 @@ export function MarketPulse() {
   const breadthPct = (pulse.advancers / totalBreadth) * 100;
   const sectorSub =
     pulse.weak_sector && pulse.weak_sector_change != null
-      ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)}`
+      ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)} ${t("pct.1d")}`
       : undefined;
 
   return (
@@ -66,7 +66,11 @@ export function MarketPulse() {
         <Cell
           label="DSEX"
           value={pulse.dsex == null ? "—" : pulse.dsex.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          sub={pulse.dsex_change_pct == null ? undefined : signed(pulse.dsex_change_pct)}
+          sub={
+            pulse.dsex_change_pct == null
+              ? undefined
+              : `${signed(pulse.dsex_change_pct)} ${t("pct.1d")}`
+          }
         />
         <Cell
           label={t("marketPulse.turnover")}
@@ -92,7 +96,7 @@ export function MarketPulse() {
           label={t("marketPulse.sectors")}
           value={
             pulse.top_sector && pulse.top_sector_change != null
-              ? `${pulse.top_sector} ${signed(pulse.top_sector_change)}`
+              ? `${pulse.top_sector} ${signed(pulse.top_sector_change)} ${t("pct.1d")}`
               : "—"
           }
           sub={sectorSub}
@@ -101,7 +105,7 @@ export function MarketPulse() {
 
       <p className="mt-3 text-[10px] text-muted">
         {t("marketPulse.footer")}{" "}
-        {pulse.dsex_change_pct != null && <Pct value={pulse.dsex_change_pct} />}
+        {pulse.dsex_change_pct != null && <Pct value={pulse.dsex_change_pct} period="1d" />}
       </p>
     </div>
   );

@@ -696,6 +696,9 @@ const STRINGS: Record<string, Entry> = {
     bn: "রিপ্লাই করতে লগ ইন করুন →",
   },
   "post.reply": { en: "reply", bn: "রিপ্লাই" },
+  // Disambiguates what a % move measures — see the Pct component for why this matters.
+  "pct.1d": { en: "1D", bn: "১দিন" },
+  "pct.sinceBuy": { en: "since buy", bn: "কেনার পর থেকে" },
   "post.replies": { en: "replies", bn: "রিপ্লাই" },
   // Today's standouts
   "standouts.title": { en: "Today's standouts", bn: "আজকের আলোচিত" },

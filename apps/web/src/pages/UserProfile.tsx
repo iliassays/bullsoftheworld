@@ -116,7 +116,7 @@ export function UserProfile() {
                   </div>
                   {h.pnl_pct != null && (
                     <div className="text-xs font-semibold">
-                      <Pct value={h.pnl_pct} />
+                      <Pct value={h.pnl_pct} period="sinceBuy" />
                     </div>
                   )}
                 </div>

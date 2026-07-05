@@ -1,12 +1,27 @@
 import type { ReactNode } from "react";
+import { useLang } from "../lib/i18n";
 
 export const taka = (n: number) => `৳${n.toLocaleString("en-US", { minimumFractionDigits: 1 })}`;
 
-export function Pct({ value }: { value: number }) {
+// `period` disambiguates what the % actually measures — a bare "▲3.32%" next to a stock is read
+// differently depending on context (today's move? total gain since you bought it?), and a user
+// asked for this explicitly after seeing an unlabeled % beside a valuation claim on a screener
+// board. "1d" = intraday/EOD change since yesterday's close; "sinceBuy" = a portfolio holding's
+// unrealized gain since average cost (NOT a daily figure — showing it bare invites exactly that
+// misreading). Omit `period` only where the number isn't a price/holding move at all (e.g. a
+// P/E-vs-sector ratio already labeled elsewhere).
+export function Pct({ value, period }: { value: number; period?: "1d" | "sinceBuy" }) {
+  const { t } = useLang();
   const up = value >= 0;
   return (
     <span className={`tnum ${up ? "text-up" : "text-down"}`}>
       {up ? "▲" : "▼"} {Math.abs(value).toFixed(2)}%
+      {period && (
+        <span className="text-muted font-normal text-[0.85em]">
+          {" "}
+          {t(period === "1d" ? "pct.1d" : "pct.sinceBuy")}
+        </span>
+      )}
     </span>
   );
 }

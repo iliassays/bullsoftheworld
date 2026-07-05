@@ -31,7 +31,7 @@ export function SectorHeat() {
               <div className="text-[12px] font-semibold truncate">{s.sector}</div>
               <div className={`text-sm font-bold tnum ${up ? "text-up" : "text-down"}`}>
                 {up ? "+" : ""}
-                {s.avg_change.toFixed(2)}%
+                {s.avg_change.toFixed(2)}% <span className="text-muted font-normal">{t("pct.1d")}</span>
               </div>
               <div className="mt-1.5 flex h-1 rounded-full overflow-hidden bg-border">
                 <div

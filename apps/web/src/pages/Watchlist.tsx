@@ -44,7 +44,7 @@ export function Watchlist() {
             <div className="ml-auto text-right">
               <div className="text-sm tnum">{taka(quote.ltp)}</div>
               <div className="text-xs font-semibold">
-                <Pct value={quote.change_pct} />
+                <Pct value={quote.change_pct} period="1d" />
               </div>
             </div>
           )}

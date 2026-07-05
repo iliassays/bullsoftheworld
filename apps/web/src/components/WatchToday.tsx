@@ -79,7 +79,7 @@ export function WatchToday() {
                   </span>
                 )}
                 <span className="ml-auto text-xs font-semibold shrink-0">
-                  <Pct value={s.change_pct} />
+                  <Pct value={s.change_pct} period="1d" />
                 </span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
