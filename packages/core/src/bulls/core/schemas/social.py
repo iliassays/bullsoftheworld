@@ -58,6 +58,7 @@ class UserOut(BaseModel):
     email_verified: bool = False
     phone: str | None = None
     phone_verified: bool = False
+    portfolio_public: bool = False
 
 
 class ContactUpdateIn(BaseModel):

@@ -27,7 +27,10 @@ const PERIOD_LABEL: Record<PortfolioHistoryPeriod, string> = {
 // holding's quantity/avg_cost can change at any time, so projecting it backward would show a
 // fictional "what if you always held this" line. History starts the day tracking began — a new
 // account (or a fresh deploy of this feature) has nothing to plot yet, which is the honest state.
-export function PortfolioGrowthChart() {
+//
+// Pass `handle` to show another member's PUBLIC growth chart (their /users/{handle}/portfolio/
+// history endpoint, already privacy-gated server-side) — omit it for the signed-in user's own.
+export function PortfolioGrowthChart({ handle }: { handle?: string } = {}) {
   const { t } = useLang();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [period, setPeriod] = useState<PortfolioHistoryPeriod>("3m");
@@ -35,8 +38,8 @@ export function PortfolioGrowthChart() {
 
   useEffect(() => {
     let alive = true;
-    api
-      .portfolioHistory(period)
+    setPoints(null);
+    (handle ? api.userPortfolioHistory(handle, period) : api.portfolioHistory(period))
       .then((rows) => {
         if (!alive) return;
         setPoints(
@@ -49,7 +52,7 @@ export function PortfolioGrowthChart() {
     return () => {
       alive = false;
     };
-  }, [period]);
+  }, [period, handle]);
 
   useEffect(() => {
     const el = wrapRef.current?.querySelector<HTMLDivElement>("[data-growth-chart]");

@@ -121,6 +121,57 @@ function AccountSection({ user }: { user: User }) {
   );
 }
 
+// Off by default — a real holdings list is sensitive. Only the account owner can turn this on
+// for themselves (PATCH /portfolio/visibility), and turning it off re-locks /u/{handle}
+// immediately since the backend re-checks the flag on every request, not just at toggle time.
+function PortfolioPrivacySection({ user }: { user: User }) {
+  const { t } = useLang();
+  const { refresh } = useAuth();
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      await api.portfolioSetVisibility(!user.portfolio_public);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{t("profile.publicPortfolio")}</div>
+          <p className="text-xs text-muted mt-0.5 leading-relaxed">
+            {t("profile.publicPortfolioHint")}
+          </p>
+        </div>
+        <button
+          onClick={toggle}
+          disabled={busy}
+          aria-pressed={user.portfolio_public}
+          className={`shrink-0 w-12 h-7 rounded-full relative transition-colors disabled:opacity-50 ${
+            user.portfolio_public ? "bg-accent" : "bg-card border border-border"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-6 h-6 rounded-full bg-bg transition-transform ${
+              user.portfolio_public ? "translate-x-[22px]" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+      {user.portfolio_public && (
+        <Link to={`/u/${user.handle}`} className="inline-block mt-3 text-xs text-accent">
+          {t("profile.viewPublicProfile")} →
+        </Link>
+      )}
+    </div>
+  );
+}
+
 // Bulls of Dhaka's Facebook page (numeric id works even without a vanity URL).
 const FB_URL = "https://www.facebook.com/1214682241723822";
 
@@ -181,6 +232,7 @@ export function Profile() {
           </div>
         </div>
         <AccountSection user={user} />
+        <PortfolioPrivacySection user={user} />
         <Link
           to="/watchlist"
           className="bg-surface border border-border rounded-2xl py-3 text-center text-sm font-semibold hover:border-accent hover:text-accent"

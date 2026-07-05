@@ -11,6 +11,7 @@ import { Scanner } from "./pages/Scanner";
 import { Profile } from "./pages/Profile";
 import { ScreenExplore } from "./pages/ScreenExplore";
 import { SymbolPage } from "./pages/Symbol";
+import { UserProfile } from "./pages/UserProfile";
 import { Watchlist } from "./pages/Watchlist";
 import { Welcome } from "./pages/Welcome";
 
@@ -28,6 +29,7 @@ export function App() {
         <Route path="bulls" element={<Navigate to="/?feed=desks" replace />} />
         <Route path="scanner" element={<Navigate to="/ideas" replace />} />
         <Route path="desk/:handle" element={<DeskProfile />} />
+        <Route path="u/:handle" element={<UserProfile />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
         <Route path="me" element={<Profile />} />

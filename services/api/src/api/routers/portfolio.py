@@ -306,3 +306,18 @@ async def delete_holding(
     h = await session.get(PortfolioHolding, (user.id, tenant.market, code.upper()))
     if h is not None:
         await session.delete(h)
+
+
+class VisibilityIn(BaseModel):
+    public: bool
+
+
+@router.patch("/visibility")
+async def set_portfolio_visibility(
+    body: VisibilityIn, user: CurrentUser, session: DbSession
+) -> dict[str, bool]:
+    """Opt in/out of showing holdings on the public profile (/u/{handle}). Off by default —
+    this is the only endpoint that can turn it on, and only for the signed-in user's own account."""
+    user.portfolio_public = body.public
+    await session.flush()
+    return {"public": user.portfolio_public}

@@ -42,6 +42,7 @@ from api.routers import (
     scorecard,
     screener,
     trending,
+    users,
     views,
     watchlist,
 )
@@ -126,5 +127,6 @@ app.include_router(scanner.router)
 app.include_router(scorecard.router)
 app.include_router(screener.router)
 app.include_router(trending.router)
+app.include_router(users.router)
 app.include_router(views.router)
 app.include_router(watchlist.router)

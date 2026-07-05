@@ -139,13 +139,12 @@ export function PostCard({
         />
         <div className="leading-tight">
           <b className="text-sm">
-            {isNote ? (
-              <Link to={`/desk/${post.author.handle}`} className="hover:underline">
-                {post.author.name}
-              </Link>
-            ) : (
-              post.author.name
-            )}
+            <Link
+              to={`/${isNote ? "desk" : "u"}/${post.author.handle}`}
+              className="hover:underline"
+            >
+              {post.author.name}
+            </Link>
             {isNote && (
               <>
                 {" "}

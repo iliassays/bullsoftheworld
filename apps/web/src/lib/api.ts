@@ -540,6 +540,33 @@ export interface Desk {
   following: boolean;
   verified: boolean;
 }
+export interface UserProfile {
+  handle: string;
+  name: string;
+  joined: string;
+  posts: number;
+  portfolio_public: boolean;
+}
+export interface PublicHolding {
+  code: string;
+  name: string | null;
+  quantity: number;
+  avg_cost: number;
+  ltp: number | null;
+  value: number | null;
+  day_change_pct: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+}
+export interface PublicPortfolio {
+  holdings: PublicHolding[];
+  total_value: number | null;
+  total_cost: number;
+  day_pnl: number | null;
+  day_pnl_pct: number | null;
+  total_pnl: number | null;
+  total_pnl_pct: number | null;
+}
 export type ReactionKind = "agree" | "disagree";
 export interface Post {
   id: number;
@@ -569,6 +596,7 @@ export interface User {
   email_verified: boolean;
   phone: string | null;
   phone_verified: boolean;
+  portfolio_public: boolean;
 }
 
 export const api = {
@@ -700,6 +728,15 @@ export const api = {
   },
   noteBeats: () => request<NoteBeat[]>("/posts/note-beats"),
   desk: (handle: string) => request<Desk>(`/desks/${handle}`),
+  userProfile: (handle: string) => request<UserProfile>(`/users/${handle}`),
+  userPortfolio: (handle: string) => request<PublicPortfolio>(`/users/${handle}/portfolio`),
+  userPortfolioHistory: (handle: string, period: PortfolioHistoryPeriod) =>
+    request<PortfolioHistoryPoint[]>(`/users/${handle}/portfolio/history?period=${period}`),
+  portfolioSetVisibility: (isPublic: boolean) =>
+    request<{ public: boolean }>("/portfolio/visibility", {
+      method: "PATCH",
+      body: JSON.stringify({ public: isPublic }),
+    }),
   followDesk: (handle: string) =>
     request<{ status: string }>(`/desks/${handle}/follow`, { method: "POST" }),
   unfollowDesk: (handle: string) =>

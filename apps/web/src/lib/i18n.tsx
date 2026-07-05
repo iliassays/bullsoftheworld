@@ -687,6 +687,8 @@ const STRINGS: Record<string, Entry> = {
   "desk.postsHeading": { en: "Posts", bn: "পোস্ট" },
   "desk.noPosts": { en: "No posts yet.", bn: "এখনো কোনো পোস্ট নেই।" },
   "desk.notFound": { en: "Desk not found.", bn: "ডেস্ক পাওয়া যায়নি।" },
+  "userProfile.notFound": { en: "Member not found.", bn: "সদস্য পাওয়া যায়নি।" },
+  "userProfile.portfolioHeading": { en: "Portfolio (public)", bn: "পোর্টফোলিও (প্রকাশ্য)" },
   "post.agreeBtn": { en: "Agree", bn: "একমত" },
   "post.disagreeBtn": { en: "Disagree", bn: "দ্বিমত" },
   "post.loginReply": {
@@ -878,6 +880,12 @@ const STRINGS: Record<string, Entry> = {
   },
   "profile.logout": { en: "Log out", bn: "লগ আউট" },
   "profile.watchlist": { en: "☆ Your watchlist", bn: "☆ আপনার ওয়াচলিস্ট" },
+  "profile.publicPortfolio": { en: "Public portfolio", bn: "প্রকাশ্য পোর্টফোলিও" },
+  "profile.publicPortfolioHint": {
+    en: "Off by default. If you turn this on, anyone can see your holdings and growth chart on your public profile.",
+    bn: "ডিফল্টে বন্ধ। চালু করলে যে কেউ আপনার প্রোফাইলে হোল্ডিং ও প্রবৃদ্ধি চার্ট দেখতে পাবে।",
+  },
+  "profile.viewPublicProfile": { en: "View your public profile", bn: "আপনার প্রকাশ্য প্রোফাইল দেখুন" },
   "profile.error": { en: "Something went wrong", bn: "কিছু ভুল হয়েছে" },
   "profile.welcomeBack": { en: "Welcome back", bn: "আবার স্বাগতম" },
   "profile.join": {

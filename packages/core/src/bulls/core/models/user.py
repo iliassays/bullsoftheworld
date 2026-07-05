@@ -31,6 +31,9 @@ class User(Base):
     # Access role. 'user' = normal member (default for every signup); 'admin' = ops/moderation
     # (can delete any post or comment). Independent of is_official (the verified-desk badge).
     role: Mapped[str] = mapped_column(String(16), default="user", server_default="user", index=True)
+    # Opt-in, private by default — a real holdings list is sensitive, so no one's portfolio is
+    # visible on their public profile unless they explicitly turn this on themselves.
+    portfolio_public: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
