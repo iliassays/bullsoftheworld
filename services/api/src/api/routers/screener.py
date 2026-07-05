@@ -304,6 +304,7 @@ _SCREEN_EVIDENCE: dict[str, str] = {
     "momentum_12_1": "utility",
     "near_52w_high": "utility",
     "institutional_buying": "utility",
+    "institutional_selling": "utility",
     "foreign_buying": "utility",
     "sponsor_selling": "utility",
     "dividend_yield": "utility",
@@ -804,6 +805,9 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
             item.catalyst
             or screen.key
             in {
+                # institutional_selling/sponsor_selling are deliberately NOT here — a green "Clean
+                # read" chip is the wrong tone on a distribution/insider-selling board regardless
+                # of how liquid the stock is.
                 "institutional_buying",
                 "foreign_buying",
                 "quality_roe",
@@ -950,6 +954,10 @@ _OWN = {
     "foreign": (T.foreign_delta, "foreign_pct", "Foreign", "Foreign investors"),
     "institute": (T.institute_delta, "institute", "Institutions", "Local institutions"),
 }
+# Distinct title for the sell direction so it reads as its own board, not a mislabeled "Institutions"
+# — a user pointed out that Sponsor Selling being its own headline while institutional distribution
+# had no equivalent made it look like only insiders' selling mattered (2026-07-05).
+_OWN_SELL_TITLE = {"foreign": "Foreign Selling", "institute": "Institutional Selling"}
 # Only show rises big enough to read as real buying — below this they'd display as "+0.0 pp"
 # (foreign stakes on DSE are tiny, so this keeps the screen honest rather than full of noise).
 _MIN_STAKE_DELTA = 0.05
@@ -1103,9 +1111,10 @@ async def _ownership(
             )
         )
     verb = "trimmed" if selling else "raised"
+    kind_name = "foreign" if kind == "foreign" else "institutional"
     return ScreenOut(
-        key=f"{'foreign' if kind == 'foreign' else 'institutional'}_buying",
-        title=title,
+        key=f"{kind_name}_{'selling' if selling else 'buying'}",
+        title=_OWN_SELL_TITLE[kind] if selling else title,
         description=(
             f"{who} {verb} their stake since the prior disclosure (the 'since' date on each row). "
             "Streaks are marked — persistence across disclosures matters more than one print. "
@@ -1254,6 +1263,9 @@ async def build_screen(
         return await _ownership(session, market, kind="foreign", direction=direction, limit=limit)
     if key == "institutional_buying":
         return await _ownership(session, market, kind="institute", direction=direction, limit=limit)
+    if key == "institutional_selling":
+        # Its own headline board, not a toggle state — always distribution, mirroring sponsor_selling.
+        return await _ownership(session, market, kind="institute", direction="sell", limit=limit)
     if key == "sponsor_selling":
         return await _sponsor_selling(session, market, limit=limit)
     if key == "most_watched":
@@ -1288,7 +1300,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
     # changes — the key folds in data freshness, but only a version bump invalidates on code
     # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
-    key = f"screens:v5:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v6:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1316,6 +1328,7 @@ async def _build_screens(
     out.append(await _beating_market(session, tenant.market))
     out.append(await _ownership(session, tenant.market, kind="foreign"))
     out.append(await _ownership(session, tenant.market, kind="institute"))
+    out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
     out.append(await _sponsor_selling(session, tenant.market))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
     out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))

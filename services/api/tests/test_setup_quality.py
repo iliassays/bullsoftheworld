@@ -51,6 +51,15 @@ def test_sponsor_selling_never_reads_clean_even_with_deep_liquidity():
     assert _setup_quality(screen, item) != "Clean read"
 
 
+def test_institutional_selling_never_reads_clean_even_with_deep_liquidity():
+    """Same reasoning as sponsor_selling: institutional distribution is a cautionary board, so
+    it should never get sponsor_selling's exemption — added alongside sponsor_selling
+    2026-07-05 after a user asked why only sponsors got a 'selling' board."""
+    screen = _screen("institutional_selling")
+    item = _item(category="A", adtv_mn=100.0, note=None)
+    assert _setup_quality(screen, item) != "Clean read"
+
+
 def test_screen_without_catalyst_or_whitelist_membership_is_mixed():
     screen = _screen("some_screen_not_in_the_whitelist")
     item = _item(category="A", adtv_mn=100.0, note=None)

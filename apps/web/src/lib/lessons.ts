@@ -75,11 +75,11 @@ export const LESSONS: Record<string, Lesson> = {
     example: "A blue-chip trading 4× its normal volume with ৳40cr turnover is genuinely 'in play'. A thin penny stock spiking is more likely a pump — which is exactly what the liquidity filter removes.",
   },
   smartmoney: {
-    title: "Institutions & foreign buying",
-    what: "Whether institutions and foreign investors raised their stake at the last monthly disclosure.",
-    use: "Retail often treats 'smart money' accumulation as a vote of confidence in a name.",
-    watch: "Disclosures are monthly and backward-looking — it's history, not a live signal, and big players can be wrong too.",
-    example: "Institutions adding 5 pp over a month suggests growing conviction — but the data is already a few weeks old.",
+    title: "Institutions & foreign ownership",
+    what: "Whether institutions and foreign investors raised OR reduced their stake at the last monthly disclosure — accumulation and distribution are two separate boards.",
+    use: "Retail often treats 'smart money' accumulation as a vote of confidence, and distribution as a caution flag — in a name.",
+    watch: "Disclosures are monthly and backward-looking — it's history, not a live signal, big players can be wrong too, and funds sell for many routine reasons besides a change of view.",
+    example: "Institutions adding 5 pp over a month suggests growing conviction; trimming 5 pp suggests the opposite — but either way the data is already a few weeks old.",
   },
 };
 
@@ -149,11 +149,11 @@ export const LESSONS_BN: Record<string, Lesson> = {
     example: "একটি ব্লু-চিপ নিজের স্বাভাবিকের ৪× ভলিউম ও ৳৪০কোটি টার্নওভারে সত্যিকারের 'সক্রিয়'। একটি পাতলা পেনি স্টকের স্পাইক বরং পাম্প — যা তারল্য ফিল্টার বাদ দেয়।",
   },
   smartmoney: {
-    title: "প্রতিষ্ঠান ও বিদেশি ক্রয়",
-    what: "শেষ মাসিক প্রকাশে প্রতিষ্ঠান ও বিদেশি বিনিয়োগকারীরা তাদের অংশ বাড়িয়েছে কিনা।",
-    use: "রিটেইল প্রায়ই 'স্মার্ট মানি' সঞ্চয়কে নামটির প্রতি আস্থার ভোট হিসেবে দেখে।",
-    watch: "প্রকাশ মাসিক ও পেছনমুখী — এটি ইতিহাস, লাইভ সংকেত নয়, এবং বড় খেলোয়াড়রাও ভুল হতে পারে।",
-    example: "এক মাসে প্রতিষ্ঠান ৫ pp যোগ করা ক্রমবর্ধমান আস্থার ইঙ্গিত — তবে ডেটা ইতিমধ্যে কয়েক সপ্তাহ পুরনো।",
+    title: "প্রতিষ্ঠান ও বিদেশি মালিকানা",
+    what: "শেষ মাসিক প্রকাশে প্রতিষ্ঠান ও বিদেশি বিনিয়োগকারীরা অংশ বাড়িয়েছে নাকি কমিয়েছে — সঞ্চয় ও বিক্রি আলাদা দুটি বোর্ড।",
+    use: "রিটেইল প্রায়ই 'স্মার্ট মানি' সঞ্চয়কে আস্থার ভোট, আর বিক্রিকে সতর্কতার সংকেত হিসেবে দেখে।",
+    watch: "প্রকাশ মাসিক ও পেছনমুখী — এটি ইতিহাস, লাইভ সংকেত নয়, বড় খেলোয়াড়রাও ভুল হতে পারে, আর ফান্ড অনেক সময় সাধারণ কারণেও (দৃষ্টিভঙ্গি বদল ছাড়াই) বিক্রি করে।",
+    example: "এক মাসে প্রতিষ্ঠান ৫ pp যোগ করা ক্রমবর্ধমান আস্থার ইঙ্গিত; ৫ pp কমানো বিপরীত ইঙ্গিত — তবে দুই ক্ষেত্রেই ডেটা ইতিমধ্যে কয়েক সপ্তাহ পুরনো।",
   },
 };
 
@@ -178,6 +178,7 @@ export const SCREEN_LESSON: Record<string, string> = {
   most_active: "volume",
   foreign_buying: "smartmoney",
   institutional_buying: "smartmoney",
+  institutional_selling: "smartmoney",
 };
 
 // Bangla screen titles + descriptions (the backend serves English). Keyed by screen key; a missing
@@ -208,6 +209,7 @@ export const SCREEN_BN: Record<string, { t: string; d: string }> = {
   dividend_yield: { t: "সর্বোচ্চ নগদ লভ্যাংশ", d: "সর্বশেষ ঘোষিত নগদ লভ্যাংশ ÷ আজকের দাম (অতীত, পূর্বাভাস নয়)" },
   foreign_buying: { t: "বিদেশি", d: "বিদেশি বিনিয়োগকারীরা শেষ প্রকাশে অংশ পরিবর্তন করেছে" },
   institutional_buying: { t: "প্রতিষ্ঠান", d: "প্রতিষ্ঠান শেষ প্রকাশে অংশ পরিবর্তন করেছে" },
+  institutional_selling: { t: "প্রাতিষ্ঠানিক বিক্রি", d: "প্রতিষ্ঠান শেষ প্রকাশে অংশ কমিয়েছে" },
   most_watched: { t: "সর্বাধিক ওয়াচড", d: "যাদের সবচেয়ে বেশি ওয়াচ করা হচ্ছে" },
   most_discussed: { t: "সর্বাধিক আলোচিত", d: "যাদের নিয়ে সবচেয়ে বেশি আলোচনা" },
   attention_rising: { t: "আলোচনা বাড়ছে", d: "স্বাভাবিকের চেয়ে অনেক বেশি আলোচনা" },

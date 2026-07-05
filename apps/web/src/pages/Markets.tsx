@@ -56,9 +56,11 @@ export const SCREEN_HELP: Record<string, string> = {
   quiet_accumulation:
     "Money is flowing in (positive Chaikin Money Flow) AND volume is confirming (On-Balance Volume trending up — volume leading price) while the price is still flat, within ~10% of its 50-day average. This 'buying into a quiet base' is the classic accumulation setup smart money looks for before a move. The flat price line next to a strong-inflow tag is the tell. A divergence, not a promise — bases can also just stay flat. Not advice.",
   foreign_buying:
-    "How foreign investors changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ they went from owning 10% to 15%). The line is the share price over that window; the dots are the stake at each disclosure (hover for figures). The 'since' date is the comparison point — disclosures come a few times a year, not daily. History, not a forecast.",
+    "How foreign investors increased their ownership since the prior disclosure. pp = percentage points (+5 pp ≈ they went from owning 10% to 15%). The line is the share price over that window; the dots are the stake at each disclosure (hover for figures). The 'since' date is the comparison point — disclosures come a few times a year, not daily. History, not a forecast.",
   institutional_buying:
-    "How local institutions (mutual funds, asset managers) changed their ownership since the prior disclosure. Use the Buying / Selling chip to flip between accumulation and distribution. pp = percentage points (+5 pp ≈ stake up 5 of the company's points). The line is the share price over that window; the dots are the stake at each disclosure. History, not a forecast.",
+    "How local institutions (mutual funds, asset managers) increased their ownership since the prior disclosure. See 'Institutional Selling' for the reverse — the same category can move both ways at once for different holders. pp = percentage points (+5 pp ≈ stake up 5 of the company's points). The line is the share price over that window; the dots are the stake at each disclosure. History, not a forecast.",
+  institutional_selling:
+    "How local institutions (mutual funds, asset managers) reduced their ownership since the prior disclosure. A different, separately-disclosed group from sponsors/directors below — funds trim for many routine reasons (rebalancing, redemptions), not just a loss of conviction. pp = percentage points. The line is the share price over that window; the dots are the stake at each disclosure. History, not a forecast.",
   sponsor_selling:
     "Sponsors/directors — the company's own insiders — reduced their stake since the prior disclosure. pp = percentage points of the company they let go. Insiders selling their own company is a disclosed fact worth reading into (why? to whom?), and a streak across disclosures matters more than one print. Not a sell signal by itself.",
   most_active:
@@ -107,9 +109,11 @@ const SCREEN_HELP_BN: Record<string, string> = {
   quiet_accumulation:
     "অর্থ ঢুকছে (ধনাত্মক CMF) এবং ভলিউমও নিশ্চিত করছে (OBV উপরে উঠছে — ভলিউম দামের আগে) অথচ দাম এখনো স্থির, ৫০-দিনের গড়ের ~১০% মধ্যে। 'নীরব ভিত্তিতে কেনা' — মুভের আগে স্মার্ট মানি যা খোঁজে। স্থির দামের লাইনের পাশে জোরালো-প্রবাহ ট্যাগই ইঙ্গিত। এটি ডাইভারজেন্স, নিশ্চয়তা নয়। পরামর্শ নয়।",
   foreign_buying:
-    "বিদেশি বিনিয়োগকারীরা শেষ প্রকাশের পর মালিকানা কীভাবে বদলেছে। ক্রয়/বিক্রয় চিপ দিয়ে সঞ্চয় ও বিক্রির মধ্যে পাল্টান। pp = শতাংশ পয়েন্ট (+৫ pp ≈ ১০% থেকে ১৫% মালিকানা)। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ (হোভার করলে সংখ্যা)। 'since' তারিখ তুলনার বিন্দু — প্রকাশ বছরে কয়েকবার হয়, প্রতিদিন নয়। ইতিহাস, পূর্বাভাস নয়।",
+    "বিদেশি বিনিয়োগকারীরা শেষ প্রকাশের পর মালিকানা বাড়িয়েছে কীভাবে। pp = শতাংশ পয়েন্ট (+৫ pp ≈ ১০% থেকে ১৫% মালিকানা)। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ (হোভার করলে সংখ্যা)। 'since' তারিখ তুলনার বিন্দু — প্রকাশ বছরে কয়েকবার হয়, প্রতিদিন নয়। ইতিহাস, পূর্বাভাস নয়।",
   institutional_buying:
-    "স্থানীয় প্রতিষ্ঠান (মিউচুয়াল ফান্ড, অ্যাসেট ম্যানেজার) শেষ প্রকাশের পর মালিকানা কীভাবে বদলেছে। ক্রয়/বিক্রয় চিপ দিয়ে পাল্টান। pp = শতাংশ পয়েন্ট (+৫ pp ≈ কোম্পানির ৫ পয়েন্ট অংশ বেড়েছে)। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ। ইতিহাস, পূর্বাভাস নয়।",
+    "স্থানীয় প্রতিষ্ঠান (মিউচুয়াল ফান্ড, অ্যাসেট ম্যানেজার) শেষ প্রকাশের পর মালিকানা বাড়িয়েছে কীভাবে। নিচে বিপরীতটির জন্য 'প্রাতিষ্ঠানিক বিক্রি' দেখুন — একই ক্যাটাগরির ভিন্ন হোল্ডাররা একসাথে দুই দিকেই যেতে পারে। pp = শতাংশ পয়েন্ট (+৫ pp ≈ কোম্পানির ৫ পয়েন্ট অংশ বেড়েছে)। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ। ইতিহাস, পূর্বাভাস নয়।",
+  institutional_selling:
+    "স্থানীয় প্রতিষ্ঠান (মিউচুয়াল ফান্ড, অ্যাসেট ম্যানেজার) শেষ প্রকাশের পর মালিকানা কমিয়েছে কীভাবে। নিচের স্পনসর/পরিচালক থেকে আলাদা, পৃথকভাবে প্রকাশিত একটি গ্রুপ — ফান্ড অনেক সময় সাধারণ কারণেও (রিব্যালান্সিং, রিডেম্পশন) অংশ কমায়, শুধু আস্থা হারানো নয়। pp = শতাংশ পয়েন্ট। লাইন = ঐ সময়ের দাম; ডট = প্রতি প্রকাশে অংশ। ইতিহাস, পূর্বাভাস নয়।",
   sponsor_selling:
     "স্পনসর/পরিচালক — কোম্পানির নিজস্ব অভ্যন্তরীণরা — শেষ প্রকাশের পর নিজেদের অংশ কমিয়েছেন। pp = কোম্পানির কত শতাংশ পয়েন্ট ছেড়েছেন। অভ্যন্তরীণদের নিজের কোম্পানি বিক্রি একটি প্রকাশিত তথ্য যা পড়ে দেখা উচিত (কেন? কার কাছে?), আর এক প্রিন্টের চেয়ে ধারাবাহিক স্ট্রিক বেশি গুরুত্বপূর্ণ। এটি নিজে বিক্রির সংকেত নয়।",
   most_active:
@@ -385,6 +389,7 @@ function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
   if (lang === "bn") {
     switch (screen.key) {
       case "institutional_buying":
+      case "institutional_selling":
         return `প্রতিষ্ঠানের মালিকানা ${metric} ${item.value >= 0 ? "বেড়েছে" : "কমেছে"}`;
       case "foreign_buying":
         return `বিদেশি মালিকানা ${metric} ${item.value >= 0 ? "বেড়েছে" : "কমেছে"}`;
@@ -437,6 +442,7 @@ function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
   }
   switch (screen.key) {
     case "institutional_buying":
+    case "institutional_selling":
       return `Institutions changed stake by ${metric}`;
     case "sponsor_selling":
       return `Sponsors/directors reduced their stake by ${metric}`;
@@ -468,6 +474,7 @@ function metricDetailLabel(screen: Screen, lang: Lang): string {
   if (lang === "bn") {
     switch (screen.key) {
       case "institutional_buying":
+      case "institutional_selling":
       case "foreign_buying":
       case "sponsor_selling":
         return "মালিকানা পরিবর্তন";
@@ -516,6 +523,7 @@ function metricDetailLabel(screen: Screen, lang: Lang): string {
   }
   switch (screen.key) {
     case "institutional_buying":
+    case "institutional_selling":
     case "foreign_buying":
     case "sponsor_selling":
       return "Stake change";
@@ -585,6 +593,7 @@ function detailContext(screen: Screen, item: ScreenItem, lang: Lang) {
   if (lang === "bn") {
     switch (screen.key) {
       case "institutional_buying":
+      case "institutional_selling":
         return ctx(
           "নতুন প্রকাশে প্রতিষ্ঠানের অংশ বদলেছে। এটি দৈনিক ফ্লো নয়, তাই দামের প্রতিক্রিয়া, খবর, ভলিউম ও লিকুইডিটি মিলিয়ে পড়ুন।",
           ["মালিকানার তারিখ", "দামের প্রতিক্রিয়া", "খবর/ঘোষণা", "অর্ডার সাইজ"],
@@ -686,6 +695,7 @@ function detailContext(screen: Screen, item: ScreenItem, lang: Lang) {
 
   switch (screen.key) {
     case "institutional_buying":
+    case "institutional_selling":
     case "foreign_buying":
       return ctx(
         "Ownership updates are disclosure-based, not daily flow. Read the stake change together with price reaction, news, volume, and liquidity.",
@@ -1024,8 +1034,11 @@ const GROUPS: { id: string; labelKey: string; advanced?: boolean }[] = [
 // Merit order (2026-07 review): ownership intelligence first, income + value core, community
 // pulse, and relative strength LAST — momentum was the one factor our DSE study found harmful,
 // so it never headlines. sponsor_selling = the disclosure-synthesis red-flag board.
+// institutional_buying/selling sit side by side deliberately: same disclosed category, opposite
+// direction — a user asked why only sponsors got a "selling" board when institutions can exit too.
 const FOCUS_KEYS = [
   "institutional_buying", // smart money — what institutions are accumulating
+  "institutional_selling", // ...and, just as real, what they're distributing
   "sponsor_selling", // insiders reducing — the red-flag counterweight
   "dividend_yield", // trailing cash income — BD investors care
   "value_vs_sector", // cheap vs its sector...
@@ -1070,7 +1083,13 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
     icon: "🏦",
     labelKey: "lens.smart",
     blurbKey: "lens.smart.blurb",
-    keys: ["institutional_buying", "foreign_buying", "quiet_accumulation", "unusual_volume"],
+    keys: [
+      "institutional_buying",
+      "institutional_selling",
+      "foreign_buying",
+      "quiet_accumulation",
+      "unusual_volume",
+    ],
   },
   {
     id: "dividend",
