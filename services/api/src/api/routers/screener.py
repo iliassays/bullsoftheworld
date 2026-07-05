@@ -1190,8 +1190,11 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     """Fill name + 1d change + sparkline on every item, batched across all screens."""
     codes = sorted({it.code for s in screens_list for it in s.items})
     names = await _names(session, market, codes)
-    skip = {it.code for s in screens_list if s.key in _NO_1D for it in s.items}
-    changes = await _change_1d(session, market, sorted(set(codes) - skip))
+    # _NO_1D screens (top_gainers/top_losers) already show the move as their headline value, so
+    # change_1d is suppressed per-screen below — but the code's change is still fetched here, since
+    # the same code appears on OTHER boards (e.g. today's top gainer can also be in value_vs_sector)
+    # and needs its 1D change there. Excluding it from this query too silently blanked it everywhere.
+    changes = await _change_1d(session, market, codes)
     sparks = await _sparks(session, market, codes)
     context = await _execution_context(session, market, codes)
     catalysts = await _recent_catalysts(session, market, codes)
@@ -1285,7 +1288,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
     # changes — the key folds in data freshness, but only a version bump invalidates on code
     # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
-    key = f"screens:v4:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v5:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
