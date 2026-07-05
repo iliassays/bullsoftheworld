@@ -325,7 +325,7 @@ function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void
               {item.change_1d != null && (
                 <>
                   {" "}
-                  · <Pct value={item.change_1d} period="1d" />
+                  · <Pct value={item.change_1d} />
                 </>
               )}
               {item.category ? ` · Cat ${item.category}` : ""}
@@ -387,7 +387,7 @@ function ScannerRow({ board, item, onPick }: { board: Screen; item: ScreenItem; 
       <div className="shrink-0 text-right tnum">
         {item.last_close > 0 && <div className="text-[13px] font-semibold">{taka(item.last_close)}</div>}
         <div className="text-xs font-semibold">
-          {item.change_1d != null ? <Pct value={item.change_1d} period="1d" /> : <span className="text-muted">{metricText(board, item, lang)}</span>}
+          {item.change_1d != null ? <Pct value={item.change_1d} /> : <span className="text-muted">{metricText(board, item, lang)}</span>}
         </div>
       </div>
     </button>

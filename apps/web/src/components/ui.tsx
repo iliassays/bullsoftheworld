@@ -3,24 +3,19 @@ import { useLang } from "../lib/i18n";
 
 export const taka = (n: number) => `৳${n.toLocaleString("en-US", { minimumFractionDigits: 1 })}`;
 
-// `period` disambiguates what the % actually measures — a bare "▲3.32%" next to a stock is read
-// differently depending on context (today's move? total gain since you bought it?), and a user
-// asked for this explicitly after seeing an unlabeled % beside a valuation claim on a screener
-// board. "1d" = intraday/EOD change since yesterday's close; "sinceBuy" = a portfolio holding's
-// unrealized gain since average cost (NOT a daily figure — showing it bare invites exactly that
-// misreading). Omit `period` only where the number isn't a price/holding move at all (e.g. a
-// P/E-vs-sector ratio already labeled elsewhere).
-export function Pct({ value, period }: { value: number; period?: "1d" | "sinceBuy" }) {
+// A bare "▲3.32%" is assumed to be the day's move — that's the default meaning everywhere on the
+// site. `period="sinceBuy"` is the one case that actually needs a label: a portfolio holding's
+// unrealized gain since average cost is NOT a daily figure, and showing it bare invites reading a
+// 40% total gain as "up 40% today". (A prior "1d" label on every other % was removed after a user
+// flagged it as confusing clutter — the freshness banner already covers "as of which close".)
+export function Pct({ value, period }: { value: number; period?: "sinceBuy" }) {
   const { t } = useLang();
   const up = value >= 0;
   return (
     <span className={`tnum ${up ? "text-up" : "text-down"}`}>
       {up ? "▲" : "▼"} {Math.abs(value).toFixed(2)}%
-      {period && (
-        <span className="text-muted font-normal text-[0.85em]">
-          {" "}
-          {t(period === "1d" ? "pct.1d" : "pct.sinceBuy")}
-        </span>
+      {period === "sinceBuy" && (
+        <span className="text-muted font-normal text-[0.85em]"> {t("pct.sinceBuy")}</span>
       )}
     </span>
   );

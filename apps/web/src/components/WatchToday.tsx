@@ -88,7 +88,7 @@ export function WatchToday({ asOf }: { asOf?: string | null } = {}) {
                   </span>
                 )}
                 <span className="ml-auto text-xs font-semibold shrink-0">
-                  <Pct value={s.change_pct} period="1d" />
+                  <Pct value={s.change_pct} />
                 </span>
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">

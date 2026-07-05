@@ -696,8 +696,8 @@ const STRINGS: Record<string, Entry> = {
     bn: "রিপ্লাই করতে লগ ইন করুন →",
   },
   "post.reply": { en: "reply", bn: "রিপ্লাই" },
-  // Disambiguates what a % move measures — see the Pct component for why this matters.
-  "pct.1d": { en: "1D", bn: "১দিন" },
+  // A holding's total gain since purchase — the one % that needs a label to avoid being
+  // misread as today's move. See the Pct component.
   "pct.sinceBuy": { en: "since buy", bn: "কেনার পর থেকে" },
   "post.replies": { en: "replies", bn: "রিপ্লাই" },
   // Today's standouts

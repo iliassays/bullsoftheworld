@@ -246,7 +246,7 @@ export function SymbolPage() {
           <div className="mt-3 flex items-end gap-3">
             <div className="text-2xl font-bold tnum">{taka(q.ltp)}</div>
             <div className="text-sm font-semibold pb-1">
-              <Pct value={q.change_pct} period="1d" />
+              <Pct value={q.change_pct} />
             </div>
             {bars.length > 1 && (
               <span className="pb-1">

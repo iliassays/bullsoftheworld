@@ -46,7 +46,7 @@ export function MarketPulse() {
   const breadthPct = (pulse.advancers / totalBreadth) * 100;
   const sectorSub =
     pulse.weak_sector && pulse.weak_sector_change != null
-      ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)} ${t("pct.1d")}`
+      ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)}`
       : undefined;
 
   return (
@@ -76,7 +76,7 @@ export function MarketPulse() {
           sub={
             pulse.dsex_change_pct == null
               ? undefined
-              : `${signed(pulse.dsex_change_pct)} ${t("pct.1d")}`
+              : signed(pulse.dsex_change_pct)
           }
         />
         <Cell
@@ -103,7 +103,7 @@ export function MarketPulse() {
           label={t("marketPulse.sectors")}
           value={
             pulse.top_sector && pulse.top_sector_change != null
-              ? `${pulse.top_sector} ${signed(pulse.top_sector_change)} ${t("pct.1d")}`
+              ? `${pulse.top_sector} ${signed(pulse.top_sector_change)}`
               : "—"
           }
           sub={sectorSub}
@@ -112,7 +112,7 @@ export function MarketPulse() {
 
       <p className="mt-3 text-[10px] text-muted">
         {t("marketPulse.footer")}{" "}
-        {pulse.dsex_change_pct != null && <Pct value={pulse.dsex_change_pct} period="1d" />}
+        {pulse.dsex_change_pct != null && <Pct value={pulse.dsex_change_pct} />}
       </p>
     </div>
   );

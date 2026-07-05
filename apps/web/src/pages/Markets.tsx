@@ -963,8 +963,7 @@ export function ScreenRow({
                 className={`text-[11px] tnum ${item.change_1d >= 0 ? "text-up" : "text-down"}`}
               >
                 {item.change_1d >= 0 ? "+" : ""}
-                {item.change_1d.toFixed(1)}%{" "}
-                <span className="text-muted font-normal">{t("pct.1d")}</span>
+                {item.change_1d.toFixed(1)}%
               </span>
             )}
           </span>
