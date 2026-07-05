@@ -15,7 +15,7 @@ from bulls.core.models.follow import Follow
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
 from bulls.core.models.page_view_event import PageViewEvent
-from bulls.core.models.portfolio import PortfolioHolding
+from bulls.core.models.portfolio import PortfolioHolding, PortfolioSnapshot
 from bulls.core.models.post import Cashtag, Post, PostReaction
 from bulls.core.models.quiz import QuizAnswer, QuizQuestion
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
@@ -43,6 +43,7 @@ __all__ = [
     "ModerationEvent",
     "PageViewEvent",
     "PortfolioHolding",
+    "PortfolioSnapshot",
     "Post",
     "PostReaction",
     "PriceAlert",

@@ -9,12 +9,19 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession
-from bulls.core.models import AlertEvent, PortfolioHolding, PriceAlert, QuoteSnapshot, Symbol
+from bulls.core.models import (
+    AlertEvent,
+    PortfolioHolding,
+    PortfolioSnapshot,
+    PriceAlert,
+    QuoteSnapshot,
+    Symbol,
+)
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -218,6 +225,45 @@ async def get_portfolio(
             )
         )
     return compute_portfolio(list(holdings), quotes, names, latest_alerts, alert_codes)
+
+
+class PortfolioHistoryPoint(BaseModel):
+    date: str
+    total_value: float | None
+    total_cost: float
+
+
+_HISTORY_PERIOD_DAYS: dict[str, int | None] = {
+    "1w": 7,
+    "1m": 30,
+    "3m": 90,
+    "6m": 180,
+    "1y": 365,
+    "all": None,
+}
+
+
+@router.get("/history")
+async def portfolio_history(
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    session: DbSession,
+    period: str = Query("3m", pattern="^(1w|1m|3m|6m|1y|all)$"),
+) -> list[PortfolioHistoryPoint]:
+    """Daily total value/cost, from the snapshot table (see ingestion.portfolio_snapshot) — never
+    reconstructed from current holdings, so this only shows growth since we started tracking."""
+    stmt = select(PortfolioSnapshot).where(
+        PortfolioSnapshot.user_id == user.id, PortfolioSnapshot.market == tenant.market
+    )
+    days = _HISTORY_PERIOD_DAYS[period]
+    if days is not None:
+        since = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=days)
+        stmt = stmt.where(PortfolioSnapshot.date >= since)
+    rows = (await session.scalars(stmt.order_by(PortfolioSnapshot.date.asc()))).all()
+    return [
+        PortfolioHistoryPoint(date=str(r.date), total_value=r.total_value, total_cost=r.total_cost)
+        for r in rows
+    ]
 
 
 @router.post("/holdings", status_code=201)

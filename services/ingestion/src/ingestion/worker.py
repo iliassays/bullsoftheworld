@@ -32,6 +32,7 @@ from ingestion.company import collect as collect_company
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
 from ingestion.market_summary import collect as collect_summary
+from ingestion.portfolio_snapshot import run as snapshot_portfolios_run
 from ingestion.scheduler import poll_market
 from ingestion.signals.news_agents import run_news_agents
 from ingestion.signals.runner import (
@@ -90,6 +91,17 @@ async def refresh_analytics(ctx) -> str:
     counts = await compute_all(MARKET)
     log.info("analytics refresh: %s/%s symbols", counts["computed"], counts["symbols"])
     return f"analytics={counts['computed']}"
+
+
+async def snapshot_portfolios(ctx) -> str:
+    """Daily portfolio value snapshot (growth-over-time chart) — only on trading days, once EOD
+    quotes have settled (the last intraday poll ~08:45 UTC is effectively the close)."""
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    stats = await snapshot_portfolios_run(MARKET)
+    log.info("portfolio snapshot: %s users", stats["users"])
+    return f"users={stats['users']}"
 
 
 async def run_trending(ctx) -> str:
@@ -260,6 +272,7 @@ class WorkerSettings:
         pull_eod_summary,
         refresh_company,
         refresh_analytics,
+        snapshot_portfolios,
         run_trending,
         snapshot_buzz,
         run_signals,
@@ -283,6 +296,10 @@ class WorkerSettings:
         cron(refresh_company, weekday="fri", hour=14, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
+        # Portfolio growth-chart snapshot — 20 min after the bar pull, same cadence as the other
+        # once-daily EOD jobs. Idempotent (upsert by user+date); no weekday filter needed since
+        # the task itself skips non-trading days.
+        cron(snapshot_portfolios, hour=13, minute=20, run_at_startup=False),
         # 'Watch today' activity ranking — after analytics, before the FB market signals (13:50).
         cron(run_trending, hour=13, minute=25, run_at_startup=False),
         # Snapshot social attention hourly across the session, then finalize after the bar pull.

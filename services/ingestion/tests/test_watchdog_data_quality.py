@@ -20,10 +20,14 @@ TEST_CODE = "ZWATCHDOGTEST"
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres")
 @pytest.mark.asyncio
 async def test_data_quality_checks_catch_confirmed_incident_shapes() -> None:
-    from bulls.core.db import get_sessionmaker
+    # dispose_engine() before/after: SQLAlchemy's async engine caches a connection pool bound to
+    # whichever event loop created it, and pytest-asyncio hands each test its own loop — a stale
+    # engine left by an earlier test (or left for a later one) crashes cross-loop otherwise.
+    from bulls.core.db import dispose_engine, get_sessionmaker
     from bulls.core.models import DailyBar, ShareholdingSnapshot
     from ingestion.watchdog import _data_quality_problems
 
+    await dispose_engine()
     sm = get_sessionmaker()
 
     # Baseline: a clean database (no planted violations) must be silent — real edge cases like
@@ -83,3 +87,4 @@ async def test_data_quality_checks_catch_confirmed_incident_shapes() -> None:
     # Cleanup verified: back to silent.
     problems = await _data_quality_problems()
     assert not any(TEST_CODE in p for p in problems)
+    await dispose_engine()

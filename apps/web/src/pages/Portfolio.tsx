@@ -4,6 +4,7 @@ import { api, type Portfolio as PortfolioData } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { PortfolioGrowthChart } from "../components/PortfolioGrowthChart";
 import { PriceAlertSheet } from "../components/PriceAlertSheet";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 
@@ -111,6 +112,8 @@ export function Portfolio() {
           </div>
         )}
       </div>
+
+      {pf.holdings.length > 0 && <PortfolioGrowthChart />}
 
       {/* Holdings */}
       {pf.holdings.length === 0 ? (

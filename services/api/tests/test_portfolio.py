@@ -148,3 +148,92 @@ def test_portfolio_endpoint_flow() -> None:
 
         # anonymous is rejected
         assert c.get("/portfolio").status_code in (401, 403)
+
+
+@pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres + ingestion")
+@pytest.mark.asyncio
+async def test_portfolio_history_period_filtering() -> None:
+    """/portfolio/history never reconstructs the past from current holdings — it only reads
+    whatever the daily snapshot job (services/ingestion/portfolio_snapshot.py) already wrote,
+    so an old point must disappear under a short period and reappear under 'all'.
+
+    Uses httpx's ASGI transport (not TestClient) so the HTTP calls and the direct DB setup/
+    teardown share this coroutine's own event loop natively — TestClient runs the app on its
+    own internal loop via a background portal, which crashes cross-loop when mixed with a
+    directly-awaited session from get_sessionmaker() in the same test.
+    """
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import delete, select
+
+    from api.main import app, lifespan
+    from bulls.core.db import dispose_engine, get_sessionmaker
+    from bulls.core.models import PortfolioSnapshot, User
+
+    # ASGITransport (unlike TestClient) doesn't drive the app's lifespan automatically — without
+    # it app.state.tenants is never populated. Running the lifespan directly also means everything
+    # in this test (HTTP calls + the raw DB session below) shares this one coroutine's event loop,
+    # which is what actually fixes the cross-loop crash TestClient's separate portal loop caused.
+    # Dispose defensively first too, in case an earlier test in the same run left a stale engine
+    # bound to its own now-closed loop (confirmed real: test_portfolio_snapshot.py did exactly
+    # this before it got the same dispose-on-both-ends treatment).
+    await dispose_engine()
+    async with (
+        lifespan(app),
+        AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        handle = "t" + uuid.uuid4().hex[:12]
+        reg = await c.post(
+            "/auth/register",
+            json={
+                "name": "History Tester",
+                "contact": f"{handle}@example.com",
+                "password": "password123",
+            },
+        )
+        assert reg.status_code == 201, reg.text
+        hdr = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+        empty = await c.get("/portfolio/history", headers=hdr)
+        assert empty.status_code == 200 and empty.json() == []
+
+        sm = get_sessionmaker()
+        async with sm() as session:
+            # Handle is server-generated from the name, not the value we sent — look the
+            # user up by the email we actually control instead.
+            uid = (
+                await session.scalars(select(User.id).where(User.email == f"{handle}@example.com"))
+            ).one()
+            session.add_all(
+                [
+                    PortfolioSnapshot(
+                        user_id=uid,
+                        market="DSE",
+                        date=dt.date(2025, 1, 1),
+                        total_value=20000.0,
+                        total_cost=25000.0,
+                    ),
+                    PortfolioSnapshot(
+                        user_id=uid,
+                        market="DSE",
+                        date=dt.date.today(),
+                        total_value=25830.0,
+                        total_cost=25000.0,
+                    ),
+                ]
+            )
+            await session.commit()
+        try:
+            recent = (await c.get("/portfolio/history?period=1w", headers=hdr)).json()
+            assert len(recent) == 1 and recent[0]["total_value"] == 25830.0
+
+            full = (await c.get("/portfolio/history?period=all", headers=hdr)).json()
+            assert len(full) == 2
+            assert full[0]["date"] == "2025-01-01"  # ascending, oldest first
+
+            bad = await c.get("/portfolio/history?period=nonsense", headers=hdr)
+            assert bad.status_code == 422
+        finally:
+            async with sm() as session:
+                await session.execute(
+                    delete(PortfolioSnapshot).where(PortfolioSnapshot.user_id == uid)
+                )
+                await session.commit()

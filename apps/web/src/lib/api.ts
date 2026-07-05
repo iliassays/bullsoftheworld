@@ -753,6 +753,8 @@ export const api = {
     }),
   holdingDelete: (code: string) =>
     request<void>(`/portfolio/holdings/${code}`, { method: "DELETE" }),
+  portfolioHistory: (period: PortfolioHistoryPeriod) =>
+    request<PortfolioHistoryPoint[]>(`/portfolio/history?period=${period}`),
 
   // daily quiz — gamified learning, never trading
   quizToday: () => request<QuizToday>("/quiz/today"),
@@ -820,4 +822,10 @@ export type Portfolio = {
   day_pnl_pct: number | null;
   total_pnl: number | null;
   total_pnl_pct: number | null;
+};
+export type PortfolioHistoryPeriod = "1w" | "1m" | "3m" | "6m" | "1y" | "all";
+export type PortfolioHistoryPoint = {
+  date: string;
+  total_value: number | null;
+  total_cost: number;
 };

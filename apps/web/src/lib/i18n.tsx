@@ -87,6 +87,11 @@ const STRINGS: Record<string, Entry> = {
   "pf.today": { en: "today", bn: "আজ" },
   "pf.allTime": { en: "all time", bn: "সর্বমোট" },
   "pf.holdings": { en: "Holdings", bn: "হোল্ডিং" },
+  "pf.growthTitle": { en: "Growth over time", bn: "সময়ের সাথে প্রবৃদ্ধি" },
+  "pf.growthBuilding": {
+    en: "We started tracking your portfolio's value today — come back tomorrow to see the trend build.",
+    bn: "আজ থেকে আপনার পোর্টফোলিওর মূল্য ট্র্যাক করা শুরু হয়েছে — প্রবণতা দেখতে আগামীকাল আসুন।",
+  },
   "pf.empty": {
     en: "No holdings yet — add what you own to see it valued with today's prices.",
     bn: "এখনো কোনো হোল্ডিং নেই — যা আছে যোগ করুন, আজকের দামে মূল্য দেখুন।",
