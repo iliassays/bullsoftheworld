@@ -807,6 +807,10 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
                 "institutional_buying",
                 "foreign_buying",
                 "quality_roe",
+                "value_vs_sector",  # same shape as quality_roe: a plain value ranking, no
+                # catalyst concept — omitting it meant "Cheap vs sector" could never show
+                # "Clean read" even for a deep-liquidity Cat-A stock (confirmed live: BSC,
+                # BSRMSTEEL, MALEKSPIN all had >20mn ADTV and zero risk flags, 2026-07-05).
                 "dividend_yield",
                 "beating_market",
                 "quiet_accumulation",
@@ -1278,9 +1282,10 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
-    # v3: sponsor_selling board + evidence labels + persistence notes (bump on shape changes —
-    # the key folds in data freshness, but only a version bump invalidates on code changes).
-    key = f"screens:v3:{market}:{quote_ts}:{ana_ts}"
+    # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
+    # changes — the key folds in data freshness, but only a version bump invalidates on code
+    # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
+    key = f"screens:v4:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
