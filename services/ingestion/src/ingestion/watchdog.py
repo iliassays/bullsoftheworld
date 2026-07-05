@@ -10,6 +10,8 @@ It checks the things that, if broken, make the site silently wrong:
   5. no impossible values got ingested  (see _data_quality_problems — OHLC/shareholding/
      dividend/index invariants; second line of defense behind the parser-level checks in
      packages/market_data, in case a future bug or a manual edit bypasses them)
+  6. the agent model portfolios obey their invariants (see _agent_problems — no negative cash,
+     no overdue settlements, holdings==lots, daily churn ceiling)
 
 On trouble it attempts a one-shot worker restart (for worker-down / stale-data faults) and emails
 an alert via Resend. The email is rate-limited by a Redis cooldown key so a sustained outage pages
@@ -215,6 +217,81 @@ async def _data_quality_problems() -> list[str]:
     return problems
 
 
+async def _agent_problems(now: dt.datetime) -> list[str]:
+    """Invariants of the agent model portfolios (services/ingestion/agent_trader.py). Every one
+    of these is impossible if the engine is correct — a hit means an engine bug or a manual edit,
+    so alert-only: a worker bounce can't fix wrong money numbers."""
+    problems: list[str] = []
+    today = to_market_tz(now).date()
+    async with get_sessionmaker()() as session:
+        # 1. Settled cash can never go negative: buys are capped by the budget check.
+        neg = (
+            await session.execute(
+                text(
+                    "select u.handle, a.cash_settled from agent_portfolios a "
+                    "join users u on u.id = a.user_id where a.cash_settled < -0.01"
+                )
+            )
+        ).all()
+        for handle, cash in neg:
+            problems.append(f"agent @{handle} has NEGATIVE settled cash ({cash:.2f})")
+
+        # 2. A sell's proceeds must be credited the first engine tick on/after settles_on. Overdue
+        #    means the engine skipped a full trading day (worker fault) or lost the trade.
+        overdue = (
+            await session.execute(
+                text(
+                    "select u.handle, t.code, t.settles_on from agent_trades t "
+                    "join users u on u.id = t.user_id "
+                    "where t.settled = false and t.settles_on < :today "
+                    "order by t.settles_on limit 5"
+                ),
+                {"today": today},
+            )
+        ).all()
+        if overdue:
+            sample = ", ".join(f"@{h} {c} (due {d})" for h, c, d in overdue)
+            problems.append(
+                f"{len(overdue)}+ agent trade(s) past settlement but uncredited: {sample}"
+            )
+
+        # 3. The two books must agree: holding quantity == sum of open lot quantity, per code.
+        drift = (
+            await session.execute(
+                text(
+                    "select u.handle, coalesce(h.code, l.code) as code, "
+                    "  coalesce(h.quantity, 0) as held, coalesce(l.left_qty, 0) as lots "
+                    "from (select user_id, market, code, sum(quantity_left) as left_qty "
+                    "      from agent_lots group by user_id, market, code) l "
+                    "full outer join portfolio_holdings h "
+                    "  on h.user_id = l.user_id and h.market = l.market and h.code = l.code "
+                    "join agent_portfolios a on a.user_id = coalesce(h.user_id, l.user_id) "
+                    "join users u on u.id = a.user_id "
+                    "where coalesce(h.quantity, 0) <> coalesce(l.left_qty, 0) limit 5"
+                )
+            )
+        ).all()
+        if drift:
+            sample = ", ".join(f"@{h} {c} holding={q} lots={lq}" for h, c, q, lq in drift)
+            problems.append(f"agent holdings/lots books disagree: {sample}")
+
+        # 4. Churn guard: 6 position slots mean ≤6 buys + ≤6 sells is the legitimate daily
+        #    ceiling. More = the engine is trading every tick (rule hysteresis broken).
+        churn = (
+            await session.execute(
+                text(
+                    "select u.handle, count(*) from agent_trades t "
+                    "join users u on u.id = t.user_id where t.trade_date = :today "
+                    "group by u.handle having count(*) > 12"
+                ),
+                {"today": today},
+            )
+        ).all()
+        for handle, n in churn:
+            problems.append(f"agent @{handle} made {n} trades today — churn guard tripped")
+    return problems
+
+
 async def _send_alert(problems: list[str], actions: list[str]) -> None:
     s = get_settings()
     recipients = [a.strip() for a in (s.alert_email or s.support_email).split(",") if a.strip()]
@@ -280,6 +357,12 @@ async def main() -> int:
         problems += await _data_quality_problems()
     except Exception:
         log.exception("data-quality check failed")
+
+    # Agent portfolios: alert only — wrong money numbers need a human + a fix, not a restart.
+    try:
+        problems += await _agent_problems(now)
+    except Exception:
+        log.exception("agent-portfolio check failed")
 
     if not problems:
         log.info("ok — worker active, quotes fresh, API healthy")
