@@ -1,5 +1,6 @@
 """ORM models. Import all here so Alembic autogenerate sees them."""
 
+from bulls.core.models.agent_portfolio import AgentLot, AgentPortfolio, AgentTrade
 from bulls.core.models.alert import AlertEvent, PriceAlert
 from bulls.core.models.announcement import Announcement
 from bulls.core.models.block_trade import BlockTrade
@@ -30,6 +31,9 @@ from bulls.core.models.user import User
 from bulls.core.models.watchlist import WatchlistItem
 
 __all__ = [
+    "AgentLot",
+    "AgentPortfolio",
+    "AgentTrade",
     "AlertEvent",
     "Announcement",
     "AnnualFinancial",

@@ -3,6 +3,7 @@ import { About } from "./pages/About";
 import { Shell } from "./components/Shell";
 import { Alerts } from "./pages/Alerts";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AuthFlows";
+import { Cockpit } from "./pages/Cockpit";
 import { DeskProfile } from "./pages/DeskProfile";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
@@ -36,6 +37,8 @@ export function App() {
         <Route path="u/:handle" element={<UserProfile />} />
         <Route path="watchlist" element={<Watchlist />} />
         <Route path="s/:code" element={<SymbolPage />} />
+        {/* Admin-only (token-gated in the page itself); deliberately not linked from any nav. */}
+        <Route path="cockpit" element={<Cockpit />} />
         <Route path="me" element={<Profile />} />
         <Route path="welcome" element={<Welcome />} />
         <Route path="about" element={<About />} />

@@ -39,10 +39,20 @@ from bulls.analytics.scorecard import (
     build_red_flags,
     build_scorecard,
 )
+from bulls.analytics.strategies import (
+    STRATEGIES,
+    Snapshot,
+    StrategySpec,
+    entry_reason,
+    exit_reason,
+    rank_entries,
+    universe_ok,
+)
 from bulls.analytics.valuation import ValuationResult, compute_valuation
 
 __all__ = [
     "AT_LIMIT_TOLERANCE_PP",
+    "STRATEGIES",
     "AnalyticsResult",
     "BarLike",
     "Dimension",
@@ -59,6 +69,8 @@ __all__ = [
     "RedFlag",
     "RedFlags",
     "Scorecard",
+    "Snapshot",
+    "StrategySpec",
     "ValuationResult",
     "at_circuit",
     "atr",
@@ -76,8 +88,11 @@ __all__ = [
     "detect_patterns",
     "dividend_score",
     "ema",
+    "entry_reason",
+    "exit_reason",
     "graham_score",
     "momentum_12_1",
+    "rank_entries",
     "realized_volatility",
     "risk_score",
     "rsi",
@@ -86,4 +101,5 @@ __all__ = [
     "swing_high_indices",
     "swing_low_indices",
     "technical_score",
+    "universe_ok",
 ]

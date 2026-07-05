@@ -51,6 +51,22 @@ def is_trading_day(d: dt.date) -> bool:
     return d.isoweekday() in _TRADING_ISOWEEKDAYS and d not in MARKET_HOLIDAYS
 
 
+def add_trading_days(d: dt.date, n: int) -> dt.date:
+    """The date `n` trading days after `d`, skipping weekends and MARKET_HOLIDAYS.
+
+    This is settlement arithmetic (DSE: T+2 for A/B/G/N contracts, T+3 for Z), so it counts
+    *exchange* days: a Thursday trade at n=2 settles the following Sunday.
+    """
+    if n < 0:
+        raise ValueError("n must be >= 0")
+    out = d
+    while n > 0:
+        out += dt.timedelta(days=1)
+        if is_trading_day(out):
+            n -= 1
+    return out
+
+
 def is_trading_hours(when: dt.datetime, tz: ZoneInfo = DHAKA) -> bool:
     """True if `when` falls inside a session (trading day, 10:00-14:30 market time)."""
     local = to_market_tz(when, tz)

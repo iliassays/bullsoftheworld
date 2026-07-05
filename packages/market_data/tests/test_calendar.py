@@ -13,6 +13,7 @@ import pytest
 
 from bulls.market_data.calendar import (
     Session,
+    add_trading_days,
     is_trading_day,
     is_trading_hours,
     session_phase,
@@ -53,3 +54,23 @@ def test_to_market_tz_requires_aware():
         to_market_tz(dt.datetime(2026, 6, 21, 4, 0))  # naive
     # +6 offset applied (default Dhaka)
     assert to_market_tz(_utc(2026, 6, 21, 4, 0)).hour == 10
+
+
+def test_add_trading_days_skips_weekend():
+    # Sunday + 2 trading days = Tuesday (plain midweek case)
+    assert add_trading_days(dt.date(2026, 6, 21), 2) == dt.date(2026, 6, 23)
+    # Thursday + 2 trading days skips Fri/Sat: T+1 = Sun 06-28, T+2 = Mon 06-29
+    assert add_trading_days(dt.date(2026, 6, 25), 2) == dt.date(2026, 6, 29)
+    # Wednesday + 2: Thu, (Fri/Sat closed), Sun -> 06-24 + 2 = 06-28
+    assert add_trading_days(dt.date(2026, 6, 24), 2) == dt.date(2026, 6, 28)
+
+
+def test_add_trading_days_skips_holidays():
+    # 2026-07-01 (Wed) is a public holiday: Mon 06-29 + 2 = Thu 07-02, not Wed 07-01
+    assert add_trading_days(dt.date(2026, 6, 29), 2) == dt.date(2026, 7, 2)
+
+
+def test_add_trading_days_zero_and_negative():
+    assert add_trading_days(dt.date(2026, 6, 26), 0) == dt.date(2026, 6, 26)  # Friday unchanged
+    with pytest.raises(ValueError):
+        add_trading_days(dt.date(2026, 6, 21), -1)

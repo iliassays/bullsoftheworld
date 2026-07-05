@@ -25,6 +25,7 @@ from arq.connections import RedisSettings
 from bulls.core.config import get_settings
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion import news
+from ingestion.agent_trader import run_agents
 from ingestion.analytics import compute_all
 from ingestion.block_trades import pull_block_trades as collect_block_trades
 from ingestion.buzz import snapshot_all
@@ -54,6 +55,17 @@ async def poll_quotes(ctx) -> str:
     counts = await poll_market(MARKET)
     log.info("intraday poll: %s quotes", counts["quotes"])
     return f"quotes={counts['quotes']}"
+
+
+async def run_agent_portfolios(ctx) -> str:
+    """One trading tick for the five agent model portfolios — settle, exits, entries. Runs 3 min
+    after each intraday quote poll so it always sees the freshest snapshot; the engine itself
+    no-ops outside trading hours and refuses stale quotes, so a mistimed run does nothing."""
+    counts = await run_agents(MARKET)
+    if counts.get("skipped"):
+        return "skipped: market closed"
+    log.info("agent portfolios: %s", counts)
+    return f"agents={counts['agents']} buys={counts['buys']} sells={counts['sells']}"
 
 
 async def pull_eod_bars(ctx) -> str:
@@ -273,6 +285,7 @@ class WorkerSettings:
 
     functions: ClassVar = [
         poll_quotes,
+        run_agent_portfolios,
         pull_eod_bars,
         pull_eod_summary,
         refresh_company,
@@ -293,6 +306,10 @@ class WorkerSettings:
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
         cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 15, 30, 45}, run_at_startup=False),
+        # Agent model portfolios: 3 min after each quote poll (fresh snapshot, no race with it).
+        cron(
+            run_agent_portfolios, hour={4, 5, 6, 7, 8}, minute={3, 18, 33, 48}, run_at_startup=False
+        ),
         # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Market-wide summary (index/turnover) right after the bar pull.

@@ -841,7 +841,65 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question_id, choice_idx }),
     }),
+
+  // admin cockpit — the agent model portfolios (X-Admin-Token gated, read-only)
+  adminAgents: (adminToken: string) =>
+    request<AgentSummary[]>("/admin/agents", {
+      headers: { "X-Admin-Token": adminToken },
+    }),
+  adminAgentDetail: (adminToken: string, handle: string) =>
+    request<AgentDetail>(`/admin/agents/${encodeURIComponent(handle)}`, {
+      headers: { "X-Admin-Token": adminToken },
+    }),
 };
+
+// ---- agent model portfolios (admin cockpit) ----
+export interface AgentHolding {
+  code: string;
+  quantity: number;
+  sellable_quantity: number; // matured shares — the rest is still inside T+2 settlement
+  avg_cost: number;
+  ltp: number | null;
+  value: number | null;
+  pnl_pct: number | null;
+  as_of: string | null;
+}
+export interface AgentTrade {
+  id: number;
+  code: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  fee: number;
+  net_cash: number;
+  trade_date: string;
+  settles_on: string;
+  settled: boolean;
+  reason: string;
+  quote_as_of: string;
+}
+export interface AgentSummary {
+  handle: string;
+  display_name: string;
+  strategy: string;
+  description: string;
+  is_active: boolean;
+  initial_capital: number;
+  cash_settled: number;
+  cash_pending: number;
+  holdings_value: number | null;
+  equity: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+  positions: number;
+  trades_total: number;
+  last_trade_at: string | null;
+  quotes_as_of: string | null;
+}
+export interface AgentDetail extends AgentSummary {
+  holdings: AgentHolding[];
+  trades: AgentTrade[];
+}
 
 // ---- quiz ----
 export type QuizToday = {
