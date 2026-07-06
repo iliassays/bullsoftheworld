@@ -12,11 +12,20 @@ It checks the things that, if broken, make the site silently wrong:
      packages/market_data, in case a future bug or a manual edit bypasses them)
   6. the agent model portfolios obey their invariants (see _agent_problems — no negative cash,
      no overdue settlements, holdings==lots, daily churn ceiling)
+  7. today's scheduled agent posts/signals actually fired (see _publish_freshness_problems) —
+     confirmed live (2026-07-06) that arq's cron loop can silently stall for ~30 min with the
+     worker unit still reporting "active" and no error logged: pull_eod_summary/refresh_analytics
+     ran fine at 13:05-13:15, then run_trending/run_signals(13:25)/pull_news(13:35)/
+     run_factor_signals(13:40) never even logged a start, before run_market_signals(13:50) ran
+     normally again. Checks #4 already covered "EOD bars/trending", missed here entirely.
 
-On trouble it attempts a one-shot worker restart (for worker-down / stale-data faults) and emails
-an alert via Resend. The email is rate-limited by a Redis cooldown key so a sustained outage pages
-once per COOLDOWN, not every 5 minutes; a clean run clears the key so the next incident pages
-immediately. Exit code is non-zero on problems (handy in the journal), but mail is the real signal.
+On trouble it attempts a one-shot worker restart (for worker-down / stale-data / stalled-cron
+faults — the last of which #7 exists specifically to catch, and is now actionable: every affected
+job now runs on worker startup too, see worker.py, so a restart genuinely recovers a day's missed
+posts instead of just being a no-op) and emails an alert via Resend. The email is rate-limited by
+a Redis cooldown key so a sustained outage pages once per COOLDOWN, not every 5 minutes; a clean
+run clears the key so the next incident pages immediately. Exit code is non-zero on problems
+(handy in the journal), but mail is the real signal.
 
     uv run python -m ingestion.watchdog
 """
@@ -53,6 +62,9 @@ _COOLDOWN_KEY = "watchdog:alerted"
 # quote-freshness check can't see, because it's silent once the market is closed.
 EOD_CHECK_FROM_UTC_HOUR = 14
 EOD_CHECK_TO_UTC_HOUR = 18
+# Morning Watch is scheduled 03:30 UTC; check from 05:00 to give a slow start plenty of room
+# before flagging it, but still well before the 04:00-08:30 UTC trading session ends.
+MORNING_WATCH_CHECK_FROM_UTC_HOUR = 5
 
 
 def _unit_active(unit: str) -> bool:
@@ -126,6 +138,53 @@ async def _eod_problems(now: dt.datetime) -> list[str]:
         )
     if trend != today:
         problems.append(f"'Active today' not updated for {today} (latest {trend})")
+    return problems
+
+
+async def _publish_freshness_problems(now: dt.datetime) -> list[str]:
+    """Catches a stalled arq cron loop that #_eod_problems can't see: bars/trending come from
+    ONE early job each (pull_eod_bars, run_trending) so a loop that stalls right after those two
+    complete still looks "caught up" to that check, while everything scheduled later in the same
+    window (signal agents, FB posts) silently never fires. Confirmed live 2026-07-06: the loop
+    stalled ~30 min with the worker unit still "active" and no error logged, dropping
+    run_trending/run_signals/pull_news/run_factor_signals between two jobs that ran fine."""
+    today = to_market_tz(now).date()
+    if not is_trading_day(today):
+        return []
+    problems: list[str] = []
+
+    if now.hour >= MORNING_WATCH_CHECK_FROM_UTC_HOUR:
+        try:
+            r = aioredis.from_url(get_settings().redis_url)
+            posted = await r.get(f"fb:posted:morning_watch:{today}")
+            await r.aclose()
+        except Exception:
+            log.warning("could not check morning_watch post key", exc_info=True)
+        else:
+            if not posted:
+                problems.append(
+                    f"Morning Watch hasn't posted for {today} "
+                    f"(past {MORNING_WATCH_CHECK_FROM_UTC_HOUR:02d}:00 UTC)"
+                )
+
+    if EOD_CHECK_FROM_UTC_HOUR <= now.hour < EOD_CHECK_TO_UTC_HOUR:
+        async with get_sessionmaker()() as session:
+            # Volume notes run on their own separate intraday schedule (04:00-08:30 UTC), so they
+            # don't prove the EOD-window agents (Levels/Factor/Ownership) actually ran today.
+            count = (
+                await session.execute(
+                    text(
+                        "select count(*) from signal_events "
+                        "where created_at::date = :today and agent not like '%Volume%'"
+                    ),
+                    {"today": today},
+                )
+            ).scalar_one()
+        if count == 0:
+            problems.append(
+                f"No Levels/Factor/Ownership signal notes fired for {today} — across 300+ "
+                "liquid stocks that's implausibly quiet; the cron tick likely never ran"
+            )
     return problems
 
 
@@ -350,6 +409,21 @@ async def main() -> int:
     # re-run them), and restarting every 5 min through the window would be a restart storm. The
     # email is the signal to manually re-run the EOD chain.
     problems += await _eod_problems(now)
+
+    # Publish freshness: DO restart — unlike the EOD/bars check above, every job this covers
+    # (Morning Watch, Levels/Factor/Ownership signals) now runs on worker startup too (see
+    # worker.py), so a restart genuinely recovers the day's missed posts instead of being a
+    # no-op. Same accepted tradeoff as the quote-staleness check above: if the cause turns out
+    # not to be a stalled loop, this could restart every 5 min until fixed — the existing email
+    # cooldown still pages only once an hour, so a stuck case is loud, not silent.
+    try:
+        freshness_problems = await _publish_freshness_problems(now)
+    except Exception:
+        freshness_problems = []
+        log.exception("publish-freshness check failed")
+    if freshness_problems:
+        problems += freshness_problems
+        worker_fault = True
 
     # Data-quality: alert only, never restart — a corrupted row isn't fixed by a worker bounce,
     # it needs the parser fixed and the bad row deleted (see docs on the 2026-07-03 incident).

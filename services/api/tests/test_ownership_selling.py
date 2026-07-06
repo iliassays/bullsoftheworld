@@ -29,7 +29,9 @@ async def test_institutional_selling_has_its_own_key_title_and_surfaces_a_real_d
     code = "T" + uuid.uuid4().hex[:8].upper()
     async with sm() as session:
         session.add(
-            Symbol(market="DSE", code=code, name_en=code, category="A", is_active=True, is_hidden=False)
+            Symbol(
+                market="DSE", code=code, name_en=code, category="A", is_active=True, is_hidden=False
+            )
         )
         session.add(
             TickerAnalytics(
@@ -55,7 +57,11 @@ async def test_institutional_selling_has_its_own_key_title_and_surfaces_a_real_d
         )
         await session.commit()
 
-        screen = await _ownership(session, "DSE", kind="institute", direction="sell")
+        # limit=1000: PER_SCREEN's real default (8) made this flake once the dev DB accumulated
+        # 17+ real stocks with an equal-or-bigger institute drop, pushing this synthetic row out
+        # of the top-8 ranking — a large limit here tests "does a real drop surface at all"
+        # without depending on how this one row ranks against however much other data exists.
+        screen = await _ownership(session, "DSE", kind="institute", direction="sell", limit=1000)
 
     assert screen.key == "institutional_selling"
     assert screen.title == "Institutional Selling"

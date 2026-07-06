@@ -323,34 +323,44 @@ class WorkerSettings:
         # the task itself skips non-trading days.
         cron(snapshot_portfolios, hour=13, minute=20, run_at_startup=False),
         # 'Watch today' activity ranking — after analytics, before the FB market signals (13:50).
-        cron(run_trending, hour=13, minute=25, run_at_startup=False),
+        # run_at_startup=True: confirmed live (2026-07-06) that arq's cron loop can silently stall
+        # for ~30 min without any restart or error — pull_eod_summary/refresh_analytics/snapshot_*
+        # ran fine at 13:05-13:20, then run_trending/run_signals(13:25)/pull_news(13:35)/
+        # run_factor_signals(13:40) never even logged a start, before run_market_signals(13:50)
+        # ran normally again. A missed exact-minute tick used to mean silence for the rest of the
+        # day. All the jobs below are cheap (pure DB read/compute, no external scraping) and
+        # idempotent (upsert or a dedupe key per day), so catching up on the next worker restart —
+        # from a deploy or the watchdog's own restart-on-fault — is free and safe.
+        cron(run_trending, hour=13, minute=25, run_at_startup=True),
         # Snapshot social attention hourly across the session, then finalize after the bar pull.
         # Intraday runs keep watchers_total + today's counts fresh; the 13:20 run is the EOD row.
         cron(snapshot_buzz, hour={4, 5, 6, 7, 8, 13}, minute=20, run_at_startup=False),
         # Agent desk-notes from the day's confirmed levels, after analytics is fresh.
-        cron(run_signals, hour=13, minute=25, run_at_startup=False),
+        cron(run_signals, hour=13, minute=25, run_at_startup=True),
         # Ownership desk-notes after the weekly company/shareholding refresh (Fri 14:00).
-        cron(run_ownership_signals, weekday="fri", hour=14, minute=10, run_at_startup=False),
+        cron(run_ownership_signals, weekday="fri", hour=14, minute=10, run_at_startup=True),
         # Unusual-volume notes mid/late session, after the :30 quote polls.
-        cron(run_volume_signals, hour={5, 6, 7, 8}, minute=45, run_at_startup=False),
+        cron(run_volume_signals, hour={5, 6, 7, 8}, minute=45, run_at_startup=True),
         # Evening Wrap card → in-app feed + Facebook, after EOD summary/analytics/factor notes
         # land (13:05/13:15/13:40 UTC ≈ 19:40 Dhaka). Trading days only; idempotent per day.
-        cron(run_market_signals, hour=13, minute=50, run_at_startup=False),
+        cron(run_market_signals, hour=13, minute=50, run_at_startup=True),
         # Morning Watch card → Facebook only, pre-open (03:30 UTC ≈ 09:30 Dhaka, before 10:00 open).
-        cron(run_morning_watch, hour=3, minute=30, run_at_startup=False),
+        cron(run_morning_watch, hour=3, minute=30, run_at_startup=True),
         # Weekly Recap card → Facebook only, Thursday after close (14:00 UTC ≈ 20:00 Dhaka).
         # arq's weekday tuple is ('mon','tues','wed','thurs','fri','sat','sun') — it's "thurs", not "thu".
         # A value not in that tuple makes WEEKDAYS.index() throw on boot and crash-loops the whole worker.
-        cron(run_weekly_recap, weekday="thurs", hour=14, minute=0, run_at_startup=False),
+        cron(run_weekly_recap, weekday="thurs", hour=14, minute=0, run_at_startup=True),
         # Factor notes (momentum / quality / smart-money / relative strength), after analytics (13:15).
-        cron(run_factor_signals, hour=13, minute=40, run_at_startup=False),
+        cron(run_factor_signals, hour=13, minute=40, run_at_startup=True),
         # News: pre-open (03:30 UTC ≈ 09:30 Dhaka) so overnight items are in before the bell,
-        # and after the close (13:35 UTC) to catch intraday postings.
+        # and after the close (13:35 UTC) to catch intraday postings. Kept run_at_startup=False:
+        # this one does hit the external DSE site, and restarts can be frequent during a deploy
+        # day — no need to add redundant scrape load on top of its own two scheduled runs.
         cron(pull_news, hour={3, 13}, minute=35, run_at_startup=False),
         # Earnings-week logo calendar: Sunday 08:45 Dhaka, before the week opens.
-        cron(run_earnings_week, weekday="sun", hour=2, minute=45, run_at_startup=False),
+        cron(run_earnings_week, weekday="sun", hour=2, minute=45, run_at_startup=True),
         # Dhaka Mood gauge: 21:00 Dhaka — Bangladesh Facebook prime time, clear of the wrap.
-        cron(run_mood_card, hour=15, minute=0, run_at_startup=False),
+        cron(run_mood_card, hour=15, minute=0, run_at_startup=True),
         # Block-market list, once after the close (session ends 08:30 UTC); internal dataset.
         # No weekday filter — arq only accepts a single weekday string (a comma-joined list
         # crash-loops the whole worker); the task itself skips non-trading days.
