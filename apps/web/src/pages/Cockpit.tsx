@@ -262,7 +262,7 @@ export function Cockpit() {
         </button>
       </div>
       <p className="text-xs text-muted">
-        Five simulated ৳1,00,000 portfolios run by deterministic strategy rules on the 15-minute
+        Simulated ৳1,00,000 model portfolios run by deterministic strategy rules on the 15-minute
         quote cycle, with DSE T+2 settlement. Paper trading on delayed quotes — an internal
         experiment, not advice, and not visible to users.
       </p>

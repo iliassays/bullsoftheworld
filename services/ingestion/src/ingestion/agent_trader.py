@@ -38,6 +38,7 @@ from bulls.core.models import (
     AgentLot,
     AgentPortfolio,
     AgentTrade,
+    CompanyProfile,
     PortfolioHolding,
     QuoteSnapshot,
     Symbol,
@@ -75,6 +76,14 @@ async def _load_snapshots(
         for s in await session.scalars(
             select(Symbol).where(
                 Symbol.market == market, Symbol.is_active.is_(True), Symbol.is_hidden.is_(False)
+            )
+        )
+    }
+    paidup = {
+        code: mn
+        for code, mn in await session.execute(
+            select(CompanyProfile.code, CompanyProfile.paid_up_capital_mn).where(
+                CompanyProfile.market == market
             )
         )
     }
@@ -118,6 +127,8 @@ async def _load_snapshots(
             relative_volume=a.relative_volume,
             avg_volume_20=a.avg_volume_20,
             market_cap_mn=a.market_cap_mn,
+            above_sma_200=a.above_sma_200,
+            paid_up_capital_mn=paidup.get(code),
         )
     return out
 

@@ -354,7 +354,7 @@ def render_portfolios(book: list[dict], selected: str) -> str:
         total_eq = sum(a["equity"] or 0 for a in book)
         total_cap = sum(a["capital"] for a in book)
         return f"""{combo}
-<div class="sub">Five simulated ৳1-lac portfolios, traded automatically every 15 min with DSE T+2
+<div class="sub">Simulated ৳1-lac model portfolios, traded automatically every 15 min with DSE T+2
 settlement · paper trading on delayed quotes · not advice</div>
 <div class="tr">
   <div><div class="k">Combined equity</div><div class="v">{total_eq:,.0f}</div></div>

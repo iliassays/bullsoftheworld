@@ -204,3 +204,51 @@ def test_rank_entries_orders_best_first_and_skips_held_codes():
     assert [s.code for s, _reason in ranked] == ["AAA"]
     ranked_all = rank_entries("value", [b, a], held=set())
     assert [s.code for s, _ in ranked_all] == ["AAA", "BBB"]
+
+
+# --- second wave: lowpaidup / graham / buffett ------------------------------------------------
+
+
+def test_lowpaidup_entry_needs_scarce_supply_with_quality_floor():
+    good = snap(paid_up_capital_mn=300.0, pe_ratio=14.0, rsi_14=55.0)
+    assert entry_reason("lowpaidup", good)
+    assert entry_reason("lowpaidup", dataclasses.replace(good, paid_up_capital_mn=2_000.0)) is None
+    assert entry_reason("lowpaidup", dataclasses.replace(good, pe_ratio=None)) is None  # loss-maker
+    assert entry_reason("lowpaidup", dataclasses.replace(good, rsi_14=75.0)) is None  # too hot
+    assert entry_reason("lowpaidup", dataclasses.replace(good, paid_up_capital_mn=None)) is None
+
+
+def test_lowpaidup_exits_when_overheated():
+    assert exit_reason("lowpaidup", snap(rsi_14=80.0), avg_cost=100.0)
+    assert exit_reason("lowpaidup", snap(rsi_14=60.0), avg_cost=100.0) is None
+
+
+def test_graham_entry_tracks_the_lens_score():
+    # pe_vs_sector<0.75 (+2), pe<=12 (+1), pb<1.2 (+1), yield>=3 (+1) -> 10/10
+    good = snap(pe_vs_sector=0.6, pe_ratio=8.0, pb_ratio=0.9, roe=12.0, dividend_yield=4.0)
+    reason = entry_reason("graham", good)
+    assert reason and "/10" in reason
+    # Neutral-priced stock scores ~5 -> no entry.
+    assert entry_reason("graham", snap()) is None
+
+
+def test_graham_exits_when_score_decays():
+    rich = snap(pe_vs_sector=1.4, pe_ratio=30.0, pb_ratio=3.5)  # 5-2-2-1 -> 0/10
+    assert exit_reason("graham", rich, avg_cost=100.0)
+    cheap = snap(pe_vs_sector=0.6, pe_ratio=8.0, pb_ratio=0.9, dividend_yield=4.0)
+    assert exit_reason("graham", cheap, avg_cost=100.0) is None
+
+
+def test_buffett_entry_and_exit_track_the_lens_score():
+    # roe>=20 (+3), growth>=15 (+2), dividend (+1) -> 10/10 (trend intact)
+    good = snap(roe=25.0, eps_growth_yoy=20.0, dividend_yield=2.0, above_sma_200=True)
+    assert entry_reason("buffett", good)
+    # Decayed fundamentals: roe 8 (-1), growth -5 (-1), dividend (+1) -> 4/10: exit fires.
+    bad = dataclasses.replace(good, roe=8.0, eps_growth_yoy=-5.0, dividend_yield=2.0)
+    assert entry_reason("buffett", bad) is None
+    assert exit_reason("buffett", bad, avg_cost=100.0)
+
+
+def test_new_strategies_respect_universe_gates_too():
+    good = snap(paid_up_capital_mn=300.0, pe_ratio=14.0, rsi_14=55.0, category="Z")
+    assert entry_reason("lowpaidup", good) is None  # Z-category stays untouchable

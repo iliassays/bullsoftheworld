@@ -1,4 +1,6 @@
-"""Deterministic buy/sell rules for the five agent model portfolios. Pure — no I/O, no clock.
+"""Deterministic buy/sell rules for the agent model portfolios (one per StrategySpec below —
+adding a portfolio = adding a spec; the engine, seed script, cockpit and Hedge tab all iterate
+STRATEGIES). Pure — no I/O, no clock.
 
 Grounded in our own factor study (docs/research/dse-trading-research.md, 2024-06 → 2026-06):
 contrarian was the strongest family (oversold-RSI IC +0.094 @ 60d, 82% hit rate), quality mildly
@@ -21,6 +23,8 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+
+from bulls.analytics.investor_lens import buffett_quality_score, graham_score
 
 # --- inputs ----------------------------------------------------------------------------------
 
@@ -64,6 +68,9 @@ class Snapshot:
     relative_volume: float | None
     avg_volume_20: float | None
     market_cap_mn: float | None
+    # Added for the second wave of portfolios (defaults keep older call sites valid):
+    above_sma_200: bool | None = None  # buffett lens penalises a broken long-term trend
+    paid_up_capital_mn: float | None = None  # from company_profiles (weekly scrape)
 
 
 def universe_ok(s: Snapshot) -> bool:
@@ -225,6 +232,88 @@ def _accumulation_exit(s: Snapshot) -> str | None:
     return None
 
 
+# ~bottom 30% of DSE by paid-up capital (prod check 2026-07-06: p25 = ৳42.5cr, median ৳100cr).
+# The retail thesis is scarce supply; the quality/liquidity floors below keep it from becoming
+# a junk tracker — this portfolio TRACKS the theme honestly, it doesn't endorse it.
+_LOW_PAIDUP_MN = 500.0
+
+
+def _lowpaidup_entry(s: Snapshot) -> str | None:
+    if (
+        s.paid_up_capital_mn is not None
+        and s.paid_up_capital_mn <= _LOW_PAIDUP_MN
+        and s.pe_ratio is not None  # profitable — the floor that separates theme from junk
+        and s.pe_ratio <= 30
+        and s.rsi_14 is not None
+        and s.rsi_14 <= 70  # don't chase a name already running hot
+    ):
+        return (
+            f"Low paid-up: ৳{s.paid_up_capital_mn / 10:.0f}cr paid-up capital (scarce supply), "
+            f"profitable at P/E {s.pe_ratio:.1f}, RSI {s.rsi_14:.0f}"
+        )
+    return None
+
+
+def _lowpaidup_exit(s: Snapshot) -> str | None:
+    if s.rsi_14 is not None and s.rsi_14 >= 78:
+        return f"Overheated: RSI {s.rsi_14:.0f} — scarce-supply names round-trip fast"
+    return None
+
+
+def _graham_entry(s: Snapshot) -> str | None:
+    score = graham_score(
+        pe_ratio=s.pe_ratio,
+        pb_ratio=s.pb_ratio,
+        pe_vs_sector=s.pe_vs_sector,
+        roe=s.roe,
+        dividend_yield=s.dividend_yield,
+    )
+    if score is not None and score >= 8:
+        return (
+            f"Graham lens {score}/10: P/E {s.pe_ratio}, P/B {s.pb_ratio}, "
+            f"{s.pe_vs_sector:.2f}x sector median"
+            + (f", yield {s.dividend_yield:.1f}%" if s.dividend_yield else "")
+        )
+    return None
+
+
+def _graham_exit(s: Snapshot) -> str | None:
+    score = graham_score(
+        pe_ratio=s.pe_ratio,
+        pb_ratio=s.pb_ratio,
+        pe_vs_sector=s.pe_vs_sector,
+        roe=s.roe,
+        dividend_yield=s.dividend_yield,
+    )
+    if score is not None and score <= 5:
+        return f"Graham lens fell to {score}/10 — the value case has closed"
+    return None
+
+
+def _buffett_entry(s: Snapshot) -> str | None:
+    score = buffett_quality_score(
+        roe=s.roe,
+        eps_growth_yoy=s.eps_growth_yoy,
+        dividend_yield=s.dividend_yield,
+        above_sma_200=s.above_sma_200,
+    )
+    if score is not None and score >= 8:
+        return f"Buffett lens {score}/10: ROE {s.roe:.0f}%, EPS growth {s.eps_growth_yoy:+.0f}% YoY"
+    return None
+
+
+def _buffett_exit(s: Snapshot) -> str | None:
+    score = buffett_quality_score(
+        roe=s.roe,
+        eps_growth_yoy=s.eps_growth_yoy,
+        dividend_yield=s.dividend_yield,
+        above_sma_200=s.above_sma_200,
+    )
+    if score is not None and score <= 5:
+        return f"Buffett lens fell to {score}/10 — quality case no longer holds"
+    return None
+
+
 STRATEGIES: dict[str, StrategySpec] = {
     spec.key: spec
     for spec in (
@@ -288,6 +377,71 @@ STRATEGIES: dict[str, StrategySpec] = {
             exit_extra=_accumulation_exit,
             stop_loss_pct=-10.0,
             take_profit_pct=15.0,
+        ),
+        StrategySpec(
+            key="lowpaidup",
+            display_name="Low Paid-up Portfolio",
+            handle="LowPaidupPortfolio",
+            description=(
+                "Tracks the DSE retail favourite: small paid-up capital (scarce supply), but only "
+                "profitable, liquid names — a theme tracker with a quality floor, not a junk chase."
+            ),
+            entry=_lowpaidup_entry,
+            rank=lambda s: -(s.paid_up_capital_mn or 1e9),  # the scarcer the supply, the higher
+            exit_extra=_lowpaidup_exit,
+            stop_loss_pct=-12.0,
+            take_profit_pct=25.0,
+        ),
+        StrategySpec(
+            key="graham",
+            display_name="Graham Value Portfolio",
+            handle="GrahamPortfolio",
+            description=(
+                "The platform's own Graham investor-lens score, traded mechanically: enters at "
+                "8+/10, exits when the score decays to 5 — same score users see on symbol pages."
+            ),
+            entry=_graham_entry,
+            rank=lambda s: (
+                (
+                    graham_score(
+                        pe_ratio=s.pe_ratio,
+                        pb_ratio=s.pb_ratio,
+                        pe_vs_sector=s.pe_vs_sector,
+                        roe=s.roe,
+                        dividend_yield=s.dividend_yield,
+                    )
+                    or 0
+                )
+                - (s.pe_vs_sector or 1)
+            ),  # tiebreak: cheaper vs sector wins the slot
+            exit_extra=_graham_exit,
+            stop_loss_pct=-12.0,
+            take_profit_pct=None,
+        ),
+        StrategySpec(
+            key="buffett",
+            display_name="Buffett Quality Portfolio",
+            handle="BuffettPortfolio",
+            description=(
+                "The Buffett investor-lens score, traded mechanically: enters at 8+/10, exits at "
+                "5 — moats measured as ROE + earnings growth, docked when the long trend breaks."
+            ),
+            entry=_buffett_entry,
+            rank=lambda s: (
+                (
+                    buffett_quality_score(
+                        roe=s.roe,
+                        eps_growth_yoy=s.eps_growth_yoy,
+                        dividend_yield=s.dividend_yield,
+                        above_sma_200=s.above_sma_200,
+                    )
+                    or 0
+                )
+                + (s.roe or 0) / 1000
+            ),  # tiebreak: higher ROE wins the slot
+            exit_extra=_buffett_exit,
+            stop_loss_pct=-12.0,
+            take_profit_pct=None,
         ),
     )
 }
