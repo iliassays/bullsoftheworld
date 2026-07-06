@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type NoteBeat } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { DeskIcon } from "../lib/deskIcons";
+import { useSeo } from "../components/Seo";
 import { VerifiedBadge } from "../components/ui";
 
 const FB_URL = "https://www.facebook.com/1214682241723822";
@@ -10,6 +11,16 @@ const FB_URL = "https://www.facebook.com/1214682241723822";
 export function About() {
   const { lang } = useLang();
   const bn = lang === "bn";
+  useSeo({
+    title: {
+      bn: "Bulls of Dhaka সম্পর্কে — DSE-র জন্য তথ্যভিত্তিক প্ল্যাটফর্ম",
+      en: "About Bulls of Dhaka — a facts-first platform for the DSE",
+    },
+    description: {
+      bn: "Bulls of Dhaka কী, কেন 'তথ্যে চলুন, গুজবে নয়', আর কোন কোন অটোমেটেড ডেস্ক DSE-র ডেটা তুলে ধরে — সব এক জায়গায়।",
+      en: "What Bulls of Dhaka is, why 'facts, not rumours', and the automated desks that surface Dhaka Stock Exchange data.",
+    },
+  });
   const [desks, setDesks] = useState<NoteBeat[]>([]);
   useEffect(() => {
     api

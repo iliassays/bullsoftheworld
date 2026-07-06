@@ -47,6 +47,7 @@ from api.routers import (
     views,
     watchlist,
 )
+from api.seo.router import router as seo_router
 from bulls.core.config import get_settings
 from bulls.core.db import dispose_engine
 from bulls.core.tenancy import TenantRegistry
@@ -128,6 +129,7 @@ app.include_router(pulse.router)
 app.include_router(scanner.router)
 app.include_router(scorecard.router)
 app.include_router(screener.router)
+app.include_router(seo_router)
 app.include_router(trending.router)
 app.include_router(users.router)
 app.include_router(views.router)

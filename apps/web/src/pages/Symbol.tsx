@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link } from "../lib/nav";
 import {
   api,
   type Bar,
@@ -23,6 +24,7 @@ import {
   OwnershipPanel,
 } from "../components/CompanyPanels";
 import { BeforeYouTrade } from "../components/BeforeYouTrade";
+import { useSeo, breadcrumbJsonLd } from "../components/Seo";
 import { KeyLevels } from "../components/KeyLevels";
 import { InvestorLensCard } from "../components/InvestorLensCard";
 import { PlainReadCard } from "../components/PlainReadCard";
@@ -108,7 +110,7 @@ export function SymbolPage() {
   const { code = "" } = useParams();
   const sym = code.toUpperCase();
   const { user } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [buzz, setBuzz] = useState<Buzz | null>(null);
@@ -168,6 +170,28 @@ export function SymbolPage() {
       b ? { ...b, watchers: b.watchers + (watched ? -1 : 1) } : b,
     );
   };
+
+  // Per-stock head. Computed from whatever's loaded (name/price/sector); falls back to the raw
+  // ticker before `detail` arrives so the hook runs unconditionally (before the early return).
+  const seoName =
+    (lang === "bn" ? detail?.symbol.name_bn || detail?.symbol.name_en : detail?.symbol.name_en) ||
+    sym;
+  const seoSector = detail?.symbol.sector;
+  const priceTxt = detail?.quote?.ltp != null ? `৳${detail.quote.ltp}` : "";
+  useSeo({
+    title:
+      lang === "bn"
+        ? `${seoName} (${sym}) শেয়ার দাম ${priceTxt} — DSE | Bulls of Dhaka`
+        : `${seoName} (${sym}) share price ${priceTxt} — DSE | Bulls of Dhaka`,
+    description:
+      lang === "bn"
+        ? `${seoName}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল (P/E, EPS, মার্কেট ক্যাপ), চার্ট প্যাটার্ন ও খবর${seoSector ? ` · খাত: ${seoSector}` : ""}। দাম ১৫ মিনিট বিলম্বিত। বিনিয়োগ পরামর্শ নয়।`
+        : `${seoName} latest share price, fundamentals (P/E, EPS, market cap), chart patterns and news${seoSector ? ` · Sector: ${seoSector}` : ""}. Price 15-min delayed. Not investment advice.`,
+    jsonLd: breadcrumbJsonLd(lang, [
+      { name: lang === "bn" ? "হোম" : "Home", path: "/" },
+      { name: `${seoName} (${sym})`, path: `/s/${sym}` },
+    ]),
+  });
 
   if (detail === null) return <Spinner />;
   const q = detail.quote;

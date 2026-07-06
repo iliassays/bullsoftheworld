@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useSeo } from "../components/Seo";
+import { Link, useNavigate } from "../lib/nav";
 import { api, ApiError, type User } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
@@ -19,6 +20,7 @@ function ContactRow({
   user: User;
 }) {
   const { t } = useLang();
+  useSeo({ noindex: true }); // private/personal — keep out of the index
   const { refresh } = useAuth();
   const value = kind === "email" ? user.email : user.phone;
   const verified = kind === "email" ? user.email_verified : user.phone_verified;

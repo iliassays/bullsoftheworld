@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceChip, evidenceExplain } from "../components/EvidenceChip";
 import { FreshnessTag } from "../components/FreshnessTag";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { Empty, Pct, Spinner, taka } from "../components/ui";
 import { api, type ScannerResponse, type Screen, type ScreenItem } from "../lib/api";
 import { useAuth } from "../lib/auth";

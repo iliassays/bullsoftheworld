@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { EvidenceNote } from "../components/EvidenceChip";
+import { useSeo } from "../components/Seo";
 import { Spinner } from "../components/ui";
 import { api, type ScreensResponse } from "../lib/api";
 import { useLang } from "../lib/i18n";
@@ -12,6 +13,16 @@ import { PATTERN_LABEL, PATTERN_ORDER } from "../lib/patterns";
 // analysis, not proven on DSE (see each pattern's lesson for the full reasoning).
 export function PatternLibrary() {
   const { t, lang } = useLang();
+  useSeo({
+    title: {
+      bn: "চার্ট প্যাটার্ন — DSE শেয়ারে ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম | Bulls of Dhaka",
+      en: "Chart patterns — triangles, channels, double tops/bottoms on DSE | Bulls of Dhaka",
+    },
+    description: {
+      bn: "ঢাকা স্টক এক্সচেঞ্জের শেয়ারে গঠিত হওয়া ক্লাসিক চার্ট প্যাটার্ন — প্রতিটি প্যাটার্নের মানে ও এখন কোন শেয়ার দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।",
+      en: "Classic chart patterns forming on Dhaka Stock Exchange stocks — what each means and which stocks show it now. Textbook technical analysis, not advice.",
+    },
+  });
   const [data, setData] = useState<ScreensResponse | null>(null);
 
   useEffect(() => {

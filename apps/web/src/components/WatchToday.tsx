@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type TrendingReason, type TrendingStock } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { CompanyLogo } from "./CompanyLogo";

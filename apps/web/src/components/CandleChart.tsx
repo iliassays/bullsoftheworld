@@ -6,7 +6,7 @@ import {
   type Time,
   createChart,
 } from "lightweight-charts";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type Bar, type PatternMatch } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { patternLabel, patternStatusLabel } from "../lib/patterns";

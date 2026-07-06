@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useSeo } from "../components/Seo";
+import { Link } from "../lib/nav";
 import { api, type SymbolDetail } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
@@ -9,6 +10,7 @@ import { Empty, Pct, Spinner, taka } from "../components/ui";
 export function Watchlist() {
   const { user } = useAuth();
   const { t } = useLang();
+  useSeo({ noindex: true }); // private/personal — keep out of the index
   const [items, setItems] = useState<SymbolDetail[] | null>(null);
 
   useEffect(() => {

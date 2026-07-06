@@ -1,0 +1,16 @@
+# Bulls of Dhaka — allow everything public, keep private/personal + transient auth pages out.
+# URLs are language-prefixed (/bn/…, /en/…); the /*/ wildcard covers both languages.
+User-agent: *
+Allow: /
+Disallow: /*/portfolio
+Disallow: /*/alerts
+Disallow: /*/watchlist
+Disallow: /*/me
+Disallow: /*/cockpit
+Disallow: /*/welcome
+Disallow: /*/forgot
+Disallow: /*/reset
+Disallow: /*/verify
+Disallow: /*/u/
+
+Sitemap: https://bullsofdhaka.com/sitemap.xml

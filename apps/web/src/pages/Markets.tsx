@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EarningsWeek } from "../components/EarningsWeek";
+import { useSeo } from "../components/Seo";
 import { EvidenceNote } from "../components/EvidenceChip";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import {
   api,
   type MomHorizons,
@@ -1340,6 +1341,16 @@ function LiquidityGuide() {
 
 export function Markets() {
   const { t } = useLang();
+  useSeo({
+    title: {
+      bn: "মার্কেট স্ক্রিন — DSE গেইনার, লুজার, ভলিউম, ভ্যালু | Bulls of Dhaka",
+      en: "Market screens — DSE gainers, losers, volume, value | Bulls of Dhaka",
+    },
+    description: {
+      bn: "ঢাকা স্টক এক্সচেঞ্জের রেডিমেড স্ক্রিন: টপ গেইনার/লুজার, অস্বাভাবিক ভলিউম, সস্তা vs খাত, প্রাতিষ্ঠানিক প্রবাহ, চার্ট প্যাটার্ন। বর্ণনামূলক তথ্য, পরামর্শ নয়।",
+      en: "Ready-made Dhaka Stock Exchange screens: top gainers/losers, unusual volume, cheap-vs-sector, institutional flow, chart patterns. Descriptive, not advice.",
+    },
+  });
   const [data, setData] = useState<ScreensResponse | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lens, setLens] = useState("focus");

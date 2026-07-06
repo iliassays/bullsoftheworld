@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSeo } from "../components/Seo";
+import { useNavigate } from "../lib/nav";
 import { api, type NoteBeat, type Sector, type SymbolOut } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
@@ -31,6 +32,7 @@ const SECTOR_ICONS: Record<string, string> = {
 export function Welcome() {
   const { user } = useAuth();
   const { t, lang } = useLang();
+  useSeo({ noindex: true }); // private/personal — keep out of the index
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [sectors, setSectors] = useState<Sector[] | null>(null);

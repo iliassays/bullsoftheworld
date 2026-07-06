@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLang } from "../lib/i18n";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../lib/nav";
 import { api, type SymbolOut } from "../lib/api";
 import { CompanyLogo } from "./CompanyLogo";
 

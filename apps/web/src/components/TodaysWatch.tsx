@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type Breadth, type MarketSession, type TodaysWatch as TodaysWatchT } from "../lib/api";
 import { useLang } from "../lib/i18n";
 

@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { About } from "./pages/About";
 import { Shell } from "./components/Shell";
 import { Alerts } from "./pages/Alerts";
@@ -17,35 +18,71 @@ import { SymbolPage } from "./pages/Symbol";
 import { UserProfile } from "./pages/UserProfile";
 import { Watchlist } from "./pages/Watchlist";
 import { Welcome } from "./pages/Welcome";
+import { type Lang, SUPPORTED, currentLang, useLang } from "./lib/i18n";
+
+// Language layout: every canonical URL is prefixed with /bn or /en (for SEO + hreflang). This
+// validates the segment, drives the i18n state from the URL, and bounces any unprefixed/legacy
+// path to the language-prefixed equivalent. `currentLang()` reads the path directly, so API
+// requests already carry the right locale regardless of when this effect runs.
+function LangLayout() {
+  const { lang } = useParams();
+  const { setLang } = useLang();
+  const loc = useLocation();
+  const valid = !!lang && SUPPORTED.includes(lang as Lang);
+  useEffect(() => {
+    if (valid) setLang(lang as Lang);
+  }, [valid, lang, setLang]);
+  if (!valid) {
+    return <Navigate to={`/${currentLang()}${loc.pathname}${loc.search}`} replace />;
+  }
+  return <Outlet />;
+}
+
+// Locale-preserving redirect for the legacy in-app aliases (kept from the 2026-07 nav redesign).
+function LocaleRedirect({ to }: { to: string }) {
+  const { lang } = useParams();
+  const pref = SUPPORTED.includes(lang as Lang) ? (lang as Lang) : currentLang();
+  return <Navigate to={`/${pref}${to}`} replace />;
+}
+
+// Bare root and any other unprefixed path → prefixed equivalent (default/stored/URL language).
+function RootRedirect() {
+  const loc = useLocation();
+  const rest = loc.pathname === "/" ? "" : loc.pathname;
+  return <Navigate to={`/${currentLang()}${rest}${loc.search}`} replace />;
+}
 
 export function App() {
   return (
     <Routes>
-      <Route element={<Shell />}>
-        <Route index element={<Feed />} />
-        <Route path="markets" element={<Markets />} />
-        <Route path="markets/:key" element={<ScreenExplore />} />
-        <Route path="learn/patterns" element={<PatternLibrary />} />
-        <Route path="learn/patterns/:type" element={<PatternDetail />} />
-        <Route path="ideas" element={<Scanner />} />
-        <Route path="portfolio" element={<Portfolio />} />
-        <Route path="alerts" element={<Alerts />} />
-        {/* Redesign 2026-07: Bulls tab merged into Home (desks filter chip); Scanner renamed Ideas. */}
-        <Route path="bulls" element={<Navigate to="/?feed=desks" replace />} />
-        <Route path="scanner" element={<Navigate to="/ideas" replace />} />
-        <Route path="desk/:handle" element={<DeskProfile />} />
-        <Route path="u/:handle" element={<UserProfile />} />
-        <Route path="watchlist" element={<Watchlist />} />
-        <Route path="s/:code" element={<SymbolPage />} />
-        {/* Admin-only (token-gated in the page itself); deliberately not linked from any nav. */}
-        <Route path="cockpit" element={<Cockpit />} />
-        <Route path="me" element={<Profile />} />
-        <Route path="welcome" element={<Welcome />} />
-        <Route path="about" element={<About />} />
-        <Route path="forgot" element={<ForgotPassword />} />
-        <Route path="reset" element={<ResetPassword />} />
-        <Route path="verify" element={<VerifyEmail />} />
+      <Route path=":lang" element={<LangLayout />}>
+        <Route element={<Shell />}>
+          <Route index element={<Feed />} />
+          <Route path="markets" element={<Markets />} />
+          <Route path="markets/:key" element={<ScreenExplore />} />
+          <Route path="learn/patterns" element={<PatternLibrary />} />
+          <Route path="learn/patterns/:type" element={<PatternDetail />} />
+          <Route path="ideas" element={<Scanner />} />
+          <Route path="portfolio" element={<Portfolio />} />
+          <Route path="alerts" element={<Alerts />} />
+          {/* Redesign 2026-07: Bulls tab merged into Home (desks filter chip); Scanner renamed Ideas. */}
+          <Route path="bulls" element={<LocaleRedirect to="/?feed=desks" />} />
+          <Route path="scanner" element={<LocaleRedirect to="/ideas" />} />
+          <Route path="desk/:handle" element={<DeskProfile />} />
+          <Route path="u/:handle" element={<UserProfile />} />
+          <Route path="watchlist" element={<Watchlist />} />
+          <Route path="s/:code" element={<SymbolPage />} />
+          {/* Admin-only (token-gated in the page itself); deliberately not linked from any nav. */}
+          <Route path="cockpit" element={<Cockpit />} />
+          <Route path="me" element={<Profile />} />
+          <Route path="welcome" element={<Welcome />} />
+          <Route path="about" element={<About />} />
+          <Route path="forgot" element={<ForgotPassword />} />
+          <Route path="reset" element={<ResetPassword />} />
+          <Route path="verify" element={<VerifyEmail />} />
+        </Route>
       </Route>
+      <Route path="*" element={<RootRedirect />} />
     </Routes>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useSeo } from "../components/Seo";
+import { useParams } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type PublicPortfolio, type UserProfile as UserProfileT } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
@@ -16,6 +18,7 @@ import { Empty, Pct, Spinner, taka } from "../components/ui";
 export function UserProfile() {
   const { handle = "" } = useParams();
   const { t } = useLang();
+  useSeo({ noindex: true }); // private/personal — keep out of the index
   const [profile, setProfile] = useState<UserProfileT | null>(null);
   const [failed, setFailed] = useState(false);
   const [pf, setPf] = useState<PublicPortfolio | null>(null);

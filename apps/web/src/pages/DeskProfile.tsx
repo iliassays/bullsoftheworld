@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type Desk } from "../lib/api";
 import { DeskIcon, hasDeskIcon } from "../lib/deskIcons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { PostCard } from "../components/PostCard";
+import { useSeo } from "../components/Seo";
 import { Empty, Spinner, VerifiedBadge } from "../components/ui";
 
 // Official desk profile — StockTwits-style: header (name + verified badge + official label + bio +
@@ -48,6 +50,18 @@ export function DeskProfile() {
   const { items, loading, sentinelRef } = useInfiniteFeed(`desk:${handle}`, (l, o) =>
     api.feed(undefined, "note", l, o, handle),
   );
+
+  const deskName = desk?.name || handle;
+  useSeo({
+    title: {
+      bn: `${deskName} — Bulls of Dhaka ডেস্ক`,
+      en: `${deskName} — Bulls of Dhaka desk`,
+    },
+    description: {
+      bn: `${deskName} ডেস্কের সব ডেস্ক-নোট ও সংকেত — ঢাকা স্টক এক্সচেঞ্জ। বর্ণনামূলক তথ্য, পরামর্শ নয়।`,
+      en: `All desk notes and signals from the ${deskName} desk — Dhaka Stock Exchange. Descriptive data, not advice.`,
+    },
+  });
 
   if (failed) return <Empty>{t("desk.notFound")}</Empty>;
   if (!desk) return <Spinner />;

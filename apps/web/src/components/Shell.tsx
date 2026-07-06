@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { api, type MarketStatus } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { usePageViewTracking } from "../lib/analytics";
 import { type Lang, useLang } from "../lib/i18n";
+import { Link, NavLink, useSwitchLang } from "../lib/nav";
 import { SearchBar } from "./SearchBar";
 
 // Live, holiday-aware market status + the delay note — a pulsing green dot while open.
@@ -88,7 +90,8 @@ function AlertsBell() {
 }
 
 function LangToggle() {
-  const { lang, setLang } = useLang();
+  const { lang } = useLang();
+  const switchLang = useSwitchLang();
   const opts: { id: Lang; label: string }[] = [
     { id: "bn", label: "🇧🇩 বাং" },
     { id: "en", label: "🇬🇧 EN" },
@@ -98,7 +101,7 @@ function LangToggle() {
       {opts.map((o) => (
         <button
           key={o.id}
-          onClick={() => setLang(o.id)}
+          onClick={() => switchLang(o.id)}
           aria-pressed={lang === o.id}
           className={`px-2 py-1 ${lang === o.id ? "bg-accent text-black" : "text-muted"}`}
         >
@@ -111,6 +114,7 @@ function LangToggle() {
 
 export function Shell() {
   const { lang, t } = useLang();
+  usePageViewTracking(); // GA4 SPA page_view on route change + view_stock on stock pages
   // Publish the live header height as a CSS var so page-level tab bars can stick right below
   // it (`top: var(--app-header-h)`). Measured, not hardcoded — the header wraps differently
   // per language and viewport.

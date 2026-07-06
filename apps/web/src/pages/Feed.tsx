@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type NoteBeat } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
@@ -9,6 +10,7 @@ import { DhakaMood } from "../components/DhakaMood";
 import { EarningsWeek } from "../components/EarningsWeek";
 import { PostCard } from "../components/PostCard";
 import { QuizCard } from "../components/QuizCard";
+import { useSeo, siteJsonLd } from "../components/Seo";
 import { TodaysWatch } from "../components/TodaysWatch";
 import { Spinner } from "../components/ui";
 
@@ -22,6 +24,7 @@ type Chip = "all" | "desks" | "people" | "myStocks" | "portfolio";
 export function Feed() {
   const { user } = useAuth();
   const { t } = useLang();
+  useSeo({ jsonLd: siteJsonLd() }); // home uses site-default title/description + Organization/WebSite
   const [params, setParams] = useSearchParams();
   // /bulls redirects to /?feed=desks so old links (and the FB page) keep working.
   const requested = params.get("feed") as Chip | null;

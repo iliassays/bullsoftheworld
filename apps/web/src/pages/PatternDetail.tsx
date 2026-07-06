@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceNote } from "../components/EvidenceChip";
+import { useSeo } from "../components/Seo";
 import { Pct, Spinner, taka } from "../components/ui";
 import { api, type PatternType, type Screen } from "../lib/api";
 import { useLang } from "../lib/i18n";
@@ -16,6 +18,24 @@ export function PatternDetail() {
   const { t, lang } = useLang();
   const { type = "" } = useParams();
   const [screen, setScreen] = useState<Screen | null>(null);
+
+  const validType = VALID_TYPES.has(type) ? (type as PatternType) : null;
+  const plabel = validType ? PATTERN_LABEL[validType] : null;
+  useSeo({
+    noindex: !validType,
+    title: plabel
+      ? {
+          bn: `${plabel.bn} — DSE চার্ট প্যাটার্ন | Bulls of Dhaka`,
+          en: `${plabel.en} — DSE chart pattern | Bulls of Dhaka`,
+        }
+      : undefined,
+    description: plabel
+      ? {
+          bn: `${plabel.bn} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন DSE শেয়ার এটি দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।`,
+          en: `What a ${plabel.en.toLowerCase()} is, what usually happens next, and which DSE stocks show it now. Textbook technical analysis, not advice.`,
+        }
+      : undefined,
+  });
 
   useEffect(() => {
     if (!VALID_TYPES.has(type)) return;

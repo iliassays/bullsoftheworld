@@ -20,6 +20,11 @@ API_URL="${PROD_API_URL:-https://api.bullsofdhaka.com}"
 echo "→ building frontend (VITE_API_BASE=$API_URL)"
 ( cd apps/web && VITE_API_BASE="$API_URL" npm run build )
 
+# Generate sitemap.xml into dist/ (from the live /symbols API + static routes) so the root sync
+# below uploads it. robots.txt ships automatically from apps/web/public/ via the build.
+echo "→ generating sitemap.xml"
+PROD_API_URL="$API_URL" node scripts/gen_sitemap.mjs
+
 # Only the hashed /assets/* bundles are content-addressed → safe to cache forever.
 echo "→ syncing hashed assets to s3://$PROD_S3_BUCKET/assets (immutable)"
 aws s3 sync apps/web/dist/assets/ "s3://$PROD_S3_BUCKET/assets/" --delete \
@@ -39,6 +44,6 @@ aws s3 cp apps/web/dist/index.html "s3://$PROD_S3_BUCKET/index.html" \
 
 echo "→ invalidating CloudFront cache"
 aws cloudfront create-invalidation \
-  --distribution-id "$PROD_CLOUDFRONT_ID" --paths "/" "/index.html" >/dev/null
+  --distribution-id "$PROD_CLOUDFRONT_ID" --paths "/" "/index.html" "/sitemap.xml" "/robots.txt" >/dev/null
 
 echo "✓ deployed → https://bullsofdhaka.com"

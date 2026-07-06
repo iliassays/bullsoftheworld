@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { api, type Screen } from "../lib/api";
 import { Spinner } from "../components/ui";
 import { InfoTip } from "../components/InfoTip";
+import { useSeo } from "../components/Seo";
 import { useLang } from "../lib/i18n";
 import { SCREEN_LESSON } from "../lib/lessons";
 import { ScreenRow, metricHeader, screenDesc, screenHelp, screenTitle } from "./Markets";
@@ -95,6 +97,17 @@ export function ScreenExplore() {
       : usesPeriod
         ? { set: isVolume ? VOL_PERIODS : PERIODS, sel: period, choose: setPeriod }
         : null;
+
+  const stitle = screen ? screenTitle(screen, lang) : active;
+  useSeo({
+    title: {
+      bn: `${stitle} — DSE স্ক্রিন | Bulls of Dhaka`,
+      en: `${stitle} — DSE screen | Bulls of Dhaka`,
+    },
+    description: screen
+      ? { bn: screenDesc(screen, "bn"), en: screenDesc(screen, "en") }
+      : undefined,
+  });
 
   return (
     <div className="flex flex-col gap-3">

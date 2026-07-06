@@ -11,9 +11,9 @@ import {
 // back in the same language. Static UI strings live in STRINGS and resolve via t().
 export type Lang = "en" | "bn";
 const KEY = "bulls.lang";
-const SUPPORTED: Lang[] = ["en", "bn"];
+export const SUPPORTED: Lang[] = ["en", "bn"];
 
-function readStored(): Lang {
+export function readStored(): Lang {
   try {
     const v = localStorage.getItem(KEY) as Lang | null;
     if (v && SUPPORTED.includes(v)) return v;
@@ -25,7 +25,18 @@ function readStored(): Lang {
 
 // Module-level mirror so non-React code (the API request()) can read the current language.
 let _lang: Lang = readStored();
-export const currentLang = (): Lang => _lang;
+// URL-first: the language now lives in the path (/bn/…, /en/…), and history.pushState updates
+// window.location synchronously on navigation — so reading the path here means the API's X-Locale
+// header is always in sync with the current route, with no dependency on React effect ordering
+// (this is what used to cause the "reverse language" refetch bug). Falls back to the stored
+// preference before the router has mounted / for any unprefixed path.
+export const currentLang = (): Lang => {
+  if (typeof window !== "undefined") {
+    const seg = window.location.pathname.split("/")[1];
+    if (SUPPORTED.includes(seg as Lang)) return seg as Lang;
+  }
+  return _lang;
+};
 
 type Entry = { en: string; bn: string };
 const STRINGS: Record<string, Entry> = {
