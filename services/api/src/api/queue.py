@@ -41,6 +41,15 @@ async def enqueue_moderation(post_id: int) -> None:
         log.warning("moderation enqueue failed for post %s: %s", post_id, e)
 
 
+async def enqueue_post_embedding(post_id: int) -> None:
+    """Index a published post for stock research retrieval. Best-effort, never blocks posting."""
+    try:
+        pool = await _get_pool()
+        await pool.enqueue_job("embed_post", post_id)
+    except Exception as e:
+        log.warning("post embedding enqueue failed for post %s: %s", post_id, e)
+
+
 async def close_pool() -> None:
     global _pool
     if _pool is not None:

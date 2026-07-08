@@ -13,6 +13,7 @@ from bulls.core.models.company import (
 )
 from bulls.core.models.company_logo import CompanyLogo
 from bulls.core.models.follow import Follow
+from bulls.core.models.knowledge import KnowledgeChunk
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
 from bulls.core.models.page_view_event import PageViewEvent
@@ -44,6 +45,7 @@ __all__ = [
     "DailyBar",
     "DividendRecord",
     "Follow",
+    "KnowledgeChunk",
     "MarketSummary",
     "ModerationEvent",
     "PageViewEvent",

@@ -16,14 +16,20 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import hashlib
+import logging
 import sys
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import Announcement
 from bulls.market_data import get_provider
 from ingestion.news_decode import decode
+
+log = logging.getLogger(__name__)
 
 BACKFILL_DAYS = 760
 DAILY_LOOKBACK_DAYS = 3  # news is time-sensitive; a short re-pull catches late postings
@@ -119,6 +125,20 @@ def _key(code: str, day: dt.date, headline: str) -> str:
     return hashlib.sha1(f"{code}|{day}|{headline}".encode()).hexdigest()[:40]
 
 
+async def _enqueue_embeddings(announcement_ids: list[int]) -> None:
+    if not announcement_ids:
+        return
+    try:
+        pool = await create_pool(RedisSettings.from_dsn(get_settings().redis_url))
+        try:
+            for announcement_id in announcement_ids:
+                await pool.enqueue_job("embed_announcement", announcement_id)
+        finally:
+            await pool.aclose()
+    except Exception as e:
+        log.warning("announcement embedding enqueue failed for %s rows: %s", len(announcement_ids), e)
+
+
 async def _ingest(market: str, items: list) -> int:
     """Classify + score + decode a batch of raw NewsItems, drop noise, upsert. Returns rows kept."""
     # DSE splits long announcements across rows that repeat the same title ("(Cont. news of X)").
@@ -135,6 +155,7 @@ async def _ingest(market: str, items: list) -> int:
             g["bodies"].append(it.body)
 
     kept = 0
+    announcement_ids: list[int] = []
     async with get_sessionmaker()() as session:
         for k, g in groups.items():
             it, category = g["item"], g["category"]
@@ -159,6 +180,7 @@ async def _ingest(market: str, items: list) -> int:
             stmt = (
                 pg_insert(Announcement)
                 .values(row)
+                .returning(Announcement.id)
                 .on_conflict_do_update(
                     index_elements=["key"],
                     set_={
@@ -170,8 +192,12 @@ async def _ingest(market: str, items: list) -> int:
                 )
             )
             result = await session.execute(stmt)
+            announcement_id = result.scalar_one_or_none()
+            if announcement_id is not None:
+                announcement_ids.append(announcement_id)
             kept += result.rowcount or 0
         await session.commit()
+    await _enqueue_embeddings(announcement_ids)
     return kept
 
 

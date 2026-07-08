@@ -21,7 +21,7 @@ from api.moderation import (
     record_event,
     status_for,
 )
-from api.queue import enqueue_moderation, enqueue_sentiment
+from api.queue import enqueue_moderation, enqueue_post_embedding, enqueue_sentiment
 from bulls.core.config import get_settings
 from bulls.core.models import (
     Cashtag,
@@ -234,6 +234,7 @@ async def create_post(
             await enqueue_sentiment(post.id)
         if get_settings().moderation_l4_enabled:  # LLM layer — off on resource-limited servers
             await enqueue_moderation(post.id)
+        await enqueue_post_embedding(post.id)
 
     return PostOut(
         id=post.id,

@@ -13,6 +13,7 @@ from typing import ClassVar
 import redis.asyncio as aioredis
 from arq.connections import RedisSettings
 
+from bulls.ai.retrieval import index_announcement, index_post, index_signal_event
 from bulls.ai.tasks.moderation import screen_post
 from bulls.ai.tasks.sentiment import classify_sentiment
 from bulls.core.config import get_settings
@@ -101,6 +102,30 @@ async def screen_post_safety(ctx, post_id: int) -> str:
         return f"flagged:{result.verdict}"
 
 
+async def embed_announcement(ctx, announcement_id: int) -> str:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        n = await index_announcement(session, announcement_id)
+        await session.commit()
+    return f"chunks:{n}"
+
+
+async def embed_post(ctx, post_id: int) -> str:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        n = await index_post(session, post_id)
+        await session.commit()
+    return f"chunks:{n}"
+
+
+async def embed_signal_event(ctx, signal_event_id: int) -> str:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        n = await index_signal_event(session, signal_event_id)
+        await session.commit()
+    return f"chunks:{n}"
+
+
 async def startup(ctx) -> None:
     ctx["redis_pub"] = aioredis.from_url(get_settings().redis_url)
 
@@ -112,7 +137,13 @@ async def shutdown(ctx) -> None:
 class WorkerSettings:
     """arq entry point."""
 
-    functions: ClassVar = [tag_sentiment, screen_post_safety]
+    functions: ClassVar = [
+        tag_sentiment,
+        screen_post_safety,
+        embed_announcement,
+        embed_post,
+        embed_signal_event,
+    ]
     on_startup: ClassVar = startup
     on_shutdown: ClassVar = shutdown
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
