@@ -67,6 +67,16 @@ EOD_CHECK_TO_UTC_HOUR = 18
 MORNING_WATCH_CHECK_FROM_UTC_HOUR = 5
 
 
+def _utc_check_start(market_date: dt.date, hour: int) -> dt.datetime:
+    """UTC instant when a check for a given Dhaka market date may start.
+
+    Near 18:00-23:59 UTC the Dhaka calendar has already rolled to tomorrow, but the jobs for that
+    Dhaka date have not reached their UTC schedule yet. Checking by ``now.hour`` alone creates a
+    false alert for tomorrow's Morning Watch before it is even due.
+    """
+    return dt.datetime.combine(market_date, dt.time(hour=hour, tzinfo=dt.UTC))
+
+
 def _unit_active(unit: str) -> bool:
     try:
         r = subprocess.run(
@@ -153,7 +163,7 @@ async def _publish_freshness_problems(now: dt.datetime) -> list[str]:
         return []
     problems: list[str] = []
 
-    if now.hour >= MORNING_WATCH_CHECK_FROM_UTC_HOUR:
+    if now >= _utc_check_start(today, MORNING_WATCH_CHECK_FROM_UTC_HOUR):
         try:
             r = aioredis.from_url(get_settings().redis_url)
             posted = await r.get(f"fb:posted:morning_watch:{today}")
