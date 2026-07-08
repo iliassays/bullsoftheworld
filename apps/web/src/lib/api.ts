@@ -179,6 +179,13 @@ export interface ResearchSource {
   snippet: string;
   reliability: "official" | "market" | "system" | "crowd";
 }
+export interface ResearchInsight {
+  lens: "valuation" | "technical" | "liquidity" | "ownership" | "disclosure" | "crowd";
+  stance: "constructive" | "watch" | "risk" | "unknown";
+  title: string;
+  detail: string;
+  evidence: string;
+}
 export interface ResearchBrief {
   code: string;
   question: string;
@@ -188,6 +195,7 @@ export interface ResearchBrief {
   blocked_advice: boolean;
   as_of: string;
   facts: string[];
+  insights: ResearchInsight[];
   sources: ResearchSource[];
 }
 export interface Level {

@@ -11,6 +11,7 @@ import datetime as dt
 from api.routers.research import (
     _ADVICE_RE,
     ResearchSource,
+    _build_insights,
     _dedupe_sources,
     _intent,
     _is_recent_official,
@@ -170,3 +171,52 @@ def test_crowd_question_does_not_claim_strong_official_evidence_without_posts():
 
     assert _rank_sources([official], question="What are people saying?", intent="crowd") == []
     assert _quality([], official_catalyst=False, intent="crowd") == "weak"
+
+
+def test_financial_insights_surface_valuation_technical_and_disclosure_lenses():
+    class Analytics:
+        pe_ratio = 5.9
+        pe_vs_sector = 0.62
+        rsi_14 = 73.0
+        relative_volume = 4.8
+        cmf_20 = 0.12
+        obv_slope = 0.31
+        institute_delta = 0.42
+        foreign_delta = None
+
+    insights = _build_insights(
+        analytics=Analytics(),
+        sources=[_src(title="Earnings: BSC: Q3 Financials")],
+        posts_24h=0,
+        chatter_x=None,
+    )
+
+    by_lens = {i.lens: i for i in insights}
+    assert by_lens["valuation"].stance == "constructive"
+    assert "cheaper than sector" in by_lens["valuation"].title
+    assert by_lens["technical"].stance == "risk"
+    assert "crowded" in by_lens["technical"].title
+    assert by_lens["disclosure"].evidence.startswith("Earnings: BSC")
+
+
+def test_financial_insights_warn_when_no_official_source_anchors_the_read():
+    class Analytics:
+        pe_ratio = None
+        pe_vs_sector = None
+        rsi_14 = 55.0
+        relative_volume = 1.0
+        cmf_20 = None
+        obv_slope = None
+        institute_delta = None
+        foreign_delta = None
+
+    insights = _build_insights(
+        analytics=Analytics(),
+        sources=[],
+        posts_24h=0,
+        chatter_x=None,
+    )
+
+    disclosure = next(i for i in insights if i.lens == "disclosure")
+    assert disclosure.stance == "risk"
+    assert "No official source" in disclosure.title

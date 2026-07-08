@@ -32,13 +32,14 @@ class Settings(BaseSettings):
     # Used when ai_provider="ollama". qwen2.5 / aya are the better multilingual (Bangla) picks.
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5"
-    # Retrieval embeddings. "hash" is deterministic and dependency-free; keep it on small servers.
-    # "ollama" is only an optional local/dev semantic backend when that service is actually present.
+    # Retrieval embeddings. "fastembed" is the free local semantic path for production workers.
+    # "hash" stays available as the dependency-free fallback; "ollama"/"openai" are opt-in only.
     ai_embedding_provider: str = "hash"
-    ai_embedding_model: str = "text-embedding-3-small"
+    ai_embedding_model: str = "BAAI/bge-base-en-v1.5"
     ai_embedding_dimensions: int = 768
     ai_embedding_api_base_url: str = "https://api.openai.com/v1"
     ai_embedding_api_key: str = ""
+    ai_embedding_cache_dir: str = ".cache/fastembed"
 
     jwt_secret: str = "change-me-in-prod"
     jwt_algorithm: str = "HS256"

@@ -30,6 +30,31 @@ const REL: Record<string, string> = {
   crowd: "Crowd",
 };
 
+const LENS: Record<string, string> = {
+  valuation: "Valuation",
+  technical: "Technical",
+  liquidity: "Flow",
+  ownership: "Ownership",
+  disclosure: "Disclosure",
+  crowd: "Crowd",
+};
+
+const LENS_BN: Record<string, string> = {
+  valuation: "ভ্যালুয়েশন",
+  technical: "টেকনিক্যাল",
+  liquidity: "ফ্লো",
+  ownership: "মালিকানা",
+  disclosure: "ডিসক্লোজার",
+  crowd: "ক্রাউড",
+};
+
+const STANCE: Record<string, string> = {
+  constructive: "bg-up/10 text-up border-up/20",
+  watch: "bg-accent/10 text-accent border-accent/20",
+  risk: "bg-down/10 text-down border-down/20",
+  unknown: "bg-muted/10 text-muted border-border",
+};
+
 function dateShort(date: string | null): string {
   if (!date) return "";
   return date.slice(0, 10);
@@ -141,6 +166,36 @@ export function ResearchCard({ code }: { code: string }) {
               </span>
             )}
           </div>
+
+          {(brief.insights ?? []).length > 0 && (
+            <div className="mt-4">
+              <div className="text-[11px] font-semibold text-muted mb-2">
+                {t("research.insights")}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(brief.insights ?? []).slice(0, 6).map((insight) => (
+                  <div
+                    key={`${insight.lens}:${insight.title}`}
+                    className={`rounded-xl border p-3 ${STANCE[insight.stance] ?? STANCE.unknown}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wide">
+                        {(bn ? LENS_BN : LENS)[insight.lens] ?? insight.lens}
+                      </span>
+                      <span className="text-[10px] font-semibold capitalize">{insight.stance}</span>
+                    </div>
+                    <div className="mt-1 text-[13px] font-semibold leading-snug">
+                      {insight.title}
+                    </div>
+                    <p className="mt-1 text-[12px] leading-snug opacity-90">{insight.detail}</p>
+                    <div className="mt-2 text-[11px] font-semibold opacity-80">
+                      {insight.evidence}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {brief.sources.length > 0 && (
             <div className="mt-4">

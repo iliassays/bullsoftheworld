@@ -1,9 +1,9 @@
 """Embedding providers for retrieval.
 
-The default hash provider is deterministic and has no service dependency, so small production
-servers can run the pgvector pipeline without Ollama. Hosted embedding APIs are the preferred
-semantic path for small servers because they add retrieval quality without local model RAM/CPU.
-Ollama remains optional for environments where that service is deliberately installed.
+The production-quality free path is ``fastembed``: it runs a local ONNX sentence embedding model
+inside the worker/backfill process and stores 768-wide vectors in pgvector. ``hash`` stays as a
+deterministic no-dependency fallback for tiny environments and tests. Hosted and Ollama providers
+remain opt-in only.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from functools import lru_cache
+from typing import Any
 
 import httpx
 
@@ -22,6 +24,8 @@ _TOKEN_RE = re.compile(r"[\w$]+", re.UNICODE)
 
 def embedding_model_name() -> str:
     s = get_settings()
+    if s.ai_embedding_provider == "fastembed":
+        return f"fastembed:{s.ai_embedding_model}:{s.ai_embedding_dimensions}"
     if s.ai_embedding_provider == "openai":
         return f"openai:{s.ai_embedding_model}:{s.ai_embedding_dimensions}"
     if s.ai_embedding_provider == "ollama":
@@ -31,6 +35,8 @@ def embedding_model_name() -> str:
 
 async def embed_text(text: str) -> list[float]:
     s = get_settings()
+    if s.ai_embedding_provider == "fastembed":
+        return _fastembed_embedding(text)
     if s.ai_embedding_provider == "openai":
         return await _openai_embedding(text)
     if s.ai_embedding_provider == "ollama":
@@ -39,8 +45,29 @@ async def embed_text(text: str) -> list[float]:
         return _hash_embedding(text)
     raise ValueError(
         f"Unknown AI_EMBEDDING_PROVIDER {s.ai_embedding_provider!r} "
-        "(use 'hash', 'openai', or 'ollama')"
+        "(use 'fastembed', 'hash', 'openai', or 'ollama')"
     )
+
+
+@lru_cache(maxsize=2)
+def _fastembed_model(model_name: str, cache_dir: str) -> Any:
+    try:
+        from fastembed import TextEmbedding
+    except ImportError as e:  # pragma: no cover - exercised only in stripped deployments
+        raise RuntimeError(
+            "AI_EMBEDDING_PROVIDER=fastembed requires the fastembed package. "
+            "Run `uv sync` after updating dependencies, or switch AI_EMBEDDING_PROVIDER=hash."
+        ) from e
+    return TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+
+
+def _fastembed_embedding(text: str) -> list[float]:
+    s = get_settings()
+    model = _fastembed_model(s.ai_embedding_model, s.ai_embedding_cache_dir)
+    embedding = next(iter(model.embed([text or " "])))
+    if hasattr(embedding, "tolist"):
+        embedding = embedding.tolist()
+    return _validate_dim([float(x) for x in embedding], s.ai_embedding_model)
 
 
 async def _openai_embedding(text: str) -> list[float]:

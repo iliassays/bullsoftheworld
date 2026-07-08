@@ -247,6 +247,7 @@ const STRINGS: Record<string, Entry> = {
   },
   "research.cta": { en: "Ask now", bn: "এখন জিজ্ঞেস করুন" },
   "research.retry": { en: "Couldn't load. Try again.", bn: "লোড হয়নি। আবার চেষ্টা করুন।" },
+  "research.insights": { en: "Analyst read", bn: "অ্যানালিস্ট রিড" },
   "research.sources": { en: "Sources", bn: "সূত্র" },
   "research.officialYes": { en: "Official catalyst found", bn: "অফিশিয়াল কারণ পাওয়া গেছে" },
   "research.officialNo": { en: "No official catalyst found", bn: "অফিশিয়াল কারণ পাওয়া যায়নি" },

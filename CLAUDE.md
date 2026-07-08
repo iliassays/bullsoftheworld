@@ -26,8 +26,12 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
    no buy/sell/target output. If a feature can be merely "okay", keep iterating.
 8. **RAG contract.** SQL is the source of truth for numbers. pgvector retrieves messy text evidence.
    A movement answer may call something an official catalyst only when the official source is recent;
-   older filings are context, not causality. On small servers keep `AI_EMBEDDING_PROVIDER=hash`, or
-   use a hosted embedding API for semantic retrieval; never require Ollama or Claude for RAG.
+   older filings are context, not causality. Preferred production retrieval is free local
+   `AI_EMBEDDING_PROVIDER=fastembed` with a 768-dim model, then backfill `knowledge_chunks`; `hash`
+   is only the dependency-free fallback. Never require Ollama, Claude, or OpenAI for RAG.
+9. **Research UX contract.** `Ask this stock` must show the analyst read in the portal: valuation,
+   technical, liquidity/flow, ownership, disclosure, and crowd lenses when data exists. Keep it
+   descriptive and evidence-backed; never collapse it into unsupported buy/sell language.
 
 ## Stack
 

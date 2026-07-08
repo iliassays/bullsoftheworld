@@ -62,6 +62,14 @@ class ResearchSource(BaseModel):
     reliability: Reliability
 
 
+class ResearchInsight(BaseModel):
+    lens: Literal["valuation", "technical", "liquidity", "ownership", "disclosure", "crowd"]
+    stance: Literal["constructive", "watch", "risk", "unknown"]
+    title: str
+    detail: str
+    evidence: str
+
+
 class ResearchBriefResponse(BaseModel):
     code: str
     question: str
@@ -71,6 +79,7 @@ class ResearchBriefResponse(BaseModel):
     blocked_advice: bool
     as_of: str
     facts: list[str]
+    insights: list[ResearchInsight]
     sources: list[ResearchSource]
 
 
@@ -252,6 +261,170 @@ def _facts(
         extra = f", about {chatter_x:g}x baseline" if chatter_x else ""
         facts.append(f"Platform discussion: {posts_24h} posts in the last 24h{extra}.")
     return facts
+
+
+def _fmt_pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.0f}%"
+
+
+def _fmt_x(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f}x"
+
+
+def _build_insights(
+    *,
+    analytics: TickerAnalytics | None,
+    sources: list[ResearchSource],
+    posts_24h: int,
+    chatter_x: float | None,
+) -> list[ResearchInsight]:
+    insights: list[ResearchInsight] = []
+    if analytics is None:
+        return [
+            ResearchInsight(
+                lens="valuation",
+                stance="unknown",
+                title="Financial snapshot unavailable",
+                detail="The deeper read needs the latest analytics row; this symbol has no usable snapshot yet.",
+                evidence="Ticker analytics missing",
+            )
+        ]
+
+    if analytics.pe_vs_sector is not None or analytics.pe_ratio is not None:
+        if analytics.pe_vs_sector is not None and analytics.pe_vs_sector <= 0.8:
+            stance = "constructive"
+            title = "Valuation looks cheaper than sector"
+            detail = "The market is pricing earnings below the sector median, so the next question is whether earnings quality and governance justify the discount."
+        elif analytics.pe_vs_sector is not None and analytics.pe_vs_sector >= 1.25:
+            stance = "risk"
+            title = "Valuation asks for stronger proof"
+            detail = "The stock trades at a premium to the sector median, so weak earnings or stale catalysts matter more."
+        else:
+            stance = "watch"
+            title = "Valuation is not the main signal"
+            detail = "The valuation read is near the sector zone; price action and disclosures may explain more than multiples."
+        insights.append(
+            ResearchInsight(
+                lens="valuation",
+                stance=stance,
+                title=title,
+                detail=detail,
+                evidence=f"P/E {_fmt_x(analytics.pe_ratio)} · sector relative {_fmt_x(analytics.pe_vs_sector)}",
+            )
+        )
+
+    if analytics.rsi_14 is not None or analytics.relative_volume is not None:
+        hot = analytics.rsi_14 is not None and analytics.rsi_14 >= 70
+        cold = analytics.rsi_14 is not None and analytics.rsi_14 <= 30
+        high_volume = analytics.relative_volume is not None and analytics.relative_volume >= 1.5
+        if hot and high_volume:
+            stance = "risk"
+            title = "Short-term move is crowded"
+            detail = "High RSI plus elevated volume often means attention is already in the price; chasing risk is higher unless fresh official news confirms the move."
+        elif cold:
+            stance = "watch"
+            title = "Oversold zone needs confirmation"
+            detail = "RSI is low, but oversold alone is not a catalyst. Look for stabilization, volume, or an official event."
+        elif high_volume:
+            stance = "watch"
+            title = "Volume is the live signal"
+            detail = "Turnover is meaningfully above normal, so the move deserves review even if the official catalyst is not obvious."
+        else:
+            stance = "constructive"
+            title = "Technical pressure is moderate"
+            detail = "The short-term setup is not showing an extreme RSI or abnormal volume warning."
+        insights.append(
+            ResearchInsight(
+                lens="technical",
+                stance=stance,
+                title=title,
+                detail=detail,
+                evidence=f"RSI {_fmt_pct(analytics.rsi_14)} · volume {analytics.relative_volume or 0:.1f}x 20-day average",
+            )
+        )
+
+    flow_bits: list[str] = []
+    if analytics.cmf_20 is not None:
+        flow_bits.append(f"CMF {analytics.cmf_20:.2f}")
+    if analytics.obv_slope is not None:
+        flow_bits.append(f"OBV slope {analytics.obv_slope:.2f}")
+    if flow_bits:
+        positive = (analytics.cmf_20 or 0) > 0 and (analytics.obv_slope or 0) > 0
+        negative = (analytics.cmf_20 or 0) < 0 and (analytics.obv_slope or 0) < 0
+        insights.append(
+            ResearchInsight(
+                lens="liquidity",
+                stance="constructive" if positive else "risk" if negative else "watch",
+                title=(
+                    "Accumulation signals align"
+                    if positive
+                    else "Distribution pressure is visible"
+                    if negative
+                    else "Flow signals are mixed"
+                ),
+                detail="Volume-flow indicators help separate simple price movement from buying or selling pressure, but they are still descriptive signals.",
+                evidence=" · ".join(flow_bits),
+            )
+        )
+
+    ownership_bits: list[str] = []
+    if analytics.institute_delta is not None:
+        ownership_bits.append(f"institute {analytics.institute_delta:+.2f} pp")
+    if analytics.foreign_delta is not None:
+        ownership_bits.append(f"foreign {analytics.foreign_delta:+.2f} pp")
+    if ownership_bits:
+        delta = (analytics.institute_delta or 0) + (analytics.foreign_delta or 0)
+        insights.append(
+            ResearchInsight(
+                lens="ownership",
+                stance="constructive" if delta > 0 else "risk" if delta < 0 else "watch",
+                title=(
+                    "Institutional ownership improved"
+                    if delta > 0
+                    else "Institutional ownership softened"
+                    if delta < 0
+                    else "Ownership is stable"
+                ),
+                detail="Ownership change is a slow signal; it can confirm or challenge a price move but should not override disclosures.",
+                evidence=" · ".join(ownership_bits),
+            )
+        )
+
+    official = [s for s in sources if s.reliability == "official"]
+    if official:
+        latest = official[0]
+        insights.append(
+            ResearchInsight(
+                lens="disclosure",
+                stance="watch",
+                title="Official disclosure anchors the read",
+                detail="The narrative should start from the newest material DSE filing, then compare price and volume behavior around it.",
+                evidence=f"{latest.title} ({latest.date or 'date unavailable'})",
+            )
+        )
+    else:
+        insights.append(
+            ResearchInsight(
+                lens="disclosure",
+                stance="risk",
+                title="No official source in this answer",
+                detail="Without a recent official item, the move is more likely driven by market mechanics, technicals, or discussion.",
+                evidence="No ranked official announcement",
+            )
+        )
+
+    if posts_24h or chatter_x:
+        insights.append(
+            ResearchInsight(
+                lens="crowd",
+                stance="watch",
+                title="Crowd attention is measurable",
+                detail="Discussion can explain attention, but it is weaker evidence than filings or market data.",
+                evidence=f"{posts_24h} posts in 24h" + (f" · {chatter_x:g}x baseline" if chatter_x else ""),
+            )
+        )
+
+    return insights[:6]
 
 
 def _render_answer(
@@ -481,6 +654,12 @@ async def research_brief(
         _is_recent_official(s, intent=intent) for s in sources
     )
     evidence_quality = _quality(sources, official_catalyst, intent=intent)
+    insights = _build_insights(
+        analytics=analytics,
+        sources=sources,
+        posts_24h=buzz.posts_24h,
+        chatter_x=buzz.chatter_x,
+    )
     blocked_advice = bool(_ADVICE_RE.search(q))
     answer = _render_answer(
         code=code,
@@ -501,5 +680,6 @@ async def research_brief(
         blocked_advice=blocked_advice,
         as_of=dt.datetime.now(dt.UTC).isoformat(),
         facts=facts,
+        insights=insights,
         sources=sources,
     )
