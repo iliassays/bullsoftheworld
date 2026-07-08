@@ -50,6 +50,7 @@ _MATERIAL_CATEGORIES = (
     "insider",
     "psi",
 )
+_MOVING_CATALYST_DAYS = 14
 
 
 class ResearchSource(BaseModel):
@@ -101,15 +102,50 @@ def _source_score(source: ResearchSource, question: str) -> int:
     q = question.lower()
     text = f"{source.title} {source.snippet}".lower()
     score = {"official": 40, "market": 30, "system": 25, "crowd": 10}[source.reliability]
+    age = _source_age_days(source)
+    if age is not None:
+        if age <= 7:
+            score += 20
+        elif age <= 30:
+            score += 12
+        elif age <= 90:
+            score += 5
     for token in re.findall(r"[a-z0-9]{3,}", q):
         if token in text:
             score += 8
     return score
 
 
-def _quality(sources: list[ResearchSource], official_catalyst: bool) -> EvidenceQuality:
-    if official_catalyst and len(sources) >= 2:
+def _source_age_days(source: ResearchSource) -> int | None:
+    if not source.date:
+        return None
+    try:
+        day = dt.date.fromisoformat(source.date[:10])
+    except ValueError:
+        return None
+    return (dt.datetime.now(dt.UTC).date() - day).days
+
+
+def _is_recent_official(source: ResearchSource, *, intent: str) -> bool:
+    if source.reliability != "official":
+        return False
+    if intent != "why_moving":
+        return True
+    age = _source_age_days(source)
+    return age is not None and 0 <= age <= _MOVING_CATALYST_DAYS
+
+
+def _quality(
+    sources: list[ResearchSource], official_catalyst: bool, *, intent: str
+) -> EvidenceQuality:
+    has_current_context = any(
+        (s.reliability in ("system", "crowd") and (_source_age_days(s) or 9999) <= 7)
+        for s in sources
+    )
+    if official_catalyst and (len(sources) >= 2 or intent != "why_moving"):
         return "strong"
+    if intent == "why_moving" and has_current_context:
+        return "mixed"
     if official_catalyst or any(s.reliability in ("market", "system") for s in sources):
         return "mixed"
     return "weak"
@@ -164,45 +200,58 @@ def _render_answer(
         )
 
     official = [s for s in sources if s.reliability == "official"]
+    recent_official = [s for s in official if _is_recent_official(s, intent=intent)]
     crowd = [s for s in sources if s.reliability == "crowd"]
     system = [s for s in sources if s.reliability == "system"]
 
     fact_line = " ".join(facts[:3])
     if intent == "why_moving":
         if official_catalyst:
-            catalyst = official[0]
+            catalyst = recent_official[0]
             body = (
-                f"{fact_line} The strongest official catalyst I found is: "
-                f"{catalyst.title} ({catalyst.date or 'date unavailable'})."
+                f"Bottom line: the move has a recent official source to review. {fact_line} "
+                f"Most relevant official item: {catalyst.title} "
+                f"({catalyst.date or 'date unavailable'})."
             )
         else:
+            context = ""
+            if official:
+                context = (
+                    f" Older official context exists, led by {official[0].title} "
+                    f"({official[0].date or 'date unavailable'}), but it is not recent enough "
+                    "to treat as today's catalyst."
+                )
             body = (
-                f"{fact_line} I do not see a recent official DSE catalyst in the retrieved evidence; "
-                "treat the move as price/volume or discussion-led until an official source appears."
+                f"Bottom line: I do not see a recent official DSE catalyst for this move. "
+                f"{fact_line} Treat this as price/volume or discussion-led until fresh official "
+                f"news appears.{context}"
             )
     elif intent in ("dividend", "earnings", "latest_news"):
         if official:
-            body = f"{fact_line} Latest relevant official item: {official[0].title}."
+            body = (
+                f"Bottom line: the official record has a relevant item. {fact_line} "
+                f"Latest relevant official item: {official[0].title}."
+            )
         else:
-            body = f"{fact_line} I did not find a matching recent official announcement."
+            body = f"Bottom line: I did not find a matching recent official announcement. {fact_line}"
     elif intent == "crowd":
         if crowd:
-            body = f"{fact_line} Recent platform discussion includes: {crowd[0].snippet}"
+            body = f"Bottom line: recent crowd context exists. {fact_line} Example: {crowd[0].snippet}"
         else:
-            body = f"{fact_line} I did not find recent published platform discussion for ${code}."
+            body = f"Bottom line: I did not find recent published platform discussion for ${code}. {fact_line}"
     elif intent == "red_flags":
         if official or system:
             top = (official + system)[0]
-            body = f"{fact_line} The main item to review is: {top.title}."
+            body = f"Bottom line: review the cited evidence before forming a view. {fact_line} Main item: {top.title}."
         else:
-            body = f"{fact_line} I did not find a recent official or system red-flag source."
+            body = f"Bottom line: I did not find a recent official or system red-flag source. {fact_line}"
     else:
         if sources:
-            body = f"{fact_line} The most relevant source is: {sources[0].title}."
+            body = f"Bottom line: the best available evidence is source-backed. {fact_line} Most relevant source: {sources[0].title}."
         else:
-            body = f"{fact_line} I do not have enough retrieved evidence for a fuller brief."
+            body = f"Bottom line: I do not have enough retrieved evidence for a fuller brief. {fact_line}"
 
-    suffix = f" Evidence quality: {evidence_quality}."
+    suffix = f" Evidence quality: {evidence_quality}. This is evidence, not a trade call."
     return (lead + body + suffix).strip()
 
 
@@ -355,8 +404,8 @@ async def research_brief(
     sources = [*vector_sources, *announcement_sources, *signal_sources, *post_sources]
     sources = _dedupe_sources(sources)
     sources = sorted(sources, key=lambda s: _source_score(s, q), reverse=True)[:8]
-    official_catalyst = any(s.reliability == "official" for s in sources)
-    evidence_quality = _quality(sources, official_catalyst)
+    official_catalyst = any(_is_recent_official(s, intent=intent) for s in sources)
+    evidence_quality = _quality(sources, official_catalyst, intent=intent)
     blocked_advice = bool(_ADVICE_RE.search(q))
     answer = _render_answer(
         code=code,

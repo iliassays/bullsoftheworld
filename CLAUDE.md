@@ -21,6 +21,13 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
    optimize the proven hot path. Real speed comes from Redis byte-caching, CDN, denormalized read
    models — not from the framework or premature distribution.
 6. **Right tool, not the trendy tool.** Fraud detection is classic ML, not an LLM. Choose deliberately.
+7. **Premium bar.** This product is for retail users but must feel institutional-grade: evidence
+   first, clean citations, no lazy chatbot behavior, no stale news framed as today's catalyst, and
+   no buy/sell/target output. If a feature can be merely "okay", keep iterating.
+8. **RAG contract.** SQL is the source of truth for numbers. pgvector retrieves messy text evidence.
+   A movement answer may call something an official catalyst only when the official source is recent;
+   older filings are context, not causality. On small servers keep `AI_EMBEDDING_PROVIDER=hash`, or
+   use a hosted embedding API for semantic retrieval; never require Ollama or Claude for RAG.
 
 ## Stack
 

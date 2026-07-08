@@ -23,6 +23,7 @@ Reliability = Literal["official", "market", "system", "crowd"]
 
 _CHUNK_CHARS = 1200
 _CHUNK_OVERLAP = 160
+_FETCH_MULTIPLIER = 4
 
 
 class RetrievedChunk(BaseModel):
@@ -196,11 +197,11 @@ async def retrieve(
     stmt = select(KnowledgeChunk, distance).where(KnowledgeChunk.market == market)
     if code:
         stmt = stmt.where(KnowledgeChunk.code == code)
-    stmt = stmt.order_by(distance).limit(k)
+    stmt = stmt.order_by(distance).limit(k * _FETCH_MULTIPLIER)
     rows = (await session.execute(stmt)).all()
     out: list[RetrievedChunk] = []
     for chunk, dist in rows:
-        score = max(0.0, 1.0 - float(dist or 0.0))
+        score = _rerank_score(chunk, float(dist or 0.0))
         out.append(
             RetrievedChunk(
                 source_type=chunk.source_type,
@@ -214,4 +215,21 @@ async def retrieve(
                 metadata=chunk.metadata_,
             )
         )
-    return out
+    return sorted(out, key=lambda x: x.score, reverse=True)[:k]
+
+
+def _rerank_score(chunk: KnowledgeChunk, distance: float) -> float:
+    semantic = max(0.0, 1.0 - distance)
+    reliability = {"official": 0.18, "market": 0.12, "system": 0.10, "crowd": 0.02}.get(
+        chunk.reliability, 0.0
+    )
+    recency = 0.0
+    if chunk.source_date:
+        age = (dt.datetime.now(dt.UTC).date() - chunk.source_date).days
+        if age <= 7:
+            recency = 0.12
+        elif age <= 30:
+            recency = 0.07
+        elif age <= 90:
+            recency = 0.03
+    return round(semantic + reliability + recency, 4)

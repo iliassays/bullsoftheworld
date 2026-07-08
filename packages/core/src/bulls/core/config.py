@@ -35,7 +35,10 @@ class Settings(BaseSettings):
     # Retrieval embeddings. "hash" is deterministic and dependency-free; keep it on small servers.
     # "ollama" is only an optional local/dev semantic backend when that service is actually present.
     ai_embedding_provider: str = "hash"
-    ai_embedding_model: str = "nomic-embed-text"
+    ai_embedding_model: str = "text-embedding-3-small"
+    ai_embedding_dimensions: int = 768
+    ai_embedding_api_base_url: str = "https://api.openai.com/v1"
+    ai_embedding_api_key: str = ""
 
     jwt_secret: str = "change-me-in-prod"
     jwt_algorithm: str = "HS256"
