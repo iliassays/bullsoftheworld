@@ -14,7 +14,9 @@ from api.routers.research import (
     _dedupe_sources,
     _intent,
     _is_recent_official,
+    _is_risk_source,
     _quality,
+    _rank_sources,
     _render_answer,
     _source_score,
 )
@@ -122,3 +124,49 @@ def test_vector_and_sql_sources_are_deduped_by_source_identity():
     out = _dedupe_sources([vector_hit, sql_hit, other])
 
     assert out == [vector_hit, other]
+
+
+def test_latest_news_is_date_led_not_hash_similarity_led():
+    old_agm = _src(
+        id="old",
+        date=str(dt.datetime.now(dt.UTC).date() - dt.timedelta(days=200)),
+        title="Corporate Action: BSC: Change of AGM Date",
+        snippet="AGM date changed after earlier dividend declaration.",
+    )
+    latest_q3 = _src(
+        id="new",
+        date=str(dt.datetime.now(dt.UTC).date() - dt.timedelta(days=45)),
+        title="Earnings: BSC: Q3 Financials",
+        snippet="EPS was lower versus the same period last year.",
+    )
+
+    ranked = _rank_sources([old_agm, latest_q3], question="Explain latest news", intent="latest_news")
+
+    assert ranked[0] == latest_q3
+
+
+def test_red_flags_suppress_routine_record_date_halts():
+    routine_halt = _src(
+        title="Halt: BSC: Suspension for Record Date",
+        snippet="Trading will remain suspended on the record date.",
+    )
+    overbought = _src(
+        type="signal",
+        id="sig",
+        title="BullsOfDhakaLevels: rsi overbought",
+        snippet="RSI overbought signal.",
+        reliability="system",
+    )
+
+    assert not _is_risk_source(routine_halt)
+    assert _is_risk_source(overbought)
+    assert _rank_sources([routine_halt, overbought], question="Any red flags?", intent="red_flags") == [
+        overbought
+    ]
+
+
+def test_crowd_question_does_not_claim_strong_official_evidence_without_posts():
+    official = _src(title="Earnings: BSC: Q3 Financials")
+
+    assert _rank_sources([official], question="What are people saying?", intent="crowd") == []
+    assert _quality([], official_catalyst=False, intent="crowd") == "weak"

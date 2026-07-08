@@ -86,7 +86,7 @@ def _intent(question: str) -> str:
         return "crowd"
     if any(w in q for w in ("move", "moving", "up", "down", "why", "volume")):
         return "why_moving"
-    if any(w in q for w in ("latest", "news", "announcement", "recent")):
+    if any(w in q for w in ("latest", "news", "announcement", "recent", "official", "dse")):
         return "latest_news"
     return "general"
 
@@ -116,12 +116,18 @@ def _source_score(source: ResearchSource, question: str) -> int:
     return score
 
 
-def _source_age_days(source: ResearchSource) -> int | None:
+def _source_date(source: ResearchSource) -> dt.date | None:
     if not source.date:
         return None
     try:
-        day = dt.date.fromisoformat(source.date[:10])
+        return dt.date.fromisoformat(source.date[:10])
     except ValueError:
+        return None
+
+
+def _source_age_days(source: ResearchSource) -> int | None:
+    day = _source_date(source)
+    if day is None:
         return None
     return (dt.datetime.now(dt.UTC).date() - day).days
 
@@ -138,6 +144,10 @@ def _is_recent_official(source: ResearchSource, *, intent: str) -> bool:
 def _quality(
     sources: list[ResearchSource], official_catalyst: bool, *, intent: str
 ) -> EvidenceQuality:
+    if intent == "crowd":
+        return "mixed" if any(s.reliability == "crowd" for s in sources) else "weak"
+    if intent == "red_flags" and not sources:
+        return "weak"
     has_current_context = any(
         (s.reliability in ("system", "crowd") and (_source_age_days(s) or 9999) <= 7)
         for s in sources
@@ -149,6 +159,69 @@ def _quality(
     if official_catalyst or any(s.reliability in ("market", "system") for s in sources):
         return "mixed"
     return "weak"
+
+
+def _is_routine_notice(source: ResearchSource) -> bool:
+    text = f"{source.title} {source.snippet}".lower()
+    return any(
+        x in text
+        for x in (
+            "record date",
+            "resumption after record",
+            "suspension for record",
+            "agm date",
+            "spot market",
+        )
+    )
+
+
+def _is_risk_source(source: ResearchSource) -> bool:
+    text = f"{source.title} {source.snippet}".lower()
+    if source.reliability == "system":
+        return any(x in text for x in ("overbought", "unusual volume", "selling", "breakdown"))
+    if source.reliability == "official":
+        if _is_routine_notice(source):
+            return False
+        return any(
+            x in text
+            for x in (
+                "downgrade",
+                "loss",
+                "decrease",
+                "decline",
+                "halt",
+                "suspension",
+                "psi",
+                "insider",
+                "earnings",
+                "financials",
+            )
+        )
+    return source.reliability == "crowd"
+
+
+def _rank_sources(
+    sources: list[ResearchSource], *, question: str, intent: str
+) -> list[ResearchSource]:
+    if intent in ("latest_news", "dividend", "earnings"):
+        # News questions are date-led. Vector similarity must not surface a stale AGM notice above
+        # the newest material DSE filing.
+        filtered = [s for s in sources if s.reliability == "official"]
+        return sorted(
+            filtered,
+            key=lambda s: (_source_date(s) or dt.date.min, _source_score(s, question)),
+            reverse=True,
+        )
+    if intent == "crowd":
+        return sorted(
+            [s for s in sources if s.reliability == "crowd"],
+            key=lambda s: (_source_date(s) or dt.date.min, _source_score(s, question)),
+            reverse=True,
+        )
+    if intent == "red_flags":
+        filtered = [s for s in sources if _is_risk_source(s)]
+        return sorted(filtered, key=lambda s: _source_score(s, question), reverse=True)
+    return sorted(sources, key=lambda s: _source_score(s, question), reverse=True)
 
 
 def _facts(
@@ -403,8 +476,10 @@ async def research_brief(
     post_sources = await _post_sources(session, tenant.market, code)
     sources = [*vector_sources, *announcement_sources, *signal_sources, *post_sources]
     sources = _dedupe_sources(sources)
-    sources = sorted(sources, key=lambda s: _source_score(s, q), reverse=True)[:8]
-    official_catalyst = any(_is_recent_official(s, intent=intent) for s in sources)
+    sources = _rank_sources(sources, question=q, intent=intent)[:8]
+    official_catalyst = intent != "crowd" and any(
+        _is_recent_official(s, intent=intent) for s in sources
+    )
     evidence_quality = _quality(sources, official_catalyst, intent=intent)
     blocked_advice = bool(_ADVICE_RE.search(q))
     answer = _render_answer(
