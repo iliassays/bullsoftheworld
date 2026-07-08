@@ -193,8 +193,12 @@ async def retrieve(
     k: int = 6,
 ) -> list[RetrievedChunk]:
     query_embedding = await embed_text(query)
+    model = embedding_model_name()
     distance = KnowledgeChunk.embedding.cosine_distance(query_embedding).label("distance")
-    stmt = select(KnowledgeChunk, distance).where(KnowledgeChunk.market == market)
+    stmt = select(KnowledgeChunk, distance).where(
+        KnowledgeChunk.market == market,
+        KnowledgeChunk.embedding_model == model,
+    )
     if code:
         stmt = stmt.where(KnowledgeChunk.code == code)
     stmt = stmt.order_by(distance).limit(k * _FETCH_MULTIPLIER)
