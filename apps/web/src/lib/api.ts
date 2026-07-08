@@ -171,6 +171,25 @@ export interface Digest {
   posts: number;
   change_pct_1d: number;
 }
+export interface ResearchSource {
+  type: string;
+  id: string;
+  title: string;
+  date: string | null;
+  snippet: string;
+  reliability: "official" | "market" | "system" | "crowd";
+}
+export interface ResearchBrief {
+  code: string;
+  question: string;
+  answer: string;
+  evidence_quality: "strong" | "mixed" | "weak";
+  official_catalyst: boolean;
+  blocked_advice: boolean;
+  as_of: string;
+  facts: string[];
+  sources: ResearchSource[];
+}
 export interface Level {
   value: number;
   date: string;
@@ -723,6 +742,8 @@ export const api = {
       points: { tag: string; text: string }[];
     }>(`/symbols/${code}/explainer`),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
+  research: (code: string, q: string) =>
+    request<ResearchBrief>(`/symbols/${code}/research?q=${encodeURIComponent(q)}`),
   plainRead: (code: string) =>
     request<PlainRead>(`/symbols/${code}/plain-read`),
   scorecard: (code: string) =>

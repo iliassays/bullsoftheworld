@@ -29,6 +29,7 @@ import { KeyLevels } from "../components/KeyLevels";
 import { InvestorLensCard } from "../components/InvestorLensCard";
 import { PlainReadCard } from "../components/PlainReadCard";
 import { PriceAlertSheet } from "../components/PriceAlertSheet";
+import { ResearchCard } from "../components/ResearchCard";
 import { ScorecardCard } from "../components/ScorecardCard";
 import { PulseGauges } from "../components/PulseGauges";
 import { PostCard } from "../components/PostCard";
@@ -331,6 +332,7 @@ export function SymbolPage() {
               see docs/redesign/2026-07-drops.md. */}
           <CandleChart code={sym} />
           <PlainReadCard code={sym} />
+          <ResearchCard code={sym} />
           <ScorecardCard code={sym} />
           <KeyLevels code={sym} />
           <BeforeYouTrade />

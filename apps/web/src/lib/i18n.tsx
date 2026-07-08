@@ -239,6 +239,22 @@ const STRINGS: Record<string, Entry> = {
     en: "How traders read this",
     bn: "ট্রেডাররা এটি যেভাবে পড়েন",
   },
+  // Research card
+  "research.title": { en: "Ask this stock", bn: "এই শেয়ারকে জিজ্ঞেস করুন" },
+  "research.hint": {
+    en: "A cited research read from price, official news, signals, and discussion.",
+    bn: "দর, অফিসিয়াল খবর, সিগন্যাল ও আলোচনা থেকে সূত্রসহ গবেষণা-পাঠ।",
+  },
+  "research.cta": { en: "Ask now", bn: "এখন জিজ্ঞেস করুন" },
+  "research.retry": { en: "Couldn't load. Try again.", bn: "লোড হয়নি। আবার চেষ্টা করুন।" },
+  "research.sources": { en: "Sources", bn: "সূত্র" },
+  "research.officialYes": { en: "Official catalyst found", bn: "অফিশিয়াল কারণ পাওয়া গেছে" },
+  "research.officialNo": { en: "No official catalyst found", bn: "অফিশিয়াল কারণ পাওয়া যায়নি" },
+  "research.adviceBlocked": { en: "Advice request redirected", bn: "পরামর্শের প্রশ্ন ঘুরিয়ে দেওয়া হয়েছে" },
+  "research.footer": {
+    en: "Evidence summary only. Not a buy/sell recommendation.",
+    bn: "শুধু প্রমাণের সারাংশ। কেনা/বেচার পরামর্শ নয়।",
+  },
   // Explain card
   "explain.title": { en: "Deeper analysis", bn: "গভীর বিশ্লেষণ" },
   "explain.cta": { en: "Generate analysis", bn: "বিশ্লেষণ তৈরি করুন" },
