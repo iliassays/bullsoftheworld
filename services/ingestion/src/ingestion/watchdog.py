@@ -116,13 +116,19 @@ async def _quote_age() -> dt.timedelta | None:
 
 
 async def _api_ok(base_url: str) -> bool:
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{base_url.rstrip('/')}/health")
-        return r.status_code == 200
-    except Exception:
-        log.warning("API /health check failed", exc_info=True)
-        return False
+    url = f"{base_url.rstrip('/')}/health"
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url)
+            if r.status_code == 200:
+                return True
+            log.warning("API /health returned %s on attempt %s", r.status_code, attempt + 1)
+        except Exception:
+            log.warning("API /health check failed on attempt %s", attempt + 1, exc_info=True)
+        if attempt < 2:
+            await asyncio.sleep(5)
+    return False
 
 
 async def _eod_problems(now: dt.datetime) -> list[str]:
