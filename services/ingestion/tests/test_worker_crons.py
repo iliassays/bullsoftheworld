@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from ingestion.worker import WorkerSettings
+from ingestion.worker import WorkerSettings, _after_eod_window
 
 
 def test_every_cron_job_can_calculate_its_next_run() -> None:
@@ -16,3 +16,8 @@ def test_every_cron_job_can_calculate_its_next_run() -> None:
     for job in WorkerSettings.cron_jobs:
         job.calculate_next(now)  # raises on any invalid spec (e.g. bad weekday string)
         assert job.next_run is not None, job.name
+
+
+def test_eod_startup_recovery_is_time_guarded() -> None:
+    assert not _after_eod_window(dt.datetime(2026, 7, 8, 8, 30, tzinfo=dt.UTC))
+    assert _after_eod_window(dt.datetime(2026, 7, 8, 13, 0, tzinfo=dt.UTC))

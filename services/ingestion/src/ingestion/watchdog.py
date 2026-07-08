@@ -415,10 +415,12 @@ async def main() -> int:
     if not await _api_ok(s.api_public_url):
         problems.append(f"API health check failed ({s.api_public_url}/health)")
 
-    # EOD staleness: alert only — don't restart. The missed jobs are already past (a restart won't
-    # re-run them), and restarting every 5 min through the window would be a restart storm. The
-    # email is the signal to manually re-run the EOD chain.
-    problems += await _eod_problems(now)
+    # EOD staleness: restart the worker. EOD jobs are run_at_startup and guarded by their own
+    # "after close" checks, so this now recovers a missed chain instead of requiring a manual rerun.
+    eod_problems = await _eod_problems(now)
+    if eod_problems:
+        problems += eod_problems
+        worker_fault = True
 
     # Publish freshness: DO restart — unlike the EOD/bars check above, every job this covers
     # (Morning Watch, Levels/Factor/Ownership signals) now runs on worker startup too (see

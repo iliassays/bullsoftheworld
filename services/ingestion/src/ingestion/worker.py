@@ -46,6 +46,13 @@ from ingestion.trending import compute_trending
 
 log = logging.getLogger(__name__)
 MARKET = "DSE"
+EOD_START_UTC_HOUR = 13
+
+
+def _after_eod_window(now: dt.datetime | None = None) -> bool:
+    """True once the DSE close/EOD data window has started in UTC."""
+    now = now or dt.datetime.now(dt.UTC)
+    return now.hour >= EOD_START_UTC_HOUR
 
 
 async def poll_quotes(ctx) -> str:
@@ -70,6 +77,8 @@ async def run_agent_portfolios(ctx) -> str:
 
 async def pull_eod_bars(ctx) -> str:
     """Pull the day's end-of-day bars after the close - only on trading days."""
+    if not _after_eod_window():
+        return "skipped: before EOD window"
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
@@ -80,6 +89,8 @@ async def pull_eod_bars(ctx) -> str:
 
 async def pull_eod_summary(ctx) -> str:
     """Pull the day's market-wide summary (index/turnover/cap) after the close — trading days only."""
+    if not _after_eod_window():
+        return "skipped: before EOD window"
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
@@ -97,6 +108,8 @@ async def refresh_company(ctx) -> str:
 
 async def refresh_analytics(ctx) -> str:
     """Recompute + persist the analytics snapshot for every symbol — only on trading days."""
+    if not _after_eod_window():
+        return "skipped: before EOD window"
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
@@ -113,6 +126,8 @@ async def refresh_analytics(ctx) -> str:
 async def snapshot_portfolios(ctx) -> str:
     """Daily portfolio value snapshot (growth-over-time chart) — only on trading days, once EOD
     quotes have settled (the last intraday poll ~08:45 UTC is effectively the close)."""
+    if not _after_eod_window():
+        return "skipped: before EOD window"
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
@@ -305,23 +320,23 @@ class WorkerSettings:
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
-        cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 15, 30, 45}, run_at_startup=False),
+        cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 15, 30, 45}, run_at_startup=True),
         # Agent model portfolios: 3 min after each quote poll (fresh snapshot, no race with it).
         cron(
             run_agent_portfolios, hour={4, 5, 6, 7, 8}, minute={3, 18, 33, 48}, run_at_startup=False
         ),
         # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
-        cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
+        cron(pull_eod_bars, hour=13, minute=0, run_at_startup=True),
         # Market-wide summary (index/turnover) right after the bar pull.
-        cron(pull_eod_summary, hour=13, minute=5, run_at_startup=False),
+        cron(pull_eod_summary, hour=13, minute=5, run_at_startup=True),
         # Weekly company/shareholding sweep — Friday (DSE closed, site quiet), well off the EOD path.
         cron(refresh_company, weekday="fri", hour=14, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
-        cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
+        cron(refresh_analytics, hour=13, minute=15, run_at_startup=True),
         # Portfolio growth-chart snapshot — 20 min after the bar pull, same cadence as the other
         # once-daily EOD jobs. Idempotent (upsert by user+date); no weekday filter needed since
         # the task itself skips non-trading days.
-        cron(snapshot_portfolios, hour=13, minute=20, run_at_startup=False),
+        cron(snapshot_portfolios, hour=13, minute=20, run_at_startup=True),
         # 'Watch today' activity ranking — after analytics, before the FB market signals (13:50).
         # run_at_startup=True: confirmed live (2026-07-06) that arq's cron loop can silently stall
         # for ~30 min without any restart or error — pull_eod_summary/refresh_analytics/snapshot_*
