@@ -49,10 +49,24 @@ MARKET = "DSE"
 EOD_START_UTC_HOUR = 13
 
 
+def _after_market_date_utc_time(
+    now: dt.datetime, market_date: dt.date, hour: int, minute: int = 0
+) -> bool:
+    """True once the UTC schedule for a Dhaka market date has passed.
+
+    At 18:00-23:59 UTC the Dhaka calendar has already rolled to tomorrow, but tomorrow's
+    UTC-scheduled jobs are still in the future. Startup jobs must not run just because the Dhaka
+    date changed.
+    """
+    due = dt.datetime.combine(market_date, dt.time(hour=hour, minute=minute, tzinfo=dt.UTC))
+    return now >= due
+
+
 def _after_eod_window(now: dt.datetime | None = None) -> bool:
-    """True once the DSE close/EOD data window has started in UTC."""
+    """True once the DSE close/EOD data window has started for the Dhaka market date."""
     now = now or dt.datetime.now(dt.UTC)
-    return now.hour >= EOD_START_UTC_HOUR
+    market_date = to_market_tz(now).date()
+    return _after_market_date_utc_time(now, market_date, EOD_START_UTC_HOUR)
 
 
 async def poll_quotes(ctx) -> str:
@@ -176,7 +190,10 @@ async def recover_eod_chain(ctx) -> str:
 
 async def run_trending(ctx) -> str:
     """Recompute the daily 'Watch today' activity ranking — only on trading days, after analytics."""
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not _after_market_date_utc_time(now, today, 13, 25):
+        return "skipped: before trending window"
     if not is_trading_day(today):
         return "skipped: non-trading day"
     stats = await compute_trending(MARKET)
@@ -207,7 +224,10 @@ async def snapshot_buzz(ctx) -> str:
 
 async def run_signals(ctx) -> str:
     """Publish agent desk-notes from the day's confirmed levels — only on trading days."""
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not _after_market_date_utc_time(now, today, 13, 25):
+        return "skipped: before signals window"
     if not is_trading_day(today):
         return "skipped: non-trading day"
     counts = await run_levels_agent(MARKET)
@@ -217,6 +237,10 @@ async def run_signals(ctx) -> str:
 
 async def run_ownership_signals(ctx) -> str:
     """Publish ownership desk-notes after the weekly company/shareholding refresh."""
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if today.weekday() != 4 or not _after_market_date_utc_time(now, today, 14, 10):
+        return "skipped: before ownership window"
     counts = await run_ownership_agents(MARKET)
     log.info("ownership signals: %s notes published", counts["published"])
     return f"ownership={counts['published']}"
@@ -278,7 +302,11 @@ async def _trigger_publish(paths: list[str]) -> dict[str, str]:
 
 async def run_market_signals(ctx) -> str:
     """Daily Evening Wrap card → in-app feed AND Facebook, after the close. Trading days only."""
-    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not _after_market_date_utc_time(now, today, 13, 50):
+        return "skipped: before evening window"
+    if not is_trading_day(today):
         return "skipped: non-trading day"
     res = await _trigger_publish(
         ["/admin/fb/publish-feed?kind=evening_wrap", "/admin/fb/publish?kind=evening_wrap"]
@@ -289,7 +317,11 @@ async def run_market_signals(ctx) -> str:
 
 async def run_morning_watch(ctx) -> str:
     """Pre-open Morning Watch card → Facebook only. Trading days only."""
-    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not _after_market_date_utc_time(now, today, 3, 30):
+        return "skipped: before morning window"
+    if not is_trading_day(today):
         return "skipped: non-trading day"
     res = await _trigger_publish(["/admin/fb/publish?kind=morning_watch"])
     log.info("morning watch auto-post: %s", res)
@@ -299,6 +331,10 @@ async def run_morning_watch(ctx) -> str:
 async def run_earnings_week(ctx) -> str:
     """Sunday-morning earnings-calendar card → Facebook, before the trading week opens.
     The composer skips (CardError) when no earnings are scheduled — no filler posts."""
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if today.weekday() != 6 or not _after_market_date_utc_time(now, today, 2, 45):
+        return "skipped: before earnings-week window"
     res = await _trigger_publish(["/admin/fb/publish?kind=earnings_week"])
     log.info("earnings week auto-post: %s", res)
     return f"earnings_week {res}"
@@ -306,7 +342,11 @@ async def run_earnings_week(ctx) -> str:
 
 async def run_mood_card(ctx) -> str:
     """Dhaka Mood gauge card → Facebook at evening prime time. Trading days only."""
-    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not _after_market_date_utc_time(now, today, 15, 0):
+        return "skipped: before mood window"
+    if not is_trading_day(today):
         return "skipped: non-trading day"
     res = await _trigger_publish(["/admin/fb/publish?kind=mood"])
     log.info("mood card auto-post: %s", res)
@@ -315,7 +355,11 @@ async def run_mood_card(ctx) -> str:
 
 async def run_weekly_recap(ctx) -> str:
     """Weekly recap card → Facebook only. Fires Thursday after close (cron weekday)."""
-    if not is_trading_day(to_market_tz(dt.datetime.now(dt.UTC)).date()):
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if today.weekday() != 3 or not _after_market_date_utc_time(now, today, 14, 0):
+        return "skipped: before weekly-recap window"
+    if not is_trading_day(today):
         return "skipped: non-trading day"
     res = await _trigger_publish(["/admin/fb/publish?kind=weekly_recap"])
     log.info("weekly recap auto-post: %s", res)
@@ -325,7 +369,10 @@ async def run_weekly_recap(ctx) -> str:
 async def run_factor_signals(ctx) -> str:
     """Descriptive factor notes (momentum / quality / smart-money / relative strength), after the
     analytics recompute — only on trading days."""
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not _after_market_date_utc_time(now, today, 13, 40):
+        return "skipped: before factor window"
     if not is_trading_day(today):
         return "skipped: non-trading day"
     counts = await run_factor_agents(MARKET)
