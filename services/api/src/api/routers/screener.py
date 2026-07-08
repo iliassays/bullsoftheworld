@@ -1219,7 +1219,9 @@ _PATTERN_STATUS_TITLE = {
 _CHART_PATTERN_PREFIX = "chart_pattern_"  # e.g. "chart_pattern_ascending_triangle"
 
 
-async def _chart_pattern_board(session, market: str, pattern_type: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _chart_pattern_board(
+    session, market: str, pattern_type: str, limit: int = PER_SCREEN
+) -> ScreenOut:
     """Stocks currently showing ONE specific classic chart pattern (Finviz-style: e.g. just
     ascending triangles, or just double tops), precomputed nightly alongside ticker_analytics —
     see bulls.analytics.patterns.detect_patterns for the geometry. One board per pattern type

@@ -27,9 +27,7 @@ async def run(market: str = "DSE") -> dict[str, int]:
     sm = get_sessionmaker()
     async with sm() as session:
         holdings = (
-            await session.scalars(
-                select(PortfolioHolding).where(PortfolioHolding.market == market)
-            )
+            await session.scalars(select(PortfolioHolding).where(PortfolioHolding.market == market))
         ).all()
         if not holdings:
             return {"users": 0}

@@ -31,7 +31,9 @@ class UserProfileOut(BaseModel):
 
 
 async def _resolve_user(session, tenant, handle: str) -> User:
-    u = await session.scalar(select(User).where(User.tenant_id == tenant.name, User.handle == handle))
+    u = await session.scalar(
+        select(User).where(User.tenant_id == tenant.name, User.handle == handle)
+    )
     if u is None:
         raise HTTPException(status_code=404, detail=f"Unknown member {handle!r}")
     return u
@@ -77,7 +79,9 @@ class PublicPortfolioOut(BaseModel):
 
 
 @router.get("/{handle}/portfolio")
-async def user_portfolio(handle: str, tenant: CurrentTenant, session: DbSession) -> PublicPortfolioOut:
+async def user_portfolio(
+    handle: str, tenant: CurrentTenant, session: DbSession
+) -> PublicPortfolioOut:
     u = await _resolve_user(session, tenant, handle)
     if not u.portfolio_public:
         raise HTTPException(status_code=404, detail="This member's portfolio is private")
@@ -94,11 +98,17 @@ async def user_portfolio(handle: str, tenant: CurrentTenant, session: DbSession)
     names: dict[str, str | None] = {}
     if codes:
         for q in await session.scalars(
-            select(QuoteSnapshot).where(QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes))
+            select(QuoteSnapshot).where(
+                QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes)
+            )
         ):
-            quotes[q.code] = QuoteView(ltp=q.ltp, change=q.change, change_pct=q.change_pct, as_of=q.as_of)
+            quotes[q.code] = QuoteView(
+                ltp=q.ltp, change=q.change, change_pct=q.change_pct, as_of=q.as_of
+            )
         for code, name in await session.execute(
-            select(Symbol.code, Symbol.name_en).where(Symbol.market == tenant.market, Symbol.code.in_(codes))
+            select(Symbol.code, Symbol.name_en).where(
+                Symbol.market == tenant.market, Symbol.code.in_(codes)
+            )
         ):
             names[code] = name
 
