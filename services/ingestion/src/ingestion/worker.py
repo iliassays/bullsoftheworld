@@ -136,6 +136,44 @@ async def snapshot_portfolios(ctx) -> str:
     return f"users={stats['users']}"
 
 
+async def recover_eod_chain(ctx) -> str:
+    """Ordered EOD recovery path used on worker startup and as a post-close safety net.
+
+    Normal cron jobs stay split for observability, but startup recovery must be sequential:
+    bars -> summary -> analytics -> portfolios -> activity/signals. Running these as independent
+    startup cron jobs can race analytics ahead of the bar pull.
+    """
+    if not _after_eod_window():
+        return "skipped: before EOD window"
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+
+    bars = await collect(MARKET, days=DAILY_LOOKBACK_DAYS)
+    summary = await collect_summary(MARKET, days=SUMMARY_LOOKBACK_DAYS)
+    analytics = await compute_all(MARKET)
+    portfolios = await snapshot_portfolios_run(MARKET)
+    trending = await compute_trending(MARKET)
+    levels = await run_levels_agent(MARKET)
+    factors = await run_factor_agents(MARKET)
+    log.info(
+        "eod recovery: bars=%s summary=%s analytics=%s portfolios=%s trending=%s "
+        "levels=%s factors=%s",
+        bars["bars_upserted"],
+        summary["days_upserted"],
+        analytics["computed"],
+        portfolios["users"],
+        trending["stored"],
+        levels["published"],
+        factors["published"],
+    )
+    return (
+        f"recovered bars={bars['bars_upserted']} summary={summary['days_upserted']} "
+        f"analytics={analytics['computed']} portfolios={portfolios['users']} "
+        f"trending={trending['stored']} levels={levels['published']} factors={factors['published']}"
+    )
+
+
 async def run_trending(ctx) -> str:
     """Recompute the daily 'Watch today' activity ranking — only on trading days, after analytics."""
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
@@ -306,6 +344,7 @@ class WorkerSettings:
         refresh_company,
         refresh_analytics,
         snapshot_portfolios,
+        recover_eod_chain,
         run_trending,
         snapshot_buzz,
         run_signals,
@@ -326,17 +365,20 @@ class WorkerSettings:
             run_agent_portfolios, hour={4, 5, 6, 7, 8}, minute={3, 18, 33, 48}, run_at_startup=False
         ),
         # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
-        cron(pull_eod_bars, hour=13, minute=0, run_at_startup=True),
+        cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Market-wide summary (index/turnover) right after the bar pull.
-        cron(pull_eod_summary, hour=13, minute=5, run_at_startup=True),
+        cron(pull_eod_summary, hour=13, minute=5, run_at_startup=False),
         # Weekly company/shareholding sweep — Friday (DSE closed, site quiet), well off the EOD path.
         cron(refresh_company, weekday="fri", hour=14, minute=0, run_at_startup=False),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
-        cron(refresh_analytics, hour=13, minute=15, run_at_startup=True),
+        cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
         # Portfolio growth-chart snapshot — 20 min after the bar pull, same cadence as the other
         # once-daily EOD jobs. Idempotent (upsert by user+date); no weekday filter needed since
         # the task itself skips non-trading days.
-        cron(snapshot_portfolios, hour=13, minute=20, run_at_startup=True),
+        cron(snapshot_portfolios, hour=13, minute=20, run_at_startup=False),
+        # Sequential safety net: catches a missed EOD chain and gives watchdog restarts a real
+        # recovery action after close, without racing analytics ahead of the bar pull.
+        cron(recover_eod_chain, hour=14, minute=5, run_at_startup=True),
         # 'Watch today' activity ranking — after analytics, before the FB market signals (13:50).
         # run_at_startup=True: confirmed live (2026-07-06) that arq's cron loop can silently stall
         # for ~30 min without any restart or error — pull_eod_summary/refresh_analytics/snapshot_*
