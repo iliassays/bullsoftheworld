@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -27,7 +27,7 @@ class QuoteSnapshot(Base):
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
     prev_close: Mapped[float | None] = mapped_column(Float)
-    volume: Mapped[int] = mapped_column(Integer)
+    volume: Mapped[int] = mapped_column(BigInteger)
     trades: Mapped[int] = mapped_column(Integer)
     as_of: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
     is_delayed: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -43,4 +43,4 @@ class DailyBar(Base):
     high: Mapped[float] = mapped_column(Float)
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
-    volume: Mapped[int] = mapped_column(Integer)
+    volume: Mapped[int] = mapped_column(BigInteger)
