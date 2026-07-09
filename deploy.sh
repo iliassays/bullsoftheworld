@@ -12,6 +12,7 @@ cd "$(dirname "$0")"
 REMOTE=bullstreetai
 APP=/home/ubuntu/bullsofdhaka
 API_URL=https://bullsofdhaka-api.bullstreetai.com
+SITE_URL=https://bullsofdhaka.bullstreetai.com
 
 echo "→ pushing code to origin/main"
 # Port 22 to github.com is often blocked on this network; fall back to the 443 SSH endpoint.
@@ -20,7 +21,20 @@ git push origin HEAD:main 2>/dev/null || git \
   push origin HEAD:main
 
 echo "→ building frontend (VITE_API_BASE=$API_URL)"
-( cd apps/web && VITE_API_BASE="$API_URL" npm run build )
+(
+  cd apps/web
+  VITE_API_BASE="$API_URL" \
+  VITE_DEFAULT_LANG=bn \
+  VITE_SITE_URL="$SITE_URL" \
+  VITE_HTML_TITLE="Bulls of Dhaka" \
+  VITE_HTML_DESCRIPTION="Bulls of Dhaka - facts on the DSE, not rumours. Live delayed prices, daily market signals, and a community for Bangladeshi retail investors. Descriptive data, not financial advice." \
+  VITE_OG_SITE_NAME="Bulls of Dhaka" \
+  VITE_OG_TITLE="Bulls of Dhaka - Facts, not rumours" \
+  VITE_OG_DESCRIPTION="Live DSE data, daily market signals, and a community for Bangladeshi retail investors. Descriptive data, not financial advice." \
+  VITE_TWITTER_TITLE="Bulls of Dhaka - Facts, not rumours" \
+  VITE_TWITTER_DESCRIPTION="Live DSE data, daily market signals, and a community for Bangladeshi retail investors." \
+  npm run build
+)
 
 echo "→ shipping frontend build"
 rsync -az --delete apps/web/dist/ "$REMOTE:$APP/apps/web/dist/"
