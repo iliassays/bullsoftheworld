@@ -63,12 +63,17 @@ class MarketConfigOut(BaseModel):
     currency_code: str
     currency_symbol: str
     timezone: str
+    timezone_label: str
+    place_label_en: str
+    place_label_bn: str
     open_time: str
     close_time: str
     settlement_cycle: str
     benchmark_label: str
     default_locale: str
     price_decimals: int
+    compact_money_units: list[dict[str, float | int | str]]
+    market_cap_money_units: list[dict[str, float | int | str]]
     features: dict[str, bool]
     tenant_name: str
     brand_name: str
@@ -87,12 +92,17 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         currency_code=profile.currency_code,
         currency_symbol=profile.currency_symbol,
         timezone=profile.timezone,
+        timezone_label=profile.timezone_label,
+        place_label_en=profile.place_label_en,
+        place_label_bn=profile.place_label_bn,
         open_time=profile.open_time.isoformat(timespec="minutes"),
         close_time=profile.close_time.isoformat(timespec="minutes"),
         settlement_cycle=profile.settlement_cycle,
         benchmark_label=profile.benchmark_label,
         default_locale=profile.default_locale,
         price_decimals=profile.price_decimals,
+        compact_money_units=[asdict(unit) for unit in profile.compact_money_units],
+        market_cap_money_units=[asdict(unit) for unit in profile.market_cap_money_units],
         features=asdict(profile.features),
         tenant_name=tenant.name,
         brand_name=tenant.display_name,

@@ -24,6 +24,14 @@ class MarketFeatures:
 
 
 @dataclass(frozen=True)
+class MoneyUnit:
+    min_value_mn: float
+    divisor_mn: float
+    suffix: str
+    decimals: int
+
+
+@dataclass(frozen=True)
 class MarketProfile:
     market: str
     exchange_code: str
@@ -34,6 +42,9 @@ class MarketProfile:
     currency_code: str
     currency_symbol: str
     timezone: str
+    timezone_label: str
+    place_label_en: str
+    place_label_bn: str
     open_time: dt.time
     close_time: dt.time
     trading_isoweekdays: frozenset[int]
@@ -42,6 +53,8 @@ class MarketProfile:
     benchmark_label: str = "Market"
     default_locale: str = "en"
     price_decimals: int = 2
+    compact_money_units: tuple[MoneyUnit, ...] = field(default_factory=tuple)
+    market_cap_money_units: tuple[MoneyUnit, ...] = field(default_factory=tuple)
     features: MarketFeatures = field(default_factory=MarketFeatures)
 
     @property
@@ -57,6 +70,9 @@ class MarketProfile:
         if lang == "bn" and self.exchange_name_bn:
             return self.exchange_name_bn
         return self.exchange_name
+
+    def place_label(self, lang: str = "en") -> str:
+        return self.place_label_bn if lang == "bn" else self.place_label_en
 
 
 DSE_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
@@ -94,6 +110,9 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         currency_code="BDT",
         currency_symbol="৳",
         timezone="Asia/Dhaka",
+        timezone_label="BDT",
+        place_label_en="Dhaka",
+        place_label_bn="ঢাকা",
         open_time=dt.time(10, 0),
         close_time=dt.time(14, 30),
         trading_isoweekdays=frozenset({7, 1, 2, 3, 4}),
@@ -102,6 +121,13 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         benchmark_label="DSEX",
         default_locale="bn",
         price_decimals=1,
+        compact_money_units=(
+            MoneyUnit(min_value_mn=10, divisor_mn=10, suffix="cr", decimals=1),
+            MoneyUnit(min_value_mn=0, divisor_mn=0.1, suffix="L", decimals=0),
+        ),
+        market_cap_money_units=(
+            MoneyUnit(min_value_mn=0, divisor_mn=10, suffix=" Cr", decimals=0),
+        ),
         features=MarketFeatures(
             dse_categories=True,
             circuit_breakers=True,
@@ -120,6 +146,9 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         currency_code="USD",
         currency_symbol="$",
         timezone="America/New_York",
+        timezone_label="ET",
+        place_label_en="New York",
+        place_label_bn="নিউ ইয়র্ক",
         open_time=dt.time(9, 30),
         close_time=dt.time(16, 0),
         trading_isoweekdays=frozenset({1, 2, 3, 4, 5}),
@@ -128,6 +157,14 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         benchmark_label="S&P 500",
         default_locale="en",
         price_decimals=2,
+        compact_money_units=(
+            MoneyUnit(min_value_mn=1000, divisor_mn=1000, suffix="B", decimals=1),
+            MoneyUnit(min_value_mn=0, divisor_mn=1, suffix="M", decimals=1),
+        ),
+        market_cap_money_units=(
+            MoneyUnit(min_value_mn=1000, divisor_mn=1000, suffix="B", decimals=1),
+            MoneyUnit(min_value_mn=0, divisor_mn=1, suffix="M", decimals=0),
+        ),
         features=MarketFeatures(sec_filings=True, extended_hours=True),
     ),
 }
@@ -146,3 +183,21 @@ def format_price(value: float | None, market: str | None = "DSE") -> str:
         return "—"
     profile = get_market_profile(market)
     return f"{profile.currency_symbol}{value:,.{profile.price_decimals}f}"
+
+
+def format_money_millions(
+    value_mn: float | None,
+    market: str | None = "DSE",
+    *,
+    style: str = "compact",
+    none: str = "—",
+) -> str:
+    if value_mn is None:
+        return none
+    profile = get_market_profile(market)
+    units = profile.market_cap_money_units if style == "market_cap" else profile.compact_money_units
+    if not units:
+        return f"{profile.currency_symbol}{value_mn:,.1f}mn"
+    unit = next((u for u in units if value_mn >= u.min_value_mn), units[-1])
+    scaled = value_mn / unit.divisor_mn
+    return f"{profile.currency_symbol}{scaled:,.{unit.decimals}f}{unit.suffix}"

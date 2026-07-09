@@ -539,12 +539,27 @@ export interface MarketConfig {
   currency_code: string;
   currency_symbol: string;
   timezone: string;
+  timezone_label: string;
+  place_label_en: string;
+  place_label_bn: string;
   open_time: string;
   close_time: string;
   settlement_cycle: string;
   benchmark_label: string;
   default_locale: string;
   price_decimals: number;
+  compact_money_units: Array<{
+    min_value_mn: number;
+    divisor_mn: number;
+    suffix: string;
+    decimals: number;
+  }>;
+  market_cap_money_units: Array<{
+    min_value_mn: number;
+    divisor_mn: number;
+    suffix: string;
+    decimals: number;
+  }>;
   features: Record<string, boolean>;
   tenant_name: string;
   brand_name: string;

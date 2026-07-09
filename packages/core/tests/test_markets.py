@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
-from bulls.core.markets import format_price, get_market_profile
+from bulls.core.markets import format_money_millions, format_price, get_market_profile
 from bulls.core.tenancy import TenantRegistry
 
 
@@ -18,6 +18,8 @@ def test_dse_profile_preserves_current_product_defaults() -> None:
     assert dse.currency_code == "BDT"
     assert dse.currency_symbol == "৳"
     assert dse.timezone == "Asia/Dhaka"
+    assert dse.timezone_label == "BDT"
+    assert dse.place_label("bn") == "ঢাকা"
     assert dse.open_time == dt.time(10, 0)
     assert dse.close_time == dt.time(14, 30)
     assert dse.trading_isoweekdays == frozenset({7, 1, 2, 3, 4})
@@ -26,6 +28,9 @@ def test_dse_profile_preserves_current_product_defaults() -> None:
     assert dse.features.dse_categories
     assert dse.features.shareholding_breakdown
     assert format_price(123.4, "DSE") == "৳123.4"
+    assert format_money_millions(5, "DSE") == "৳50L"
+    assert format_money_millions(12.5, "DSE") == "৳1.2cr"
+    assert format_money_millions(1250, "DSE", style="market_cap") == "৳125 Cr"
 
 
 def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
@@ -35,6 +40,8 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert us.exchange_label("bn") == "যুক্তরাষ্ট্রের শেয়ারবাজার"
     assert us.currency_symbol == "$"
     assert us.timezone == "America/New_York"
+    assert us.timezone_label == "ET"
+    assert us.place_label("en") == "New York"
     assert us.open_time == dt.time(9, 30)
     assert us.close_time == dt.time(16, 0)
     assert us.trading_isoweekdays == frozenset({1, 2, 3, 4, 5})
@@ -44,6 +51,9 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert not us.features.shareholding_breakdown
     assert us.features.sec_filings
     assert format_price(123.4, "US") == "$123.40"
+    assert format_money_millions(500, "US") == "$500.0M"
+    assert format_money_millions(1250, "US") == "$1.2B"
+    assert format_money_millions(500, "US", style="market_cap") == "$500M"
 
 
 def test_dormant_us_tenant_loads_without_changing_default_tenant() -> None:

@@ -25,8 +25,12 @@ async def test_market_config_preserves_dse_defaults() -> None:
     assert config.currency_symbol == "৳"
     assert config.exchange_label_bn == "ডিএসই"
     assert config.exchange_name_bn == "ঢাকা স্টক এক্সচেঞ্জ"
+    assert config.timezone_label == "BDT"
+    assert config.place_label_bn == "ঢাকা"
     assert config.open_time == "10:00"
     assert config.close_time == "14:30"
+    assert config.compact_money_units[0]["suffix"] == "cr"
+    assert config.market_cap_money_units[0]["suffix"] == " Cr"
     assert config.default_locale == "bn"
     assert config.features["dse_categories"] is True
     assert config.features["sec_filings"] is False
@@ -48,9 +52,13 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     assert config.market == "US"
     assert config.currency_symbol == "$"
     assert config.exchange_label_bn == "যুক্তরাষ্ট্রের শেয়ারবাজার"
+    assert config.timezone_label == "ET"
+    assert config.place_label_en == "New York"
     assert config.open_time == "09:30"
     assert config.close_time == "16:00"
     assert config.settlement_cycle == "T+1"
+    assert config.compact_money_units[0]["suffix"] == "B"
+    assert config.market_cap_money_units[1]["suffix"] == "M"
     assert config.features["dse_categories"] is False
     assert config.features["shareholding_breakdown"] is False
     assert config.features["sec_filings"] is True

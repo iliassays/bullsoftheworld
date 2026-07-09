@@ -20,7 +20,7 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bulls.core.markets import get_market_profile
+from bulls.core.markets import format_money_millions, get_market_profile
 from bulls.core.models import Symbol, TickerAnalytics
 from bulls.core.models.quote import QuoteSnapshot
 from bulls.market_data.calendar import to_market_tz
@@ -96,13 +96,9 @@ def _doc(
 def _delayed_note(lang: str, as_of: dt.datetime, market: str) -> str:
     profile = get_market_profile(market)
     local = to_market_tz(as_of, market=market).strftime("%d %b %Y, %H:%M")
-    place = (
-        "Dhaka"
-        if profile.market == "DSE"
-        else profile.timezone.rsplit("/", 1)[-1].replace("_", " ")
-    )
+    place = profile.place_label(lang)
     return (
-        f"১৫ মিনিট বিলম্বিত · সর্বশেষ {local} ({'ঢাকা' if profile.market == 'DSE' else place})"
+        f"১৫ মিনিট বিলম্বিত · সর্বশেষ {local} ({place})"
         if lang == "bn"
         else f"15-min delayed · as of {local} ({place})"
     )
@@ -111,12 +107,7 @@ def _delayed_note(lang: str, as_of: dt.datetime, market: str) -> str:
 def _market_cap_text(value_mn: float | None, market: str) -> str | None:
     if value_mn is None:
         return None
-    profile = get_market_profile(market)
-    if profile.market == "DSE":
-        return f"৳{value_mn / 10:,.0f} Cr"
-    if value_mn >= 1000:
-        return f"{profile.currency_symbol}{value_mn / 1000:,.1f}B"
-    return f"{profile.currency_symbol}{value_mn:,.0f}M"
+    return format_money_millions(value_mn, market, style="market_cap")
 
 
 async def _render_stock(

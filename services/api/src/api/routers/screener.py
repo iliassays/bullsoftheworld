@@ -19,7 +19,7 @@ from api.deps import CurrentTenant, DbSession, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
-from bulls.core.markets import get_market_profile
+from bulls.core.markets import format_money_millions, get_market_profile
 from bulls.core.models import (
     Announcement,
     Cashtag,
@@ -782,14 +782,7 @@ async def _change_1d(session, market: str, codes: list[str]) -> dict[str, float]
 
 def _money_mn(n: float | None, market: str) -> str:
     """Compact currency text from currency millions."""
-    if n is None:
-        return "n/a"
-    profile = get_market_profile(market)
-    if profile.market == "DSE":
-        if n >= 10:
-            return f"৳{n / 10:,.1f}cr"
-        return f"৳{n * 10:,.0f}L"
-    return f"{profile.currency_symbol}{n:,.1f}mn"
+    return format_money_millions(n, market, none="n/a")
 
 
 def _bdt_mn(n: float | None) -> str:

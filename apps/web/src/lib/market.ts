@@ -1,3 +1,10 @@
+export interface MoneyUnit {
+  minValueMn: number;
+  divisorMn: number;
+  suffix: string;
+  decimals: number;
+}
+
 export interface MarketUiConfig {
   market: string;
   exchangeCode: string;
@@ -6,6 +13,8 @@ export interface MarketUiConfig {
   timezone: string;
   timezoneLabel: string;
   priceDecimals: number;
+  compactMoneyUnits: MoneyUnit[];
+  marketCapMoneyUnits: MoneyUnit[];
 }
 
 export const DSE_MARKET: MarketUiConfig = {
@@ -16,6 +25,11 @@ export const DSE_MARKET: MarketUiConfig = {
   timezone: "Asia/Dhaka",
   timezoneLabel: "BDT",
   priceDecimals: 1,
+  compactMoneyUnits: [
+    { minValueMn: 10, divisorMn: 10, suffix: "cr", decimals: 1 },
+    { minValueMn: 0, divisorMn: 0.1, suffix: "L", decimals: 0 },
+  ],
+  marketCapMoneyUnits: [{ minValueMn: 0, divisorMn: 10, suffix: " Cr", decimals: 0 }],
 };
 
 export const US_MARKET: MarketUiConfig = {
@@ -26,6 +40,14 @@ export const US_MARKET: MarketUiConfig = {
   timezone: "America/New_York",
   timezoneLabel: "ET",
   priceDecimals: 2,
+  compactMoneyUnits: [
+    { minValueMn: 1000, divisorMn: 1000, suffix: "B", decimals: 1 },
+    { minValueMn: 0, divisorMn: 1, suffix: "M", decimals: 1 },
+  ],
+  marketCapMoneyUnits: [
+    { minValueMn: 1000, divisorMn: 1000, suffix: "B", decimals: 1 },
+    { minValueMn: 0, divisorMn: 1, suffix: "M", decimals: 0 },
+  ],
 };
 
 export function marketUiFromConfig(config: {
@@ -34,16 +56,42 @@ export function marketUiFromConfig(config: {
   currency_code: string;
   currency_symbol: string;
   timezone: string;
+  timezone_label: string;
   price_decimals: number;
+  compact_money_units: Array<{
+    min_value_mn: number;
+    divisor_mn: number;
+    suffix: string;
+    decimals: number;
+  }>;
+  market_cap_money_units: Array<{
+    min_value_mn: number;
+    divisor_mn: number;
+    suffix: string;
+    decimals: number;
+  }>;
 }): MarketUiConfig {
+  const convertUnit = (unit: {
+    min_value_mn: number;
+    divisor_mn: number;
+    suffix: string;
+    decimals: number;
+  }): MoneyUnit => ({
+    minValueMn: unit.min_value_mn,
+    divisorMn: unit.divisor_mn,
+    suffix: unit.suffix,
+    decimals: unit.decimals,
+  });
   return {
     market: config.market,
     exchangeCode: config.exchange_code,
     currencyCode: config.currency_code,
     currencySymbol: config.currency_symbol,
     timezone: config.timezone,
-    timezoneLabel: config.timezone === "America/New_York" ? "ET" : config.currency_code,
+    timezoneLabel: config.timezone_label,
     priceDecimals: config.price_decimals,
+    compactMoneyUnits: config.compact_money_units.map(convertUnit),
+    marketCapMoneyUnits: config.market_cap_money_units.map(convertUnit),
   };
 }
 
@@ -60,12 +108,10 @@ export function formatMoney(
 
 export function formatCurrencyMillions(n: number | null | undefined, market = DSE_MARKET) {
   if (n == null) return "—";
-  if (market.market === "DSE") {
-    return n >= 10
-      ? `৳${(n / 10).toLocaleString(undefined, { maximumFractionDigits: n >= 100 ? 0 : 1 })}Cr`
-      : `৳${(n * 10).toLocaleString(undefined, { maximumFractionDigits: n >= 1 ? 0 : 1 })}L`;
-  }
-  return n >= 1000
-    ? `${market.currencySymbol}${(n / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}B`
-    : `${market.currencySymbol}${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}M`;
+  const units = market.compactMoneyUnits.length ? market.compactMoneyUnits : DSE_MARKET.compactMoneyUnits;
+  const unit = units.find((candidate) => n >= candidate.minValueMn) ?? units[units.length - 1];
+  return `${market.currencySymbol}${(n / unit.divisorMn).toLocaleString(undefined, {
+    minimumFractionDigits: unit.decimals,
+    maximumFractionDigits: unit.decimals,
+  })}${unit.suffix}`;
 }
