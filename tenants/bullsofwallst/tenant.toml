@@ -1,0 +1,18 @@
+# Bulls of Wall Street — US equities tenant under the Bulls of the World family.
+name = "bullsofwallst"
+display_name = "Bulls of Wall Street"
+market = "US"
+locale = "en"
+timezone = "America/New_York"
+domains = [
+  "bullsofwallst.com",
+  "www.bullsofwallst.com",
+  "wallst.localhost",
+  "bullsofwallst.localhost",
+]
+
+[theme]
+accent = "#2563EB"
+up = "#16A34A"
+down = "#DC2626"
+dark_first = true

@@ -4,6 +4,7 @@ import { Link } from "../lib/nav";
 import { api, type NoteBeat } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { Composer } from "../components/Composer";
 import { DhakaMood } from "../components/DhakaMood";
@@ -24,7 +25,8 @@ type Chip = "all" | "desks" | "people" | "myStocks" | "portfolio";
 export function Feed() {
   const { user } = useAuth();
   const { t } = useLang();
-  useSeo({ jsonLd: siteJsonLd() }); // home uses site-default title/description + Organization/WebSite
+  const { config, siteUrl } = useTenantConfig();
+  useSeo({ jsonLd: siteJsonLd(config, siteUrl) }); // home uses site-default title/description + Organization/WebSite
   const [params, setParams] = useSearchParams();
   // /bulls redirects to /?feed=desks so old links (and the FB page) keep working.
   const requested = params.get("feed") as Chip | null;

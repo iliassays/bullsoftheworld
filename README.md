@@ -4,6 +4,7 @@ A multi-tenant social platform for stock markets — post, follow, tag stocks wi
 (`$GP`), call bull/bear, and watch the market. One engine, localized faces.
 
 > **First tenant:** [Bulls of Dhaka](tenants/bullsofdhaka) — Dhaka Stock Exchange (DSE), Bangla-first.
+> **US tenant:** [Bulls of Wall Street](tenants/bullsofwallst) — US equities, English-first.
 
 ## Architecture at a glance
 
@@ -18,7 +19,7 @@ packages/
   analytics         descriptive TA engine (RSI, S/R)  (bulls.analytics)
   market_data       provider interface + DSE adapter  (bulls.market_data)  ← the crux
   ai                Claude/Ollama client, RAG, evals  (bulls.ai)
-tenants/            per-market config (market, locale, branding)
+tenants/            per-market config (market, locale, branding, domains)
 ```
 
 The app only ever talks to a `MarketDataProvider` — swapping the DSE scraper for a licensed
@@ -86,6 +87,23 @@ uv run python scripts/simulate_activity.py --clean  # remove all sim_ users + th
 uv run pytest                                        # python unit tests
 DB_TESTS=1 uv run pytest                             # + integration tests (needs Postgres up)
 uv run ruff check . && uv run ruff format .          # lint + format
+```
+
+## Frontend Deploys
+
+```bash
+# Bulls of Dhaka production
+PROD_S3_BUCKET=bullsofdhaka-web PROD_CLOUDFRONT_ID=EPJ7LAHUJDDMK ./deploy-prod.sh
+
+# Bulls of Wall Street production
+WEB_S3_BUCKET=bullsofwallst-web \
+WEB_CLOUDFRONT_ID=E3DLOEKLM3136G \
+WEB_SITE_URL=https://bullsofwallst.com \
+WEB_TENANT_HOST=bullsofwallst.com \
+WEB_BRAND_NAME="Bulls of Wall Street" \
+WEB_DEFAULT_LANG=en \
+WEB_API_URL=https://api.bullsofdhaka.com \
+./deploy-web.sh
 ```
 
 ## Design

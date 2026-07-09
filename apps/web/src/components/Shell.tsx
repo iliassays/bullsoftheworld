@@ -5,6 +5,7 @@ import { useAuth } from "../lib/auth";
 import { usePageViewTracking } from "../lib/analytics";
 import { type Lang, useLang } from "../lib/i18n";
 import { Link, NavLink, useSwitchLang } from "../lib/nav";
+import { useTenantConfig } from "../lib/tenant";
 import { SearchBar } from "./SearchBar";
 
 // Live, holiday-aware market status + the delay note — a pulsing green dot while open.
@@ -114,7 +115,14 @@ function LangToggle() {
 
 export function Shell() {
   const { lang, t } = useLang();
+  const { config } = useTenantConfig();
   usePageViewTracking(); // GA4 SPA page_view on route change + view_stock on stock pages
+  const tagline =
+    config.market === "US"
+      ? lang === "bn"
+        ? "যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়"
+        : "US market intelligence, not noise"
+      : t("tagline");
   // Publish the live header height as a CSS var so page-level tab bars can stick right below
   // it (`top: var(--app-header-h)`). Measured, not hardcoded — the header wraps differently
   // per language and viewport.
@@ -136,12 +144,12 @@ export function Shell() {
         className="sticky top-0 z-20 bg-nav/90 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5"
       >
         <div className="flex items-center gap-2.5">
-          <Link to="/" aria-label="Bulls of Dhaka — home" className="flex items-center gap-2.5 min-w-0">
-            <img src="/logo-mark-v2.png" alt="Bulls of Dhaka" className="w-9 h-9 shrink-0" />
+          <Link to="/" aria-label={`${config.brand_name} — home`} className="flex items-center gap-2.5 min-w-0">
+            <img src="/logo-mark-v2.png" alt={config.brand_name} className="w-9 h-9 shrink-0" />
             <div className="leading-tight min-w-0">
-              <div className="font-bold text-base whitespace-nowrap">Bulls of Dhaka</div>
+              <div className="font-bold text-base whitespace-nowrap">{config.brand_name}</div>
               <div lang={lang} className="text-[11px] text-accent font-semibold truncate">
-                {t("tagline")}
+                {tagline}
               </div>
             </div>
           </Link>

@@ -9,9 +9,18 @@ import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SITE = "https://bullsofdhaka.com";
-const API = process.env.PROD_API_URL || "https://api.bullsofdhaka.com";
-const LANGS = ["bn", "en"];
+const SITE = (process.env.WEB_SITE_URL || process.env.PROD_SITE_URL || "https://bullsofdhaka.com").replace(
+  /\/$/,
+  "",
+);
+const API = process.env.WEB_API_URL || process.env.PROD_API_URL || "https://api.bullsofdhaka.com";
+const TENANT_HOST = process.env.WEB_TENANT_HOST || new URL(SITE).hostname;
+const DEFAULT_LANG = process.env.WEB_DEFAULT_LANG || "bn";
+const LANGS = (process.env.WEB_LANGS || "bn,en")
+  .split(",")
+  .map((lang) => lang.trim())
+  .filter(Boolean);
+const BRAND_NAME = process.env.WEB_BRAND_NAME || "Bulls of Dhaka";
 const PATTERN_TYPES = [
   "ascending_triangle",
   "descending_triangle",
@@ -33,7 +42,9 @@ const STATIC_PATHS = [
 
 async function stockPaths() {
   try {
-    const res = await fetch(`${API}/symbols?limit=500`);
+    const res = await fetch(`${API}/symbols?limit=500`, {
+      headers: { "X-Tenant-Host": TENANT_HOST },
+    });
     if (!res.ok) throw new Error(`/symbols HTTP ${res.status}`);
     const list = await res.json();
     // Encode the code: some real DSE tickers contain XML/URL-unsafe chars (e.g. "KAY&QUE").
@@ -50,7 +61,7 @@ function urlEntries(path) {
   // One <url> per language; each carries the full hreflang alternate set (bn, en, x-default=bn).
   const alts = [
     ...LANGS.map((l) => `    <xhtml:link rel="alternate" hreflang="${l}" href="${abs(l, path)}"/>`),
-    `    <xhtml:link rel="alternate" hreflang="x-default" href="${abs("bn", path)}"/>`,
+    `    <xhtml:link rel="alternate" hreflang="x-default" href="${abs(DEFAULT_LANG, path)}"/>`,
   ].join("\n");
   return LANGS.map((lang) => `  <url>\n    <loc>${abs(lang, path)}</loc>\n${alts}\n  </url>`).join("\n");
 }
@@ -64,6 +75,27 @@ const xml =
 
 const out = join(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web", "dist", "sitemap.xml");
 writeFileSync(out, xml);
+const robotsOut = join(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web", "dist", "robots.txt");
+writeFileSync(
+  robotsOut,
+  `# ${BRAND_NAME} — allow public pages, keep private/personal + transient auth pages out.
+User-agent: *
+Allow: /
+Disallow: /*/portfolio
+Disallow: /*/alerts
+Disallow: /*/watchlist
+Disallow: /*/me
+Disallow: /*/cockpit
+Disallow: /*/welcome
+Disallow: /*/forgot
+Disallow: /*/reset
+Disallow: /*/verify
+Disallow: /*/u/
+
+Sitemap: ${SITE}/sitemap.xml
+`,
+);
 console.log(
   `sitemap: ${paths.length} paths × ${LANGS.length} langs = ${paths.length * LANGS.length} urls → ${out}`,
 );
+console.log(`robots: ${robotsOut}`);

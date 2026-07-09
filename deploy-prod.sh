@@ -15,35 +15,11 @@ cd "$(dirname "$0")"
 
 : "${PROD_S3_BUCKET:?set PROD_S3_BUCKET (the S3 bucket name)}"
 : "${PROD_CLOUDFRONT_ID:?set PROD_CLOUDFRONT_ID (the CloudFront distribution id)}"
-API_URL="${PROD_API_URL:-https://api.bullsofdhaka.com}"
-
-echo "→ building frontend (VITE_API_BASE=$API_URL)"
-( cd apps/web && VITE_API_BASE="$API_URL" npm run build )
-
-# Generate sitemap.xml into dist/ (from the live /symbols API + static routes) so the root sync
-# below uploads it. robots.txt ships automatically from apps/web/public/ via the build.
-echo "→ generating sitemap.xml"
-PROD_API_URL="$API_URL" node scripts/gen_sitemap.mjs
-
-# Only the hashed /assets/* bundles are content-addressed → safe to cache forever.
-echo "→ syncing hashed assets to s3://$PROD_S3_BUCKET/assets (immutable)"
-aws s3 sync apps/web/dist/assets/ "s3://$PROD_S3_BUCKET/assets/" --delete \
-  --cache-control "public,max-age=31536000,immutable"
-
-# Stable-named root files (favicons, logo-mark, og, manifest, pwa icons) keep their names
-# across rebrands, so they must NOT be immutable — short cache + revalidate so a rebrand
-# actually reaches visitors. (This was the bug: a new logo never propagated.)
-echo "→ syncing root files (short cache, revalidate)"
-aws s3 sync apps/web/dist/ "s3://$PROD_S3_BUCKET/" --delete \
-  --exclude "assets/*" --exclude "index.html" \
-  --cache-control "public,max-age=300,must-revalidate"
-
-echo "→ uploading index.html (no-store)"
-aws s3 cp apps/web/dist/index.html "s3://$PROD_S3_BUCKET/index.html" \
-  --cache-control "no-store" --content-type "text/html; charset=utf-8"
-
-echo "→ invalidating CloudFront cache"
-aws cloudfront create-invalidation \
-  --distribution-id "$PROD_CLOUDFRONT_ID" --paths "/" "/index.html" "/sitemap.xml" "/robots.txt" >/dev/null
-
-echo "✓ deployed → https://bullsofdhaka.com"
+WEB_S3_BUCKET="$PROD_S3_BUCKET" \
+WEB_CLOUDFRONT_ID="$PROD_CLOUDFRONT_ID" \
+WEB_API_URL="${PROD_API_URL:-https://api.bullsofdhaka.com}" \
+WEB_SITE_URL="${PROD_SITE_URL:-https://bullsofdhaka.com}" \
+WEB_TENANT_HOST="${PROD_TENANT_HOST:-bullsofdhaka.com}" \
+WEB_BRAND_NAME="${PROD_BRAND_NAME:-Bulls of Dhaka}" \
+WEB_DEFAULT_LANG="${PROD_DEFAULT_LANG:-bn}" \
+./deploy-web.sh

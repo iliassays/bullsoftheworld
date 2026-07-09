@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
+import { type MarketConfig } from "../lib/api";
 import { type Lang, useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 
 // Per-page head management for the client-rendered SPA: title, description, canonical, hreflang,
 // Open Graph / Twitter, JSON-LD. Design: ONE <SeoHead> (mounted by SeoProvider) imperatively
@@ -12,7 +14,7 @@ import { type Lang, useLang } from "../lib/i18n";
 // StrictMode here, and a ~40-line upsert we control is more predictable than debugging its
 // internals — it updates the SAME static tags already in index.html in place, so no duplicates.
 
-export const SITE = "https://bullsofdhaka.com";
+const FALLBACK_SITE = "https://bullsofdhaka.com";
 
 type Loc = string | Record<Lang, string>;
 export interface SeoValues {
@@ -23,14 +25,27 @@ export interface SeoValues {
   jsonLd?: object | object[];
 }
 
-const DEFAULT_TITLE: Record<Lang, string> = {
-  bn: "Bulls of Dhaka — ঢাকা স্টক এক্সচেঞ্জের তথ্য, গুজব নয়",
-  en: "Bulls of Dhaka — Dhaka Stock Exchange data, not rumours",
-};
-const DEFAULT_DESC: Record<Lang, string> = {
-  bn: "DSE-র শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।",
-  en: "DSE share prices, fundamentals, chart patterns and community — in one place. Descriptive data, not investment advice.",
-};
+function defaultTitle(config: MarketConfig, lang: Lang): string {
+  if (config.market === "US") {
+    return lang === "bn"
+      ? `${config.brand_name} — যুক্তরাষ্ট্রের শেয়ারবাজার তথ্য, গুজব নয়`
+      : `${config.brand_name} — US market data, not noise`;
+  }
+  return lang === "bn"
+    ? "Bulls of Dhaka — ঢাকা স্টক এক্সচেঞ্জের তথ্য, গুজব নয়"
+    : "Bulls of Dhaka — Dhaka Stock Exchange data, not rumours";
+}
+
+function defaultDesc(config: MarketConfig, lang: Lang): string {
+  if (config.market === "US") {
+    return lang === "bn"
+      ? "যুক্তরাষ্ট্রের শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।"
+      : "US share prices, fundamentals, chart patterns and community — in one place. Descriptive data, not investment advice.";
+  }
+  return lang === "bn"
+    ? "DSE-র শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।"
+    : "DSE share prices, fundamentals, chart patterns and community — in one place. Descriptive data, not investment advice.";
+}
 
 function pick(v: Loc | undefined, lang: Lang): string | undefined {
   if (v == null) return undefined;
@@ -40,17 +55,28 @@ function stripLang(pathname: string): string {
   return pathname.replace(/^\/(bn|en)(?=\/|$)/, "") || "/";
 }
 
-export function siteJsonLd(): object[] {
+function currentSiteOrigin(): string {
+  if (typeof window === "undefined") return FALLBACK_SITE;
+  return window.location.origin;
+}
+
+export function siteJsonLd(config: MarketConfig, site = currentSiteOrigin()): object[] {
   return [
-    { "@context": "https://schema.org", "@type": "Organization", name: "Bulls of Dhaka", url: SITE, logo: `${SITE}/logo-mark-v2.png` },
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: config.brand_name,
+      url: site,
+      logo: `${site}/logo-mark-v2.png`,
+    },
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
-      name: "Bulls of Dhaka",
-      url: SITE,
+      name: config.brand_name,
+      url: site,
       potentialAction: {
         "@type": "SearchAction",
-        target: `${SITE}/bn/s/{search_term_string}`,
+        target: `${site}/${config.default_locale}/s/{search_term_string}`,
         "query-input": "required name=search_term_string",
       },
     },
@@ -58,6 +84,7 @@ export function siteJsonLd(): object[] {
 }
 
 export function breadcrumbJsonLd(lang: Lang, trail: { name: string; path: string }[]): object {
+  const site = currentSiteOrigin();
   return {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -65,7 +92,7 @@ export function breadcrumbJsonLd(lang: Lang, trail: { name: string; path: string
       "@type": "ListItem",
       position: i + 1,
       name: c.name,
-      item: `${SITE}/${lang}${c.path === "/" ? "" : c.path}`,
+      item: `${site}/${lang}${c.path === "/" ? "" : c.path}`,
     })),
   };
 }
@@ -122,15 +149,16 @@ export function useSeo(v: SeoValues) {
 
 function SeoHead({ values }: { values: SeoValues | null }) {
   const { lang } = useLang();
+  const { config, siteUrl } = useTenantConfig();
   const loc = useLocation();
   const v = values ?? {};
   const suffix = stripLang(loc.pathname) === "/" ? "" : stripLang(loc.pathname);
-  const canonical = `${SITE}/${lang}${suffix}`;
-  const altBn = `${SITE}/bn${suffix}`;
-  const altEn = `${SITE}/en${suffix}`;
-  const t = pick(v.title, lang) ?? DEFAULT_TITLE[lang];
-  const d = pick(v.description, lang) ?? DEFAULT_DESC[lang];
-  const img = v.image ?? `${SITE}/og.png`;
+  const canonical = `${siteUrl}/${lang}${suffix}`;
+  const altBn = `${siteUrl}/bn${suffix}`;
+  const altEn = `${siteUrl}/en${suffix}`;
+  const t = pick(v.title, lang) ?? defaultTitle(config, lang);
+  const d = pick(v.description, lang) ?? defaultDesc(config, lang);
+  const img = v.image ?? `${siteUrl}/og.png`;
   const jsonLd = v.jsonLd ? (Array.isArray(v.jsonLd) ? v.jsonLd : [v.jsonLd]) : [];
   const jsonLdStr = JSON.stringify(jsonLd);
 

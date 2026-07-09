@@ -4,8 +4,9 @@ A multi-tenant social platform for stock markets — think "StockTwits, done loc
 follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch market data.
 
 - **Platform:** Bulls of the World (this repo, Python namespace `bulls`)
-- **Tenant pattern:** Bulls of `[City]` → `bullsof[city].com`
+- **Tenant pattern:** Bulls of `[Market/Place]` → `bullsof[place].com`
 - **First tenant:** Bulls of Dhaka — market `DSE`, locale `bn` (Bangla-first)
+- **US tenant:** Bulls of Wall Street — market `US`, locale `en`, canonical domain `bullsofwallst.com`
 
 ## Core principles (do not violate)
 
@@ -83,6 +84,12 @@ uv run granian --interface asgi api.main:app --host 0.0.0.0 --port 8000   # run 
   (env `PROD_S3_BUCKET=bullsofdhaka-web PROD_CLOUDFRONT_ID=EPJ7LAHUJDDMK`) = build FE → S3 →
   CloudFront invalidate (bullsofdhaka.com). Server: `ssh bullstreetai`, app `/home/ubuntu/bullsofdhaka`,
   Postgres in docker (`docker compose -f infra/docker-compose.yml exec -T postgres psql -U bulls -d bulls -p 5432`).
+- **US frontend:** `WEB_S3_BUCKET=bullsofwallst-web WEB_CLOUDFRONT_ID=E3DLOEKLM3136G
+  WEB_SITE_URL=https://bullsofwallst.com WEB_TENANT_HOST=bullsofwallst.com
+  WEB_BRAND_NAME="Bulls of Wall Street" WEB_DEFAULT_LANG=en WEB_API_URL=https://api.bullsofdhaka.com
+  ./deploy-web.sh` deploys the BullsofWallst static frontend. Distribution:
+  `d2jnx1yh0pmbv8.cloudfront.net`; ACM cert:
+  `arn:aws:acm:us-east-1:982534375924:certificate/0c63d9f6-5148-45f0-bd2f-ec60ec8a6d31`.
 - **Worker rhythm (arq cron, UTC, trading days):** intraday `poll_quotes` {4–8}:{0,15,30,45}; EOD chain
   `pull_eod_bars` 13:00 → `pull_eod_summary` 13:05 → `refresh_analytics` 13:15 → `run_trending` 13:25
   → `run_factor_signals` 13:40 → `run_market_signals` (Evening Wrap → feed+FB) 13:50; `run_morning_watch`

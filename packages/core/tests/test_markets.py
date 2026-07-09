@@ -56,10 +56,25 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert format_money_millions(500, "US", style="market_cap") == "$500M"
 
 
-def test_dormant_us_tenant_loads_without_changing_default_tenant() -> None:
+def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     tenants_dir = Path(__file__).resolve().parents[3] / "tenants"
     registry = TenantRegistry.from_dir(tenants_dir, default="bullsofdhaka")
 
     assert registry.resolve("localhost").name == "bullsofdhaka"
-    assert registry.resolve("us.localhost").name == "bullsofusa"
-    assert registry.resolve("us.localhost").market == "US"
+    assert registry.resolve("bullsofwallst.com").name == "bullsofwallst"
+    assert registry.resolve("www.bullsofwallst.com").name == "bullsofwallst"
+    assert registry.resolve("wallst.localhost").name == "bullsofwallst"
+    assert registry.resolve("wallst.localhost").display_name == "Bulls of Wall Street"
+    assert registry.resolve("wallst.localhost").market == "US"
+    assert registry.resolve("api.shared.local", tenant_host="bullsofwallst.com").name == (
+        "bullsofwallst"
+    )
+    assert registry.resolve("api.shared.local", origin="https://www.bullsofwallst.com").name == (
+        "bullsofwallst"
+    )
+    assert registry.resolve(
+        "api.shared.local", referer="https://bullsofwallst.com/en/s/AAPL"
+    ).name == ("bullsofwallst")
+    assert registry.resolve("bullsofdhaka.com", tenant_host="bullsofwallst.com").name == (
+        "bullsofdhaka"
+    )

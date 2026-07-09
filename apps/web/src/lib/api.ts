@@ -10,6 +10,15 @@ const BASE =
 export const logoUrl = (code: string) => `${BASE}/symbols/${encodeURIComponent(code)}/logo`;
 const TOKEN_KEY = "bulls.token";
 
+function tenantHost(): string | undefined {
+  return typeof window === "undefined" ? undefined : window.location.hostname;
+}
+
+function tenantHeaders(): Record<string, string> {
+  const host = tenantHost();
+  return host ? { "X-Tenant-Host": host } : {};
+}
+
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
   set: (t: string) => localStorage.setItem(TOKEN_KEY, t),
@@ -58,7 +67,7 @@ async function tryRefresh(): Promise<boolean> {
     try {
       const res = await fetch(`${BASE}/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...tenantHeaders() },
         body: JSON.stringify({ refresh_token: rt }),
       });
       if (!res.ok) throw new Error();
@@ -82,6 +91,7 @@ async function request<T>(path: string, opts: RequestInit = {}, retried = false)
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Locale": currentLang(),
+    ...tenantHeaders(),
     ...(opts.headers as Record<string, string>),
   };
   const token = tokenStore.get();

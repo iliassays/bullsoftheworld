@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
@@ -50,10 +51,39 @@ class TenantRegistry:
             raise RuntimeError(f"No tenants found under {root}")
         return cls(tenants, default=default)
 
-    def resolve(self, host: str | None) -> Tenant:
-        """Resolve by request host; fall back to the default tenant (local dev)."""
-        if host:
-            hostname = host.split(":")[0].lower()
+    @staticmethod
+    def _hostname(value: str | None) -> str | None:
+        """Normalize a host or URL-like value into a lowercase hostname."""
+        if not value:
+            return None
+        raw = value.strip().lower()
+        if not raw:
+            return None
+        parsed = urlparse(raw if "://" in raw else f"//{raw}")
+        return parsed.hostname
+
+    def resolve(
+        self,
+        host: str | None,
+        *,
+        tenant_host: str | None = None,
+        origin: str | None = None,
+        referer: str | None = None,
+    ) -> Tenant:
+        """Resolve a tenant from request context; fall back to the default tenant.
+
+        `host` is authoritative when it maps to a tenant. For shared API domains, browser callers can
+        identify the frontend tenant through `X-Tenant-Host`; browser-loaded assets fall back to
+        Origin/Referer. Only configured tenant domains are accepted.
+        """
+        candidates = (
+            host,
+            tenant_host,
+            origin,
+            referer,
+        )
+        for candidate in candidates:
+            hostname = self._hostname(candidate)
             if hostname in self._by_domain:
                 return self._by_domain[hostname]
         return self._by_name[self._default]

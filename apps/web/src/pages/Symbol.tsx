@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 import { formatDhakaDateTime } from "../lib/time";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { CandleChart } from "../components/CandleChart";
@@ -112,6 +113,7 @@ export function SymbolPage() {
   const sym = code.toUpperCase();
   const { user } = useAuth();
   const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const [detail, setDetail] = useState<SymbolDetail | null>(null);
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [buzz, setBuzz] = useState<Buzz | null>(null);
@@ -178,16 +180,23 @@ export function SymbolPage() {
     (lang === "bn" ? detail?.symbol.name_bn || detail?.symbol.name_en : detail?.symbol.name_en) ||
     sym;
   const seoSector = detail?.symbol.sector;
-  const priceTxt = detail?.quote?.ltp != null ? `৳${detail.quote.ltp}` : "";
+  const priceTxt =
+    detail?.quote?.ltp != null
+      ? `${config.currency_symbol}${detail.quote.ltp.toLocaleString(undefined, {
+          maximumFractionDigits: config.price_decimals,
+        })}`
+      : "";
+  const exchange = config.exchange_code;
+  const brand = config.brand_name;
   useSeo({
     title:
       lang === "bn"
-        ? `${seoName} (${sym}) শেয়ার দাম ${priceTxt} — DSE | Bulls of Dhaka`
-        : `${seoName} (${sym}) share price ${priceTxt} — DSE | Bulls of Dhaka`,
+        ? `${seoName} (${sym}) শেয়ার দাম ${priceTxt} — ${exchange} | ${brand}`
+        : `${seoName} (${sym}) share price ${priceTxt} — ${exchange} | ${brand}`,
     description:
       lang === "bn"
-        ? `${seoName}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল (P/E, EPS, মার্কেট ক্যাপ), চার্ট প্যাটার্ন ও খবর${seoSector ? ` · খাত: ${seoSector}` : ""}। দাম ১৫ মিনিট বিলম্বিত। বিনিয়োগ পরামর্শ নয়।`
-        : `${seoName} latest share price, fundamentals (P/E, EPS, market cap), chart patterns and news${seoSector ? ` · Sector: ${seoSector}` : ""}. Price 15-min delayed. Not investment advice.`,
+        ? `${seoName}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল (P/E, EPS, মার্কেট ক্যাপ), চার্ট প্যাটার্ন ও খবর${seoSector ? ` · খাত: ${seoSector}` : ""}। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।`
+        : `${seoName} latest share price, fundamentals (P/E, EPS, market cap), chart patterns and news${seoSector ? ` · Sector: ${seoSector}` : ""}. Descriptive data, not investment advice.`,
     jsonLd: breadcrumbJsonLd(lang, [
       { name: lang === "bn" ? "হোম" : "Home", path: "/" },
       { name: `${seoName} (${sym})`, path: `/s/${sym}` },

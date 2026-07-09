@@ -84,7 +84,12 @@ app.add_middleware(
 @app.middleware("http")
 async def resolve_tenant(request: Request, call_next):
     registry: TenantRegistry = request.app.state.tenants
-    request.state.tenant = registry.resolve(request.headers.get("host"))
+    request.state.tenant = registry.resolve(
+        request.headers.get("host"),
+        tenant_host=request.headers.get("x-tenant-host"),
+        origin=request.headers.get("origin"),
+        referer=request.headers.get("referer"),
+    )
     return await call_next(request)
 
 

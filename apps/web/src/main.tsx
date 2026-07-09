@@ -6,16 +6,19 @@ import { App } from "./App";
 import { SeoProvider } from "./components/Seo";
 import { AuthProvider } from "./lib/auth";
 import { LanguageProvider } from "./lib/i18n";
+import { TenantConfigProvider } from "./lib/tenant";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <LanguageProvider>
-        <SeoProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </SeoProvider>
+        <TenantConfigProvider>
+          <SeoProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </SeoProvider>
+        </TenantConfigProvider>
       </LanguageProvider>
     </BrowserRouter>
   </React.StrictMode>,

@@ -39,17 +39,19 @@ async def test_market_config_preserves_dse_defaults() -> None:
 @pytest.mark.asyncio
 async def test_market_config_can_describe_us_tenant_without_dse_features() -> None:
     tenant = Tenant(
-        name="bullsofusa",
-        display_name="Bulls of USA",
+        name="bullsofwallst",
+        display_name="Bulls of Wall Street",
         market="US",
         locale="en",
         timezone="America/New_York",
-        domains=["us.localhost"],
+        domains=["bullsofwallst.com", "www.bullsofwallst.com", "wallst.localhost"],
     )
 
     config = await market_config(tenant)
 
     assert config.market == "US"
+    assert config.tenant_name == "bullsofwallst"
+    assert config.brand_name == "Bulls of Wall Street"
     assert config.currency_symbol == "$"
     assert config.exchange_label_bn == "যুক্তরাষ্ট্রের শেয়ারবাজার"
     assert config.timezone_label == "ET"
