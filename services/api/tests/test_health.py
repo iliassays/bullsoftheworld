@@ -24,3 +24,11 @@ def test_shared_api_can_resolve_wall_street_from_frontend_host():
             "/whoami", headers={"Origin": "https://www.bullsofwallst.com"}
         ).json()
         assert via_origin["tenant"] == "bullsofwallst"
+
+
+def test_tenant_sensitive_api_responses_are_not_http_cached():
+    with TestClient(app) as client:
+        res = client.get("/whoami", headers={"X-Tenant-Host": "bullsofwallst.com"})
+        assert res.headers["cache-control"] == "no-store"
+        vary = {part.strip().lower() for part in res.headers["vary"].split(",")}
+        assert {"origin", "x-tenant-host", "referer"}.issubset(vary)

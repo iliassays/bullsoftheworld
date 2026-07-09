@@ -97,6 +97,12 @@ async def resolve_tenant(request: Request, call_next):
 async def security_headers(request: Request, call_next):
     """Baseline hardening on every response (nginx terminates TLS; HSTS pins it in browsers)."""
     resp = await call_next(request)
+    vary = {part.strip() for part in resp.headers.get("Vary", "").split(",") if part.strip()}
+    vary.update({"Origin", "X-Tenant-Host", "Referer"})
+    resp.headers["Vary"] = ", ".join(sorted(vary))
+    # The API is tenant-sensitive. Let Redis/app-level caches handle reuse; HTTP intermediaries must
+    # not serve a response resolved for one tenant to another tenant.
+    resp.headers.setdefault("Cache-Control", "no-store")
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
