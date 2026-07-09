@@ -22,4 +22,10 @@ WEB_SITE_URL="${PROD_SITE_URL:-https://bullsofdhaka.com}" \
 WEB_TENANT_HOST="${PROD_TENANT_HOST:-bullsofdhaka.com}" \
 WEB_BRAND_NAME="${PROD_BRAND_NAME:-Bulls of Dhaka}" \
 WEB_DEFAULT_LANG="${PROD_DEFAULT_LANG:-bn}" \
+WEB_HTML_TITLE="${PROD_HTML_TITLE:-Bulls of Dhaka}" \
+WEB_SITE_DESCRIPTION="${PROD_SITE_DESCRIPTION:-Bulls of Dhaka - facts on the DSE, not rumours. Live delayed prices, daily market signals, and a community for Bangladeshi retail investors. Descriptive data, not financial advice.}" \
+WEB_OG_TITLE="${PROD_OG_TITLE:-Bulls of Dhaka - Facts, not rumours}" \
+WEB_OG_DESCRIPTION="${PROD_OG_DESCRIPTION:-Live DSE data, daily market signals, and a community for Bangladeshi retail investors. Descriptive data, not financial advice.}" \
+WEB_TWITTER_TITLE="${PROD_TWITTER_TITLE:-Bulls of Dhaka - Facts, not rumours}" \
+WEB_TWITTER_DESCRIPTION="${PROD_TWITTER_DESCRIPTION:-Live DSE data, daily market signals, and a community for Bangladeshi retail investors.}" \
 ./deploy-web.sh

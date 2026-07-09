@@ -12,6 +12,8 @@
 #   WEB_BRAND_NAME      Brand name used in generated robots header
 #   WEB_DEFAULT_LANG    x-default hreflang, default bn
 #   WEB_LANGS           Comma-separated language list, default bn,en
+#   WEB_HTML_TITLE      Static index.html title
+#   WEB_SITE_DESCRIPTION Static index.html meta description
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -19,10 +21,32 @@ cd "$(dirname "$0")"
 : "${WEB_CLOUDFRONT_ID:?set WEB_CLOUDFRONT_ID (the CloudFront distribution id)}"
 
 SITE_URL="${WEB_SITE_URL:-https://bullsofdhaka.com}"
+SITE_URL="${SITE_URL%/}"
 API_URL="${WEB_API_URL:-https://api.bullsofdhaka.com}"
+BRAND_NAME="${WEB_BRAND_NAME:-Bulls of Dhaka}"
+DEFAULT_LANG="${WEB_DEFAULT_LANG:-bn}"
+HTML_TITLE="${WEB_HTML_TITLE:-$BRAND_NAME}"
+SITE_DESCRIPTION="${WEB_SITE_DESCRIPTION:-$BRAND_NAME - market data, ticker search, daily signals, and a community for retail investors. Descriptive data, not financial advice.}"
+OG_TITLE="${WEB_OG_TITLE:-$BRAND_NAME - Market data, not noise}"
+OG_DESCRIPTION="${WEB_OG_DESCRIPTION:-$SITE_DESCRIPTION}"
+TWITTER_TITLE="${WEB_TWITTER_TITLE:-$OG_TITLE}"
+TWITTER_DESCRIPTION="${WEB_TWITTER_DESCRIPTION:-$OG_DESCRIPTION}"
 
 echo "→ building frontend (VITE_API_BASE=$API_URL)"
-( cd apps/web && VITE_API_BASE="$API_URL" npm run build )
+(
+  cd apps/web
+  VITE_API_BASE="$API_URL" \
+  VITE_DEFAULT_LANG="$DEFAULT_LANG" \
+  VITE_SITE_URL="$SITE_URL" \
+  VITE_HTML_TITLE="$HTML_TITLE" \
+  VITE_HTML_DESCRIPTION="$SITE_DESCRIPTION" \
+  VITE_OG_SITE_NAME="$BRAND_NAME" \
+  VITE_OG_TITLE="$OG_TITLE" \
+  VITE_OG_DESCRIPTION="$OG_DESCRIPTION" \
+  VITE_TWITTER_TITLE="$TWITTER_TITLE" \
+  VITE_TWITTER_DESCRIPTION="$TWITTER_DESCRIPTION" \
+  npm run build
+)
 
 echo "→ generating sitemap.xml + robots.txt ($SITE_URL)"
 WEB_API_URL="$API_URL" WEB_SITE_URL="$SITE_URL" node scripts/gen_sitemap.mjs
