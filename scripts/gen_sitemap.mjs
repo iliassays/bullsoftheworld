@@ -42,11 +42,17 @@ const STATIC_PATHS = [
 
 async function stockPaths() {
   try {
-    const res = await fetch(`${API}/symbols?limit=500`, {
-      headers: { "X-Tenant-Host": TENANT_HOST },
-    });
-    if (!res.ok) throw new Error(`/symbols HTTP ${res.status}`);
-    const list = await res.json();
+    const list = [];
+    const limit = 500;
+    for (let offset = 0; ; offset += limit) {
+      const res = await fetch(`${API}/symbols?limit=${limit}&offset=${offset}`, {
+        headers: { "X-Tenant-Host": TENANT_HOST },
+      });
+      if (!res.ok) throw new Error(`/symbols HTTP ${res.status}`);
+      const page = await res.json();
+      list.push(...page);
+      if (page.length < limit) break;
+    }
     // Encode the code: some real DSE tickers contain XML/URL-unsafe chars (e.g. "KAY&QUE").
     return list.map((s) => `/s/${encodeURIComponent(s.code)}`);
   } catch (e) {

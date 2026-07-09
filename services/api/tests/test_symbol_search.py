@@ -54,7 +54,7 @@ async def test_symbol_search_builds_server_side_filter_and_ranking() -> None:
     session = _FakeSession()
     tenant = Tenant(name="wallst", display_name="Wall St", market="US", locale="en")
 
-    rows = await list_symbols(tenant, session, limit=5, q="aa")
+    rows = await list_symbols(tenant, session, limit=5, offset=10, q="aa")
 
     assert rows[0].code == "AAPL"
     sql = str(
@@ -67,3 +67,4 @@ async def test_symbol_search_builds_server_side_filter_and_ranking() -> None:
     assert "upper(symbols.code) LIKE" in sql
     assert "upper(symbols.name_en) LIKE" in sql
     assert "ORDER BY CASE" in sql
+    assert "LIMIT 5 OFFSET 10" in sql

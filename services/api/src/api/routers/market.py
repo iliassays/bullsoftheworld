@@ -382,6 +382,7 @@ async def list_symbols(
     tenant: CurrentTenant,
     session: DbSession,
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=100_000),
     q: str | None = Query(None, min_length=1, max_length=64),
 ) -> list[SymbolOut]:
     raw_query = q.strip() if q else ""
@@ -392,6 +393,7 @@ async def list_symbols(
             Symbol.is_active.is_(True),
             Symbol.is_hidden.is_(False),
         )
+        .offset(offset)
         .limit(limit)
     )
     if raw_query:
