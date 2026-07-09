@@ -25,6 +25,8 @@ from bulls.market_data.providers.us_security_master import (
     fetch_us_security_master,
 )
 
+UPSERT_BATCH_SIZE = 1000
+
 
 def _user_agent() -> str:
     settings = get_settings()
@@ -60,32 +62,34 @@ def _symbol_rows(records: list[UsSecurityRecord]) -> list[dict]:
     ]
 
 
+def _chunks[T](rows: list[T], size: int = UPSERT_BATCH_SIZE) -> list[list[T]]:
+    return [rows[i : i + size] for i in range(0, len(rows), size)]
+
+
 async def _upsert_security_master(session, rows: list[dict]) -> None:
-    if not rows:
-        return
-    stmt = pg_insert(SecurityMaster).values(rows)
-    update_cols = {
-        col: getattr(stmt.excluded, col)
-        for col in rows[0]
-        if col not in {"market", "symbol", "first_seen_at"}
-    }
-    stmt = stmt.on_conflict_do_update(index_elements=["market", "symbol"], set_=update_cols)
-    await session.execute(stmt)
+    for batch in _chunks(rows):
+        stmt = pg_insert(SecurityMaster).values(batch)
+        update_cols = {
+            col: getattr(stmt.excluded, col)
+            for col in batch[0]
+            if col not in {"market", "symbol", "first_seen_at"}
+        }
+        stmt = stmt.on_conflict_do_update(index_elements=["market", "symbol"], set_=update_cols)
+        await session.execute(stmt)
 
 
 async def _upsert_product_symbols(session, rows: list[dict]) -> None:
-    if not rows:
-        return
-    stmt = pg_insert(Symbol).values(rows)
-    update_cols = {
-        "name_en": stmt.excluded.name_en,
-        "name_bn": stmt.excluded.name_bn,
-        "sector": stmt.excluded.sector,
-        "category": stmt.excluded.category,
-        "is_active": stmt.excluded.is_active,
-    }
-    stmt = stmt.on_conflict_do_update(index_elements=["market", "code"], set_=update_cols)
-    await session.execute(stmt)
+    for batch in _chunks(rows):
+        stmt = pg_insert(Symbol).values(batch)
+        update_cols = {
+            "name_en": stmt.excluded.name_en,
+            "name_bn": stmt.excluded.name_bn,
+            "sector": stmt.excluded.sector,
+            "category": stmt.excluded.category,
+            "is_active": stmt.excluded.is_active,
+        }
+        stmt = stmt.on_conflict_do_update(index_elements=["market", "code"], set_=update_cols)
+        await session.execute(stmt)
 
 
 async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, int]:

@@ -7,7 +7,7 @@ security master while only product-eligible securities are projected into `symbo
 from __future__ import annotations
 
 from bulls.market_data.providers.us_security_master import parse_nasdaq_listed, parse_other_listed
-from ingestion.security_master import _symbol_rows
+from ingestion.security_master import _chunks, _symbol_rows
 
 
 def test_symbol_rows_publish_only_product_eligible_instruments() -> None:
@@ -30,3 +30,13 @@ ABR$D|Arbor Realty Trust Preferred Stock|N|ABRpD|N|100|N|ABR-D
     assert all(row["market"] == "US" for row in rows)
     assert all(row["is_active"] is True for row in rows)
     assert all(row["is_hidden"] is False for row in rows)
+
+
+def test_bulk_rows_are_chunked_before_upsert() -> None:
+    rows = list(range(2501))
+
+    chunks = _chunks(rows, size=1000)
+
+    assert [len(chunk) for chunk in chunks] == [1000, 1000, 501]
+    assert chunks[0][0] == 0
+    assert chunks[-1][-1] == 2500
