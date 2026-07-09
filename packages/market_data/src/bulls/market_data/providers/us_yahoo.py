@@ -1,0 +1,152 @@
+"""No-key US EOD bar adapter backed by Yahoo's chart endpoint.
+
+This is a free, replaceable bootstrap provider. It intentionally lives behind the same
+MarketDataProvider boundary as the DSE scraper, so a licensed feed can replace it without changing
+API/UI code. It provides historical daily bars only; it does not pretend to be a real-time quote
+feed.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Any
+
+import httpx
+
+from bulls.market_data.provider import (
+    Bar,
+    CompanyInfo,
+    MarketSummary,
+    NewsItem,
+    Quote,
+    SectorPE,
+    Symbol,
+)
+from bulls.market_data.providers.us_security_master import fetch_us_security_master
+
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+_UA = "Mozilla/5.0 BullsOfTheWorld/0.1 us-eod-bars"
+
+
+def yahoo_symbol(code: str) -> str:
+    """Map our public US code to Yahoo's chart symbol convention."""
+    return code.strip().upper().replace(".", "-")
+
+
+def _period(d: dt.date) -> int:
+    return int(dt.datetime.combine(d, dt.time.min, tzinfo=dt.UTC).timestamp())
+
+
+def parse_yahoo_chart(data: dict[str, Any], *, market: str, code: str) -> list[Bar]:
+    chart = data.get("chart") if isinstance(data, dict) else None
+    if not isinstance(chart, dict) or chart.get("error"):
+        return []
+    results = chart.get("result")
+    if not isinstance(results, list) or not results:
+        return []
+    result = results[0]
+    if not isinstance(result, dict):
+        return []
+    timestamps = result.get("timestamp")
+    indicators = result.get("indicators")
+    if not isinstance(timestamps, list) or not isinstance(indicators, dict):
+        return []
+    quotes = indicators.get("quote")
+    if not isinstance(quotes, list) or not quotes or not isinstance(quotes[0], dict):
+        return []
+    quote = quotes[0]
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    volumes = quote.get("volume") or []
+
+    out: list[Bar] = []
+    for i, ts in enumerate(timestamps):
+        try:
+            open_ = opens[i]
+            high = highs[i]
+            low = lows[i]
+            close = closes[i]
+            volume = volumes[i]
+        except IndexError:
+            continue
+        if None in (open_, high, low, close):
+            continue
+        open_f = float(open_)
+        high_f = float(high)
+        low_f = float(low)
+        close_f = float(close)
+        if min(open_f, high_f, low_f, close_f) <= 0 or high_f < low_f:
+            continue
+        out.append(
+            Bar(
+                market=market,
+                code=code,
+                date=dt.datetime.fromtimestamp(int(ts), tz=dt.UTC).date(),
+                open=open_f,
+                high=high_f,
+                low=low_f,
+                close=close_f,
+                volume=int(volume or 0),
+            )
+        )
+    return out
+
+
+class YahooUsEodProvider:
+    market = "US"
+
+    def __init__(self, *, timeout: float = 20.0) -> None:
+        self._timeout = timeout
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+            timeout=self._timeout,
+            follow_redirects=True,
+        )
+
+    async def list_symbols(self) -> list[Symbol]:
+        records = await fetch_us_security_master(_UA)
+        return [
+            Symbol(market=r.market, code=r.symbol, name_en=r.security_name)
+            for r in records
+            if r.is_product_eligible
+        ]
+
+    async def get_quotes(self, codes: list[str]) -> list[Quote]:
+        return []
+
+    async def get_daily_bars(self, code: str, start: dt.date, end: dt.date) -> list[Bar]:
+        if end < start:
+            return []
+        params = {
+            "period1": str(_period(start)),
+            # Yahoo treats period2 as an exclusive boundary; include the requested end date.
+            "period2": str(_period(end + dt.timedelta(days=1))),
+            "interval": "1d",
+            "events": "history",
+            "includeAdjustedClose": "true",
+        }
+        async with self._client() as client:
+            try:
+                resp = await client.get(YAHOO_CHART_URL.format(symbol=yahoo_symbol(code)), params=params)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    return []
+                raise
+        return parse_yahoo_chart(resp.json(), market=self.market, code=code.upper())
+
+    async def get_market_summary(self, start: dt.date, end: dt.date) -> list[MarketSummary]:
+        return []
+
+    async def get_company(self, code: str) -> CompanyInfo | None:
+        return None
+
+    async def get_sector_pe(self) -> list[SectorPE]:
+        return []
+
+    async def get_news(self, start: dt.date, end: dt.date) -> list[NewsItem]:
+        return []

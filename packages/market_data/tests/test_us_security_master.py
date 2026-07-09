@@ -26,6 +26,8 @@ OTHER_LISTED = """ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Siz
 BRK.B|Berkshire Hathaway Inc. Class B Common Stock|N|BRK.B|N|100|N|BRK-B
 BABA|Alibaba Group Holding Limited American Depositary Shares|N|BABA|N|100|N|BABA
 ABR$D|Arbor Realty Trust 6.375% Series D Cumulative Redeemable Preferred Stock|N|ABRpD|N|100|N|ABR-D
+EQH-A|Equitable Holdings, Inc. Depositary Shares|N|EQH-A|N|100|N|EQH-A
+FITB-I|Fifth Third Bancorp Depositary Share repstg 1/1000th Ownership Interest Perp Pfd Series I|N|FITB-I|N|100|N|FITB-I
 AAA|Alternative Access First Priority CLO Bond ETF|P|AAA|Y|100|N|AAA
 AAC.U|Ares Acquisition Corporation III Units|N|AAC.U|N|100|N|AAC=
 """
@@ -70,6 +72,14 @@ def test_parse_other_listed_normalizes_symbols_and_keeps_raw_symbol() -> None:
     assert records["ABR-D"].instrument_type == "preferred_stock"
     assert not records["ABR-D"].is_product_eligible
     assert records["ABR-D"].exclude_reason == "preferred_stock"
+
+    assert records["EQH-A"].instrument_type == "other"
+    assert not records["EQH-A"].is_product_eligible
+    assert records["EQH-A"].exclude_reason == "other"
+
+    assert records["FITB-I"].instrument_type == "preferred_stock"
+    assert not records["FITB-I"].is_product_eligible
+    assert records["FITB-I"].exclude_reason == "preferred_stock"
 
     assert records["AAA"].instrument_type == "etf"
     assert records["AAA"].exchange == "NYSE Arca"

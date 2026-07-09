@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from bulls.market_data.provider import MarketDataProvider
 from bulls.market_data.providers.dse_scrape import DseScrapeProvider
+from bulls.market_data.providers.us_yahoo import YahooUsEodProvider
 
 _REGISTRY: dict[str, MarketDataProvider] = {
     "DSE": DseScrapeProvider(),
     # "DSE": DseLicensedProvider(),   # ← swap here when the real-time feed lands
-    # "US": UsEquitiesProvider(),     # ← wire after choosing Alpaca/Polygon/Nasdaq/etc.
+    "US": YahooUsEodProvider(),       # free EOD bootstrap; swap for a licensed feed later
     # "BSE": BseProvider(),           # ← add markets here (Bulls of Mumbai, ...)
 }
 

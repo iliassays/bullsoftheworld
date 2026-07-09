@@ -84,7 +84,7 @@ def classify_instrument(name: str, *, is_etf: bool, nextshares: bool = False) ->
         return "nextshares"
     if is_etf:
         return "etf"
-    if "preferred" in lower or "preference" in lower:
+    if "preferred" in lower or "preference" in lower or " pfd" in lower:
         return "preferred_stock"
     if "warrant" in lower:
         return "warrant"
@@ -99,8 +99,6 @@ def classify_instrument(name: str, *, is_etf: bool, nextshares: bool = False) ->
         for token in (
             "american depositary",
             "american depository",
-            "depositary share",
-            "depository share",
             " adr",
             " ads",
         )
