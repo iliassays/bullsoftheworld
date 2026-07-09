@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 
 EvidenceQuality = Literal["strong", "mixed", "weak"]
 Reliability = Literal["official", "market", "system", "crowd"]
+Lang = Literal["en", "bn"]
 
 _ADVICE_RE = re.compile(
     r"\b(should\s+i|should\s+we|buy|sell|hold|target|entry|exit|stop\s*loss|"
@@ -51,6 +52,7 @@ _MATERIAL_CATEGORIES = (
     "psi",
 )
 _MOVING_CATALYST_DAYS = 14
+_LANG_QUERY = Query("en")
 
 
 class ResearchSource(BaseModel):
@@ -233,6 +235,12 @@ def _rank_sources(
     return sorted(sources, key=lambda s: _source_score(s, question), reverse=True)
 
 
+def _quality_label(evidence_quality: EvidenceQuality, lang: Lang) -> str:
+    if lang == "bn":
+        return {"strong": "ভাল", "mixed": "মিশ্র", "weak": "দুর্বল"}[evidence_quality]
+    return {"strong": "good", "mixed": "mixed", "weak": "weak"}[evidence_quality]
+
+
 def _facts(
     *,
     code: str,
@@ -240,26 +248,53 @@ def _facts(
     analytics: TickerAnalytics | None,
     posts_24h: int,
     chatter_x: float | None,
+    lang: Lang = "en",
 ) -> list[str]:
     facts: list[str] = []
     if quote:
-        delayed = " delayed" if quote.is_delayed else ""
-        facts.append(
-            f"${code} last traded at ৳{quote.ltp:g} ({quote.change_pct:+.2f}% today,"
-            f" volume {quote.volume:,},{delayed} as of {quote.as_of.isoformat()})."
-        )
+        if lang == "bn":
+            delayed = " বিলম্বিত" if quote.is_delayed else ""
+            facts.append(
+                f"${code} সর্বশেষ ৳{quote.ltp:g} দরে ট্রেড করেছে "
+                f"({quote.change_pct:+.2f}% আজ, ভলিউম {quote.volume:,},"
+                f"{delayed} সময় {quote.as_of.isoformat()})।"
+            )
+        else:
+            delayed = " delayed" if quote.is_delayed else ""
+            facts.append(
+                f"${code} last traded at ৳{quote.ltp:g} ({quote.change_pct:+.2f}% today,"
+                f" volume {quote.volume:,},{delayed} as of {quote.as_of.isoformat()})."
+            )
     if analytics and analytics.relative_volume is not None:
-        facts.append(f"Volume is {analytics.relative_volume:.1f}x its 20-session average.")
+        facts.append(
+            f"ভলিউম ২০ সেশনের গড়ের {analytics.relative_volume:.1f} গুণ।"
+            if lang == "bn"
+            else f"Volume is {analytics.relative_volume:.1f}x its 20-session average."
+        )
     if analytics and analytics.rsi_14 is not None:
-        facts.append(f"RSI(14) is {analytics.rsi_14:.0f}.")
+        facts.append(
+            f"RSI(14) {analytics.rsi_14:.0f}।"
+            if lang == "bn"
+            else f"RSI(14) is {analytics.rsi_14:.0f}."
+        )
     if analytics and analytics.pe_ratio is not None:
-        bits = [f"P/E is {analytics.pe_ratio:.1f}"]
+        bits = [
+            f"P/E {analytics.pe_ratio:.1f}" if lang == "bn" else f"P/E is {analytics.pe_ratio:.1f}"
+        ]
         if analytics.pe_vs_sector is not None:
-            bits.append(f"{analytics.pe_vs_sector:.2f}x sector median")
-        facts.append(", ".join(bits) + ".")
+            bits.append(
+                f"সেক্টর মিডিয়ানের {analytics.pe_vs_sector:.2f} গুণ"
+                if lang == "bn"
+                else f"{analytics.pe_vs_sector:.2f}x sector median"
+            )
+        facts.append(", ".join(bits) + ("।" if lang == "bn" else "."))
     if posts_24h:
-        extra = f", about {chatter_x:g}x baseline" if chatter_x else ""
-        facts.append(f"Platform discussion: {posts_24h} posts in the last 24h{extra}.")
+        if lang == "bn":
+            extra = f", স্বাভাবিকের প্রায় {chatter_x:g} গুণ" if chatter_x else ""
+            facts.append(f"প্ল্যাটফর্ম আলোচনা: গত ২৪ ঘণ্টায় {posts_24h}টি পোস্ট{extra}।")
+        else:
+            extra = f", about {chatter_x:g}x baseline" if chatter_x else ""
+            facts.append(f"Platform discussion: {posts_24h} posts in the last 24h{extra}.")
     return facts
 
 
@@ -277,6 +312,7 @@ def _build_insights(
     sources: list[ResearchSource],
     posts_24h: int,
     chatter_x: float | None,
+    lang: Lang = "en",
 ) -> list[ResearchInsight]:
     insights: list[ResearchInsight] = []
     if analytics is None:
@@ -284,32 +320,58 @@ def _build_insights(
             ResearchInsight(
                 lens="valuation",
                 stance="unknown",
-                title="Financial snapshot unavailable",
-                detail="The deeper read needs the latest analytics row; this symbol has no usable snapshot yet.",
-                evidence="Ticker analytics missing",
+                title="ফিন্যান্সিয়াল স্ন্যাপশট নেই" if lang == "bn" else "Financial snapshot unavailable",
+                detail=(
+                    "গভীর পাঠের জন্য সর্বশেষ অ্যানালিটিক্স দরকার; এই শেয়ারের ব্যবহারযোগ্য স্ন্যাপশট এখনো নেই।"
+                    if lang == "bn"
+                    else "The deeper read needs the latest analytics row; this symbol has no usable snapshot yet."
+                ),
+                evidence="টিকার অ্যানালিটিক্স নেই" if lang == "bn" else "Ticker analytics missing",
             )
         ]
 
     if analytics.pe_vs_sector is not None or analytics.pe_ratio is not None:
         if analytics.pe_vs_sector is not None and analytics.pe_vs_sector <= 0.8:
             stance = "constructive"
-            title = "Valuation looks cheaper than sector"
-            detail = "The market is pricing earnings below the sector median, so the next question is whether earnings quality and governance justify the discount."
+            title = (
+                "সেক্টরের তুলনায় দাম কম দেখাচ্ছে"
+                if lang == "bn"
+                else "Valuation looks cheaper than sector"
+            )
+            detail = (
+                "বাজার কোম্পানির আয়কে সেক্টর মিডিয়ানের নিচে মূল্য দিচ্ছে; এখন দেখতে হবে আয়ের মান ও গভর্ন্যান্স এই ডিসকাউন্ট ব্যাখ্যা করে কি না।"
+                if lang == "bn"
+                else "The market is pricing earnings below the sector median, so the next question is whether earnings quality and governance justify the discount."
+            )
         elif analytics.pe_vs_sector is not None and analytics.pe_vs_sector >= 1.25:
             stance = "risk"
-            title = "Valuation asks for stronger proof"
-            detail = "The stock trades at a premium to the sector median, so weak earnings or stale catalysts matter more."
+            title = (
+                "দামের জন্য শক্ত প্রমাণ দরকার" if lang == "bn" else "Valuation asks for stronger proof"
+            )
+            detail = (
+                "শেয়ারটি সেক্টর মিডিয়ানের চেয়ে প্রিমিয়ামে ট্রেড করছে, তাই দুর্বল আয় বা পুরোনো কারণ বেশি গুরুত্বপূর্ণ।"
+                if lang == "bn"
+                else "The stock trades at a premium to the sector median, so weak earnings or stale catalysts matter more."
+            )
         else:
             stance = "watch"
-            title = "Valuation is not the main signal"
-            detail = "The valuation read is near the sector zone; price action and disclosures may explain more than multiples."
+            title = "দাম-মূল্য প্রধান সিগন্যাল নয়" if lang == "bn" else "Valuation is not the main signal"
+            detail = (
+                "ভ্যালুয়েশন সেক্টরের কাছাকাছি; দাম, ভলিউম ও ঘোষণাই এখানে বেশি ব্যাখ্যা দিতে পারে।"
+                if lang == "bn"
+                else "The valuation read is near the sector zone; price action and disclosures may explain more than multiples."
+            )
         insights.append(
             ResearchInsight(
                 lens="valuation",
                 stance=stance,
                 title=title,
                 detail=detail,
-                evidence=f"P/E {_fmt_x(analytics.pe_ratio)} · sector relative {_fmt_x(analytics.pe_vs_sector)}",
+                evidence=(
+                    f"P/E {_fmt_x(analytics.pe_ratio)} · সেক্টর তুলনা {_fmt_x(analytics.pe_vs_sector)}"
+                    if lang == "bn"
+                    else f"P/E {_fmt_x(analytics.pe_ratio)} · sector relative {_fmt_x(analytics.pe_vs_sector)}"
+                ),
             )
         )
 
@@ -319,27 +381,49 @@ def _build_insights(
         high_volume = analytics.relative_volume is not None and analytics.relative_volume >= 1.5
         if hot and high_volume:
             stance = "risk"
-            title = "Short-term move is crowded"
-            detail = "High RSI plus elevated volume often means attention is already in the price; chasing risk is higher unless fresh official news confirms the move."
+            title = "স্বল্পমেয়াদি মুভ ভিড়যুক্ত" if lang == "bn" else "Short-term move is crowded"
+            detail = (
+                "উচ্চ RSI ও বেশি ভলিউম মানে আগ্রহের বড় অংশ দামে চলে আসতে পারে; নতুন অফিসিয়াল খবর না থাকলে পেছনে দৌড়ানোর ঝুঁকি বেশি।"
+                if lang == "bn"
+                else "High RSI plus elevated volume often means attention is already in the price; chasing risk is higher unless fresh official news confirms the move."
+            )
         elif cold:
             stance = "watch"
-            title = "Oversold zone needs confirmation"
-            detail = "RSI is low, but oversold alone is not a catalyst. Look for stabilization, volume, or an official event."
+            title = (
+                "ওভারসোল্ড হলে নিশ্চিতকরণ দরকার" if lang == "bn" else "Oversold zone needs confirmation"
+            )
+            detail = (
+                "RSI কম, কিন্তু শুধু ওভারসোল্ড হওয়া কারণ নয়। স্থিতিশীলতা, ভলিউম বা অফিসিয়াল ঘটনা দেখুন।"
+                if lang == "bn"
+                else "RSI is low, but oversold alone is not a catalyst. Look for stabilization, volume, or an official event."
+            )
         elif high_volume:
             stance = "watch"
-            title = "Volume is the live signal"
-            detail = "Turnover is meaningfully above normal, so the move deserves review even if the official catalyst is not obvious."
+            title = "ভলিউমই লাইভ সিগন্যাল" if lang == "bn" else "Volume is the live signal"
+            detail = (
+                "টার্নওভার স্বাভাবিকের চেয়ে বেশি, তাই অফিসিয়াল কারণ স্পষ্ট না হলেও মুভটি দেখা দরকার।"
+                if lang == "bn"
+                else "Turnover is meaningfully above normal, so the move deserves review even if the official catalyst is not obvious."
+            )
         else:
             stance = "constructive"
-            title = "Technical pressure is moderate"
-            detail = "The short-term setup is not showing an extreme RSI or abnormal volume warning."
+            title = "চার্টের চাপ মাঝারি" if lang == "bn" else "Technical pressure is moderate"
+            detail = (
+                "স্বল্পমেয়াদি সেটআপে চরম RSI বা অস্বাভাবিক ভলিউম সতর্কতা দেখা যাচ্ছে না।"
+                if lang == "bn"
+                else "The short-term setup is not showing an extreme RSI or abnormal volume warning."
+            )
         insights.append(
             ResearchInsight(
                 lens="technical",
                 stance=stance,
                 title=title,
                 detail=detail,
-                evidence=f"RSI {_fmt_pct(analytics.rsi_14)} · volume {analytics.relative_volume or 0:.1f}x 20-day average",
+                evidence=(
+                    f"RSI {_fmt_pct(analytics.rsi_14)} · ভলিউম ২০ দিনের গড়ের {analytics.relative_volume or 0:.1f} গুণ"
+                    if lang == "bn"
+                    else f"RSI {_fmt_pct(analytics.rsi_14)} · volume {analytics.relative_volume or 0:.1f}x 20-day average"
+                ),
             )
         )
 
@@ -351,18 +435,29 @@ def _build_insights(
     if flow_bits:
         positive = (analytics.cmf_20 or 0) > 0 and (analytics.obv_slope or 0) > 0
         negative = (analytics.cmf_20 or 0) < 0 and (analytics.obv_slope or 0) < 0
+        flow_title = (
+            "ফ্লো সিগন্যাল একদিকে যাচ্ছে"
+            if positive and lang == "bn"
+            else "বিক্রির চাপ দেখা যাচ্ছে"
+            if negative and lang == "bn"
+            else "ফ্লো সিগন্যাল মিশ্র"
+            if lang == "bn"
+            else "Accumulation signals align"
+            if positive
+            else "Distribution pressure is visible"
+            if negative
+            else "Flow signals are mixed"
+        )
         insights.append(
             ResearchInsight(
                 lens="liquidity",
                 stance="constructive" if positive else "risk" if negative else "watch",
-                title=(
-                    "Accumulation signals align"
-                    if positive
-                    else "Distribution pressure is visible"
-                    if negative
-                    else "Flow signals are mixed"
+                title=flow_title,
+                detail=(
+                    "ভলিউম-ফ্লো ইন্ডিকেটর শুধু দাম ওঠা-নামা আর কেনা/বেচার চাপ আলাদা করতে সাহায্য করে; এগুলো এখনো বর্ণনামূলক সিগন্যাল।"
+                    if lang == "bn"
+                    else "Volume-flow indicators help separate simple price movement from buying or selling pressure, but they are still descriptive signals."
                 ),
-                detail="Volume-flow indicators help separate simple price movement from buying or selling pressure, but they are still descriptive signals.",
                 evidence=" · ".join(flow_bits),
             )
         )
@@ -374,18 +469,29 @@ def _build_insights(
         ownership_bits.append(f"foreign {analytics.foreign_delta:+.2f} pp")
     if ownership_bits:
         delta = (analytics.institute_delta or 0) + (analytics.foreign_delta or 0)
+        ownership_title = (
+            "প্রাতিষ্ঠানিক মালিকানা বেড়েছে"
+            if delta > 0 and lang == "bn"
+            else "প্রাতিষ্ঠানিক মালিকানা কমেছে"
+            if delta < 0 and lang == "bn"
+            else "মালিকানা স্থিতিশীল"
+            if lang == "bn"
+            else "Institutional ownership improved"
+            if delta > 0
+            else "Institutional ownership softened"
+            if delta < 0
+            else "Ownership is stable"
+        )
         insights.append(
             ResearchInsight(
                 lens="ownership",
                 stance="constructive" if delta > 0 else "risk" if delta < 0 else "watch",
-                title=(
-                    "Institutional ownership improved"
-                    if delta > 0
-                    else "Institutional ownership softened"
-                    if delta < 0
-                    else "Ownership is stable"
+                title=ownership_title,
+                detail=(
+                    "মালিকানার পরিবর্তন ধীর সিগন্যাল; এটি দামের মুভকে সমর্থন বা প্রশ্ন করতে পারে, কিন্তু অফিসিয়াল ঘোষণাকে ছাপিয়ে যাওয়া উচিত নয়।"
+                    if lang == "bn"
+                    else "Ownership change is a slow signal; it can confirm or challenge a price move but should not override disclosures."
                 ),
-                detail="Ownership change is a slow signal; it can confirm or challenge a price move but should not override disclosures.",
                 evidence=" · ".join(ownership_bits),
             )
         )
@@ -397,9 +503,13 @@ def _build_insights(
             ResearchInsight(
                 lens="disclosure",
                 stance="watch",
-                title="Official disclosure anchors the read",
-                detail="The narrative should start from the newest material DSE filing, then compare price and volume behavior around it.",
-                evidence=f"{latest.title} ({latest.date or 'date unavailable'})",
+                title="অফিসিয়াল ফাইলিং আছে" if lang == "bn" else "Official filing anchors the read",
+                detail=(
+                    "ব্যাখ্যা শুরু করা উচিত সর্বশেষ গুরুত্বপূর্ণ ডিএসই ফাইলিং থেকে, তারপর তার আশেপাশের দাম ও ভলিউম দেখা উচিত।"
+                    if lang == "bn"
+                    else "The read should start from the newest material DSE filing, then compare price and volume behavior around it."
+                ),
+                evidence=f"{latest.title} ({latest.date or ('তারিখ নেই' if lang == 'bn' else 'date unavailable')})",
             )
         )
     else:
@@ -407,9 +517,17 @@ def _build_insights(
             ResearchInsight(
                 lens="disclosure",
                 stance="risk",
-                title="No official source in this answer",
-                detail="Without a recent official item, the move is more likely driven by market mechanics, technicals, or discussion.",
-                evidence="No ranked official announcement",
+                title="এই উত্তরে অফিসিয়াল সূত্র নেই"
+                if lang == "bn"
+                else "No official source in this answer",
+                detail=(
+                    "সাম্প্রতিক অফিসিয়াল আইটেম না থাকলে মুভটি বাজারের মেকানিক্স, টেকনিক্যাল বা আলোচনাচালিত হওয়ার সম্ভাবনা বেশি।"
+                    if lang == "bn"
+                    else "Without a recent official item, the move is more likely driven by market mechanics, technicals, or discussion."
+                ),
+                evidence="র‍্যাঙ্ক করা অফিসিয়াল ঘোষণা নেই"
+                if lang == "bn"
+                else "No ranked official announcement",
             )
         )
 
@@ -418,9 +536,19 @@ def _build_insights(
             ResearchInsight(
                 lens="crowd",
                 stance="watch",
-                title="Crowd attention is measurable",
-                detail="Discussion can explain attention, but it is weaker evidence than filings or market data.",
-                evidence=f"{posts_24h} posts in 24h" + (f" · {chatter_x:g}x baseline" if chatter_x else ""),
+                title="আলোচনার আগ্রহ মাপা যাচ্ছে" if lang == "bn" else "Crowd attention is measurable",
+                detail=(
+                    "আলোচনা আগ্রহ ব্যাখ্যা করতে পারে, কিন্তু ফাইলিং বা বাজার ডেটার চেয়ে দুর্বল সূত্র।"
+                    if lang == "bn"
+                    else "Discussion can explain attention, but it is weaker evidence than filings or market data."
+                ),
+                evidence=(
+                    f"২৪ ঘণ্টায় {posts_24h}টি পোস্ট"
+                    + (f" · স্বাভাবিকের {chatter_x:g} গুণ" if chatter_x else "")
+                    if lang == "bn"
+                    else f"{posts_24h} posts in 24h"
+                    + (f" · {chatter_x:g}x baseline" if chatter_x else "")
+                ),
             )
         )
 
@@ -437,13 +565,17 @@ def _render_answer(
     official_catalyst: bool,
     evidence_quality: EvidenceQuality,
     blocked_advice: bool,
+    lang: Lang = "en",
 ) -> str:
     lead = ""
     if blocked_advice:
-        lead = (
-            "I cannot tell you whether to buy, sell, hold, or set a target. "
-            "I can summarize the evidence available right now. "
-        )
+        if lang == "bn":
+            lead = "আমি কেনা, বেচা, ধরে রাখা বা টার্গেট বলতে পারি না। এখনকার সূত্রগুলো সংক্ষেপে বলছি। "
+        else:
+            lead = (
+                "I cannot tell you whether to buy, sell, hold, or set a target. "
+                "I can summarize the evidence available right now. "
+            )
 
     official = [s for s in sources if s.reliability == "official"]
     recent_official = [s for s in official if _is_recent_official(s, intent=intent)]
@@ -454,54 +586,108 @@ def _render_answer(
     if intent == "why_moving":
         if official_catalyst:
             catalyst = recent_official[0]
-            body = (
-                f"Bottom line: the move has a recent official source to review. {fact_line} "
-                f"Most relevant official item: {catalyst.title} "
-                f"({catalyst.date or 'date unavailable'})."
-            )
+            if lang == "bn":
+                body = (
+                    f"সারকথা: এই মুভের জন্য সাম্প্রতিক অফিসিয়াল সূত্র আছে। {fact_line} "
+                    f"সবচেয়ে প্রাসঙ্গিক অফিসিয়াল আইটেম: {catalyst.title} "
+                    f"({catalyst.date or 'তারিখ নেই'})।"
+                )
+            else:
+                body = (
+                    f"Bottom line: the move has a recent official source to review. {fact_line} "
+                    f"Most relevant official item: {catalyst.title} "
+                    f"({catalyst.date or 'date unavailable'})."
+                )
         else:
             context = ""
             if official:
-                context = (
-                    f" Older official context exists, led by {official[0].title} "
-                    f"({official[0].date or 'date unavailable'}), but it is not recent enough "
-                    "to treat as today's catalyst."
+                if lang == "bn":
+                    context = (
+                        f" পুরোনো অফিসিয়াল প্রসঙ্গ আছে: {official[0].title} "
+                        f"({official[0].date or 'তারিখ নেই'}), কিন্তু এটিকে আজকের কারণ ধরা যথেষ্ট সাম্প্রতিক নয়।"
+                    )
+                else:
+                    context = (
+                        f" Older official context exists, led by {official[0].title} "
+                        f"({official[0].date or 'date unavailable'}), but it is not recent enough "
+                        "to treat as today's catalyst."
+                    )
+            if lang == "bn":
+                body = (
+                    f"সারকথা: এই মুভের জন্য সাম্প্রতিক অফিসিয়াল ডিএসই কারণ দেখছি না। "
+                    f"{fact_line} নতুন অফিসিয়াল খবর না আসা পর্যন্ত এটিকে দাম/ভলিউম বা আলোচনাচালিত ধরে পড়ুন।{context}"
                 )
-            body = (
-                f"Bottom line: I do not see a recent official DSE catalyst for this move. "
-                f"{fact_line} Treat this as price/volume or discussion-led until fresh official "
-                f"news appears.{context}"
-            )
+            else:
+                body = (
+                    f"Bottom line: I do not see a recent official DSE catalyst for this move. "
+                    f"{fact_line} Treat this as price/volume or discussion-led until fresh official "
+                    f"news appears.{context}"
+                )
     elif intent in ("dividend", "earnings", "latest_news"):
         if official:
-            body = (
-                f"Bottom line: the official record has a relevant item. {fact_line} "
-                f"Latest relevant official item: {official[0].title}."
-            )
+            if lang == "bn":
+                body = (
+                    f"সারকথা: অফিসিয়াল রেকর্ডে প্রাসঙ্গিক আইটেম আছে। {fact_line} "
+                    f"সর্বশেষ প্রাসঙ্গিক অফিসিয়াল আইটেম: {official[0].title}।"
+                )
+            else:
+                body = (
+                    f"Bottom line: the official record has a relevant item. {fact_line} "
+                    f"Latest relevant official item: {official[0].title}."
+                )
         else:
-            body = f"Bottom line: I did not find a matching recent official announcement. {fact_line}"
+            if lang == "bn":
+                body = f"সারকথা: মিল থাকা সাম্প্রতিক অফিসিয়াল ঘোষণা পাইনি। {fact_line}"
+            else:
+                body = f"Bottom line: I did not find a matching recent official announcement. {fact_line}"
     elif intent == "crowd":
         if crowd:
-            body = f"Bottom line: recent crowd context exists. {fact_line} Example: {crowd[0].snippet}"
+            if lang == "bn":
+                body = f"সারকথা: সাম্প্রতিক আলোচনার প্রসঙ্গ আছে। {fact_line} উদাহরণ: {crowd[0].snippet}"
+            else:
+                body = f"Bottom line: recent crowd context exists. {fact_line} Example: {crowd[0].snippet}"
         else:
-            body = f"Bottom line: I did not find recent published platform discussion for ${code}. {fact_line}"
+            if lang == "bn":
+                body = f"সারকথা: ${code} নিয়ে সাম্প্রতিক প্রকাশিত প্ল্যাটফর্ম আলোচনা পাইনি। {fact_line}"
+            else:
+                body = f"Bottom line: I did not find recent published platform discussion for ${code}. {fact_line}"
     elif intent == "red_flags":
         if official or system:
             top = (official + system)[0]
-            body = f"Bottom line: review the cited evidence before forming a view. {fact_line} Main item: {top.title}."
+            if lang == "bn":
+                body = (
+                    f"সারকথা: মত তৈরি করার আগে উদ্ধৃত সূত্রগুলো দেখুন। {fact_line} প্রধান আইটেম: {top.title}।"
+                )
+            else:
+                body = f"Bottom line: review the cited evidence before forming a view. {fact_line} Main item: {top.title}."
         else:
-            body = f"Bottom line: I did not find a recent official or system red-flag source. {fact_line}"
+            if lang == "bn":
+                body = f"সারকথা: সাম্প্রতিক অফিসিয়াল বা সিস্টেম রেড-ফ্ল্যাগ সূত্র পাইনি। {fact_line}"
+            else:
+                body = f"Bottom line: I did not find a recent official or system red-flag source. {fact_line}"
     else:
         if sources:
-            body = f"Bottom line: the best available evidence is source-backed. {fact_line} Most relevant source: {sources[0].title}."
+            if lang == "bn":
+                body = f"সারকথা: সেরা উপলভ্য তথ্য সূত্রভিত্তিক। {fact_line} সবচেয়ে প্রাসঙ্গিক সূত্র: {sources[0].title}।"
+            else:
+                body = f"Bottom line: the best available evidence is source-backed. {fact_line} Most relevant source: {sources[0].title}."
         else:
-            body = f"Bottom line: I do not have enough retrieved evidence for a fuller brief. {fact_line}"
+            if lang == "bn":
+                body = f"সারকথা: পূর্ণ সংক্ষিপ্ত বিশ্লেষণের জন্য যথেষ্ট সূত্র পাইনি। {fact_line}"
+            else:
+                body = f"Bottom line: I do not have enough retrieved evidence for a fuller brief. {fact_line}"
 
-    suffix = f" Evidence quality: {evidence_quality}. This is evidence, not a trade call."
+    suffix = (
+        f" সূত্রের মান: {_quality_label(evidence_quality, lang)}। এটি তথ্যভিত্তিক পাঠ, কেনা/বেচার পরামর্শ নয়।"
+        if lang == "bn"
+        else f" Evidence quality: {_quality_label(evidence_quality, lang)}. This is evidence, not a trade call."
+    )
     return (lead + body + suffix).strip()
 
 
-async def _announcement_sources(session, market: str, code: str, intent: str) -> list[ResearchSource]:
+async def _announcement_sources(
+    session, market: str, code: str, intent: str
+) -> list[ResearchSource]:
     categories = _MATERIAL_CATEGORIES
     if intent == "dividend":
         categories = ("dividend", "board_meeting", "corporate_action")
@@ -625,6 +811,7 @@ async def research_brief(
     tenant: CurrentTenant,
     session: DbSession,
     q: str = Query("Why is this moving?", min_length=3, max_length=240),
+    lang: Lang = _LANG_QUERY,
 ) -> ResearchBriefResponse:
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
@@ -642,6 +829,7 @@ async def research_brief(
         analytics=analytics,
         posts_24h=buzz.posts_24h,
         chatter_x=buzz.chatter_x,
+        lang=lang,
     )
     vector_sources = await _vector_sources(session, tenant.market, code, q)
     announcement_sources = await _announcement_sources(session, tenant.market, code, intent)
@@ -659,6 +847,7 @@ async def research_brief(
         sources=sources,
         posts_24h=buzz.posts_24h,
         chatter_x=buzz.chatter_x,
+        lang=lang,
     )
     blocked_advice = bool(_ADVICE_RE.search(q))
     answer = _render_answer(
@@ -670,6 +859,7 @@ async def research_brief(
         official_catalyst=official_catalyst,
         evidence_quality=evidence_quality,
         blocked_advice=blocked_advice,
+        lang=lang,
     )
     return ResearchBriefResponse(
         code=code,

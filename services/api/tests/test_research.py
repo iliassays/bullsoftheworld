@@ -117,6 +117,53 @@ def test_old_official_news_is_context_not_today_catalyst():
     assert "not recent enough to treat as today's catalyst" in answer
 
 
+def test_bangla_moving_answer_distinguishes_old_filing_from_fresh_catalyst():
+    old_day = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=45)
+    old = _src(date=str(old_day), title="Earnings: SEAPEARL: Q3 Financials")
+    answer = _render_answer(
+        code="SEAPEARL",
+        question="why is this moving?",
+        intent="why_moving",
+        facts=["$SEAPEARL সর্বশেষ ৳45 দরে ট্রেড করেছে।"],
+        sources=[old],
+        official_catalyst=False,
+        evidence_quality="mixed",
+        blocked_advice=False,
+        lang="bn",
+    )
+
+    assert "সাম্প্রতিক অফিসিয়াল ডিএসই কারণ দেখছি না" in answer
+    assert "পুরোনো অফিসিয়াল প্রসঙ্গ আছে" in answer
+    assert "Evidence quality" not in answer
+    assert "Bottom line" not in answer
+
+
+def test_bangla_insights_do_not_return_english_retail_copy():
+    class Analytics:
+        pe_ratio = 18.97
+        pe_vs_sector = 0.71
+        rsi_14 = 76.0
+        relative_volume = 4.3
+        cmf_20 = 0.31
+        obv_slope = 0.27
+        institute_delta = -0.21
+        foreign_delta = 0.0
+
+    insights = _build_insights(
+        analytics=Analytics(),
+        sources=[_src(title="Earnings: SEAPEARL: Q3 Financials")],
+        posts_24h=4,
+        chatter_x=2.7,
+        lang="bn",
+    )
+
+    rendered = " ".join(f"{i.title} {i.detail} {i.evidence}" for i in insights)
+    assert "Short-term move is crowded" not in rendered
+    assert "Official disclosure" not in rendered
+    assert "সূত্র" not in rendered or "Evidence" not in rendered
+    assert "স্বল্পমেয়াদি মুভ ভিড়যুক্ত" in rendered
+
+
 def test_vector_and_sql_sources_are_deduped_by_source_identity():
     vector_hit = _src(id="10", snippet="Vector chunk from the same announcement.")
     sql_hit = _src(id="10", snippet="SQL fallback source from the same announcement.")
@@ -141,7 +188,9 @@ def test_latest_news_is_date_led_not_hash_similarity_led():
         snippet="EPS was lower versus the same period last year.",
     )
 
-    ranked = _rank_sources([old_agm, latest_q3], question="Explain latest news", intent="latest_news")
+    ranked = _rank_sources(
+        [old_agm, latest_q3], question="Explain latest news", intent="latest_news"
+    )
 
     assert ranked[0] == latest_q3
 
@@ -161,9 +210,9 @@ def test_red_flags_suppress_routine_record_date_halts():
 
     assert not _is_risk_source(routine_halt)
     assert _is_risk_source(overbought)
-    assert _rank_sources([routine_halt, overbought], question="Any red flags?", intent="red_flags") == [
-        overbought
-    ]
+    assert _rank_sources(
+        [routine_halt, overbought], question="Any red flags?", intent="red_flags"
+    ) == [overbought]
 
 
 def test_crowd_question_does_not_claim_strong_official_evidence_without_posts():

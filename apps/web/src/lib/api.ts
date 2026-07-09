@@ -750,8 +750,10 @@ export const api = {
       points: { tag: string; text: string }[];
     }>(`/symbols/${code}/explainer`),
   digest: (code: string) => request<Digest>(`/symbols/${code}/digest`),
-  research: (code: string, q: string) =>
-    request<ResearchBrief>(`/symbols/${code}/research?q=${encodeURIComponent(q)}`),
+  research: (code: string, q: string, lang: "en" | "bn" = "en") =>
+    request<ResearchBrief>(
+      `/symbols/${code}/research?q=${encodeURIComponent(q)}&lang=${encodeURIComponent(lang)}`,
+    ),
   plainRead: (code: string) =>
     request<PlainRead>(`/symbols/${code}/plain-read`),
   scorecard: (code: string) =>

@@ -247,10 +247,10 @@ const STRINGS: Record<string, Entry> = {
   },
   "research.cta": { en: "Ask now", bn: "এখন জিজ্ঞেস করুন" },
   "research.retry": { en: "Couldn't load. Try again.", bn: "লোড হয়নি। আবার চেষ্টা করুন।" },
-  "research.insights": { en: "Analyst read", bn: "অ্যানালিস্ট রিড" },
+  "research.insights": { en: "Evidence read", bn: "সূত্রভিত্তিক পাঠ" },
   "research.sources": { en: "Sources", bn: "সূত্র" },
-  "research.officialYes": { en: "Official catalyst found", bn: "অফিশিয়াল কারণ পাওয়া গেছে" },
-  "research.officialNo": { en: "No official catalyst found", bn: "অফিশিয়াল কারণ পাওয়া যায়নি" },
+  "research.officialYes": { en: "Fresh official catalyst", bn: "নতুন অফিসিয়াল কারণ আছে" },
+  "research.officialNo": { en: "No fresh official catalyst", bn: "নতুন অফিসিয়াল কারণ নেই" },
   "research.adviceBlocked": { en: "Advice request redirected", bn: "পরামর্শের প্রশ্ন ঘুরিয়ে দেওয়া হয়েছে" },
   "research.footer": {
     en: "Evidence summary only. Not a buy/sell recommendation.",

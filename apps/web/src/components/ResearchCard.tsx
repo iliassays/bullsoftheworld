@@ -12,15 +12,15 @@ const QUESTIONS = [
 ];
 
 const QUALITY: Record<ResearchBrief["evidence_quality"], string> = {
-  strong: "Strong evidence",
-  mixed: "Mixed evidence",
-  weak: "Weak evidence",
+  strong: "Good source",
+  mixed: "Mixed source",
+  weak: "Weak source",
 };
 
 const QUALITY_BN: Record<ResearchBrief["evidence_quality"], string> = {
-  strong: "শক্ত প্রমাণ",
-  mixed: "মিশ্র প্রমাণ",
-  weak: "দুর্বল প্রমাণ",
+  strong: "ভাল সূত্র",
+  mixed: "মিশ্র সূত্র",
+  weak: "দুর্বল সূত্র",
 };
 
 const REL: Record<string, string> = {
@@ -28,6 +28,13 @@ const REL: Record<string, string> = {
   market: "Market",
   system: "Signal",
   crowd: "Crowd",
+};
+
+const REL_BN: Record<string, string> = {
+  official: "ডিএসই",
+  market: "বাজার",
+  system: "সিগন্যাল",
+  crowd: "আলোচনা",
 };
 
 const LENS: Record<string, string> = {
@@ -40,12 +47,26 @@ const LENS: Record<string, string> = {
 };
 
 const LENS_BN: Record<string, string> = {
-  valuation: "ভ্যালুয়েশন",
-  technical: "টেকনিক্যাল",
+  valuation: "দাম-মূল্য",
+  technical: "চার্ট",
   liquidity: "ফ্লো",
   ownership: "মালিকানা",
-  disclosure: "ডিসক্লোজার",
-  crowd: "ক্রাউড",
+  disclosure: "ঘোষণা",
+  crowd: "আলোচনা",
+};
+
+const STANCE_LABEL: Record<string, string> = {
+  constructive: "Constructive",
+  watch: "Watch",
+  risk: "Risk",
+  unknown: "Unknown",
+};
+
+const STANCE_LABEL_BN: Record<string, string> = {
+  constructive: "সহায়ক",
+  watch: "লক্ষ্য রাখুন",
+  risk: "ঝুঁকি",
+  unknown: "অজানা",
 };
 
 const STANCE: Record<string, string> = {
@@ -80,7 +101,7 @@ export function ResearchCard({ code }: { code: string }) {
     setLoading(true);
     setFailed(false);
     api
-      .research(code, q)
+      .research(code, q, lang)
       .then(setBrief)
       .catch(() => setFailed(true))
       .finally(() => setLoading(false));
@@ -182,7 +203,9 @@ export function ResearchCard({ code }: { code: string }) {
                       <span className="text-[10px] font-bold uppercase tracking-wide">
                         {(bn ? LENS_BN : LENS)[insight.lens] ?? insight.lens}
                       </span>
-                      <span className="text-[10px] font-semibold capitalize">{insight.stance}</span>
+                      <span className="text-[10px] font-semibold">
+                        {(bn ? STANCE_LABEL_BN : STANCE_LABEL)[insight.stance] ?? insight.stance}
+                      </span>
                     </div>
                     <div className="mt-1 text-[13px] font-semibold leading-snug">
                       {insight.title}
@@ -206,7 +229,9 @@ export function ResearchCard({ code }: { code: string }) {
                 {brief.sources.slice(0, 4).map((s) => (
                   <div key={`${s.type}:${s.id}`} className="rounded-xl border border-border p-3">
                     <div className="flex items-center gap-2 text-[11px] text-muted">
-                      <span className="font-bold text-accent">{REL[s.reliability] ?? s.type}</span>
+                      <span className="font-bold text-accent">
+                        {(bn ? REL_BN : REL)[s.reliability] ?? s.type}
+                      </span>
                       {dateShort(s.date) && <span className="tnum">{dateShort(s.date)}</span>}
                     </div>
                     <div className="mt-1 text-[13px] font-semibold leading-snug">{s.title}</div>
