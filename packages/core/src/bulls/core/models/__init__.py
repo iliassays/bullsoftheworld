@@ -22,6 +22,7 @@ from bulls.core.models.post import Cashtag, Post, PostReaction
 from bulls.core.models.quiz import QuizAnswer, QuizQuestion
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
 from bulls.core.models.refresh_session import RefreshSession
+from bulls.core.models.security_master import SecurityMaster
 from bulls.core.models.signal_event import SignalEvent
 from bulls.core.models.symbol import Symbol
 from bulls.core.models.ticker_analytics import TickerAnalytics
@@ -59,6 +60,7 @@ __all__ = [
     "QuoteSnapshot",
     "RefreshSession",
     "SectorPE",
+    "SecurityMaster",
     "ShareholdingSnapshot",
     "SignalEvent",
     "Symbol",
