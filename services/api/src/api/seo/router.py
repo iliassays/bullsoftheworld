@@ -18,7 +18,17 @@ router = APIRouter(tags=["seo"])
 
 @router.get("/seo/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
 async def seo_render(full_path: str, tenant: CurrentTenant, session: DbSession) -> HTMLResponse:
-    html, status = await render_path(session, tenant.market, full_path)
+    domain = next(
+        (d for d in tenant.domains if "." in d and not d.endswith(".localhost")),
+        "bullsofdhaka.com",
+    )
+    html, status = await render_path(
+        session,
+        tenant.market,
+        full_path,
+        site=f"https://{domain}",
+        brand=tenant.display_name,
+    )
     # Short cache: crawlers can re-fetch; content is EOD/15-min-delayed so it needn't be instant.
     return HTMLResponse(
         content=html,

@@ -12,6 +12,7 @@ from bulls.market_data.providers.dse_scrape import DseScrapeProvider
 _REGISTRY: dict[str, MarketDataProvider] = {
     "DSE": DseScrapeProvider(),
     # "DSE": DseLicensedProvider(),   # ← swap here when the real-time feed lands
+    # "US": UsEquitiesProvider(),     # ← wire after choosing Alpaca/Polygon/Nasdaq/etc.
     # "BSE": BseProvider(),           # ← add markets here (Bulls of Mumbai, ...)
 }
 

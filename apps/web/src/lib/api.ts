@@ -529,6 +529,26 @@ export interface MarketStatus {
   phase: "open" | "pre_open" | "post_close" | "weekend";
   as_of: string | null;
 }
+export interface MarketConfig {
+  market: string;
+  exchange_code: string;
+  exchange_label_bn: string | null;
+  exchange_name: string;
+  exchange_name_bn: string | null;
+  country_code: string;
+  currency_code: string;
+  currency_symbol: string;
+  timezone: string;
+  open_time: string;
+  close_time: string;
+  settlement_cycle: string;
+  benchmark_label: string;
+  default_locale: string;
+  price_decimals: number;
+  features: Record<string, boolean>;
+  tenant_name: string;
+  brand_name: string;
+}
 export interface MoodComponent {
   key: string;
   label: string;
@@ -714,6 +734,7 @@ export const api = {
   screens: () => request<ScreensResponse>("/screens"),
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),
+  marketConfig: () => request<MarketConfig>("/market/config"),
   marketStatus: () => request<MarketStatus>("/market/status"),
   scannerRadar: (tab: "today" | "value" | "lens", watched: boolean, limit?: number) =>
     request<ScannerResponse>(

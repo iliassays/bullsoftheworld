@@ -6,6 +6,7 @@ Everything is scoped to the active tenant's market, so Bulls of Dhaka only ever 
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import asdict
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -24,6 +25,7 @@ from bulls.analytics import (
     detect_patterns,
 )
 from bulls.core.config import get_settings
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     Announcement,
     CompanyLogo,
@@ -35,7 +37,7 @@ from bulls.core.models import (
     TrendingScore,
 )
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
-from bulls.market_data.calendar import MARKET_CLOSE, session_phase
+from bulls.market_data.calendar import market_close, session_phase
 
 _MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
 
@@ -51,9 +53,55 @@ class MarketStatusOut(BaseModel):
     as_of: str | None
 
 
+class MarketConfigOut(BaseModel):
+    market: str
+    exchange_code: str
+    exchange_label_bn: str | None
+    exchange_name: str
+    exchange_name_bn: str | None
+    country_code: str
+    currency_code: str
+    currency_symbol: str
+    timezone: str
+    open_time: str
+    close_time: str
+    settlement_cycle: str
+    benchmark_label: str
+    default_locale: str
+    price_decimals: int
+    features: dict[str, bool]
+    tenant_name: str
+    brand_name: str
+
+
+@router.get("/market/config")
+async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
+    profile = get_market_profile(tenant.market)
+    return MarketConfigOut(
+        market=profile.market,
+        exchange_code=profile.exchange_code,
+        exchange_label_bn=profile.exchange_label_bn,
+        exchange_name=profile.exchange_name,
+        exchange_name_bn=profile.exchange_name_bn,
+        country_code=profile.country_code,
+        currency_code=profile.currency_code,
+        currency_symbol=profile.currency_symbol,
+        timezone=profile.timezone,
+        open_time=profile.open_time.isoformat(timespec="minutes"),
+        close_time=profile.close_time.isoformat(timespec="minutes"),
+        settlement_cycle=profile.settlement_cycle,
+        benchmark_label=profile.benchmark_label,
+        default_locale=profile.default_locale,
+        price_decimals=profile.price_decimals,
+        features=asdict(profile.features),
+        tenant_name=tenant.name,
+        brand_name=tenant.display_name,
+    )
+
+
 @router.get("/market/status")
 async def market_status(tenant: CurrentTenant, session: DbSession) -> MarketStatusOut:
-    phase = session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone))
+    phase = session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone), market=tenant.market)
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == tenant.market)
     )
@@ -288,7 +336,7 @@ async def _freshest_quote(
             prev_close=prev_close,
             volume=bar.volume,
             trades=0,
-            as_of=dt.datetime.combine(bar.date, MARKET_CLOSE, tzinfo=tz),
+            as_of=dt.datetime.combine(bar.date, market_close(market), tzinfo=tz),
             is_delayed=True,
         )
     return QuoteOut.model_validate(snapshot) if snapshot else None

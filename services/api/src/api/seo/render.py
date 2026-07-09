@@ -20,6 +20,7 @@ import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bulls.core.markets import get_market_profile
 from bulls.core.models import Symbol, TickerAnalytics
 from bulls.core.models.quote import QuoteSnapshot
 from bulls.market_data.calendar import to_market_tz
@@ -48,17 +49,20 @@ def _doc(
     title: str,
     description: str,
     body: str,
+    site: str = SITE,
+    brand: str = "Bulls of Dhaka",
     noindex: bool = False,
-    og_image: str = f"{SITE}/og.png",
+    og_image: str | None = None,
     json_ld: list[dict] | None = None,
 ) -> str:
     """Assemble a complete, valid HTML document with all SEO head tags + hreflang alternates."""
+    og_image = og_image or f"{site}/og.png"
     suffix = "" if path == "/" else path
-    canonical = f"{SITE}/{lang}{suffix}"
+    canonical = f"{site}/{lang}{suffix}"
     alts = "".join(
-        f'<link rel="alternate" hreflang="{lg}" href="{SITE}/{lg}{suffix}">' for lg in LANGS
+        f'<link rel="alternate" hreflang="{lg}" href="{site}/{lg}{suffix}">' for lg in LANGS
     )
-    alts += f'<link rel="alternate" hreflang="x-default" href="{SITE}/bn{suffix}">'
+    alts += f'<link rel="alternate" hreflang="x-default" href="{site}/bn{suffix}">'
     robots = '<meta name="robots" content="noindex,follow">' if noindex else ""
     ld = "".join(
         f'<script type="application/ld+json">{json.dumps(b, ensure_ascii=False)}</script>'
@@ -73,7 +77,7 @@ def _doc(
         f'<meta name="description" content="{d}">'
         f'<link rel="canonical" href="{canonical}">{alts}{robots}'
         '<meta property="og:type" content="website">'
-        '<meta property="og:site_name" content="Bulls of Dhaka">'
+        f'<meta property="og:site_name" content="{_e(brand)}">'
         f'<meta property="og:title" content="{t}">'
         f'<meta property="og:description" content="{d}">'
         f'<meta property="og:url" content="{canonical}">'
@@ -84,22 +88,49 @@ def _doc(
         f'<meta name="twitter:image" content="{_e(og_image)}">'
         f"{ld}</head><body>{body}"
         # A link to the real app so a human who somehow lands here (and the crawl graph) can proceed.
-        f'<p><a href="{canonical}">Open Bulls of Dhaka →</a></p>'
+        f'<p><a href="{canonical}">Open {_e(brand)} →</a></p>'
         "</body></html>"
     )
 
 
-def _delayed_note(lang: str, as_of: dt.datetime) -> str:
-    local = to_market_tz(as_of).strftime("%d %b %Y, %H:%M")
+def _delayed_note(lang: str, as_of: dt.datetime, market: str) -> str:
+    profile = get_market_profile(market)
+    local = to_market_tz(as_of, market=market).strftime("%d %b %Y, %H:%M")
+    place = (
+        "Dhaka"
+        if profile.market == "DSE"
+        else profile.timezone.rsplit("/", 1)[-1].replace("_", " ")
+    )
     return (
-        f"১৫ মিনিট বিলম্বিত · সর্বশেষ {local} (ঢাকা)"
+        f"১৫ মিনিট বিলম্বিত · সর্বশেষ {local} ({'ঢাকা' if profile.market == 'DSE' else place})"
         if lang == "bn"
-        else f"15-min delayed · as of {local} (Dhaka)"
+        else f"15-min delayed · as of {local} ({place})"
     )
 
 
-async def _render_stock(session: AsyncSession, market: str, lang: str, code: str) -> str | None:
+def _market_cap_text(value_mn: float | None, market: str) -> str | None:
+    if value_mn is None:
+        return None
+    profile = get_market_profile(market)
+    if profile.market == "DSE":
+        return f"৳{value_mn / 10:,.0f} Cr"
+    if value_mn >= 1000:
+        return f"{profile.currency_symbol}{value_mn / 1000:,.1f}B"
+    return f"{profile.currency_symbol}{value_mn:,.0f}M"
+
+
+async def _render_stock(
+    session: AsyncSession,
+    market: str,
+    lang: str,
+    code: str,
+    *,
+    site: str = SITE,
+    brand: str = "Bulls of Dhaka",
+) -> str | None:
     code = code.upper()
+    profile = get_market_profile(market)
+    exchange = profile.exchange_label(lang)
     sym = await session.get(Symbol, (market, code))
     if sym is None:
         return None
@@ -107,11 +138,11 @@ async def _render_stock(session: AsyncSession, market: str, lang: str, code: str
     ta = await session.get(TickerAnalytics, (market, code))
     name = (sym.name_bn or sym.name_en) if lang == "bn" else sym.name_en
     sector = sym.sector
-    price = f"৳{quote.ltp:g}" if quote else ""
-    delayed = _delayed_note(lang, quote.as_of) if quote else ""
+    price = f"{profile.currency_symbol}{quote.ltp:g}" if quote else ""
+    delayed = _delayed_note(lang, quote.as_of, market) if quote else ""
 
     if lang == "bn":
-        title = f"{name} ({code}) শেয়ার দাম {price} — DSE | Bulls of Dhaka"
+        title = f"{name} ({code}) শেয়ার দাম {price} — {exchange} | {brand}"
         desc = (
             f"{name}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল (P/E, EPS, মার্কেট ক্যাপ), চার্ট প্যাটার্ন ও খবর"
             + (f" · খাত: {sector}" if sector else "")
@@ -119,7 +150,7 @@ async def _render_stock(session: AsyncSession, market: str, lang: str, code: str
         )
         h1 = f"{name} ({code}) — শেয়ার দাম ও তথ্য"
     else:
-        title = f"{name} ({code}) share price {price} — DSE | Bulls of Dhaka"
+        title = f"{name} ({code}) share price {price} — {profile.exchange_code} | {brand}"
         desc = (
             f"{name} latest share price, fundamentals (P/E, EPS, market cap), chart patterns and news"
             + (f" · Sector: {sector}" if sector else "")
@@ -131,15 +162,18 @@ async def _render_stock(session: AsyncSession, market: str, lang: str, code: str
     if ta is not None:
         if ta.pe_ratio is not None:
             stats.append(("P/E", f"{ta.pe_ratio:.1f}"))
-        if ta.market_cap_mn is not None:
-            stats.append(("Market cap" if lang == "en" else "মার্কেট ক্যাপ", f"৳{ta.market_cap_mn / 10:,.0f} Cr"))
+        cap = _market_cap_text(ta.market_cap_mn, market)
+        if cap is not None:
+            stats.append(("Market cap" if lang == "en" else "মার্কেট ক্যাপ", cap))
         if ta.dividend_yield is not None:
-            stats.append(("Dividend yield" if lang == "en" else "ডিভিডেন্ড ইল্ড", f"{ta.dividend_yield:.1f}%"))
+            stats.append(
+                ("Dividend yield" if lang == "en" else "ডিভিডেন্ড ইল্ড", f"{ta.dividend_yield:.1f}%")
+            )
     stats_html = "".join(f"<li>{_e(k)}: {_e(v)}</li>" for k, v in stats)
 
     body = (
         f"<h1>{_e(h1)}</h1>"
-        + (f'<p><strong>{_e(price)}</strong> <small>{_e(delayed)}</small></p>' if quote else "")
+        + (f"<p><strong>{_e(price)}</strong> <small>{_e(delayed)}</small></p>" if quote else "")
         + (f"<p>{_e('খাত' if lang == 'bn' else 'Sector')}: {_e(sector)}</p>" if sector else "")
         + (f"<ul>{stats_html}</ul>" if stats_html else "")
         + f"<p>{_e(desc)}</p>"
@@ -148,64 +182,171 @@ async def _render_stock(session: AsyncSession, market: str, lang: str, code: str
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
         "itemListElement": [
-            {"@type": "ListItem", "position": 1, "name": "Home" if lang == "en" else "হোম", "item": f"{SITE}/{lang}"},
-            {"@type": "ListItem", "position": 2, "name": f"{name} ({code})", "item": f"{SITE}/{lang}/s/{code}"},
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home" if lang == "en" else "হোম",
+                "item": f"{site}/{lang}",
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": f"{name} ({code})",
+                "item": f"{site}/{lang}/s/{code}",
+            },
         ],
     }
-    return _doc(lang=lang, path=f"/s/{code}", title=title, description=desc, body=body, json_ld=[breadcrumb])
+    return _doc(
+        lang=lang,
+        path=f"/s/{code}",
+        title=title,
+        description=desc,
+        body=body,
+        site=site,
+        brand=brand,
+        json_ld=[breadcrumb],
+    )
 
 
-async def _render_pattern_detail(lang: str, ptype: str) -> str | None:
+async def _render_pattern_detail(
+    lang: str,
+    ptype: str,
+    *,
+    market: str = "DSE",
+    site: str = SITE,
+    brand: str = "Bulls of Dhaka",
+) -> str | None:
     label = _PATTERN_TITLE.get(ptype)
     if not label:
         return None
+    profile = get_market_profile(market)
+    exchange = profile.exchange_label(lang)
     name = label[lang]
     if lang == "bn":
-        title = f"{name} — DSE চার্ট প্যাটার্ন | Bulls of Dhaka"
-        desc = f"{name} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন DSE শেয়ার এটি দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।"
+        title = f"{name} — {exchange} চার্ট প্যাটার্ন | {brand}"
+        desc = f"{name} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন {exchange} শেয়ার এটি দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।"
     else:
-        title = f"{name} — DSE chart pattern | Bulls of Dhaka"
-        desc = f"What a {name.lower()} is, what usually happens next, and which DSE stocks show it now. Textbook technical analysis, not advice."
+        title = f"{name} — {profile.exchange_code} chart pattern | {brand}"
+        desc = f"What a {name.lower()} is, what usually happens next, and which {profile.exchange_code} stocks show it now. Textbook technical analysis, not advice."
     body = f"<h1>{_e(name)}</h1><p>{_e(desc)}</p>"
-    return _doc(lang=lang, path=f"/learn/patterns/{ptype}", title=title, description=desc, body=body)
+    return _doc(
+        lang=lang,
+        path=f"/learn/patterns/{ptype}",
+        title=title,
+        description=desc,
+        body=body,
+        site=site,
+        brand=brand,
+    )
 
 
-def _static_page(lang: str, path: str) -> str:
+def _static_page(
+    lang: str,
+    path: str,
+    *,
+    market: str = "DSE",
+    site: str = SITE,
+    brand: str = "Bulls of Dhaka",
+) -> str:
     """Meta + a real heading/description for the non-stock indexable routes."""
+    profile = get_market_profile(market)
+    exchange = profile.exchange_label(lang)
+    exchange_name = profile.exchange_name_label(lang)
     pages = {
         "/": {
-            "bn": ("Bulls of Dhaka — ঢাকা স্টক এক্সচেঞ্জের তথ্য, গুজব নয়", "DSE-র শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।"),
-            "en": ("Bulls of Dhaka — Dhaka Stock Exchange data, not rumours", "DSE share prices, fundamentals, chart patterns and community — in one place. Descriptive data, not investment advice."),
+            "bn": (
+                f"{brand} — {exchange_name}-এর তথ্য, গুজব নয়",
+                f"{exchange}-র শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।",
+            ),
+            "en": (
+                f"{brand} — {profile.exchange_name} data, not rumours",
+                f"{profile.exchange_code} share prices, fundamentals, chart patterns and community — in one place. Descriptive data, not investment advice.",
+            ),
         },
         "/markets": {
-            "bn": ("মার্কেট স্ক্রিন — DSE গেইনার, লুজার, ভলিউম, ভ্যালু | Bulls of Dhaka", "ঢাকা স্টক এক্সচেঞ্জের রেডিমেড স্ক্রিন: টপ গেইনার/লুজার, অস্বাভাবিক ভলিউম, সস্তা vs খাত, প্রাতিষ্ঠানিক প্রবাহ, চার্ট প্যাটার্ন।"),
-            "en": ("Market screens — DSE gainers, losers, volume, value | Bulls of Dhaka", "Ready-made Dhaka Stock Exchange screens: top gainers/losers, unusual volume, cheap-vs-sector, institutional flow, chart patterns."),
+            "bn": (
+                f"মার্কেট স্ক্রিন — {exchange} গেইনার, লুজার, ভলিউম, ভ্যালু | {brand}",
+                f"{exchange_name}-এর রেডিমেড স্ক্রিন: টপ গেইনার/লুজার, অস্বাভাবিক ভলিউম, সস্তা vs খাত, প্রাতিষ্ঠানিক প্রবাহ, চার্ট প্যাটার্ন।",
+            ),
+            "en": (
+                f"Market screens — {profile.exchange_code} gainers, losers, volume, value | {brand}",
+                f"Ready-made {profile.exchange_name} screens: top gainers/losers, unusual volume, cheap-vs-sector, institutional flow, chart patterns.",
+            ),
         },
         "/learn/patterns": {
-            "bn": ("চার্ট প্যাটার্ন — DSE শেয়ারে ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম | Bulls of Dhaka", "ঢাকা স্টক এক্সচেঞ্জের শেয়ারে গঠিত হওয়া ক্লাসিক চার্ট প্যাটার্ন — প্রতিটির মানে ও এখন কোন শেয়ার দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।"),
-            "en": ("Chart patterns — triangles, channels, double tops/bottoms on DSE | Bulls of Dhaka", "Classic chart patterns forming on Dhaka Stock Exchange stocks — what each means and which stocks show it now. Textbook technical analysis, not advice."),
+            "bn": (
+                f"চার্ট প্যাটার্ন — {exchange} শেয়ারে ত্রিভুজ, চ্যানেল, ডাবল টপ/বটম | {brand}",
+                f"{exchange_name}-এর শেয়ারে গঠিত হওয়া ক্লাসিক চার্ট প্যাটার্ন — প্রতিটির মানে ও এখন কোন শেয়ার দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।",
+            ),
+            "en": (
+                f"Chart patterns — triangles, channels, double tops/bottoms on {profile.exchange_code} | {brand}",
+                f"Classic chart patterns forming on {profile.exchange_name} stocks — what each means and which stocks show it now. Textbook technical analysis, not advice.",
+            ),
         },
         "/ideas": {
-            "bn": ("আইডিয়া — DSE স্ক্রিনার ও লেন্স | Bulls of Dhaka", "ঢাকা স্টক এক্সচেঞ্জের জন্য কিউরেটেড আইডিয়া বোর্ড ও ইনভেস্টর লেন্স। বর্ণনামূলক তথ্য, পরামর্শ নয়।"),
-            "en": ("Ideas — DSE screeners & lenses | Bulls of Dhaka", "Curated idea boards and investor lenses for the Dhaka Stock Exchange. Descriptive data, not advice."),
+            "bn": (
+                f"আইডিয়া — {exchange} স্ক্রিনার ও লেন্স | {brand}",
+                f"{exchange_name}-এর জন্য কিউরেটেড আইডিয়া বোর্ড ও ইনভেস্টর লেন্স। বর্ণনামূলক তথ্য, পরামর্শ নয়।",
+            ),
+            "en": (
+                f"Ideas — {profile.exchange_code} screeners & lenses | {brand}",
+                f"Curated idea boards and investor lenses for {profile.exchange_name}. Descriptive data, not advice.",
+            ),
         },
         "/about": {
-            "bn": ("Bulls of Dhaka সম্পর্কে — DSE-র জন্য তথ্যভিত্তিক প্ল্যাটফর্ম", "Bulls of Dhaka কী, কেন 'তথ্যে চলুন, গুজবে নয়', আর কোন কোন অটোমেটেড ডেস্ক DSE-র ডেটা তুলে ধরে।"),
-            "en": ("About Bulls of Dhaka — a facts-first platform for the DSE", "What Bulls of Dhaka is, why 'facts, not rumours', and the automated desks that surface Dhaka Stock Exchange data."),
+            "bn": (
+                f"{brand} সম্পর্কে — {exchange}-র জন্য তথ্যভিত্তিক প্ল্যাটফর্ম",
+                f"{brand} কী, কেন 'তথ্যে চলুন, গুজবে নয়', আর কোন কোন অটোমেটেড ডেস্ক {exchange}-র ডেটা তুলে ধরে।",
+            ),
+            "en": (
+                f"About {brand} — a facts-first platform for {profile.exchange_code}",
+                f"What {brand} is, why 'facts, not rumours', and the automated desks that surface {profile.exchange_name} data.",
+            ),
         },
     }
     title, desc = pages[path][lang]
     json_ld = None
     if path == "/":
         json_ld = [
-            {"@context": "https://schema.org", "@type": "Organization", "name": "Bulls of Dhaka", "url": SITE, "logo": f"{SITE}/logo-mark-v2.png"},
-            {"@context": "https://schema.org", "@type": "WebSite", "name": "Bulls of Dhaka", "url": SITE,
-             "potentialAction": {"@type": "SearchAction", "target": f"{SITE}/bn/s/{{search_term_string}}", "query-input": "required name=search_term_string"}},
+            {
+                "@context": "https://schema.org",
+                "@type": "Organization",
+                "name": brand,
+                "url": site,
+                "logo": f"{site}/logo-mark-v2.png",
+            },
+            {
+                "@context": "https://schema.org",
+                "@type": "WebSite",
+                "name": brand,
+                "url": site,
+                "potentialAction": {
+                    "@type": "SearchAction",
+                    "target": f"{site}/bn/s/{{search_term_string}}",
+                    "query-input": "required name=search_term_string",
+                },
+            },
         ]
-    return _doc(lang=lang, path=path, title=title, description=desc, body=f"<h1>{_e(title)}</h1><p>{_e(desc)}</p>", json_ld=json_ld)
+    return _doc(
+        lang=lang,
+        path=path,
+        title=title,
+        description=desc,
+        body=f"<h1>{_e(title)}</h1><p>{_e(desc)}</p>",
+        site=site,
+        brand=brand,
+        json_ld=json_ld,
+    )
 
 
-async def render_path(session: AsyncSession, market: str, raw_path: str) -> tuple[str, int]:
+async def render_path(
+    session: AsyncSession,
+    market: str,
+    raw_path: str,
+    *,
+    site: str = SITE,
+    brand: str = "Bulls of Dhaka",
+) -> tuple[str, int]:
     """Render the HTML for an SPA path (already stripped of any /seo prefix). Returns (html, status).
 
     Unknown/private paths render a valid noindex page rather than erroring — the CloudFront rule
@@ -217,26 +358,48 @@ async def render_path(session: AsyncSession, market: str, raw_path: str) -> tupl
 
     # /{lang}  (home)
     if not rest:
-        return _static_page(lang, "/"), 200
+        return _static_page(lang, "/", market=market, site=site, brand=brand), 200
     if rest == ["markets"]:
-        return _static_page(lang, "/markets"), 200
+        return _static_page(lang, "/markets", market=market, site=site, brand=brand), 200
     if rest == ["ideas"]:
-        return _static_page(lang, "/ideas"), 200
+        return _static_page(lang, "/ideas", market=market, site=site, brand=brand), 200
     if rest == ["about"]:
-        return _static_page(lang, "/about"), 200
+        return _static_page(lang, "/about", market=market, site=site, brand=brand), 200
     if rest == ["learn", "patterns"]:
-        return _static_page(lang, "/learn/patterns"), 200
+        return _static_page(lang, "/learn/patterns", market=market, site=site, brand=brand), 200
     if len(rest) == 3 and rest[0] == "learn" and rest[1] == "patterns":
-        page = await _render_pattern_detail(lang, rest[2])
-        return (page, 200) if page else (_static_page(lang, "/learn/patterns"), 200)
+        page = await _render_pattern_detail(lang, rest[2], market=market, site=site, brand=brand)
+        return (
+            (page, 200)
+            if page
+            else (_static_page(lang, "/learn/patterns", market=market, site=site, brand=brand), 200)
+        )
     if len(rest) == 2 and rest[0] == "s":
-        page = await _render_stock(session, market, lang, rest[1])
+        page = await _render_stock(session, market, lang, rest[1], site=site, brand=brand)
         if page:
             return page, 200
         # Unknown ticker → a minimal noindex 404-ish page.
-        title = "Not found — Bulls of Dhaka" if lang == "en" else "পাওয়া যায়নি — Bulls of Dhaka"
-        return _doc(lang=lang, path="/", title=title, description=title, body=f"<h1>{_e(title)}</h1>", noindex=True), 404
+        title = f"Not found — {brand}" if lang == "en" else f"পাওয়া যায়নি — {brand}"
+        return _doc(
+            lang=lang,
+            path="/",
+            title=title,
+            description=title,
+            body=f"<h1>{_e(title)}</h1>",
+            site=site,
+            brand=brand,
+            noindex=True,
+        ), 404
 
     # Anything else (private/unknown): valid but noindex.
-    title = "Bulls of Dhaka"
-    return _doc(lang=lang, path="/", title=title, description=title, body=f"<h1>{_e(title)}</h1>", noindex=True), 200
+    title = brand
+    return _doc(
+        lang=lang,
+        path="/",
+        title=title,
+        description=title,
+        body=f"<h1>{_e(title)}</h1>",
+        site=site,
+        brand=brand,
+        noindex=True,
+    ), 200

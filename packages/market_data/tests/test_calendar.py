@@ -74,3 +74,22 @@ def test_add_trading_days_zero_and_negative():
     assert add_trading_days(dt.date(2026, 6, 26), 0) == dt.date(2026, 6, 26)  # Friday unchanged
     with pytest.raises(ValueError):
         add_trading_days(dt.date(2026, 6, 21), -1)
+
+
+def test_us_calendar_uses_us_weekdays_hours_and_holidays():
+    # Friday is closed on DSE but open in the US unless it is a holiday.
+    assert not is_trading_day(dt.date(2026, 6, 26))
+    assert is_trading_day(dt.date(2026, 6, 26), market="US")
+    # 2026-07-03 is the observed US Independence Day holiday.
+    assert not is_trading_day(dt.date(2026, 7, 3), market="US")
+
+    # Regular US session is 09:30-16:00 New York time, i.e. 13:30-20:00 UTC in June.
+    assert is_trading_hours(_utc(2026, 6, 26, 13, 30), market="US")
+    assert is_trading_hours(_utc(2026, 6, 26, 20, 0), market="US")
+    assert not is_trading_hours(_utc(2026, 6, 26, 13, 29), market="US")
+    assert session_phase(_utc(2026, 6, 26, 21, 0), market="US") is Session.POST_CLOSE
+
+
+def test_us_add_trading_days_skips_weekends_and_us_holidays():
+    # Thu 2026-07-02 + 1 skips the observed Fri holiday and weekend -> Mon 2026-07-06.
+    assert add_trading_days(dt.date(2026, 7, 2), 1, market="US") == dt.date(2026, 7, 6)

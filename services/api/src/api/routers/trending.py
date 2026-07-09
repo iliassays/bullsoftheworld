@@ -184,7 +184,7 @@ async def todays_watch_endpoint(
     tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> WatchResponse:
     now = dt.datetime.now(dt.UTC)
-    phase = session_phase(now, ZoneInfo(tenant.timezone))
+    phase = session_phase(now, ZoneInfo(tenant.timezone), market=tenant.market)
     cache_key = f"watch:v2:{tenant.market}:{locale}:{now.date()}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:

@@ -19,6 +19,7 @@ from api.deps import CurrentTenant, DbSession, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     Announcement,
     Cashtag,
@@ -42,21 +43,40 @@ T = TickerAnalytics
 PER_SCREEN = 8
 _DISCUSSED_DAYS = 2  # window for "most discussed"
 _BUZZ_HISTORY = 14  # look-back for the attention baseline
-DSE_SETTLEMENT_CYCLE = "T+2"
 
 # Reused metric expressions
 _PCT_ABOVE_SUPPORT = (T.last_close - T.nearest_support) / T.nearest_support * 100
 _PCT_BELOW_RESISTANCE = (T.nearest_resistance - T.last_close) / T.last_close * 100
 _PCT_ABOVE_200 = (T.last_close - T.sma_200) / T.sma_200 * 100
 
-# --- Institutional liquidity floor ------------------------------------------
-# DSE screens should surface names a real desk can plausibly trade without dominating the tape. This
-# is still a discovery floor, not a full capacity model: execution sizing, spread and impact checks
-# belong in the next layer. Z-category names stay out of default investable screens; community screens
-# are tenant-filtered, but not liquidity/category-filtered.
-_MIN_ADTV_MN = 5.0  # average daily turnover over 20 sessions, ৳ millions (~৳50 lakh/day)
-_MIN_MCAP_MN = 500.0  # market capitalisation, ৳ millions (~৳50 crore)
-_MIN_FREE_FLOAT_CAP_MN = 100.0  # applied when available, ৳ millions
+
+@dataclass(frozen=True)
+class ScreenMarketSettings:
+    min_adtv_mn: float
+    min_mcap_mn: float
+    min_free_float_cap_mn: float
+    dse_category_filter: bool = False
+
+
+_SCREEN_SETTINGS: dict[str, ScreenMarketSettings] = {
+    # DSE screens should surface names a real desk can plausibly trade without dominating the tape.
+    # Values are in currency millions: BDT mn for DSE.
+    "DSE": ScreenMarketSettings(
+        min_adtv_mn=5.0,
+        min_mcap_mn=500.0,
+        min_free_float_cap_mn=100.0,
+        dse_category_filter=True,
+    ),
+    # US placeholder values are deliberately conservative and in USD mn. They only apply once a US
+    # provider populates ticker_analytics for market="US".
+    "US": ScreenMarketSettings(min_adtv_mn=2.0, min_mcap_mn=300.0, min_free_float_cap_mn=50.0),
+}
+
+
+def _screen_settings(market: str) -> ScreenMarketSettings:
+    return _SCREEN_SETTINGS.get(market.upper(), _SCREEN_SETTINGS["DSE"])
+
+
 _MATERIAL_ANNOUNCEMENT_CATEGORIES = (
     "dividend",
     "earnings",
@@ -68,34 +88,43 @@ _MATERIAL_ANNOUNCEMENT_CATEGORIES = (
     "psi",
 )
 
-_LIQUID = and_(
-    T.last_close > 0,
-    T.avg_volume_20.isnot(None),
-    T.avg_volume_20 > 0,
-    T.avg_volume_20 * T.last_close / 1e6 >= _MIN_ADTV_MN,
-    func.coalesce(T.market_cap_mn, 0) >= _MIN_MCAP_MN,
-    or_(T.free_float_cap_mn.is_(None), T.free_float_cap_mn >= _MIN_FREE_FLOAT_CAP_MN),
-)
-
 
 def _screenable_codes(market: str):
     """Visible codes eligible for default Market screens.
 
-    DSE Z-category names are left out of the investable discovery boards. They can still appear in
-    community attention widgets, where the product is showing what users follow rather than surfacing
-    a clean tradeable universe.
+    DSE Z-category names are left out of investable discovery boards. Other markets do not inherit
+    that filter unless their settings explicitly ask for it.
     """
-    return select(Symbol.code).where(
+    conds = [
         Symbol.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
-        or_(Symbol.category.is_(None), Symbol.category != "Z"),
+    ]
+    if _screen_settings(market).dse_category_filter:
+        conds.append(or_(Symbol.category.is_(None), Symbol.category != "Z"))
+    return select(Symbol.code).where(*conds)
+
+
+def _liquid(market: str):
+    settings = _screen_settings(market)
+    return and_(
+        T.last_close > 0,
+        T.avg_volume_20.isnot(None),
+        T.avg_volume_20 > 0,
+        T.avg_volume_20 * T.last_close / 1e6 >= settings.min_adtv_mn,
+        func.coalesce(T.market_cap_mn, 0) >= settings.min_mcap_mn,
+        or_(
+            T.free_float_cap_mn.is_(None),
+            T.free_float_cap_mn >= settings.min_free_float_cap_mn,
+        ),
     )
 
 
 def _investable(market: str):
     """Subquery of investable codes — visible AND liquid — for builders that don't query T."""
-    return select(T.code).where(T.market == market, T.code.in_(_screenable_codes(market)), _LIQUID)
+    return select(T.code).where(
+        T.market == market, T.code.in_(_screenable_codes(market)), _liquid(market)
+    )
 
 
 @dataclass
@@ -456,7 +485,7 @@ async def _unusual_volume(
                 T.market == market,
                 field >= _RVOL_MIN[window],
                 T.code.in_(_screenable_codes(market)),
-                _LIQUID,
+                _liquid(market),
             )
             .order_by(field.desc())
             .limit(limit)
@@ -653,7 +682,7 @@ async def _momentum(
                 mom > 0,
                 T.volatility > 0,
                 T.code.in_(_screenable_codes(market)),
-                _LIQUID,
+                _liquid(market),
             )
             .order_by(is_pump.asc(), (mom / T.volatility).desc())
             .limit(limit)
@@ -689,7 +718,12 @@ async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> Scr
     rows = (
         await session.execute(
             select(T.code, T.last_close, spec.value)
-            .where(T.market == market, spec.where, T.code.in_(_screenable_codes(market)), _LIQUID)
+            .where(
+                T.market == market,
+                spec.where,
+                T.code.in_(_screenable_codes(market)),
+                _liquid(market),
+            )
             .order_by(spec.order)
             .limit(limit)
         )
@@ -746,16 +780,25 @@ async def _change_1d(session, market: str, codes: list[str]) -> dict[str, float]
     return {c: round(v, 2) for c, v in rows}
 
 
-def _bdt_mn(n: float | None) -> str:
-    """Compact BDT text from ৳ millions: >=10mn as crore, below as lakh."""
+def _money_mn(n: float | None, market: str) -> str:
+    """Compact currency text from currency millions."""
     if n is None:
         return "n/a"
-    if n >= 10:
-        return f"৳{n / 10:,.1f}cr"
-    return f"৳{n * 10:,.0f}L"
+    profile = get_market_profile(market)
+    if profile.market == "DSE":
+        if n >= 10:
+            return f"৳{n / 10:,.1f}cr"
+        return f"৳{n * 10:,.0f}L"
+    return f"{profile.currency_symbol}{n:,.1f}mn"
 
 
-def _metric_text(label: str, value: float) -> str:
+def _bdt_mn(n: float | None) -> str:
+    """Backward-compatible DSE compact money helper."""
+    return _money_mn(n, "DSE")
+
+
+def _metric_text(label: str, value: float, market: str = "DSE") -> str:
+    profile = get_market_profile(market)
     if label == "RSI":
         return f"RSI {value:.0f}"
     if label == "CMF":
@@ -767,7 +810,7 @@ def _metric_text(label: str, value: float) -> str:
     if "avg vol" in label or "usual" in label:
         return f"{value:.1f}x normal volume"
     if label == "turnover":
-        return f"{_bdt_mn(value * 10)} turnover"
+        return f"{_money_mn(value * 10, market)} turnover"
     if label == "pp":
         return f"{value:+.1f} pp stake change"
     if label in {"ROE", "volatility", "% today", "% period", "% YoY"}:
@@ -775,12 +818,13 @@ def _metric_text(label: str, value: float) -> str:
     if label == "momentum":
         return f"{value:+.0f}% momentum"
     if label == "vs market":
-        return f"{value:+.1f}% vs DSEX"
+        return f"{value:+.1f}% vs {profile.benchmark_label}"
     return f"{value:.2f} {label}"
 
 
-def _liquidity_label(adtv_mn: float | None, category: str | None) -> str | None:
-    if category == "Z":
+def _liquidity_label(adtv_mn: float | None, category: str | None, market: str) -> str | None:
+    settings = _screen_settings(market)
+    if settings.dse_category_filter and category == "Z":
         return "High-risk: Z category"
     if adtv_mn is None:
         return None
@@ -788,17 +832,18 @@ def _liquidity_label(adtv_mn: float | None, category: str | None) -> str | None:
         return "Deep liquidity"
     if adtv_mn >= 10:
         return "Tradeable liquidity"
-    if adtv_mn >= _MIN_ADTV_MN:
+    if adtv_mn >= settings.min_adtv_mn:
         return "Watch order size"
     return "Thin liquidity"
 
 
-def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
+def _setup_quality(screen: ScreenOut, item: ScreenItem, market: str = "DSE") -> str | None:
+    settings = _screen_settings(market)
     high_risk_note = (item.note or "").lower()
     if (
-        item.category == "Z"
+        (settings.dse_category_filter and item.category == "Z")
         or "pump" in high_risk_note
-        or (item.adtv_mn is not None and item.adtv_mn < _MIN_ADTV_MN)
+        or (item.adtv_mn is not None and item.adtv_mn < settings.min_adtv_mn)
     ):
         return "High-risk read"
     if (
@@ -832,14 +877,14 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem) -> str | None:
     return "Mixed read"
 
 
-def _why_text(screen: ScreenOut, item: ScreenItem) -> str:
-    metric = _metric_text(screen.value_label, item.value)
+def _why_text(screen: ScreenOut, item: ScreenItem, market: str) -> str:
+    metric = _metric_text(screen.value_label, item.value, market)
     parts = [f"{screen.title}: {metric}"]
     if item.change_1d is not None:
         parts.append(f"1D {item.change_1d:+.1f}%")
     if item.adtv_mn is not None and item.safe_order_mn is not None:
-        parts.append(f"ADTV {_bdt_mn(item.adtv_mn)}")
-        parts.append(f"5% size {_bdt_mn(item.safe_order_mn)}")
+        parts.append(f"ADTV {_money_mn(item.adtv_mn, market)}")
+        parts.append(f"5% size {_money_mn(item.safe_order_mn, market)}")
     if item.category:
         parts.append(f"Cat {item.category}")
     if item.catalyst:
@@ -1087,7 +1132,7 @@ async def _ownership(
     rows = (
         await session.execute(
             select(T.code, T.last_close, delta_col)
-            .where(T.market == market, cond, T.code.in_(_screenable_codes(market)), _LIQUID)
+            .where(T.market == market, cond, T.code.in_(_screenable_codes(market)), _liquid(market))
             .order_by(order)
             .limit(limit)
         )
@@ -1160,7 +1205,9 @@ async def _sponsor_selling(session, market: str, limit: int = PER_SCREEN) -> Scr
         for c, lc in (
             await session.execute(
                 select(T.code, T.last_close).where(
-                    T.market == market, T.code.in_([c for c, _, _ in drops]), _LIQUID
+                    T.market == market,
+                    T.code.in_([c for c, _, _ in drops]),
+                    _liquid(market),
                 )
             )
         ).all()
@@ -1245,7 +1292,7 @@ async def _chart_pattern_board(
                 TickerPattern.pattern_type == pattern_type,
                 TickerPattern.status != "invalidated",
                 T.code.in_(_screenable_codes(market)),
-                _LIQUID,
+                _liquid(market),
             )
             .order_by(TickerPattern.strength_score.desc())
             .limit(limit)
@@ -1312,16 +1359,16 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
                 if isinstance(ctx.get("free_float_cap_mn"), float)
                 else None
             )
-            it.liquidity = _liquidity_label(it.adtv_mn, it.category)
+            it.liquidity = _liquidity_label(it.adtv_mn, it.category, market)
             catalyst = catalysts.get(it.code)
             if catalyst:
                 it.catalyst = catalyst.headline
                 it.catalyst_date = str(catalyst.published_at)
                 it.catalyst_category = catalyst.category
-            it.setup_quality = _setup_quality(s, it)
+            it.setup_quality = _setup_quality(s, it, market)
             # A board builder may have written a richer per-name sentence (e.g. the scanner's
             # Quality Reversal / Oversold Quality prose) — never clobber it with the generic line.
-            it.why = it.why or _why_text(s, it)
+            it.why = it.why or _why_text(s, it, market)
 
 
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
@@ -1403,6 +1450,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
 async def _build_screens(
     tenant: CurrentTenant, session: DbSession, quote_ts: dt.datetime | None
 ) -> ScreensResponse:
+    profile = get_market_profile(tenant.market)
     out: list[ScreenOut] = [
         await _build_spec(session, tenant.market, spec, PER_SCREEN) for spec in _SCREENS
     ]
@@ -1412,10 +1460,12 @@ async def _build_screens(
     out.append(await _momentum(session, tenant.market))
     out.append(await _unusual_volume(session, tenant.market))
     out.append(await _beating_market(session, tenant.market))
-    out.append(await _ownership(session, tenant.market, kind="foreign"))
-    out.append(await _ownership(session, tenant.market, kind="institute"))
-    out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
-    out.append(await _sponsor_selling(session, tenant.market))
+    if profile.features.shareholding_breakdown:
+        out.append(await _ownership(session, tenant.market, kind="foreign"))
+        out.append(await _ownership(session, tenant.market, kind="institute"))
+        out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
+    if profile.features.sponsor_director_disclosures:
+        out.append(await _sponsor_selling(session, tenant.market))
     for pattern_type in _PATTERN_TITLE:
         out.append(await _chart_pattern_board(session, tenant.market, pattern_type=pattern_type))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
@@ -1424,17 +1474,21 @@ async def _build_screens(
 
     await _enrich(session, tenant.market, out)
     as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
+    settings = _screen_settings(tenant.market)
     methodology = MarketMethodology(
         market=tenant.market,
-        settlement_cycle=DSE_SETTLEMENT_CYCLE,
-        data_clock="End-of-day analytics from DSE closes; live quote boards use latest quote snapshot.",
+        settlement_cycle=profile.settlement_cycle,
+        data_clock=(
+            f"End-of-day analytics from {profile.exchange_code} closes; "
+            "live quote boards use latest quote snapshot."
+        ),
         liquidity_floor=(
             "Institutional discovery: minimum 20-session average daily turnover and market cap; "
             "free-float cap floor is applied when available."
         ),
-        min_adtv_mn=_MIN_ADTV_MN,
-        min_mcap_mn=_MIN_MCAP_MN,
-        min_free_float_cap_mn=_MIN_FREE_FLOAT_CAP_MN,
+        min_adtv_mn=settings.min_adtv_mn,
+        min_mcap_mn=settings.min_mcap_mn,
+        min_free_float_cap_mn=settings.min_free_float_cap_mn,
     )
     return ScreensResponse(
         as_of=str(as_of) if as_of else None,
@@ -1643,14 +1697,15 @@ async def _index_return(session, market: str, days: int) -> float | None:
 
 
 async def _beating_market(session, market: str, *, limit: int = PER_SCREEN) -> ScreenOut:
-    """Stocks outperforming the DSEX over ~1 month — relative strength, the institutional tell for
+    """Stocks outperforming the market benchmark over ~1 month — relative strength, the institutional tell for
     genuine strength (up while, or more than, the market). Value = excess return vs the index."""
     idx = await _index_return(session, market, _RS_DAYS)
     desc_idx = f"{idx:+.1f}%" if idx is not None else "n/a"
+    benchmark = get_market_profile(market).benchmark_label
     base = ScreenOut(
         key="beating_market",
         title="Beating the market",
-        description=f"Outperforming the DSEX (index {desc_idx} over ~1 month)",
+        description=f"Outperforming {benchmark} ({desc_idx} over ~1 month)",
         value_label="vs market",
         group="movers",
         items=[],

@@ -201,7 +201,10 @@ async def get_levels(
     # Bridge the two clocks: while the market is open, show the live (delayed) price's position
     # relative to the as-of-close levels. Outside hours the EOD card stands on its own.
     live_line: str | None = None
-    if session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone)) is Session.OPEN:
+    if (
+        session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone), market=tenant.market)
+        is Session.OPEN
+    ):
         quote = await session.get(QuoteSnapshot, (tenant.market, code))
         price = quote.ltp if quote else result.last_close
         rel = _relation(price, insight.support, insight.resistance)

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from api.deps import CurrentTenant, DbSession
 from api.routers.buzz import gather_buzz
 from bulls.ai.retrieval import retrieve
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     Announcement,
     Cashtag,
@@ -249,20 +250,22 @@ def _facts(
     posts_24h: int,
     chatter_x: float | None,
     lang: Lang = "en",
+    market: str = "DSE",
 ) -> list[str]:
     facts: list[str] = []
+    profile = get_market_profile(market)
     if quote:
         if lang == "bn":
             delayed = " বিলম্বিত" if quote.is_delayed else ""
             facts.append(
-                f"${code} সর্বশেষ ৳{quote.ltp:g} দরে ট্রেড করেছে "
+                f"${code} সর্বশেষ {profile.currency_symbol}{quote.ltp:g} দরে ট্রেড করেছে "
                 f"({quote.change_pct:+.2f}% আজ, ভলিউম {quote.volume:,},"
                 f"{delayed} সময় {quote.as_of.isoformat()})।"
             )
         else:
             delayed = " delayed" if quote.is_delayed else ""
             facts.append(
-                f"${code} last traded at ৳{quote.ltp:g} ({quote.change_pct:+.2f}% today,"
+                f"${code} last traded at {profile.currency_symbol}{quote.ltp:g} ({quote.change_pct:+.2f}% today,"
                 f" volume {quote.volume:,},{delayed} as of {quote.as_of.isoformat()})."
             )
     if analytics and analytics.relative_volume is not None:
@@ -313,8 +316,10 @@ def _build_insights(
     posts_24h: int,
     chatter_x: float | None,
     lang: Lang = "en",
+    market: str = "DSE",
 ) -> list[ResearchInsight]:
     insights: list[ResearchInsight] = []
+    profile = get_market_profile(market)
     if analytics is None:
         return [
             ResearchInsight(
@@ -499,15 +504,16 @@ def _build_insights(
     official = [s for s in sources if s.reliability == "official"]
     if official:
         latest = official[0]
+        exchange = profile.exchange_label(lang)
         insights.append(
             ResearchInsight(
                 lens="disclosure",
                 stance="watch",
                 title="অফিসিয়াল ফাইলিং আছে" if lang == "bn" else "Official filing anchors the read",
                 detail=(
-                    "ব্যাখ্যা শুরু করা উচিত সর্বশেষ গুরুত্বপূর্ণ ডিএসই ফাইলিং থেকে, তারপর তার আশেপাশের দাম ও ভলিউম দেখা উচিত।"
+                    f"ব্যাখ্যা শুরু করা উচিত সর্বশেষ গুরুত্বপূর্ণ {exchange} ফাইলিং থেকে, তারপর তার আশেপাশের দাম ও ভলিউম দেখা উচিত।"
                     if lang == "bn"
-                    else "The read should start from the newest material DSE filing, then compare price and volume behavior around it."
+                    else f"The read should start from the newest material {profile.exchange_code} filing, then compare price and volume behavior around it."
                 ),
                 evidence=f"{latest.title} ({latest.date or ('তারিখ নেই' if lang == 'bn' else 'date unavailable')})",
             )
@@ -566,7 +572,10 @@ def _render_answer(
     evidence_quality: EvidenceQuality,
     blocked_advice: bool,
     lang: Lang = "en",
+    market: str = "DSE",
 ) -> str:
+    profile = get_market_profile(market)
+    exchange = profile.exchange_label(lang)
     lead = ""
     if blocked_advice:
         if lang == "bn":
@@ -614,12 +623,12 @@ def _render_answer(
                     )
             if lang == "bn":
                 body = (
-                    f"সারকথা: এই মুভের জন্য সাম্প্রতিক অফিসিয়াল ডিএসই কারণ দেখছি না। "
+                    f"সারকথা: এই মুভের জন্য সাম্প্রতিক অফিসিয়াল {exchange} কারণ দেখছি না। "
                     f"{fact_line} নতুন অফিসিয়াল খবর না আসা পর্যন্ত এটিকে দাম/ভলিউম বা আলোচনাচালিত ধরে পড়ুন।{context}"
                 )
             else:
                 body = (
-                    f"Bottom line: I do not see a recent official DSE catalyst for this move. "
+                    f"Bottom line: I do not see a recent official {profile.exchange_code} catalyst for this move. "
                     f"{fact_line} Treat this as price/volume or discussion-led until fresh official "
                     f"news appears.{context}"
                 )
@@ -830,6 +839,7 @@ async def research_brief(
         posts_24h=buzz.posts_24h,
         chatter_x=buzz.chatter_x,
         lang=lang,
+        market=tenant.market,
     )
     vector_sources = await _vector_sources(session, tenant.market, code, q)
     announcement_sources = await _announcement_sources(session, tenant.market, code, intent)
@@ -848,6 +858,7 @@ async def research_brief(
         posts_24h=buzz.posts_24h,
         chatter_x=buzz.chatter_x,
         lang=lang,
+        market=tenant.market,
     )
     blocked_advice = bool(_ADVICE_RE.search(q))
     answer = _render_answer(
@@ -860,6 +871,7 @@ async def research_brief(
         evidence_quality=evidence_quality,
         blocked_advice=blocked_advice,
         lang=lang,
+        market=tenant.market,
     )
     return ResearchBriefResponse(
         code=code,

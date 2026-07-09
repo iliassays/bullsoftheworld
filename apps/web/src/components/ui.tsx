@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import { useLang } from "../lib/i18n";
 
-export const taka = (n: number) => `৳${n.toLocaleString("en-US", { minimumFractionDigits: 1 })}`;
+import { DSE_MARKET, formatMoney } from "../lib/market";
+
+export const money = formatMoney;
+export const taka = (n: number) => formatMoney(n, DSE_MARKET);
 
 // A bare "▲3.32%" is assumed to be the day's move — that's the default meaning everywhere on the
 // site. `period="sinceBuy"` is the one case that actually needs a label: a portfolio holding's

@@ -1,11 +1,8 @@
 """Market trading calendar - pure, timezone-correct helpers.
 
-A market's trading hours and timezone are configuration, not hardcoded: every function takes an
-explicit `tz` (surfaced through tenant config), so the same logic serves any exchange. DSE's
-Asia/Dhaka is the default. DSE trades Sunday to Thursday, 10:00-14:30, closed Friday/Saturday and
-on public holidays (see MARKET_HOLIDAYS).
-
-Inputs must be timezone-AWARE datetimes (e.g. datetime.now(dt.UTC)); they're converted to `tz`.
+DSE remains the default for backward compatibility. New markets should call these helpers with a
+``market=`` argument so trading days, hours, holidays, and timezone come from the shared market
+profile rather than Dhaka constants.
 """
 
 from __future__ import annotations
@@ -14,22 +11,12 @@ import datetime as dt
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+from bulls.core.markets import get_market_profile
+
 DHAKA = ZoneInfo("Asia/Dhaka")
 MARKET_OPEN = dt.time(10, 0)
 MARKET_CLOSE = dt.time(14, 30)
-
-# isoweekday(): Mon=1 .. Sun=7. DSE trades Sun, Mon, Tue, Wed, Thu.
-_TRADING_ISOWEEKDAYS = frozenset({7, 1, 2, 3, 4})
-
-# DSE public holidays — the market is closed even though it's a weekday. Maintain from DSE's
-# official annual holiday calendar (dates are Dhaka-local). Under-listing only costs a benign
-# watchdog false-alarm that day; over-listing would make the worker skip a REAL trading day, so
-# add only confirmed dates.
-MARKET_HOLIDAYS: frozenset[dt.date] = frozenset(
-    {
-        dt.date(2026, 7, 1),  # confirmed closed — extend with the official DSE 2026 calendar
-    }
-)
+MARKET_HOLIDAYS: frozenset[dt.date] = get_market_profile("DSE").holidays
 
 
 class Session(StrEnum):
@@ -39,48 +26,72 @@ class Session(StrEnum):
     WEEKEND = "weekend"  # non-trading day
 
 
-def to_market_tz(when: dt.datetime, tz: ZoneInfo = DHAKA) -> dt.datetime:
+def _profile_for(market: str | None):
+    return get_market_profile(market or "DSE")
+
+
+def market_timezone(market: str | None = "DSE") -> ZoneInfo:
+    return _profile_for(market).tz
+
+
+def market_open(market: str | None = "DSE") -> dt.time:
+    return _profile_for(market).open_time
+
+
+def market_close(market: str | None = "DSE") -> dt.time:
+    return _profile_for(market).close_time
+
+
+def to_market_tz(
+    when: dt.datetime, tz: ZoneInfo | None = None, *, market: str | None = "DSE"
+) -> dt.datetime:
     """Convert an aware datetime to the market timezone."""
     if when.tzinfo is None:
         raise ValueError("calendar requires timezone-aware datetimes")
-    return when.astimezone(tz)
+    return when.astimezone(tz or market_timezone(market))
 
 
-def is_trading_day(d: dt.date) -> bool:
-    """True on Sun-Thu that aren't public holidays."""
-    return d.isoweekday() in _TRADING_ISOWEEKDAYS and d not in MARKET_HOLIDAYS
+def is_trading_day(d: dt.date, *, market: str | None = "DSE") -> bool:
+    """True on configured market weekdays that are not configured full-day holidays."""
+    profile = _profile_for(market)
+    return d.isoweekday() in profile.trading_isoweekdays and d not in profile.holidays
 
 
-def add_trading_days(d: dt.date, n: int) -> dt.date:
-    """The date `n` trading days after `d`, skipping weekends and MARKET_HOLIDAYS.
-
-    This is settlement arithmetic (DSE: T+2 for A/B/G/N contracts, T+3 for Z), so it counts
-    *exchange* days: a Thursday trade at n=2 settles the following Sunday.
-    """
+def add_trading_days(d: dt.date, n: int, *, market: str | None = "DSE") -> dt.date:
+    """The date `n` trading days after `d`, skipping that market's weekends and holidays."""
     if n < 0:
         raise ValueError("n must be >= 0")
     out = d
     while n > 0:
         out += dt.timedelta(days=1)
-        if is_trading_day(out):
+        if is_trading_day(out, market=market):
             n -= 1
     return out
 
 
-def is_trading_hours(when: dt.datetime, tz: ZoneInfo = DHAKA) -> bool:
-    """True if `when` falls inside a session (trading day, 10:00-14:30 market time)."""
-    local = to_market_tz(when, tz)
-    return is_trading_day(local.date()) and MARKET_OPEN <= local.time() <= MARKET_CLOSE
+def is_trading_hours(
+    when: dt.datetime, tz: ZoneInfo | None = None, *, market: str | None = "DSE"
+) -> bool:
+    """True if `when` falls inside the configured regular market session."""
+    profile = _profile_for(market)
+    local = to_market_tz(when, tz, market=market)
+    return (
+        is_trading_day(local.date(), market=profile.market)
+        and profile.open_time <= local.time() <= profile.close_time
+    )
 
 
-def session_phase(when: dt.datetime, tz: ZoneInfo = DHAKA) -> Session:
+def session_phase(
+    when: dt.datetime, tz: ZoneInfo | None = None, *, market: str | None = "DSE"
+) -> Session:
     """Which part of the market day `when` is in, in market time."""
-    local = to_market_tz(when, tz)
-    if not is_trading_day(local.date()):
+    profile = _profile_for(market)
+    local = to_market_tz(when, tz, market=market)
+    if not is_trading_day(local.date(), market=profile.market):
         return Session.WEEKEND
     t = local.time()
-    if t < MARKET_OPEN:
+    if t < profile.open_time:
         return Session.PRE_OPEN
-    if t <= MARKET_CLOSE:
+    if t <= profile.close_time:
         return Session.OPEN
     return Session.POST_CLOSE
