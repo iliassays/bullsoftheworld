@@ -30,6 +30,11 @@ def test_normalize_deobfuscates():
     assert "now" in n.compact  # repeats fully collapse in the compact view
 
 
+def test_normalize_extracts_us_share_class_cashtags():
+    n = normalize("watch $brk.b. and $F, not $100")
+    assert n.cashtags == ["BRK.B", "F"]
+
+
 def test_normalize_extracts_contact():
     n = normalize("join t.me/tips or call 01712345678")
     assert n.urls and n.phones

@@ -755,7 +755,12 @@ export const api = {
     request<Quote[]>(
       `/quotes${codes?.length ? `?codes=${codes.join(",")}` : ""}`,
     ),
-  symbols: (limit = 500) => request<SymbolOut[]>(`/symbols?limit=${limit}`),
+  symbols: (limit = 500, q?: string) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    const query = q?.trim();
+    if (query) params.set("q", query);
+    return request<SymbolOut[]>(`/symbols?${params.toString()}`);
+  },
   screens: () => request<ScreensResponse>("/screens"),
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),

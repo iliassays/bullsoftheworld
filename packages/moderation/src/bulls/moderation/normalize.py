@@ -18,8 +18,8 @@ import unicodedata
 
 from pydantic import BaseModel
 
-# $ + 2-16 uppercase alphanumerics (matches services/api parse_cashtags).
-_CASHTAG_RE = re.compile(r"\$([A-Z0-9]{2,16})")
+# $ + 1-16 symbol chars. US tickers include one-letter codes and share classes like BRK.B.
+_CASHTAG_RE = re.compile(r"\$([A-Z][A-Z0-9.-]{0,15})")
 _URL_RE = re.compile(r"https?://\S+|\b(?:t\.me|wa\.me|chat\.whatsapp\.com|bit\.ly)/\S+", re.I)
 # BD mobile numbers: 01XXXXXXXXX or +8801XXXXXXXXX, tolerating spaces/dashes.
 _PHONE_RE = re.compile(r"(?:\+?880[\s-]?)?01[\s-]?\d[\s-]?\d(?:[\s-]?\d){7}")
@@ -54,6 +54,23 @@ class NormalizedPost(BaseModel):
         return bool(self.urls or self.phones)
 
 
+def parse_cashtags(text: str) -> list[str]:
+    """Unique cashtag codes in order of first appearance.
+
+    This deliberately extracts candidates only. The API validates candidates against the active
+    tenant's symbol table before attaching them to a post.
+    """
+    codes: list[str] = []
+    seen: set[str] = set()
+    for raw in _CASHTAG_RE.findall(text.upper()):
+        code = raw.rstrip(".-")
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        codes.append(code)
+    return codes
+
+
 def _fold(text: str) -> str:
     t = unicodedata.normalize("NFKC", text).translate(_ZERO_WIDTH)
     t = _RUN3_RE.sub(r"\1\1", t.lower())
@@ -73,7 +90,7 @@ def normalize(text: str) -> NormalizedPost:
         folded=folded,
         compact=_compact(folded),
         # cashtags parse off the raw upper-case (folded is lower-cased).
-        cashtags=list(dict.fromkeys(_CASHTAG_RE.findall(text.upper()))),
+        cashtags=parse_cashtags(text),
         urls=[m.group(0) for m in _URL_RE.finditer(text)],
         phones=[m.group(0) for m in _PHONE_RE.finditer(text)],
         percents=[m.group(0) for m in _PERCENT_RE.finditer(folded)],

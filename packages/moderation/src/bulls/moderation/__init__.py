@@ -10,7 +10,7 @@ See docs/specs/feed-moderation.md. Typical use:
 
 from .engine import decide
 from .lexicon import Policy, load_policy
-from .normalize import NormalizedPost, normalize
+from .normalize import NormalizedPost, normalize, parse_cashtags
 from .scorer import Context, score
 from .types import Action, Category, Decision
 
@@ -24,5 +24,6 @@ __all__ = [
     "decide",
     "load_policy",
     "normalize",
+    "parse_cashtags",
     "score",
 ]

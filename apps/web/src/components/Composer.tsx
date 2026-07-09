@@ -3,7 +3,7 @@ import { CompanyLogo } from "./CompanyLogo";
 import { api, ApiError, type Post, type SymbolOut } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
-import { loadSymbols } from "../lib/symbols";
+import { searchSymbols } from "../lib/symbols";
 
 // Find the ticker token the caret is currently inside, if any: a `$` or `@` trigger at the
 // start of a word followed only by ticker chars up to the caret. We always insert `$CODE`
@@ -13,7 +13,7 @@ function tokenAt(
   caret: number,
 ): { start: number; query: string } | null {
   let i = caret - 1;
-  while (i >= 0 && /[A-Za-z0-9]/.test(text[i])) i--;
+  while (i >= 0 && /[A-Za-z0-9.-]/.test(text[i])) i--;
   if (
     i >= 0 &&
     (text[i] === "$" || text[i] === "@") &&
@@ -50,7 +50,7 @@ export function Composer({
 
   // Ticker autocomplete
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const [symbols, setSymbols] = useState<SymbolOut[]>([]);
+  const [matches, setMatches] = useState<SymbolOut[]>([]);
   const [suggest, setSuggest] = useState<{
     start: number;
     query: string;
@@ -58,21 +58,23 @@ export function Composer({
   const [sel, setSel] = useState(0);
 
   useEffect(() => {
-    loadSymbols().then(setSymbols);
-  }, []);
+    if (suggest === null) {
+      setMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      searchSymbols(suggest.query, 6).then((symbols) => {
+        if (!cancelled) setMatches(symbols);
+      });
+    }, 100);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [suggest]);
 
   if (!user) return null;
-
-  const q = (suggest?.query ?? "").toUpperCase();
-  const matches =
-    suggest === null
-      ? []
-      : symbols
-          .filter(
-            (s) =>
-              !q || s.code.includes(q) || s.name_en.toUpperCase().includes(q),
-          )
-          .slice(0, 6);
 
   const recompute = (val: string, caret: number) => {
     setSuggest(tokenAt(val, caret));

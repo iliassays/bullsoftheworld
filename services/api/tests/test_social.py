@@ -19,6 +19,7 @@ from api.routers.posts import parse_cashtags
 
 def test_parse_cashtags_dedup_and_uppercase():
     assert parse_cashtags("buying $gp and $BEXIMCO, $gp again") == ["GP", "BEXIMCO"]
+    assert parse_cashtags("watch $brk.b. and $F, not $100") == ["BRK.B", "F"]
     assert parse_cashtags("no tags here") == []
 
 

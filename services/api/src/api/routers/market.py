@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession, visible_codes
 from bulls.analytics import (
@@ -44,6 +44,11 @@ _MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
 router = APIRouter(tags=["market"])
 
 _MIN_ADTV_MN = 5.0
+
+
+def _escape_like(value: str) -> str:
+    """Escape user input used inside SQL LIKE patterns."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class MarketStatusOut(BaseModel):
@@ -376,8 +381,10 @@ async def get_quotes(
 async def list_symbols(
     tenant: CurrentTenant,
     session: DbSession,
-    limit: int = Query(100, le=500),
+    limit: int = Query(100, ge=1, le=500),
+    q: str | None = Query(None, min_length=1, max_length=64),
 ) -> list[SymbolOut]:
+    raw_query = q.strip() if q else ""
     stmt = (
         select(Symbol)
         .where(
@@ -385,9 +392,32 @@ async def list_symbols(
             Symbol.is_active.is_(True),
             Symbol.is_hidden.is_(False),
         )
-        .order_by(Symbol.code)
         .limit(limit)
     )
+    if raw_query:
+        raw_like = _escape_like(raw_query)
+        upper = raw_query.upper()
+        upper_like = _escape_like(upper)
+        code_upper = func.upper(Symbol.code)
+        name_upper = func.upper(Symbol.name_en)
+        name_bn_match = Symbol.name_bn.ilike(f"%{raw_like}%", escape="\\")
+        stmt = stmt.where(
+            or_(
+                code_upper.like(f"{upper_like}%", escape="\\"),
+                name_upper.like(f"%{upper_like}%", escape="\\"),
+                name_bn_match,
+            )
+        ).order_by(
+            case(
+                (code_upper == upper, 0),
+                (code_upper.like(f"{upper_like}%", escape="\\"), 1),
+                (name_upper.like(f"{upper_like}%", escape="\\"), 2),
+                else_=3,
+            ),
+            Symbol.code,
+        )
+    else:
+        stmt = stmt.order_by(Symbol.code)
     rows = (await session.execute(stmt)).scalars().all()
     return [SymbolOut.model_validate(r) for r in rows]
 

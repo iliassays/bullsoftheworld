@@ -8,7 +8,6 @@ post's take, one per user per post — surfaced as tallies plus the caller's own
 from __future__ import annotations
 
 import datetime as dt
-import re
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -36,18 +35,9 @@ from bulls.core.models import (
     WatchlistItem,
 )
 from bulls.core.schemas.social import AuthorOut, PostCreate, PostOut, ReactionIn
-from bulls.moderation import Action
+from bulls.moderation import Action, parse_cashtags
 
 router = APIRouter(prefix="/posts", tags=["posts"])
-
-# Cashtag = $ followed by 2-16 uppercase alphanumerics.
-CASHTAG_RE = re.compile(r"\$([A-Z0-9]{2,16})")
-
-
-def parse_cashtags(body: str) -> list[str]:
-    """Unique cashtag codes in order of first appearance."""
-    return list(dict.fromkeys(CASHTAG_RE.findall(body.upper())))
-
 
 async def _valid_codes(session, market: str, codes: list[str]) -> list[str]:
     """Keep only codes that exist as symbols in this market."""

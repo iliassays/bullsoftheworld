@@ -1,31 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useLang } from "../lib/i18n";
 import { useNavigate } from "../lib/nav";
-import { api, type SymbolOut } from "../lib/api";
+import type { SymbolOut } from "../lib/api";
+import { searchSymbols } from "../lib/symbols";
 import { CompanyLogo } from "./CompanyLogo";
-
-// Global ticker search — instant client-side typeahead over the (small) symbol universe.
-// The list is fetched once and module-cached so it loads at most once per session.
-let symbolCache: SymbolOut[] | null = null;
 
 export function SearchBar() {
   const { t } = useLang();
   const [q, setQ] = useState("");
-  const [symbols, setSymbols] = useState<SymbolOut[]>(symbolCache ?? []);
+  const [results, setResults] = useState<SymbolOut[]>([]);
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-
-  const load = () => {
-    if (symbolCache) return;
-    api
-      .symbols(500)
-      .then((s) => {
-        symbolCache = s;
-        setSymbols(s);
-      })
-      .catch(() => {});
-  };
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -36,17 +22,22 @@ export function SearchBar() {
   }, []);
 
   const raw = q.trim();
-  const upper = raw.toUpperCase();
-  const results = raw
-    ? symbols
-        .filter(
-          (s) =>
-            s.code.includes(upper) ||
-            s.name_en.toUpperCase().includes(upper) ||
-            (s.name_bn ?? "").includes(raw),
-        )
-        .slice(0, 8)
-    : [];
+  useEffect(() => {
+    if (!open || !raw) {
+      setResults([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      searchSymbols(raw, 8).then((symbols) => {
+        if (!cancelled) setResults(symbols);
+      });
+    }, 120);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, raw]);
 
   const go = (code: string) => {
     setQ("");
@@ -59,7 +50,6 @@ export function SearchBar() {
       <input
         value={q}
         onFocus={() => {
-          load();
           setOpen(true);
         }}
         onChange={(e) => {

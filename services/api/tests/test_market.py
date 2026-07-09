@@ -40,3 +40,11 @@ def test_symbol_detail():
 
         missing = client.get("/symbols/NOTAREALCODE")
         assert missing.status_code == 404
+
+
+def test_symbol_search_filters_and_ranks_prefix_matches():
+    with TestClient(app) as client:
+        r = client.get("/symbols", params={"q": "gp", "limit": 5})
+        assert r.status_code == 200
+        codes = [row["code"] for row in r.json()]
+        assert codes and codes[0] == "GP"
