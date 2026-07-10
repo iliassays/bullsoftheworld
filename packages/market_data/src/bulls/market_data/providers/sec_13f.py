@@ -135,12 +135,22 @@ def discover_dataset_urls(html: str, *, base_url: str = DATASET_PAGE) -> list[st
 
 
 _INSTRUMENT_WORDS = re.compile(
-    r"\b(COMMON|ORDINARY|CAPITAL|STOCK|SHARES?|AMERICAN|DEPOSITARY|DEPOSITORY|"
-    r"ADS|ADR|ETF|TRUST|TR|UNIT|SERIES|SER|NEW|DEL)\b"
+    r"\b(COM|COMMON|ORDINARY|CAPITAL|STOCK|SHARES?|AMERICAN|DEPOSITARY|DEPOSITORY|"
+    r"ADS|ADR|ETF|FUND|INDEX|SPONSORED|TRUST|TR|UNIT|SERIES|SER|NEW|DEL)\b"
 )
 _CLASS_WORDS = re.compile(r"\b(?:CLASS|CL)\s*([A-Z])\b")
 _SERIES_WORDS = re.compile(r"\b(?:SERIES|SER)\s*\d+\b")
 _NON_ALNUM = re.compile(r"[^A-Z0-9]+")
+_LEGAL_WORDS = re.compile(
+    r"\b(AND|CO|CORP|INC|LTD|LLC|PLC|LP|L P|THE|DE|HOLDING|HOLDINGS|HLDG|HLDGS)\b"
+)
+_TOKEN_ALIASES = {
+    "BD": "BOND",
+    "INDL": "INDUSTRIAL",
+    "MCDONALD": "MCDONALDS",
+    "TREAS": "TREASURY",
+    "YR": "YEAR",
+}
 
 
 def _class_token(text: str) -> str | None:
@@ -149,13 +159,25 @@ def _class_token(text: str) -> str | None:
 
 
 def normalize_issuer_name(value: str) -> str:
-    text = value.upper().replace("J P MORGAN", "JPMORGAN").replace("JP MORGAN", "JPMORGAN")
+    text = re.sub(r"([A-Z])['\u2019]S\b", r"\1S", value.upper())
+    text = text.replace("EXXONMOBIL", "EXXON MOBIL")
+    text = text.replace("J P MORGAN", "JPMORGAN").replace("JP MORGAN", "JPMORGAN")
     text = text.replace("CORPORATION", "CORP").replace("INCORPORATED", "INC")
     text = text.replace("COMPANY", "CO").replace("LIMITED", "LTD")
+    text = re.sub(r"\bEACH\s+REPRESENTING\b.*$", " ", text)
+    if "SPDR" in text:
+        text = re.sub(r"\bSTATE\s+STREET\b", " ", text)
     text = _CLASS_WORDS.sub(" ", text)
     text = _SERIES_WORDS.sub(" ", text)
     text = _INSTRUMENT_WORDS.sub(" ", text)
-    return " ".join(_NON_ALNUM.sub(" ", text).split())
+    text = _LEGAL_WORDS.sub(" ", text)
+    tokens = [_TOKEN_ALIASES.get(token, token) for token in _NON_ALNUM.sub(" ", text).split()]
+    return " ".join(tokens)
+
+
+def _identity_signature(value: str) -> tuple[str, ...]:
+    """Return an order-independent exact signature after conservative SEC-name normalization."""
+    return tuple(sorted(set(normalize_issuer_name(value).split())))
 
 
 def match_13f_security(
@@ -175,6 +197,25 @@ def match_13f_security(
             ]
             if len(class_matches) == 1:
                 return class_matches[0].code, 1.0, "exact_issuer_and_class"
+
+    filing_signature = _identity_signature(f"{issuer_name} {title_of_class}")
+    if not filing_signature:
+        return None
+    signature_candidates = [
+        symbol for symbol in symbols if _identity_signature(symbol.name) == filing_signature
+    ]
+    if len(signature_candidates) == 1:
+        return signature_candidates[0].code, 0.99, "exact_normalized_token_signature"
+    if len(signature_candidates) > 1:
+        filing_class = _class_token(title_of_class)
+        if filing_class:
+            class_matches = [
+                symbol
+                for symbol in signature_candidates
+                if _class_token(symbol.name) == filing_class
+            ]
+            if len(class_matches) == 1:
+                return class_matches[0].code, 0.99, "exact_token_signature_and_class"
     return None
 
 

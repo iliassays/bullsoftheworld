@@ -9,6 +9,7 @@ symbol/report period.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import datetime as dt
 import tempfile
@@ -17,7 +18,7 @@ from pathlib import Path
 import httpx
 from arq import create_pool
 from arq.connections import RedisSettings
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, distinct, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
@@ -79,22 +80,11 @@ async def _dataset_urls() -> list[str]:
     return discover_dataset_urls(page.text)
 
 
-async def _download_latest_two(directory: Path, urls: list[str]) -> list[tuple[str, Path, int]]:
-    async with httpx.AsyncClient(headers=_headers(), timeout=180, follow_redirects=True) as client:
-        downloads: list[tuple[str, Path, int]] = []
-        for index, url in enumerate(urls):
-            target = directory / f"dataset-{index}.zip"
-            try:
-                size = await _download(client, url, target)
-            except (httpx.HTTPError, ValueError) as error:
-                print(f"  ! skipped 13F archive {url} ({error})")
-                continue
-            downloads.append((url, target, size))
-            if len(downloads) == 2:
-                break
-        if len(downloads) < 2:
-            raise RuntimeError("SEC page did not provide two downloadable Form 13F archives")
-        return downloads
+async def _download_archive(
+    client: httpx.AsyncClient, directory: Path, url: str, index: int
+) -> tuple[Path, int]:
+    target = directory / f"dataset-{index}.zip"
+    return target, await _download(client, url, target)
 
 
 async def _symbol_context() -> tuple[list[SymbolIdentity], dict[str, str]]:
@@ -141,7 +131,44 @@ async def _upsert(session, model, rows: list[dict], keys: tuple[str, ...]) -> in
     return len(rows)
 
 
-async def _persist(current, prior, downloaded_bytes: int, changes, summaries) -> dict[str, int]:
+async def _upsert_managers(session, rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    for start in range(0, len(rows), UPSERT_BATCH_ROWS):
+        batch = rows[start : start + UPSERT_BATCH_ROWS]
+        stmt = pg_insert(InstitutionalManager).values(batch)
+        await session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["cik"],
+                set_={
+                    "name": case(
+                        (
+                            InstitutionalManager.latest_report_date.is_(None),
+                            stmt.excluded.name,
+                        ),
+                        (
+                            stmt.excluded.latest_report_date
+                            >= InstitutionalManager.latest_report_date,
+                            stmt.excluded.name,
+                        ),
+                        else_=InstitutionalManager.name,
+                    ),
+                    "latest_report_date": func.greatest(
+                        InstitutionalManager.latest_report_date,
+                        stmt.excluded.latest_report_date,
+                    ),
+                    "latest_filing_date": func.greatest(
+                        InstitutionalManager.latest_filing_date,
+                        stmt.excluded.latest_filing_date,
+                    ),
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+        )
+    return len(rows)
+
+
+async def _persist_period(current, changes, summaries) -> dict[str, int]:
     now = dt.datetime.now(dt.UTC)
     manager_rows: dict[int, dict] = {}
     for row in changes:
@@ -190,7 +217,7 @@ async def _persist(current, prior, downloaded_bytes: int, changes, summaries) ->
             identifier_rows,
             ("market", "identifier_type", "identifier"),
         )
-        await _upsert(session, InstitutionalManager, list(manager_rows.values()), ("cik",))
+        await _upsert_managers(session, list(manager_rows.values()))
         await _upsert(
             session,
             InstitutionalPosition,
@@ -215,26 +242,6 @@ async def _persist(current, prior, downloaded_bytes: int, changes, summaries) ->
                 InstitutionalHoldingSummary.report_date < cutoff,
             )
         )
-        state = {
-            "market": MARKET,
-            "source": SOURCE,
-            "as_of_date": current.report_date,
-            "last_success_at": now,
-            "records": len(changes) + len(summaries),
-            "symbols_covered": len(summaries),
-            "downloaded_bytes": downloaded_bytes,
-            "details": {
-                "prior_report_date": prior.report_date.isoformat(),
-                "positions_retained": len(changes),
-                "all_manager_summaries": len(summaries),
-                "new_cusip_matches": len(current.matches),
-                "unmatched_cusips": current.unmatched_cusips,
-                "retention": f"{RETENTION_QUARTERS} quarters; max 150 managers/symbol/quarter",
-                "raw_archives_retained": False,
-                "current_archive_url": current.source_url,
-            },
-        }
-        await _upsert(session, RegulatoryDataState, [state], ("market", "source"))
         await session.commit()
     return {
         "positions": len(changes),
@@ -244,71 +251,215 @@ async def _persist(current, prior, downloaded_bytes: int, changes, summaries) ->
     }
 
 
-async def _already_current(candidate_url: str) -> bool:
+async def _persist_state(
+    *,
+    newest,
+    baseline,
+    downloaded_bytes: int,
+    requested_quarters: int,
+    new_matches: int,
+    unmatched_cusips: int,
+) -> dict[str, int]:
+    now = dt.datetime.now(dt.UTC)
+    sm = get_sessionmaker()
+    async with sm() as session:
+        positions = await session.scalar(
+            select(func.count()).select_from(InstitutionalPosition).where(
+                InstitutionalPosition.market == MARKET
+            )
+        )
+        summaries = await session.scalar(
+            select(func.count()).select_from(InstitutionalHoldingSummary).where(
+                InstitutionalHoldingSummary.market == MARKET
+            )
+        )
+        periods = await session.scalar(
+            select(func.count(distinct(InstitutionalHoldingSummary.report_date))).where(
+                InstitutionalHoldingSummary.market == MARKET
+            )
+        )
+        symbols = await session.scalar(
+            select(func.count(distinct(InstitutionalHoldingSummary.code))).where(
+                InstitutionalHoldingSummary.market == MARKET,
+                InstitutionalHoldingSummary.report_date == newest.report_date,
+            )
+        )
+        state = {
+            "market": MARKET,
+            "source": SOURCE,
+            "as_of_date": newest.report_date,
+            "last_success_at": now,
+            "records": int(positions or 0) + int(summaries or 0),
+            "symbols_covered": int(symbols or 0),
+            "downloaded_bytes": downloaded_bytes,
+            "details": {
+                "baseline_report_date": baseline.report_date.isoformat(),
+                "positions_retained": int(positions or 0),
+                "all_manager_summaries": int(summaries or 0),
+                "history_quarters_loaded": int(periods or 0),
+                "requested_quarters": requested_quarters,
+                "new_cusip_matches": new_matches,
+                "unmatched_cusips": unmatched_cusips,
+                "retention": f"{RETENTION_QUARTERS} quarters; max 150 managers/symbol/quarter",
+                "raw_archives_retained": False,
+                "current_archive_url": newest.source_url,
+            },
+        }
+        await _upsert(session, RegulatoryDataState, [state], ("market", "source"))
+        await session.commit()
+    return {
+        "positions": int(positions or 0),
+        "summaries": int(summaries or 0),
+        "history_quarters": int(periods or 0),
+    }
+
+
+def _is_refresh_current(
+    details: dict | None, candidate_url: str, requested_quarters: int
+) -> bool:
+    details = details or {}
+    return bool(
+        details.get("current_archive_url") == candidate_url
+        and int(details.get("history_quarters_loaded") or 1) >= requested_quarters
+    )
+
+
+async def _already_current(candidate_url: str, requested_quarters: int) -> bool:
     sm = get_sessionmaker()
     async with sm() as session:
         state = await session.get(RegulatoryDataState, (MARKET, SOURCE))
-    return bool(state and (state.details or {}).get("current_archive_url") == candidate_url)
+    return bool(state and _is_refresh_current(state.details, candidate_url, requested_quarters))
 
 
-async def collect(*, force: bool = False) -> dict[str, int]:
+async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str, int]:
+    if not 1 <= history_quarters <= RETENTION_QUARTERS:
+        raise ValueError(f"history_quarters must be between 1 and {RETENTION_QUARTERS}")
     symbols, known_cusips = await _symbol_context()
     urls = await _dataset_urls()
     if not urls:
         raise RuntimeError("SEC page did not list Form 13F archives")
-    if not force and await _already_current(urls[0]):
-        return {"symbols_requested": len(symbols), "skipped_current": 1}
+    if not force and await _already_current(urls[0], history_quarters):
+        return {
+            "symbols_requested": len(symbols),
+            "history_quarters": history_quarters,
+            "skipped_current": 1,
+        }
+
+    summaries_to_index = []
+    period_stats: list[dict[str, int]] = []
+    downloaded_bytes = 0
+    new_matches = 0
+    unmatched_cusips = 0
+    completed = 0
+    newest = None
+    baseline = None
+    current = None
+
     with tempfile.TemporaryDirectory(prefix="bulls-sec-13f-") as temp:
-        downloads = await _download_latest_two(Path(temp), urls)
-        current_url, current_path, current_bytes = downloads[0]
-        prior_url, prior_path, prior_bytes = downloads[1]
-        current = parse_13f_archive(
-            current_path,
-            source_url=current_url,
-            symbols=symbols,
-            known_cusips=known_cusips,
-        )
-        expanded_cusips = {**known_cusips, **{row.cusip: row.code for row in current.matches}}
-        prior = parse_13f_archive(
-            prior_path,
-            source_url=prior_url,
-            symbols=symbols,
-            known_cusips=expanded_cusips,
-        )
-        if current.report_date <= prior.report_date:
+        async with httpx.AsyncClient(
+            headers=_headers(), timeout=180, follow_redirects=True
+        ) as client:
+            for index, url in enumerate(urls):
+                path = None
+                try:
+                    path, size = await _download_archive(client, Path(temp), url, index)
+                    archive = parse_13f_archive(
+                        path,
+                        source_url=url,
+                        symbols=symbols,
+                        known_cusips=known_cusips,
+                    )
+                except (httpx.HTTPError, ValueError) as error:
+                    print(f"  ! skipped 13F archive {url} ({error})")
+                    continue
+                finally:
+                    if path is not None:
+                        path.unlink(missing_ok=True)
+
+                downloaded_bytes += size
+                new_matches += len(archive.matches)
+                unmatched_cusips += archive.unmatched_cusips
+                known_cusips.update({row.cusip: row.code for row in archive.matches})
+                if current is None:
+                    current = archive
+                    newest = archive
+                    continue
+                prior = archive
+                if current.report_date <= prior.report_date:
+                    raise RuntimeError(
+                        f"13F data sets are not descending: "
+                        f"{current.report_date} <= {prior.report_date}"
+                    )
+                changes, summaries = build_holding_changes(current, prior)
+                period_stats.append(await _persist_period(current, changes, summaries))
+                summaries_to_index.extend(summaries)
+                completed += 1
+                baseline = prior
+                print(
+                    f"  ...stored {completed}/{history_quarters} quarters "
+                    f"({current.report_date}, {len(summaries)} symbols)"
+                )
+                if completed == history_quarters:
+                    break
+                current = prior
+
+        if completed < history_quarters or newest is None or baseline is None:
             raise RuntimeError(
-                f"13F data sets are not descending: {current.report_date} <= {prior.report_date}"
+                f"SEC page provided {completed} comparable quarters; "
+                f"{history_quarters} requested"
             )
-        changes, summaries = build_holding_changes(current, prior)
-        stats = await _persist(current, prior, current_bytes + prior_bytes, changes, summaries)
+
+        stats = await _persist_state(
+            newest=newest,
+            baseline=baseline,
+            downloaded_bytes=downloaded_bytes,
+            requested_quarters=history_quarters,
+            new_matches=new_matches,
+            unmatched_cusips=unmatched_cusips,
+        )
         settings = get_settings()
         redis = await create_pool(
             RedisSettings.from_dsn(settings.redis_url),
             default_queue_name=settings.ai_queue_name,
         )
         try:
-            for summary in summaries:
+            for summary in summaries_to_index:
                 await redis.enqueue_job(
                     "embed_institutional_summary",
                     MARKET,
                     summary.code,
                     summary.report_date.isoformat(),
-                    _job_id=(f"embed:sec-13f:{MARKET}:{summary.code}:{summary.report_date}"),
+                    _job_id=(f"embed:sec-13f:v3:{MARKET}:{summary.code}:{summary.report_date}"),
                 )
         finally:
             await redis.aclose()
     return {
         **stats,
+        "period_positions_written": sum(row["positions"] for row in period_stats),
+        "period_summaries_written": sum(row["summaries"] for row in period_stats),
         "symbols_requested": len(symbols),
-        "current_report": int(current.report_date.strftime("%Y%m%d")),
-        "prior_report": int(prior.report_date.strftime("%Y%m%d")),
-        "downloaded_bytes": current_bytes + prior_bytes,
+        "current_report": int(newest.report_date.strftime("%Y%m%d")),
+        "baseline_report": int(baseline.report_date.strftime("%Y%m%d")),
+        "downloaded_bytes": downloaded_bytes,
     }
 
 
+def _args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Ingest bounded SEC Form 13F history")
+    parser.add_argument(
+        "--history-quarters",
+        type=int,
+        default=1,
+        choices=range(1, RETENTION_QUARTERS + 1),
+    )
+    parser.add_argument("--force", action="store_true")
+    return parser.parse_args()
+
+
 def main() -> None:
-    print("[sec-13f] refreshing bounded institutional holdings")
-    stats = asyncio.run(collect())
+    args = _args()
+    print(f"[sec-13f] refreshing {args.history_quarters} bounded institutional quarters")
+    stats = asyncio.run(collect(force=args.force, history_quarters=args.history_quarters))
     print(f"[sec-13f] done: {stats}")
 
 

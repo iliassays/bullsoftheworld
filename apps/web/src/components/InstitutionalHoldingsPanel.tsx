@@ -17,6 +17,17 @@ const compactUsd = (value: number) =>
 const signedPct = (value: number | null) =>
   value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
+const changeLabel = (value: InstitutionalPosition["change_type"], bn: boolean) => {
+  if (!bn) return value;
+  return {
+    new: "নতুন",
+    increased: "বাড়িয়েছে",
+    reduced: "কমিয়েছে",
+    unchanged: "অপরিবর্তিত",
+    exited: "বেরিয়েছে",
+  }[value];
+};
+
 function PositionRows({ rows, bn }: { rows: InstitutionalPosition[]; bn: boolean }) {
   if (!rows.length) {
     return <Empty>{bn ? "এই বিভাগে কোনো রিপোর্ট করা পরিবর্তন নেই।" : "No reported changes in this category."}</Empty>;
@@ -48,7 +59,7 @@ function PositionRows({ rows, bn }: { rows: InstitutionalPosition[]; bn: boolean
                     : "text-muted"
               }`}
             >
-              {row.change_type} {row.change_pct == null ? "" : signedPct(row.change_pct)}
+              {changeLabel(row.change_type, bn)} {row.change_pct == null ? "" : signedPct(row.change_pct)}
             </div>
           </div>
         </a>
@@ -92,7 +103,7 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
   ];
 
   return (
-    <section className="bg-surface border border-border rounded-2xl p-4">
+    <section className="bg-surface border border-border rounded-lg p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold">{bn ? "প্রাতিষ্ঠানিক হোল্ডিং" : "Institutional holdings"}</h2>
@@ -108,6 +119,19 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
         >
           SEC ↗
         </a>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="border border-border px-2 py-1 text-muted">
+          {bn
+            ? `${data.history_quarters}/${data.target_history_quarters} প্রান্তিক ইতিহাস`
+            : `${data.history_quarters}/${data.target_history_quarters} quarters loaded`}
+        </span>
+        <span className="border border-border px-2 py-1 text-muted">
+          {bn
+            ? `${data.identifier_count}টি যাচাইকৃত CUSIP`
+            : `${data.identifier_count} verified CUSIP${data.identifier_count === 1 ? "" : "s"}`}
+        </span>
       </div>
 
       <div className="mt-3 border-y border-border py-3">
@@ -152,6 +176,26 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
             </div>
           )}
         </div>
+        <div className="py-2 border-b border-border/60">
+          <div className="text-[10px] text-muted">{bn ? "ম্যানেজার প্রবণতা" : "Manager breadth"}</div>
+          <div className={`text-base font-semibold tnum ${(latest.net_breadth_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+            {signedPct(latest.net_breadth_pct)}
+          </div>
+          <div className="text-[9px] text-muted tnum">
+            {bn
+              ? `${latest.adding_managers} বাড়িয়েছে · ${latest.reducing_managers} কমিয়েছে`
+              : `${latest.adding_managers} adding · ${latest.reducing_managers} reducing`}
+          </div>
+        </div>
+        <div className="py-2 border-b border-border/60">
+          <div className="text-[10px] text-muted">{bn ? "SPY-এর তুলনায় ৩০ সেশন" : "30-session excess vs SPY"}</div>
+          <div className={`text-base font-semibold tnum ${(latest.excess_return_30_sessions_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+            {signedPct(latest.excess_return_30_sessions_pct)}
+          </div>
+          <div className="text-[9px] text-muted tnum">
+            {bn ? "শুধু প্রকাশের পর" : "Post-public only"}
+          </div>
+        </div>
       </div>
 
       <div className="mt-3 text-[11px] text-muted">
@@ -178,6 +222,73 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
       </div>
       <PositionRows rows={rows} bn={bn} />
 
+      {data.horizons.length > 0 && (
+        <div className="mt-5 border-t border-border pt-4">
+          <h3 className="text-xs font-semibold">{bn ? "বহু-প্রান্তিক প্রবণতা" : "Multi-quarter direction"}</h3>
+          <div className="mt-2 divide-y divide-border/60">
+            {data.horizons.map((horizon) => (
+              <div key={horizon.quarters} className="grid grid-cols-[1fr_auto] gap-3 py-2">
+                <div>
+                  <div className="text-[11px] font-medium">
+                    {bn ? `${horizon.quarters} প্রান্তিক` : `${horizon.quarters}-quarter snapshots`}
+                  </div>
+                  <div className="text-[9px] text-muted tnum">
+                    {horizon.from_report_date} → {horizon.to_report_date}
+                  </div>
+                </div>
+                <div className={`text-sm font-semibold tnum ${horizon.reported_share_change_pct >= 0 ? "text-up" : "text-down"}`}>
+                  {signedPct(horizon.reported_share_change_pct)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.manager_histories.length > 0 && (
+        <div className="mt-5 border-t border-border pt-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-xs font-semibold">{bn ? "নির্বাচিত ম্যানেজারের ইতিহাস" : "Selected manager history"}</h3>
+            <span className="text-[9px] text-muted">{bn ? "CIK অনুযায়ী" : "CIK identity"}</span>
+          </div>
+          <div className="mt-2 divide-y divide-border/60">
+            {data.manager_histories.slice(0, 5).map((manager) => (
+              <div key={manager.manager_cik} className="py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[11px] font-semibold">{manager.manager_name}</div>
+                    <div className="text-[9px] text-muted tnum">CIK {manager.manager_cik}</div>
+                  </div>
+                  <div className="shrink-0 text-[11px] font-semibold tnum">{compactUsd(manager.latest_value_usd)}</div>
+                </div>
+                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                  {manager.points.map((point) => (
+                    <a
+                      key={point.report_date}
+                      href={point.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="min-w-[92px] border-l-2 border-border pl-2"
+                    >
+                      <div className="text-[9px] text-muted tnum">{point.report_date}</div>
+                      {point.reported_manager_name !== manager.manager_name && (
+                        <div className="max-w-[90px] truncate text-[8px] text-muted" title={point.reported_manager_name}>
+                          {point.reported_manager_name}
+                        </div>
+                      )}
+                      <div className={`text-[10px] font-semibold ${(point.share_change ?? 0) > 0 ? "text-up" : (point.share_change ?? 0) < 0 ? "text-down" : "text-muted"}`}>
+                        {changeLabel(point.change_type, bn)}
+                      </div>
+                      <div className="text-[9px] tnum">{signedPct(point.change_pct)}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 border-t border-border pt-3 text-[10px] text-muted leading-relaxed">
         <p>
           {bn
@@ -189,6 +300,13 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
             ? "13F সঠিক ট্রেডের তারিখ, এন্ট্রি দাম বা শর্ট পজিশন দেখায় না। অপশন ও অমীমাংসিত CUSIP এখানে বাদ দেওয়া হয়েছে।"
             : data.limitations.join(" ")}
         </p>
+        {data.bounded_manager_history && (
+          <p className="mt-1">
+            {bn
+              ? "ম্যানেজার ইতিহাসে প্রতি প্রান্তিকের গুরুত্বপূর্ণ সংরক্ষিত অবস্থান দেখানো হয়; একই নামের ম্যানেজার একত্র করা হয় না।"
+              : "Manager history uses material retained positions per quarter; managers with similar names are not merged."}
+          </p>
+        )}
       </div>
     </section>
   );

@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
 from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
-from ingestion.sec_13f import UPSERT_BATCH_ROWS
+from ingestion.sec_13f import UPSERT_BATCH_ROWS, _is_refresh_current, _upsert_managers
 from ingestion.sec_13f import _upsert as _upsert_13f
 
 
@@ -73,6 +73,50 @@ def test_sic_mapping_produces_comparable_retail_sectors() -> None:
     assert _sector_from_sic("3571", "Electronic Computers") == "Technology"
     assert _sector_from_sic("6021", "National Commercial Banks") == "Financials"
     assert _sector_from_sic("2834", "Pharmaceutical Preparations") == "Health Care"
+
+
+def test_13f_refresh_state_requires_requested_history_depth() -> None:
+    url = "https://www.sec.gov/files/current.zip"
+    details = {"current_archive_url": url, "history_quarters_loaded": 4}
+
+    assert _is_refresh_current(details, url, 4)
+    assert not _is_refresh_current(details, url, 8)
+    assert not _is_refresh_current(details, "https://www.sec.gov/files/new.zip", 1)
+
+
+def test_legacy_13f_refresh_state_represents_one_loaded_quarter() -> None:
+    url = "https://www.sec.gov/files/current.zip"
+
+    assert _is_refresh_current({"current_archive_url": url}, url, 1)
+    assert not _is_refresh_current({"current_archive_url": url}, url, 2)
+
+
+@pytest.mark.asyncio
+async def test_historical_13f_import_does_not_regress_manager_latest_dates() -> None:
+    class Session:
+        statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+
+    session = Session()
+    await _upsert_managers(
+        session,
+        [
+            {
+                "cik": 1,
+                "name": "Example Manager",
+                "latest_report_date": dt.date(2025, 12, 31),
+                "latest_filing_date": dt.date(2026, 2, 14),
+                "updated_at": dt.datetime(2026, 2, 14, tzinfo=dt.UTC),
+            }
+        ],
+    )
+
+    sql = str(session.statement.compile(dialect=postgresql.dialect()))
+    assert "name = case" in sql.lower()
+    assert "greatest(institutional_managers.latest_report_date" in sql.lower()
+    assert "greatest(institutional_managers.latest_filing_date" in sql.lower()
 
 
 @pytest.mark.asyncio

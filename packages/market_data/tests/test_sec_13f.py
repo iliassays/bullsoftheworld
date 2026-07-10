@@ -62,6 +62,56 @@ def test_strict_issuer_matching_handles_common_etf_legal_designators() -> None:
     )
 
 
+def test_token_signature_matching_handles_real_sec_and_vendor_names() -> None:
+    symbols = [
+        SymbolIdentity(code="BA", name="Boeing Company (The)"),
+        SymbolIdentity(
+            code="BABA",
+            name="Alibaba Group Holding Limited ADS each representing eight Ordinary Shares",
+        ),
+        SymbolIdentity(
+            code="DIA",
+            name="State Street SPDR Dow Jones Industrial Average ETF Trust",
+        ),
+        SymbolIdentity(code="HD", name="Home Depot Inc (The)"),
+        SymbolIdentity(code="IWM", name="iShares Russell 2000 Index Fund"),
+        SymbolIdentity(code="LLY", name="Eli Lilly and Company"),
+        SymbolIdentity(code="MCD", name="McDonald's Corporation"),
+        SymbolIdentity(code="SPY", name="State Street SPDR S&P 500 ETF Trust"),
+        SymbolIdentity(code="TLT", name="iShares 20+ Year Treasury Bond ETF"),
+        SymbolIdentity(code="UNH", name="UnitedHealth Group Incorporated (DE)"),
+        SymbolIdentity(code="XOM", name="ExxonMobil Holdings Corporation"),
+    ]
+    cases = [
+        ("BOEING CO", "COM", "BA"),
+        ("ALIBABA GROUP HLDG LTD", "SPONSORED ADS", "BABA"),
+        ("SPDR DOW JONES INDL AVERAGE ETF TR", "UNIT SER 1", "DIA"),
+        ("HOME DEPOT INC", "COM", "HD"),
+        ("ISHARES TR", "RUSSELL 2000 ETF", "IWM"),
+        ("LILLY ELI & CO", "COM", "LLY"),
+        ("MCDONALDS CORP", "COM", "MCD"),
+        ("SPDR S&P 500 ETF TR", "TR UNIT", "SPY"),
+        ("ISHARES TR", "20+ YR TREAS BD ETF", "TLT"),
+        ("UNITEDHEALTH GROUP INC", "COM", "UNH"),
+        ("EXXON MOBIL CORP", "COM", "XOM"),
+    ]
+
+    for issuer, title, expected_code in cases:
+        match = match_13f_security(issuer, title, symbols)
+        assert match is not None
+        assert match[0] == expected_code
+        assert match[1] >= 0.99
+
+
+def test_token_signature_matching_rejects_ambiguous_share_classes() -> None:
+    symbols = [
+        SymbolIdentity(code="FOOA", name="Foo Holdings Class A Common Stock"),
+        SymbolIdentity(code="FOOC", name="Foo Holdings Class C Common Stock"),
+    ]
+
+    assert match_13f_security("FOO HLDGS", "COM", symbols) is None
+
+
 def _position(
     code: str,
     manager: int,

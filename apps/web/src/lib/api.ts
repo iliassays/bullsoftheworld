@@ -562,13 +562,50 @@ export interface InstitutionalActivity {
     latest_close: number | null;
     return_since_public_pct: number | null;
     return_30_sessions_pct: number | null;
+    return_60_sessions_pct: number | null;
+    benchmark_return_30_sessions_pct: number | null;
+    benchmark_return_60_sessions_pct: number | null;
+    excess_return_30_sessions_pct: number | null;
+    excess_return_60_sessions_pct: number | null;
+    adding_managers: number;
+    reducing_managers: number;
+    net_breadth_pct: number | null;
     source_url: string;
+  }>;
+  horizons: Array<{
+    quarters: number;
+    from_report_date: string;
+    to_report_date: string;
+    reported_share_change_pct: number;
+  }>;
+  manager_histories: Array<{
+    manager_cik: number;
+    manager_name: string;
+    latest_value_usd: number;
+    points: Array<{
+      report_date: string;
+      reported_manager_name: string;
+      shares: number;
+      value_usd: number;
+      share_change: number | null;
+      change_pct: number | null;
+      change_type: "new" | "increased" | "reduced" | "unchanged" | "exited";
+      filing_date: string;
+      url: string;
+    }>;
   }>;
   top_positions: InstitutionalPosition[];
   top_new: InstitutionalPosition[];
   top_increases: InstitutionalPosition[];
   top_reductions: InstitutionalPosition[];
   top_exits: InstitutionalPosition[];
+  history_quarters: number;
+  target_history_quarters: number;
+  history_status: "not_available" | "building_history" | "full_history";
+  identifier_count: number;
+  mapping_confidence: number | null;
+  mapping_methods: string[];
+  bounded_manager_history: boolean;
   disclosure_note: string;
   limitations: string[];
 }
