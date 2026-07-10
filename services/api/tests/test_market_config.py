@@ -45,6 +45,7 @@ async def test_market_config_preserves_dse_defaults() -> None:
     assert config.features["price_alerts"] is True
     assert config.features["intraday_quotes"] is True
     assert config.features["sec_filings"] is False
+    assert config.features["strategy_scanner"] is True
     assert config.social_url == "https://facebook.example/bullsofdhaka"
 
 
@@ -82,9 +83,12 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     assert config.market_cap_money_units[1]["suffix"] == "M"
     assert config.features["dse_categories"] is False
     assert config.features["shareholding_breakdown"] is False
-    assert config.features["sec_filings"] is False
-    assert config.features["curated_screens"] is False
-    assert config.features["learning_quiz"] is False
+    assert config.features["sec_filings"] is True
+    assert config.features["institutional_holdings"] is True
+    assert config.features["curated_screens"] is True
+    assert config.features["company_fundamentals"] is True
+    assert config.features["learning_quiz"] is True
+    assert config.features["strategy_scanner"] is False
     assert config.features["interpreted_analytics"] is True
     assert config.features["price_alerts"] is False
     assert config.features["intraday_quotes"] is False

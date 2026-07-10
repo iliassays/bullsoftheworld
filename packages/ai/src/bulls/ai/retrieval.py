@@ -17,7 +17,16 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.ai.embeddings import embed_document_text, embed_query_text, embedding_model_name
-from bulls.core.models import Announcement, Cashtag, KnowledgeChunk, Post, SignalEvent
+from bulls.core.models import (
+    Announcement,
+    Cashtag,
+    InstitutionalHoldingSummary,
+    KnowledgeChunk,
+    Post,
+    SecFiling,
+    SecFinancialFact,
+    SignalEvent,
+)
 
 Reliability = Literal["official", "market", "system", "crowd"]
 
@@ -80,6 +89,30 @@ async def upsert_source_chunks(session, source: ChunkInput) -> int:
     model = embedding_model_name()
     texts = _chunks(source.text)
     for idx, text in enumerate(texts):
+        content_hash = _content_hash(f"{source.title}\n\n{text}")
+        tenant_scope = (
+            KnowledgeChunk.tenant_id.is_(None)
+            if source.tenant_id is None
+            else KnowledgeChunk.tenant_id == source.tenant_id
+        )
+        code_scope = (
+            KnowledgeChunk.code.is_(None)
+            if source.code is None
+            else KnowledgeChunk.code == source.code
+        )
+        existing_hash = await session.scalar(
+            select(KnowledgeChunk.content_hash).where(
+                tenant_scope,
+                KnowledgeChunk.market == source.market,
+                code_scope,
+                KnowledgeChunk.source_type == source.source_type,
+                KnowledgeChunk.source_id == source.source_id,
+                KnowledgeChunk.chunk_index == idx,
+                KnowledgeChunk.embedding_model == model,
+            )
+        )
+        if existing_hash == content_hash:
+            continue
         embedding = await embed_document_text(f"{source.title}\n\n{text}")
         row = {
             "tenant_id": source.tenant_id,
@@ -93,7 +126,7 @@ async def upsert_source_chunks(session, source: ChunkInput) -> int:
             "text": text,
             "reliability": source.reliability,
             "metadata": source.metadata,
-            "content_hash": _content_hash(text),
+            "content_hash": content_hash,
             "embedding_model": model,
             "embedding": embedding,
         }
@@ -155,6 +188,158 @@ async def index_announcement(session, announcement_id: int) -> int:
             metadata={"category": a.category, "strength": a.strength, "details": a.details},
         ),
     )
+
+
+async def index_sec_filing(session, market: str, code: str, accession_number: str) -> int:
+    filing = await session.get(SecFiling, (market, code, accession_number))
+    if filing is None:
+        return 0
+    title = f"SEC {filing.form}: {filing.category.replace('_', ' ').title()}"
+    text = ". ".join(
+        value
+        for value in (
+            filing.description,
+            f"Filed {filing.filing_date} for report period {filing.report_date}."
+            if filing.report_date
+            else f"Filed {filing.filing_date}.",
+            f"Items: {filing.items}." if filing.items else None,
+        )
+        if value
+    )
+    return await upsert_source_chunks(
+        session,
+        ChunkInput(
+            market=filing.market,
+            code=filing.code,
+            source_type="sec_filing",
+            source_id=filing.accession_number,
+            title=title,
+            text=text,
+            reliability="official",
+            source_date=filing.filing_date,
+            metadata={
+                "form": filing.form,
+                "category": filing.category,
+                "report_date": str(filing.report_date) if filing.report_date else None,
+                "url": filing.filing_url,
+            },
+        ),
+    )
+
+
+async def index_sec_financials(session, market: str, code: str) -> int:
+    facts = list(
+        await session.scalars(
+            select(SecFinancialFact)
+            .where(SecFinancialFact.market == market, SecFinancialFact.code == code)
+            .order_by(SecFinancialFact.period_end.desc(), SecFinancialFact.filed_at.desc())
+        )
+    )
+    by_period: dict[tuple[dt.date, str], list[SecFinancialFact]] = {}
+    for fact in facts:
+        by_period.setdefault((fact.period_end, fact.period_type), []).append(fact)
+    written = 0
+    active_ids: list[str] = []
+    for (period_end, period_type), rows in sorted(by_period.items(), reverse=True)[:12]:
+        source_id = f"{code}:{period_end}:{period_type}"
+        active_ids.append(source_id)
+        latest = max(rows, key=lambda row: row.filed_at)
+        text = ". ".join(
+            f"{row.metric.replace('_', ' ')}: {row.value:,.4g} {row.unit}" for row in rows
+        )
+        written += await upsert_source_chunks(
+            session,
+            ChunkInput(
+                market=market,
+                code=code,
+                source_type="sec_financials",
+                source_id=source_id,
+                title=f"SEC financial facts: {period_type} ending {period_end}",
+                text=text,
+                reliability="official",
+                source_date=latest.filed_at,
+                metadata={
+                    "period_end": str(period_end),
+                    "period_type": period_type,
+                    "url": latest.source_url,
+                },
+            ),
+        )
+    stale_facts = delete(KnowledgeChunk).where(
+        KnowledgeChunk.market == market,
+        KnowledgeChunk.code == code,
+        KnowledgeChunk.source_type == "sec_financials",
+        KnowledgeChunk.embedding_model == embedding_model_name(),
+    )
+    if active_ids:
+        stale_facts = stale_facts.where(KnowledgeChunk.source_id.not_in(active_ids))
+    await session.execute(stale_facts)
+    await session.execute(
+        delete(KnowledgeChunk).where(
+            KnowledgeChunk.market == market,
+            KnowledgeChunk.code == code,
+            KnowledgeChunk.source_type == "sec_filing",
+            KnowledgeChunk.embedding_model == embedding_model_name(),
+            KnowledgeChunk.source_id.not_in(
+                select(SecFiling.accession_number).where(
+                    SecFiling.market == market, SecFiling.code == code
+                )
+            ),
+        )
+    )
+    return written
+
+
+async def index_institutional_summary(session, market: str, code: str, report_date: dt.date) -> int:
+    summary = await session.get(InstitutionalHoldingSummary, (market, code, report_date))
+    if summary is None:
+        return 0
+    change = (
+        f"Comparable shares changed {summary.net_change_pct:+.2f}% quarter over quarter. "
+        if summary.net_change_pct is not None
+        else "A comparable quarter-over-quarter percentage was unavailable. "
+    )
+    text = (
+        f"{summary.managers_count} reporting managers held {summary.total_shares:,} shares "
+        f"worth ${summary.total_value_usd:,.0f}. {change}"
+        f"New positions {summary.new_positions}; increased {summary.increased_positions}; "
+        f"reduced {summary.reduced_positions}; exited {summary.exited_positions}. "
+        "Form 13F reports quarter-end long holdings after a filing delay and does not disclose "
+        "actual trade dates or prices."
+    )
+    written = await upsert_source_chunks(
+        session,
+        ChunkInput(
+            market=market,
+            code=code,
+            source_type="sec_13f",
+            source_id=f"{code}:{report_date}",
+            title=f"SEC 13F holdings as of {report_date}",
+            text=text,
+            reliability="official",
+            source_date=summary.latest_filing_date,
+            metadata={"report_date": str(report_date), "url": summary.source_url},
+        ),
+    )
+    report_dates = list(
+        await session.scalars(
+            select(InstitutionalHoldingSummary.report_date).where(
+                InstitutionalHoldingSummary.market == market,
+                InstitutionalHoldingSummary.code == code,
+            )
+        )
+    )
+    active_ids = [f"{code}:{date}" for date in report_dates]
+    stale = delete(KnowledgeChunk).where(
+        KnowledgeChunk.market == market,
+        KnowledgeChunk.code == code,
+        KnowledgeChunk.source_type == "sec_13f",
+        KnowledgeChunk.embedding_model == embedding_model_name(),
+    )
+    if active_ids:
+        stale = stale.where(KnowledgeChunk.source_id.not_in(active_ids))
+    await session.execute(stale)
+    return written
 
 
 async def index_post(session, post_id: int) -> int:

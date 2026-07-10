@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     ai_queue_name: str = "arq:ai"
     dse_ingestion_queue_name: str = "arq:ingestion:dse"
     us_ingestion_queue_name: str = "arq:ingestion:us"
+    sec_ingestion_queue_name: str = "arq:ingestion:sec"
     us_eod_min_coverage: float = Field(default=0.90, gt=0, le=1)
+    sec_contact_email: str = "hello@bullsofwallst.com"
 
     # LLM-only features are opt-in. Retrieval embeddings remain local and free when this is disabled.
     ai_provider: Literal["disabled", "ollama", "claude"] = "disabled"

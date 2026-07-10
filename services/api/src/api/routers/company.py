@@ -7,8 +7,10 @@ rest from the weekly company scrape.
 
 from __future__ import annotations
 
+import itertools
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature
@@ -16,6 +18,7 @@ from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
     DividendRecord,
+    SecFinancialFact,
     ShareholdingSnapshot,
     Symbol,
     TickerAnalytics,
@@ -74,7 +77,34 @@ class EarningsRow(BaseModel):
 class DividendRow(BaseModel):
     year: int
     cash_pct: float | None = None
+    cash_per_share: float | None = None
     bonus_pct: float | None = None
+
+
+class QuarterlyFinancialRow(BaseModel):
+    period_end: str
+    revenue_mn: float | None = None
+    net_income_mn: float | None = None
+    eps: float | None = None
+    source_url: str | None = None
+
+
+class FinancialHealth(BaseModel):
+    as_of: str | None = None
+    revenue_ttm_mn: float | None = None
+    net_income_ttm_mn: float | None = None
+    profit_margin_pct: float | None = None
+    operating_cash_flow_ttm_mn: float | None = None
+    capital_expenditure_ttm_mn: float | None = None
+    free_cash_flow_ttm_mn: float | None = None
+    assets_mn: float | None = None
+    liabilities_mn: float | None = None
+    equity_mn: float | None = None
+    cash_mn: float | None = None
+    debt_mn: float | None = None
+    current_ratio: float | None = None
+    debt_to_equity: float | None = None
+    source_url: str | None = None
 
 
 class CompanyResponse(BaseModel):
@@ -83,6 +113,130 @@ class CompanyResponse(BaseModel):
     ownership: Ownership
     earnings: list[EarningsRow]
     dividends: list[DividendRow]
+    quarters: list[QuarterlyFinancialRow] = Field(default_factory=list)
+    financial_health: FinancialHealth = Field(default_factory=FinancialHealth)
+
+
+def _facts_by_metric(rows: list[SecFinancialFact], metric: str, period_type: str | None = None):
+    return [
+        row
+        for row in rows
+        if row.metric == metric and (period_type is None or row.period_type == period_type)
+    ]
+
+
+def _latest_fact(
+    rows: list[SecFinancialFact], metric: str, period_type: str | None = None
+) -> SecFinancialFact | None:
+    candidates = _facts_by_metric(rows, metric, period_type)
+    return max(candidates, key=lambda row: (row.period_end, row.filed_at)) if candidates else None
+
+
+def _ttm(rows: list[SecFinancialFact], metric: str) -> tuple[float | None, str | None]:
+    quarters = sorted(
+        _facts_by_metric(rows, metric, "quarter"),
+        key=lambda row: (row.period_end, row.filed_at),
+        reverse=True,
+    )
+    latest_four = quarters[:4]
+    if len(latest_four) == 4 and all(
+        60 <= (newer.period_end - older.period_end).days <= 130
+        for newer, older in itertools.pairwise(latest_four)
+    ):
+        return sum(row.value for row in latest_four), latest_four[0].source_url
+    annual = _latest_fact(rows, metric, "annual")
+    if annual is None:
+        return None, None
+    newer = [row for row in quarters if row.period_end > annual.period_end]
+    if not newer:
+        return annual.value, annual.source_url
+    replacements: list[tuple[SecFinancialFact, SecFinancialFact]] = []
+    for current in newer:
+        prior = next(
+            (
+                candidate
+                for candidate in quarters
+                if 345 <= (current.period_end - candidate.period_end).days <= 385
+            ),
+            None,
+        )
+        if prior is None:
+            return annual.value, annual.source_url
+        replacements.append((current, prior))
+    value = annual.value + sum(current.value - prior.value for current, prior in replacements)
+    return value, newer[0].source_url
+
+
+def _financial_health(rows: list[SecFinancialFact]) -> FinancialHealth:
+    revenue, revenue_url = _ttm(rows, "revenue")
+    income, income_url = _ttm(rows, "net_income")
+    operating_cf, cashflow_url = _ttm(rows, "operating_cash_flow")
+    capex, capex_url = _ttm(rows, "capital_expenditure")
+    assets = _latest_fact(rows, "assets", "instant")
+    liabilities = _latest_fact(rows, "liabilities", "instant")
+    equity = _latest_fact(rows, "equity", "instant")
+    cash = _latest_fact(rows, "cash", "instant")
+    current_assets = _latest_fact(rows, "current_assets", "instant")
+    current_liabilities = _latest_fact(rows, "current_liabilities", "instant")
+    debt_current = _latest_fact(rows, "debt_current", "instant")
+    debt_noncurrent = _latest_fact(rows, "debt_noncurrent", "instant")
+    debt_total = _latest_fact(rows, "debt_total", "instant")
+    debt = (
+        debt_total.value
+        if debt_total is not None
+        else sum(fact.value for fact in (debt_current, debt_noncurrent) if fact is not None)
+    )
+    latest_instant = max(
+        (fact for fact in (assets, liabilities, equity, cash) if fact is not None),
+        key=lambda fact: fact.period_end,
+        default=None,
+    )
+    return FinancialHealth(
+        as_of=str(latest_instant.period_end) if latest_instant else None,
+        revenue_ttm_mn=revenue / 1e6 if revenue is not None else None,
+        net_income_ttm_mn=income / 1e6 if income is not None else None,
+        profit_margin_pct=(income / revenue * 100 if income is not None and revenue else None),
+        operating_cash_flow_ttm_mn=operating_cf / 1e6 if operating_cf is not None else None,
+        capital_expenditure_ttm_mn=capex / 1e6 if capex is not None else None,
+        free_cash_flow_ttm_mn=(
+            (operating_cf - capex) / 1e6 if operating_cf is not None and capex is not None else None
+        ),
+        assets_mn=assets.value / 1e6 if assets else None,
+        liabilities_mn=liabilities.value / 1e6 if liabilities else None,
+        equity_mn=equity.value / 1e6 if equity else None,
+        cash_mn=cash.value / 1e6 if cash else None,
+        debt_mn=debt / 1e6 if debt_total or debt_current or debt_noncurrent else None,
+        current_ratio=(
+            current_assets.value / current_liabilities.value
+            if current_assets and current_liabilities and current_liabilities.value
+            else None
+        ),
+        debt_to_equity=(debt / equity.value if equity and equity.value else None),
+        source_url=revenue_url or income_url or cashflow_url or capex_url,
+    )
+
+
+def _quarter_rows(rows: list[SecFinancialFact]) -> list[QuarterlyFinancialRow]:
+    by_period: dict[str, dict[str, SecFinancialFact]] = {}
+    for metric in ("revenue", "net_income", "eps_diluted", "eps_basic"):
+        for fact in _facts_by_metric(rows, metric, "quarter"):
+            by_period.setdefault(str(fact.period_end), {}).setdefault(metric, fact)
+    out = []
+    for period, metrics in sorted(by_period.items(), reverse=True)[:8]:
+        revenue = metrics.get("revenue")
+        income = metrics.get("net_income")
+        eps = metrics.get("eps_diluted") or metrics.get("eps_basic")
+        source = revenue or income or eps
+        out.append(
+            QuarterlyFinancialRow(
+                period_end=period,
+                revenue_mn=revenue.value / 1e6 if revenue else None,
+                net_income_mn=income.value / 1e6 if income else None,
+                eps=eps.value if eps else None,
+                source_url=source.source_url if source else None,
+            )
+        )
+    return out
 
 
 @router.get("/symbols/{code}/company")
@@ -125,6 +279,13 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
             select(DividendRecord)
             .where(DividendRecord.market == tenant.market, DividendRecord.code == code)
             .order_by(DividendRecord.year.desc())
+        )
+    )
+    sec_facts = list(
+        await session.scalars(
+            select(SecFinancialFact)
+            .where(SecFinancialFact.market == tenant.market, SecFinancialFact.code == code)
+            .order_by(SecFinancialFact.period_end.desc(), SecFinancialFact.filed_at.desc())
         )
     )
 
@@ -172,6 +333,14 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
             for e in earnings
         ],
         dividends=[
-            DividendRow(year=d.year, cash_pct=d.cash_pct, bonus_pct=d.bonus_pct) for d in dividends
+            DividendRow(
+                year=d.year,
+                cash_pct=d.cash_pct,
+                cash_per_share=d.cash_per_share,
+                bonus_pct=d.bonus_pct,
+            )
+            for d in dividends
         ],
+        quarters=_quarter_rows(sec_facts),
+        financial_health=_financial_health(sec_facts),
     )

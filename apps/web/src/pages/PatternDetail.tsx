@@ -9,6 +9,7 @@ import { api, type PatternType, type Screen } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { getLesson } from "../lib/lessons";
 import { PATTERN_LABEL, PATTERN_LESSON_ID, PATTERN_ORDER } from "../lib/patterns";
+import { useTenantConfig } from "../lib/tenant";
 
 const VALID_TYPES = new Set<string>(PATTERN_ORDER);
 
@@ -16,6 +17,7 @@ const VALID_TYPES = new Set<string>(PATTERN_ORDER);
 // happens" with a live, checkable answer, rather than leaving the claim untested in the abstract.
 export function PatternDetail() {
   const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const { type = "" } = useParams();
   const [screen, setScreen] = useState<Screen | null>(null);
 
@@ -25,14 +27,14 @@ export function PatternDetail() {
     noindex: !validType,
     title: plabel
       ? {
-          bn: `${plabel.bn} — DSE চার্ট প্যাটার্ন | Bulls of Dhaka`,
-          en: `${plabel.en} — DSE chart pattern | Bulls of Dhaka`,
+          bn: `${plabel.bn} — ${config.exchange_code} চার্ট প্যাটার্ন | ${config.brand_name}`,
+          en: `${plabel.en} — ${config.exchange_code} chart pattern | ${config.brand_name}`,
         }
       : undefined,
     description: plabel
       ? {
-          bn: `${plabel.bn} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন DSE শেয়ার এটি দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।`,
-          en: `What a ${plabel.en.toLowerCase()} is, what usually happens next, and which DSE stocks show it now. Textbook technical analysis, not advice.`,
+          bn: `${plabel.bn} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন ${config.exchange_code} শেয়ার এটি দেখাচ্ছে। প্রথাগত বিশ্লেষণ, পরামর্শ নয়।`,
+          en: `What a ${plabel.en.toLowerCase()} is, what usually happens next, and which ${config.exchange_code} stocks show it now. Textbook technical analysis, not advice.`,
         }
       : undefined,
   });
@@ -57,7 +59,7 @@ export function PatternDetail() {
     );
   }
   const patternType = type as PatternType;
-  const lesson = getLesson(PATTERN_LESSON_ID[patternType], lang);
+  const lesson = getLesson(PATTERN_LESSON_ID[patternType], lang, config.market);
   const rows: { label: string; body: string }[] = lesson
     ? [
         { label: t("learn.what"), body: lesson.what },

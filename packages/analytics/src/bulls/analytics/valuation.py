@@ -40,6 +40,7 @@ def compute_valuation(
     eps: float | None = None,
     nav_per_share: float | None = None,
     cash_dividend_pct: float | None = None,
+    cash_dividend_per_share: float | None = None,
     face_value: float | None = None,
 ) -> ValuationResult:
     """Valuation for one symbol. `*_ref` are scrape-time values used only for the float ratio."""
@@ -64,9 +65,11 @@ def compute_valuation(
     )
 
     dividend_yield = None
-    if cash_dividend_pct is not None and face_value:
-        cash_taka = cash_dividend_pct / 100 * face_value  # dividend % is of face value, not price
-        y = cash_taka / last_close * 100
+    cash_amount = cash_dividend_per_share
+    if cash_amount is None and cash_dividend_pct is not None and face_value:
+        cash_amount = cash_dividend_pct / 100 * face_value
+    if cash_amount is not None:
+        y = cash_amount / last_close * 100
         dividend_yield = y if y <= _MAX_SANE_YIELD else None
 
     return ValuationResult(

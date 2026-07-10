@@ -7,6 +7,7 @@ import {
   type Bar,
   type Buzz,
   type Company,
+  type InstitutionalActivity,
   type NewsItem,
   type Post,
   type SymbolDetail,
@@ -21,10 +22,12 @@ import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
 import {
   EarningsPanel,
+  FinancialHealthPanel,
   FundamentalsPanel,
   NewsPanel,
   OwnershipPanel,
 } from "../components/CompanyPanels";
+import { InstitutionalHoldingsPanel } from "../components/InstitutionalHoldingsPanel";
 import { BeforeYouTrade } from "../components/BeforeYouTrade";
 import { useSeo, breadcrumbJsonLd } from "../components/Seo";
 import { KeyLevels } from "../components/KeyLevels";
@@ -114,6 +117,7 @@ export function SymbolPage() {
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
+  const [institutional, setInstitutional] = useState<InstitutionalActivity | null>(null);
   const [news, setNews] = useState<NewsItem[] | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [watched, setWatched] = useState(false);
@@ -128,6 +132,7 @@ export function SymbolPage() {
     setTopPost(null);
     setBuzz(null);
     setCompany(null);
+    setInstitutional(null);
     setNews(null);
     setBars([]);
     api
@@ -160,12 +165,24 @@ export function SymbolPage() {
         .then(setCompany)
         .catch(() => setCompany(null));
     }
+    if (config.features.institutional_holdings) {
+      api
+        .institutionalHoldings(sym)
+        .then(setInstitutional)
+        .catch(() => setInstitutional(null));
+    }
     api.recordView(sym).catch(() => {}); // internal analytics; fire-and-forget
     if (user)
       api
         .watchlist()
         .then((w) => setWatched(w.some((i) => i.symbol.code === sym)));
-  }, [sym, user, config.features.company_fundamentals, config.features.official_disclosures]);
+  }, [
+    sym,
+    user,
+    config.features.company_fundamentals,
+    config.features.institutional_holdings,
+    config.features.official_disclosures,
+  ]);
 
   const toggleWatch = async () => {
     if (watched) await api.watchRemove(sym);
@@ -217,7 +234,9 @@ export function SymbolPage() {
   };
   const tabs = TABS.filter(
     (candidate) =>
-      (candidate.id !== "ownership" || config.features.shareholding_breakdown) &&
+      (candidate.id !== "ownership" ||
+        config.features.shareholding_breakdown ||
+        config.features.institutional_holdings) &&
       (candidate.id !== "lens" || config.features.interpreted_analytics) &&
       (candidate.id !== "financials" || config.features.company_fundamentals) &&
       (candidate.id !== "news" || config.features.official_disclosures),
@@ -442,6 +461,7 @@ export function SymbolPage() {
         (company ? (
           <>
             <FundamentalsPanel f={company.fundamentals} earnings={company.earnings} />
+            <FinancialHealthPanel company={company} />
             <EarningsPanel
               earnings={company.earnings}
               dividends={company.dividends}
@@ -452,7 +472,13 @@ export function SymbolPage() {
           <Spinner />
         ))}
       {tab === "ownership" &&
-        (company ? <OwnershipPanel o={company.ownership} /> : <Spinner />)}
+        (config.features.institutional_holdings ? (
+          institutional ? <InstitutionalHoldingsPanel data={institutional} /> : <Spinner />
+        ) : company ? (
+          <OwnershipPanel o={company.ownership} />
+        ) : (
+          <Spinner />
+        ))}
     </div>
   );
 }

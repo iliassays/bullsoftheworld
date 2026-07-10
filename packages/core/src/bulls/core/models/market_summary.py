@@ -23,6 +23,9 @@ class MarketSummary(Base):
     dsex_change: Mapped[float | None] = mapped_column(Float)
     ds30: Mapped[float | None] = mapped_column(Float)
     ds30_change: Mapped[float | None] = mapped_column(Float)
+    benchmark_code: Mapped[str | None] = mapped_column(String(16))
+    benchmark_close: Mapped[float | None] = mapped_column(Float)
+    benchmark_change: Mapped[float | None] = mapped_column(Float)
     total_trade: Mapped[int | None] = mapped_column(Integer)
     total_value_mn: Mapped[float | None] = mapped_column(Float)
     total_volume: Mapped[int | None] = mapped_column(

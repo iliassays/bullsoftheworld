@@ -22,6 +22,7 @@ flowchart LR
   API --> RAG["Market-shared official evidence plus tenant-private community evidence"]
   DSE["DSE worker queue"] --> Market
   US["US worker queue"] --> Market
+  SEC["SEC regulatory queue"] --> Market
   AI["AI worker queue"] --> RAG
 ```
 
@@ -38,7 +39,7 @@ flowchart LR
   moderation are tenant-scoped.
 - Official exchange evidence may be shared inside one market; community RAG chunks may not cross a
   tenant boundary.
-- AI, DSE ingestion, and US ingestion use separate arq queues.
+- AI, DSE ingestion, US EOD ingestion, and SEC regulatory ingestion use separate arq queues.
 - Market capabilities are explicit. A tenant does not render DSE-only screens merely because a
   route exists in the shared bundle. API endpoints enforce the same capability contract, and
   tenant sitemaps advertise only enabled public route families.
@@ -87,8 +88,8 @@ These cannot be solved by application code and must stay closed until an owner r
   and redistribution on the public domains.
 - An official, annually refreshed exchange calendar. The current US worker intentionally refuses to
   run outside the verified 2026 calendar instead of guessing holidays or early closes.
-- SEC filing/fundamental ingestion and reconciliation before enabling `sec_filings`, company
-  fundamentals, official-disclosure tabs, or US valuation screens.
+- Production SEC filing/fundamental/13F coverage reconciliation before advertising those features
+  as complete. Missing or unresolved issuer evidence must remain visibly unavailable, never guessed.
 - US-specific quantitative validation for every public screen, threshold, claim, and explanatory
   sentence. DSE backtests and Taka liquidity cutoffs are not transferable evidence.
 - Legal review for publisher versus adviser positioning, disclaimers, market-data attribution,

@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 class MarketFeatures:
     intraday_quotes: bool = False
     curated_screens: bool = False
+    strategy_scanner: bool = False
     official_disclosures: bool = False
     company_fundamentals: bool = False
     automated_desks: bool = False
@@ -28,6 +29,7 @@ class MarketFeatures:
     sponsor_director_disclosures: bool = False
     block_trades: bool = False
     sec_filings: bool = False
+    institutional_holdings: bool = False
     extended_hours: bool = False
 
 
@@ -148,6 +150,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         features=MarketFeatures(
             intraday_quotes=True,
             curated_screens=True,
+            strategy_scanner=True,
             official_disclosures=True,
             company_fundamentals=True,
             automated_desks=True,
@@ -191,9 +194,15 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
             MoneyUnit(min_value_mn=1000, divisor_mn=1000, suffix="B", decimals=1),
             MoneyUnit(min_value_mn=0, divisor_mn=1, suffix="M", decimals=0),
         ),
-        # Technical interpretation is computed from adjusted EOD bars and does not depend on
-        # DSE-only fundamentals, ownership, disclosures, or intraday quote infrastructure.
-        features=MarketFeatures(interpreted_analytics=True),
+        features=MarketFeatures(
+            curated_screens=True,
+            official_disclosures=True,
+            company_fundamentals=True,
+            learning_quiz=True,
+            interpreted_analytics=True,
+            sec_filings=True,
+            institutional_holdings=True,
+        ),
     ),
 }
 

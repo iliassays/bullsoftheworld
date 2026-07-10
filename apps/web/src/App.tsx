@@ -69,7 +69,7 @@ export function App() {
           <Route path="markets/:key" element={<CapabilityRoute feature="curated_screens"><ScreenExplore /></CapabilityRoute>} />
           <Route path="learn/patterns" element={<CapabilityRoute feature="curated_screens"><PatternLibrary /></CapabilityRoute>} />
           <Route path="learn/patterns/:type" element={<CapabilityRoute feature="curated_screens"><PatternDetail /></CapabilityRoute>} />
-          <Route path="ideas" element={<CapabilityRoute feature="curated_screens"><Scanner /></CapabilityRoute>} />
+          <Route path="ideas" element={<CapabilityRoute feature="strategy_scanner"><Scanner /></CapabilityRoute>} />
           <Route path="portfolio" element={<Portfolio />} />
           <Route path="alerts" element={<Alerts />} />
           {/* Redesign 2026-07: Bulls tab merged into Home (desks filter chip); Scanner renamed Ideas. */}

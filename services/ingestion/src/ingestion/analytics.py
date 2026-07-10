@@ -10,11 +10,13 @@ One-shot (cron-friendly / backfill now):
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
+import statistics
 import sys
 from collections import defaultdict
 from types import SimpleNamespace
 
-from sqlalchemy import delete, exists, func, select
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics import adjust_bars, compute, compute_valuation, detect_patterns
@@ -80,7 +82,9 @@ _EXTRA_FIELDS = ("pe_vs_sector", "eps_growth_yoy", *_OWNERSHIP_FIELDS)
 
 
 def _valuation_row(
-    last_close: float, profile: CompanyProfile | None, cash_dividend_pct: float | None
+    last_close: float,
+    profile: CompanyProfile | None,
+    cash_dividend: tuple[float | None, float | None] | None,
 ) -> dict[str, float | None]:
     """Derive the valuation fields from today's close + a symbol's fundamentals (None → all-None).
 
@@ -89,6 +93,7 @@ def _valuation_row(
     """
     if profile is None:
         return dict.fromkeys(_VALUATION_FIELDS)
+    cash_pct, cash_per_share = cash_dividend or (None, None)
     v = compute_valuation(
         last_close,
         outstanding_shares=profile.outstanding_shares,
@@ -96,13 +101,16 @@ def _valuation_row(
         free_float_mcap_mn_ref=profile.free_float_mcap_mn,
         eps=profile.eps,
         nav_per_share=profile.nav_per_share,
-        cash_dividend_pct=cash_dividend_pct,
+        cash_dividend_pct=cash_pct,
+        cash_dividend_per_share=cash_per_share,
         face_value=profile.face_value,
     )
     return {f: getattr(v, f) for f in _VALUATION_FIELDS}
 
 
-async def _load_latest_cash_dividend(session, market: str) -> dict[str, float]:
+async def _load_latest_cash_dividend(
+    session, market: str
+) -> dict[str, tuple[float | None, float | None]]:
     """Most recent declared year's cash dividend (% of face value), per code.
 
     Only the cash paid in a company's latest dividend year counts: if that latest year was
@@ -117,14 +125,14 @@ async def _load_latest_cash_dividend(session, market: str) -> dict[str, float]:
             .order_by(DividendRecord.code, DividendRecord.year.desc())
         )
     )
-    out: dict[str, float] = {}
+    out: dict[str, tuple[float | None, float | None]] = {}
     seen: set[str] = set()
     for r in rows:
         if r.code in seen:  # first row per code is its latest year
             continue
         seen.add(r.code)
-        if r.cash_pct and r.cash_pct > 0:
-            out[r.code] = r.cash_pct
+        if (r.cash_pct and r.cash_pct > 0) or (r.cash_per_share and r.cash_per_share > 0):
+            out[r.code] = (r.cash_pct, r.cash_per_share)
     return out
 
 
@@ -258,7 +266,9 @@ async def _persist_symbol_analytics(
     profile = profiles.get(code)
     row = {"market": market, "code": code, "as_of_date": result.as_of_date}
     row.update({field: getattr(result, field) for field in _FIELDS})
-    row.update(_valuation_row(result.last_close, profile, cash_dividends.get(code)))
+    # Indicators use split/distribution-adjusted bars; valuation must use the listed security's
+    # unadjusted current close against its current per-share fundamentals.
+    row.update(_valuation_row(bars[-1].close, profile, cash_dividends.get(code)))
     row.update(
         _extra_row(
             code,
@@ -303,9 +313,7 @@ async def _persist_symbol_analytics(
         if col not in ("market", "code")
     }
     await session.execute(
-        pattern_stmt.on_conflict_do_update(
-            index_elements=["market", "code"], set_=pattern_updates
-        )
+        pattern_stmt.on_conflict_do_update(index_elements=["market", "code"], set_=pattern_updates)
     )
     return 1, 1
 
@@ -366,6 +374,66 @@ async def compute_all(market: str) -> dict[str, int]:
                 )
                 computed += done
                 patterns_found += patterns
+            await session.commit()
+
+    if market.upper() != "DSE":
+        async with sm() as session:
+            rows = (
+                await session.execute(
+                    select(CompanyProfile.sector, TickerAnalytics.code, TickerAnalytics.pe_ratio)
+                    .join(
+                        TickerAnalytics,
+                        (TickerAnalytics.market == CompanyProfile.market)
+                        & (TickerAnalytics.code == CompanyProfile.code),
+                    )
+                    .where(
+                        CompanyProfile.market == market,
+                        CompanyProfile.sector.isnot(None),
+                        TickerAnalytics.pe_ratio > 0,
+                    )
+                )
+            ).all()
+            by_sector: dict[str, list[float]] = defaultdict(list)
+            for sector, _, pe in rows:
+                by_sector[sector].append(float(pe))
+            medians = {
+                sector: statistics.median(values)
+                for sector, values in by_sector.items()
+                if len(values) >= 3
+            }
+            now = dt.datetime.now(dt.UTC)
+            if medians:
+                stmt = pg_insert(SectorPE).values(
+                    [
+                        {
+                            "market": market,
+                            "sector": sector,
+                            "median_pe": median,
+                            "fetched_at": now,
+                        }
+                        for sector, median in medians.items()
+                    ]
+                )
+                await session.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=["market", "sector"],
+                        set_={
+                            "median_pe": stmt.excluded.median_pe,
+                            "fetched_at": stmt.excluded.fetched_at,
+                        },
+                    )
+                )
+                for sector, code, pe in rows:
+                    median = medians.get(sector)
+                    if median:
+                        await session.execute(
+                            update(TickerAnalytics)
+                            .where(
+                                TickerAnalytics.market == market,
+                                TickerAnalytics.code == code,
+                            )
+                            .values(pe_vs_sector=round(float(pe) / median, 2))
+                        )
             await session.commit()
 
     return {"symbols": len(codes), "computed": computed, "patterns": patterns_found}

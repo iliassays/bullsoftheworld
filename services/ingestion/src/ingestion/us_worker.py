@@ -35,6 +35,7 @@ from ingestion.buzz import snapshot_all
 from ingestion.history import US_DAILY_LOOKBACK_DAYS, collect
 from ingestion.portfolio_snapshot import run as snapshot_portfolios
 from ingestion.security_master import collect as refresh_security_master
+from ingestion.us_eod_snapshot import collect as publish_us_eod
 
 log = logging.getLogger(__name__)
 MARKET = "US"
@@ -52,11 +53,14 @@ def most_recent_due_session(now: dt.datetime) -> dt.date:
     local = to_market_tz(now, market=MARKET)
     candidate = local.date()
     if is_trading_day(candidate, market=MARKET):
-        due = dt.datetime.combine(
-            candidate,
-            market_close_on(candidate, MARKET),
-            tzinfo=market_timezone(MARKET),
-        ) + EOD_PUBLICATION_DELAY
+        due = (
+            dt.datetime.combine(
+                candidate,
+                market_close_on(candidate, MARKET),
+                tzinfo=market_timezone(MARKET),
+            )
+            + EOD_PUBLICATION_DELAY
+        )
         if local >= due:
             return candidate
     candidate -= dt.timedelta(days=1)
@@ -124,6 +128,7 @@ async def run_us_eod_chain(ctx) -> str:
             f"US EOD coverage below gate for {session_date}: {covered}/{ready}, required {required}"
         )
 
+    eod_snapshot = await publish_us_eod()
     analytics = await compute_all(MARKET)
     portfolios = await snapshot_portfolios(MARKET)
     buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
@@ -139,7 +144,8 @@ async def run_us_eod_chain(ctx) -> str:
     )
     return (
         f"session={session_date} coverage={covered}/{ready} bars={bars['bars_upserted']} "
-        f"analytics={analytics['computed']} portfolios={portfolios} buzz={buzz}"
+        f"eod_snapshot={eod_snapshot} analytics={analytics['computed']} "
+        f"portfolios={portfolios} buzz={buzz}"
     )
 
 

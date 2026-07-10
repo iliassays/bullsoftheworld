@@ -51,8 +51,12 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert us.benchmark_label == "S&P 500"
     assert not us.features.dse_categories
     assert not us.features.shareholding_breakdown
-    assert not us.features.sec_filings
-    assert not us.features.curated_screens
+    assert us.features.sec_filings
+    assert us.features.institutional_holdings
+    assert us.features.curated_screens
+    assert us.features.company_fundamentals
+    assert us.features.learning_quiz
+    assert not us.features.strategy_scanner
     assert us.features.interpreted_analytics
     assert not us.features.price_alerts
     assert format_price(123.4, "US") == "$123.40"

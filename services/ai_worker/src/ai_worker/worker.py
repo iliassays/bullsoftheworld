@@ -8,12 +8,20 @@ opt-in and no-op when generation is disabled. Run with:
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import ClassVar
 
 import redis.asyncio as aioredis
 from arq.connections import RedisSettings
 
-from bulls.ai.retrieval import index_announcement, index_post, index_signal_event
+from bulls.ai.retrieval import (
+    index_announcement,
+    index_institutional_summary,
+    index_post,
+    index_sec_filing,
+    index_sec_financials,
+    index_signal_event,
+)
 from bulls.ai.tasks.moderation import screen_post
 from bulls.ai.tasks.sentiment import classify_sentiment
 from bulls.core.config import get_settings
@@ -128,6 +136,32 @@ async def embed_signal_event(ctx, signal_event_id: int) -> str:
     return f"chunks:{n}"
 
 
+async def embed_sec_filing(ctx, market: str, code: str, accession_number: str) -> str:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        n = await index_sec_filing(session, market, code, accession_number)
+        await session.commit()
+    return f"chunks:{n}"
+
+
+async def embed_sec_financials(ctx, market: str, code: str) -> str:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        n = await index_sec_financials(session, market, code)
+        await session.commit()
+    return f"chunks:{n}"
+
+
+async def embed_institutional_summary(ctx, market: str, code: str, report_date: str) -> str:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        n = await index_institutional_summary(
+            session, market, code, dt.date.fromisoformat(report_date)
+        )
+        await session.commit()
+    return f"chunks:{n}"
+
+
 async def startup(ctx) -> None:
     ctx["redis_pub"] = aioredis.from_url(get_settings().redis_url)
 
@@ -145,6 +179,9 @@ class WorkerSettings:
         embed_announcement,
         embed_post,
         embed_signal_event,
+        embed_sec_filing,
+        embed_sec_financials,
+        embed_institutional_summary,
     ]
     on_startup: ClassVar = startup
     on_shutdown: ClassVar = shutdown

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "../lib/nav";
 import { api, type EarningsEvent } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 import { CompanyLogo } from "./CompanyLogo";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -25,31 +26,50 @@ const GRID = 9; // 3×3 by default; "+N more" expands the rest
 // scope="week" (Markets: the full trading week). Hidden entirely when nothing is scheduled.
 export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
   const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const bn = lang === "bn";
   const [events, setEvents] = useState<EarningsEvent[] | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  // All dates in DHAKA time (UTC+6, no DST) — plain toISOString() would show yesterday
-  // to anyone browsing before 6am Dhaka.
-  const dhakaNow = new Date(Date.now() + 6 * 3600_000);
-  const dhakaToday = dhakaNow.toISOString().slice(0, 10);
-  // The DSE week runs Sun–Thu. On Fri/Sat, show the coming week; otherwise the current one.
-  const dow = dhakaNow.getUTCDay(); // 0=Sun … 6=Sat
-  const toSunday = dow === 5 ? 2 : dow === 6 ? 1 : -dow;
-  const weekStart = new Date(dhakaNow.getTime() + toSunday * 86_400_000);
+  const todayParts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: config.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(new Date())
+      .map((part) => [part.type, part.value]),
+  );
+  const marketToday = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+  const marketDate = new Date(`${marketToday}T00:00:00Z`);
+  const dow = marketDate.getUTCDay();
+  const toWeekStart =
+    config.market === "DSE"
+      ? dow === 5
+        ? 2
+        : dow === 6
+          ? 1
+          : -dow
+      : dow === 6
+        ? 2
+        : dow === 0
+          ? 1
+          : 1 - dow;
+  const weekStart = new Date(marketDate.getTime() + toWeekStart * 86_400_000);
   const weekDates = Array.from({ length: 5 }, (_, i) =>
     new Date(weekStart.getTime() + i * 86_400_000).toISOString().slice(0, 10),
   );
 
   useEffect(() => {
     let alive = true;
-    const back = scope === "week" ? Math.max(0, -toSunday) : 0;
+    const back = scope === "week" ? Math.max(0, -toWeekStart) : 0;
     api
       .earningsCalendar(scope === "today" ? 1 : 7, back)
       .then((e) => {
         if (!alive) return;
         setEvents(
-          scope === "today" ? e.filter((ev) => ev.meeting_date === dhakaToday) : e,
+          scope === "today" ? e.filter((ev) => ev.meeting_date === marketToday) : e,
         );
       })
       .catch(() => alive && setEvents([]));
@@ -83,7 +103,7 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
           {weekDates.map((iso) => {
             const { day, weekday } = fmt(iso, bn);
             const items = events.filter((e) => e.meeting_date === iso);
-            const past = iso < dhakaToday;
+            const past = iso < marketToday;
             return (
               <div key={iso} className={`px-1 ${past ? "opacity-50" : ""}`}>
                 <div className="text-center text-[9px] font-bold uppercase tracking-[0.1em] text-accent leading-tight">
@@ -99,7 +119,7 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
                     >
                       <CompanyLogo code={e.code} size={30} />
                       <span className="w-full truncate text-center text-[8px] font-bold leading-tight">
-                        {e.code}
+                        {e.status === "estimated" ? "~" : ""}{e.code}
                       </span>
                     </Link>
                   ))}
@@ -108,7 +128,13 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
             );
           })}
         </div>
-        <p className="text-[10px] text-muted mt-2 text-center">{t("home.earningsWeekNote")}</p>
+        <p className="text-[10px] text-muted mt-2 text-center">
+          {config.features.sec_filings
+            ? bn
+              ? "~ চিহ্নিত তারিখগুলো আগের SEC ফাইলিংয়ের সময়সূচি থেকে অনুমান; কোম্পানি নিশ্চিত করেনি।"
+              : "~ dates are estimated from prior SEC filing cadence, not company-confirmed."
+            : t("home.earningsWeekNote")}
+        </p>
       </div>
     );
   }
@@ -151,7 +177,9 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
                   className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/50 px-1.5 py-2.5 text-center hover:border-accent"
                 >
                   <CompanyLogo code={e.code} size={34} />
-                  <div className="w-full truncate text-[11px] font-bold">${e.code}</div>
+                  <div className="w-full truncate text-[11px] font-bold">
+                    {e.status === "estimated" ? "~" : ""}${e.code}
+                  </div>
                 </Link>
               ))}
             </div>
@@ -166,7 +194,13 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
           +{hidden} {bn ? "আরও" : "more"}
         </button>
       )}
-      <p className="text-[10px] text-muted mt-2.5">{t("home.earningsWeekNote")}</p>
+      <p className="text-[10px] text-muted mt-2.5">
+        {config.features.sec_filings
+          ? bn
+            ? "~ তারিখটি আগের SEC ফাইলিংয়ের সময়সূচি থেকে অনুমান; কোম্পানি নিশ্চিত করেনি।"
+            : "~ Date estimated from prior SEC filing cadence; not company-confirmed."
+          : t("home.earningsWeekNote")}
+      </p>
     </div>
   );
 }

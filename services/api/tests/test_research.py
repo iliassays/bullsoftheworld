@@ -43,6 +43,7 @@ def test_intent_routing_keeps_common_retail_questions_constrained():
     assert _intent("what changed in EPS?") == "earnings"
     assert _intent("what are people saying?") == "crowd"
     assert _intent("any red flags or risks?") == "red_flags"
+    assert _intent("what are institutions reporting in 13F?") == "institutional"
 
 
 def test_advice_questions_are_redirected_not_answered_as_recommendations():
@@ -220,6 +221,36 @@ def test_crowd_question_does_not_claim_strong_official_evidence_without_posts():
 
     assert _rank_sources([official], question="What are people saying?", intent="crowd") == []
     assert _quality([], official_catalyst=False, intent="crowd") == "weak"
+
+
+def test_institutional_question_uses_13f_and_states_timing_limit() -> None:
+    filing = _src(type="sec_filing", id="filing", title="SEC 10-Q")
+    holding = _src(
+        type="sec_13f",
+        id="AAPL:2026-03-31",
+        title="SEC 13F holdings as of 2026-03-31",
+        snippet="Comparable reported shares increased 8.2%.",
+    )
+    ranked = _rank_sources(
+        [filing, holding],
+        question="What are institutions reporting?",
+        intent="institutional",
+    )
+
+    assert ranked == [holding]
+    answer = _render_answer(
+        code="AAPL",
+        question="What are institutions reporting?",
+        intent="institutional",
+        facts=[],
+        sources=ranked,
+        official_catalyst=True,
+        evidence_quality="strong",
+        blocked_advice=False,
+        market="US",
+    )
+    assert "actual trade date or price" in answer
+    assert "reported holdings change" in answer
 
 
 def test_financial_insights_surface_valuation_technical_and_disclosure_lenses():

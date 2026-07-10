@@ -24,6 +24,7 @@ from bulls.core.models import (
     Announcement,
     Cashtag,
     DailyBar,
+    InstitutionalHoldingSummary,
     MarketSummary,
     Post,
     QuoteSnapshot,
@@ -336,6 +337,8 @@ _SCREEN_EVIDENCE: dict[str, str] = {
     "near_52w_high": "utility",
     "institutional_buying": "utility",
     "institutional_selling": "utility",
+    "institutional_13f_accumulation": "utility",
+    "institutional_13f_distribution": "utility",
     "foreign_buying": "utility",
     "sponsor_selling": "utility",
     "dividend_yield": "utility",
@@ -423,6 +426,10 @@ class MarketPulseOut(BaseModel):
     dsex: float | None = None
     dsex_change_pct: float | None = None
     turnover_cr: float | None = None
+    benchmark_label: str | None = None
+    benchmark_close: float | None = None
+    benchmark_change_pct: float | None = None
+    turnover_mn: float | None = None
     turnover_vs_20d: float | None = None
     advancers: int
     decliners: int
@@ -524,7 +531,68 @@ async def _most_active(session, market: str, limit: int = PER_SCREEN) -> ScreenO
         description="Most heavily traded by value today",
         value_label="turnover",
         group="movers",
-        items=[ScreenItem(code=c, last_close=p, value=round(t / 1e7, 2)) for c, p, t in rows],
+        items=[ScreenItem(code=c, last_close=p, value=round(t / 1e6, 2)) for c, p, t in rows],
+    )
+
+
+async def _institutional_13f(
+    session, market: str, *, accumulation: bool, limit: int = PER_SCREEN
+) -> ScreenOut:
+    latest_period = (
+        select(
+            InstitutionalHoldingSummary.code,
+            func.max(InstitutionalHoldingSummary.report_date).label("report_date"),
+        )
+        .where(InstitutionalHoldingSummary.market == market)
+        .group_by(InstitutionalHoldingSummary.code)
+        .subquery()
+    )
+    change = InstitutionalHoldingSummary.net_change_pct
+    rows = (
+        await session.execute(
+            select(
+                InstitutionalHoldingSummary.code,
+                T.last_close,
+                change,
+                InstitutionalHoldingSummary.report_date,
+            )
+            .join(
+                latest_period,
+                (latest_period.c.code == InstitutionalHoldingSummary.code)
+                & (latest_period.c.report_date == InstitutionalHoldingSummary.report_date),
+            )
+            .join(T, (T.market == market) & (T.code == InstitutionalHoldingSummary.code))
+            .where(
+                InstitutionalHoldingSummary.market == market,
+                change.isnot(None),
+                change > 0 if accumulation else change < 0,
+                _liquid(market),
+            )
+            .order_by(change.desc() if accumulation else change.asc())
+            .limit(limit)
+        )
+    ).all()
+    direction = "accumulation" if accumulation else "distribution"
+    return ScreenOut(
+        key=f"institutional_13f_{direction}",
+        title=f"13F reported {direction}",
+        description=(
+            "Largest quarter-over-quarter increases in comparable reported shares"
+            if accumulation
+            else "Largest quarter-over-quarter reductions in comparable reported shares"
+        ),
+        value_label="% reported shares",
+        group="value",
+        evidence="utility",
+        items=[
+            ScreenItem(
+                code=code,
+                last_close=last_close,
+                value=round(net_change, 2),
+                note=f"13F quarter ended {report_date}",
+            )
+            for code, last_close, net_change, report_date in rows
+        ],
     )
 
 
@@ -1334,7 +1402,10 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
     catalysts = await _recent_catalysts(session, market, codes)
     for s in screens_list:
         default_evidence = "framework" if s.key.startswith(_CHART_PATTERN_PREFIX) else None
-        s.evidence = s.evidence or _SCREEN_EVIDENCE.get(s.key) or default_evidence
+        mapped_evidence = _SCREEN_EVIDENCE.get(s.key)
+        if mapped_evidence == "backtested" and market != "DSE":
+            mapped_evidence = "framework"
+        s.evidence = s.evidence or mapped_evidence or default_evidence
         for it in s.items:
             it.name = names.get(it.code, "")
             it.change_1d = None if s.key in _NO_1D else changes.get(it.code)
@@ -1392,6 +1463,10 @@ async def build_screen(
     if key == "institutional_selling":
         # Its own headline board, not a toggle state — always distribution, mirroring sponsor_selling.
         return await _ownership(session, market, kind="institute", direction="sell", limit=limit)
+    if key == "institutional_13f_accumulation":
+        return await _institutional_13f(session, market, accumulation=True, limit=limit)
+    if key == "institutional_13f_distribution":
+        return await _institutional_13f(session, market, accumulation=False, limit=limit)
     if key == "sponsor_selling":
         return await _sponsor_selling(session, market, limit=limit)
     if key.startswith(_CHART_PATTERN_PREFIX):
@@ -1464,6 +1539,9 @@ async def _build_screens(
         out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
     if profile.features.sponsor_director_disclosures:
         out.append(await _sponsor_selling(session, tenant.market))
+    if profile.features.institutional_holdings:
+        out.append(await _institutional_13f(session, tenant.market, accumulation=True))
+        out.append(await _institutional_13f(session, tenant.market, accumulation=False))
     for pattern_type in _PATTERN_TITLE:
         out.append(await _chart_pattern_board(session, tenant.market, pattern_type=pattern_type))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
@@ -1603,9 +1681,15 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
-    dsex_pct = _index_pct_from_points(
-        summary.dsex if summary else None, summary.dsex_change if summary else None
+    benchmark_close = summary.benchmark_close or summary.dsex if summary else None
+    benchmark_change = (
+        summary.benchmark_change
+        if summary and summary.benchmark_change is not None
+        else summary.dsex_change
+        if summary
+        else None
     )
+    dsex_pct = _index_pct_from_points(benchmark_close, benchmark_change)
     top = sectors[0] if sectors else None
     weak = sectors[-1] if sectors else None
     return MarketPulseOut(
@@ -1614,6 +1698,12 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
         dsex=round(summary.dsex, 2) if summary and summary.dsex is not None else None,
         dsex_change_pct=dsex_pct,
         turnover_cr=round(summary.total_value_mn / 10, 1)
+        if summary and summary.total_value_mn is not None
+        else None,
+        benchmark_label=get_market_profile(market).benchmark_label,
+        benchmark_close=round(benchmark_close, 2) if benchmark_close is not None else None,
+        benchmark_change_pct=dsex_pct,
+        turnover_mn=round(summary.total_value_mn, 1)
         if summary and summary.total_value_mn is not None
         else None,
         turnover_vs_20d=turnover_vs_20d,
@@ -1682,11 +1772,12 @@ _RS_DAYS = 22  # relative-strength lookback (~1 month of sessions)
 
 
 async def _index_return(session, market: str, days: int) -> float | None:
-    """DSEX index % change over the trailing `days` sessions."""
+    """Configured benchmark index % change over the trailing `days` sessions."""
+    benchmark = func.coalesce(MarketSummary.benchmark_close, MarketSummary.dsex)
     levels = (
         await session.scalars(
-            select(MarketSummary.dsex)
-            .where(MarketSummary.market == market, MarketSummary.dsex.isnot(None))
+            select(benchmark)
+            .where(MarketSummary.market == market, benchmark.isnot(None))
             .order_by(MarketSummary.date.desc())
             .limit(days + 1)
         )

@@ -88,6 +88,12 @@ export function ResearchCard({ code }: { code: string }) {
   const [brief, setBrief] = useState<ResearchBrief | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  const questions = config.features.institutional_holdings
+    ? [
+        ...QUESTIONS,
+        { en: "What are institutions reporting?", bn: "প্রতিষ্ঠানগুলো কী রিপোর্ট করছে?" },
+      ]
+    : QUESTIONS;
 
   useEffect(() => {
     setQuestion(QUESTIONS[0].en);
@@ -130,7 +136,7 @@ export function ResearchCard({ code }: { code: string }) {
       </div>
 
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-        {QUESTIONS.map((q) => {
+        {questions.map((q) => {
           const label = bn ? q.bn : q.en;
           const active = brief?.question === q.en || (!brief && question === q.en);
           return (
@@ -230,7 +236,9 @@ export function ResearchCard({ code }: { code: string }) {
                   <div key={`${s.type}:${s.id}`} className="rounded-xl border border-border p-3">
                     <div className="flex items-center gap-2 text-[11px] text-muted">
                       <span className="font-bold text-accent">
-                        {s.reliability === "official"
+                        {s.type.startsWith("sec_")
+                          ? "SEC"
+                          : s.reliability === "official"
                           ? bn
                             ? config.exchange_label_bn || config.exchange_code
                             : config.exchange_code
@@ -240,6 +248,16 @@ export function ResearchCard({ code }: { code: string }) {
                     </div>
                     <div className="mt-1 text-[13px] font-semibold leading-snug">{s.title}</div>
                     <p className="mt-1 text-[12px] text-muted leading-snug">{s.snippet}</p>
+                    {s.url && (
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-block mt-2 text-[11px] font-semibold text-accent"
+                      >
+                        {bn ? "মূল উৎস দেখুন" : "Open source"} ↗
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>

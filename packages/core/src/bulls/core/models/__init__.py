@@ -22,6 +22,15 @@ from bulls.core.models.post import Cashtag, Post, PostReaction
 from bulls.core.models.quiz import QuizAnswer, QuizQuestion
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
 from bulls.core.models.refresh_session import RefreshSession
+from bulls.core.models.sec import (
+    InstitutionalHoldingSummary,
+    InstitutionalManager,
+    InstitutionalPosition,
+    RegulatoryDataState,
+    SecFiling,
+    SecFinancialFact,
+    SecurityIdentifier,
+)
 from bulls.core.models.security_master import SecurityMaster
 from bulls.core.models.signal_event import SignalEvent
 from bulls.core.models.symbol import Symbol
@@ -46,6 +55,9 @@ __all__ = [
     "DailyBar",
     "DividendRecord",
     "Follow",
+    "InstitutionalHoldingSummary",
+    "InstitutionalManager",
+    "InstitutionalPosition",
     "KnowledgeChunk",
     "MarketSummary",
     "ModerationEvent",
@@ -59,7 +71,11 @@ __all__ = [
     "QuizQuestion",
     "QuoteSnapshot",
     "RefreshSession",
+    "RegulatoryDataState",
+    "SecFiling",
+    "SecFinancialFact",
     "SectorPE",
+    "SecurityIdentifier",
     "SecurityMaster",
     "ShareholdingSnapshot",
     "SignalEvent",

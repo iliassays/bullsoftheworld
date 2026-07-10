@@ -1,6 +1,8 @@
 import { type ReactNode, useState } from "react";
 import type { Company, NewsItem } from "../lib/api";
 import { type Lang, useLang } from "../lib/i18n";
+import { formatCurrencyMillions, formatMoney } from "../lib/market";
+import { useTenantConfig } from "../lib/tenant";
 import { Empty } from "./ui";
 import { InfoTip } from "./InfoTip";
 
@@ -117,7 +119,7 @@ function CompactRow({ n }: { n: NewsItem }) {
   } else {
     desc = n.headline.replace(/^[A-Z0-9.&-]+:\s*/, ""); // drop the "CODE: " prefix
   }
-  return (
+  const content = (
     <div className="flex items-center gap-2 py-1.5 px-1 text-xs">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${catDot(n.category)}`} />
       <span className="text-muted shrink-0">{catName(n.category, t)}</span>
@@ -125,6 +127,11 @@ function CompactRow({ n }: { n: NewsItem }) {
       <span className="text-muted shrink-0 tnum">{shortDate(n.published_at)}</span>
     </div>
   );
+  return n.url ? (
+    <a href={n.url} target="_blank" rel="noreferrer">
+      {content}
+    </a>
+  ) : content;
 }
 
 // Forward-looking events pulled from decoded dates — only ever REAL future dates (never inferred),
@@ -412,10 +419,19 @@ function ImportantCard({ n, ltp }: { n: NewsItem; ltp?: number | null }) {
           <p lang={lang} className="text-sm font-semibold mt-1.5 leading-snug">
             {plain ?? cleanHeadline(n.headline)}
           </p>
-          {plain && (
-            <p className="text-[10px] text-muted mt-0.5 truncate" title={n.headline}>
-              {bn ? "উৎস: DSE ঘোষণা" : "Source: DSE filing"} — {cleanHeadline(n.headline)}
-            </p>
+          <p className="text-[10px] text-muted mt-0.5 truncate" title={n.headline}>
+            {bn ? "উৎস" : "Source"}: {n.details?.source ?? (bn ? "DSE ঘোষণা" : "DSE filing")}
+            {n.details?.form ? ` · ${n.details.form}` : ""}
+          </p>
+          {n.url && (
+            <a
+              href={n.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block mt-1 text-[11px] font-semibold text-accent"
+            >
+              {bn ? "মূল ফাইলিং দেখুন" : "Open original filing"} ↗
+            </a>
           )}
         </div>
       </div>
@@ -499,13 +515,8 @@ export function NewsPanel({ items, ltp }: { items: NewsItem[]; ltp?: number | nu
 const dash = "—";
 const pct = (n: number | null) => (n == null ? dash : `${n.toFixed(2)}%`);
 const ratio = (n: number | null) => (n == null ? dash : n.toFixed(2));
-const taka = (n: number | null) =>
-  n == null ? dash : `৳${n.toLocaleString()}`;
-// DSE thinks in crore (1 cr = 10 million)
-const crore = (mn: number | null) =>
-  mn == null
-    ? dash
-    : `৳${(mn / 10).toLocaleString(undefined, { maximumFractionDigits: 0 })} Cr`;
+const taka = (n: number | null) => (n == null ? dash : formatMoney(n));
+const crore = (mn: number | null) => formatCurrencyMillions(mn);
 
 function Row({
   label,
@@ -555,23 +566,32 @@ export function FundamentalsPanel({
   earnings?: Company["earnings"];
 }) {
   const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const bn = lang === "bn";
   // "Compared to what?" — the prior fiscal year, inline, so a lone number gets context
   // without leaving the row. earnings[0] = latest FY, [1] = the one before.
   const prior = earnings[1];
   const lastFY = (v: number | null | undefined) =>
-    v == null ? undefined : bn ? `(গত অর্থবছর ৳${v})` : `(last FY ৳${v})`;
+    v == null
+      ? undefined
+      : bn
+        ? `(গত অর্থবছর ${formatMoney(v)})`
+        : `(last FY ${formatMoney(v)})`;
   const yoy =
     f.eps_growth_yoy == null
       ? dash
       : `${f.eps_growth_yoy > 0 ? "+" : ""}${f.eps_growth_yoy.toFixed(1)}%`;
   const yoyHint =
     prior?.eps != null && earnings[0]?.eps != null
-      ? `(৳${prior.eps} → ৳${earnings[0].eps})`
+      ? `(${formatMoney(prior.eps)} → ${formatMoney(earnings[0].eps)})`
       : undefined;
   return (
     <Card title={t("tab.fundamentals")}>
-      <Row label={t("f.marketCap")} value={crore(f.market_cap_mn)} help={fhelp("market_cap", lang)} />
+      <Row
+        label={t("f.marketCap")}
+        value={crore(f.market_cap_mn)}
+        help={config.market === "DSE" ? fhelp("market_cap", lang) : undefined}
+      />
       <Row label={t("f.pe")} value={ratio(f.pe_ratio)} help={fhelp("pe", lang)} />
       <Row
         label={t("f.peSector")}
@@ -606,11 +626,89 @@ export function FundamentalsPanel({
             : f.outstanding_shares.toLocaleString()
         }
       />
-      <Row label={t("f.faceValue")} value={taka(f.face_value)} />
+      {config.features.dse_categories && <Row label={t("f.faceValue")} value={taka(f.face_value)} />}
       <Row label={t("f.sector")} value={f.sector ?? dash} />
       <Row label={t("f.creditRating")} value={f.credit_rating ?? dash} />
       <p className="text-[10px] text-muted mt-2">
         Valuation derived from the latest close. Descriptive, not advice.
+      </p>
+    </Card>
+  );
+}
+
+export function FinancialHealthPanel({ company }: { company: Company }) {
+  const { lang } = useLang();
+  const bn = lang === "bn";
+  const h = company.financial_health;
+  const hasHealth = Object.entries(h).some(
+    ([key, value]) => !["as_of", "source_url"].includes(key) && value != null,
+  );
+  if (!hasHealth && !company.quarters.length) return null;
+
+  const metric = (labelEn: string, labelBn: string, value: string) => (
+    <div className="py-2 border-b border-border/60 last:border-0 min-w-0">
+      <div className="text-[10px] text-muted">{bn ? labelBn : labelEn}</div>
+      <div className="text-sm font-semibold tnum mt-0.5 truncate">{value}</div>
+    </div>
+  );
+
+  return (
+    <Card title={bn ? "আর্থিক স্বাস্থ্য" : "Financial health"}>
+      {h.as_of && (
+        <p className="text-[11px] text-muted mb-2">
+          {bn ? "SEC তথ্য, সময়কাল শেষ" : "SEC facts, period ended"} {h.as_of}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-x-4">
+        {metric("Revenue (TTM)", "রাজস্ব (গত ১২ মাস)", crore(h.revenue_ttm_mn))}
+        {metric("Net income (TTM)", "নিট আয় (গত ১২ মাস)", crore(h.net_income_ttm_mn))}
+        {metric("Free cash flow", "ফ্রি ক্যাশ ফ্লো", crore(h.free_cash_flow_ttm_mn))}
+        {metric("Profit margin", "মুনাফার মার্জিন", pct(h.profit_margin_pct))}
+        {metric("Cash", "নগদ", crore(h.cash_mn))}
+        {metric("Debt", "ঋণ", crore(h.debt_mn))}
+        {metric("Current ratio", "কারেন্ট রেশিও", ratio(h.current_ratio))}
+        {metric("Debt / equity", "ঋণ / ইকুইটি", ratio(h.debt_to_equity))}
+      </div>
+
+      {company.quarters.length > 0 && (
+        <div className="mt-4">
+          <div className="text-[11px] font-semibold text-muted mb-2">
+            {bn ? "সাম্প্রতিক প্রান্তিক" : "Recent quarters"}
+          </div>
+          <div className="grid grid-cols-4 text-[10px] text-muted font-semibold pb-1 border-b border-border">
+            <span>{bn ? "সময়কাল" : "Period"}</span>
+            <span className="text-right">{bn ? "রাজস্ব" : "Revenue"}</span>
+            <span className="text-right">{bn ? "নিট আয়" : "Net income"}</span>
+            <span className="text-right">EPS</span>
+          </div>
+          {company.quarters.slice(0, 6).map((quarter) => (
+            <div
+              key={quarter.period_end}
+              className="grid grid-cols-4 text-[11px] tnum py-2 border-b border-border/60 last:border-0"
+            >
+              <span>{quarter.period_end.slice(0, 7)}</span>
+              <span className="text-right">{crore(quarter.revenue_mn)}</span>
+              <span className="text-right">{crore(quarter.net_income_mn)}</span>
+              <span className="text-right">{taka(quarter.eps)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {h.source_url && (
+        <a
+          href={h.source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block mt-3 text-xs font-semibold text-accent"
+        >
+          {bn ? "SEC উৎস দেখুন" : "Open SEC source"} ↗
+        </a>
+      )}
+      <p className="text-[10px] text-muted mt-2">
+        {bn
+          ? "মানগুলো SEC Company Facts থেকে নেওয়া; সংশোধিত ফাইলিংয়ে পরিবর্তন হতে পারে।"
+          : "Values come from SEC Company Facts and can change after amended filings."}
       </p>
     </Card>
   );
@@ -879,6 +977,7 @@ export function EarningsPanel({
   dividends: Company["dividends"];
   f: Company["fundamentals"];
 }) {
+  const { config } = useTenantConfig();
   if (!earnings.length && !dividends.length)
     return <Empty>No earnings history yet.</Empty>;
 
@@ -895,15 +994,21 @@ export function EarningsPanel({
 
   const eps0 = f.eps ?? earnings[0]?.eps ?? null;
   const face = f.face_value ?? 10;
-  const latestCash = dividends[0]?.cash_pct ?? null;
+  const latestCashPct = dividends[0]?.cash_pct ?? null;
+  const latestCashPerShare =
+    dividends[0]?.cash_per_share ??
+    (latestCashPct != null ? (latestCashPct / 100) * face : null);
   const payout =
-    latestCash != null && eps0 ? ((latestCash / 100) * face) / eps0 * 100 : null;
+    latestCashPerShare != null && eps0 ? (latestCashPerShare / eps0) * 100 : null;
 
   const epsBars = fillYears(
     earnings.slice(0, 6).reverse().map((e) => ({ year: e.fiscal_year, v: e.eps })),
   );
   const cashBars = fillYears(
-    dividends.slice(0, 6).reverse().map((d) => ({ year: d.year, v: d.cash_pct })),
+    dividends.slice(0, 6).reverse().map((d) => ({
+      year: d.year,
+      v: config.market === "DSE" ? d.cash_pct : d.cash_per_share,
+    })),
   );
 
   return (
@@ -915,7 +1020,7 @@ export function EarningsPanel({
             <Stat label="Earnings yield" value={pct(earningsYield)} tip={_EY_TIP} />
             <Stat label="NAV / share" value={taka(earnings[0]?.nav_per_share ?? null)} />
           </div>
-          <YearBars data={epsBars} fmt={(n) => `৳${n.toFixed(1)}`} />
+          <YearBars data={epsBars} fmt={(n) => formatMoney(n)} />
           <div className="grid grid-cols-4 text-[11px] text-muted font-semibold pb-1 border-b border-border">
             <span>FY</span>
             <span className="text-right">EPS</span>
@@ -941,16 +1046,23 @@ export function EarningsPanel({
             <Stat label="Dividend yield" value={pct(f.dividend_yield)} />
             <Stat
               label="Cash (latest)"
-              value={pct(latestCash)}
+              value={
+                config.market === "DSE" ? pct(latestCashPct) : taka(latestCashPerShare)
+              }
               sub={
-                latestCash == null
+                latestCashPerShare == null
                   ? undefined
-                  : `= ৳${+((latestCash / 100) * face).toFixed(2)}/share`
+                  : `${taka(latestCashPerShare)}/share`
               }
             />
             <Stat label="Payout ratio" value={pct(payout)} tip={_PAYOUT_TIP} />
           </div>
-          <YearBars data={cashBars} fmt={(n) => `${n.toFixed(0)}%`} color="#0ea5e9" emptyLabel="no div" />
+          <YearBars
+            data={cashBars}
+            fmt={(n) => (config.market === "DSE" ? `${n.toFixed(0)}%` : formatMoney(n))}
+            color="#0ea5e9"
+            emptyLabel="no div"
+          />
           <div className="grid grid-cols-3 text-[11px] text-muted font-semibold pb-1 border-b border-border">
             <span>Year</span>
             <span className="text-right">Cash</span>
@@ -962,7 +1074,9 @@ export function EarningsPanel({
               className="grid grid-cols-3 text-sm tnum py-1.5 border-b border-border/60 last:border-0"
             >
               <span>{d.year}</span>
-              <span className="text-right">{pct(d.cash_pct)}</span>
+              <span className="text-right">
+                {config.market === "DSE" ? pct(d.cash_pct) : taka(d.cash_per_share)}
+              </span>
               <span className="text-right">{pct(d.bonus_pct)}</span>
             </div>
           ))}

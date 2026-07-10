@@ -21,6 +21,8 @@ import { WatchToday } from "../components/WatchToday";
 import { type Lang, useLang } from "../lib/i18n";
 import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
 import { PATTERN_ORDER, PATTERN_STATUS_LABEL } from "../lib/patterns";
+import { formatCurrencyMillions } from "../lib/market";
+import { useTenantConfig } from "../lib/tenant";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
 export const SCREEN_HELP: Record<string, string> = {
@@ -42,6 +44,10 @@ export const SCREEN_HELP: Record<string, string> = {
     "Chaikin Money Flow (CMF) below 0 means money is flowing out — net selling pressure over 20 days. e.g. -0.30 = strong outflow.",
   unusual_volume:
     "How active a stock is vs its normal pace — a 1-day spike (1D) or sustained over a week/month (5D/1M). Tagged by today's direction: heavy volume while rising = buying, while falling = selling. e.g. 4.6x = 4.6 times its usual volume.",
+  institutional_13f_accumulation:
+    "Quarter-over-quarter growth in comparable long-share positions reported on SEC Form 13F. Reports can arrive up to 45 days after quarter-end and do not reveal actual trade dates or entry prices.",
+  institutional_13f_distribution:
+    "Quarter-over-quarter reduction in comparable long-share positions reported on SEC Form 13F. A reduction can reflect flows, mandates, taxes or risk controls, not only a bearish view.",
   uptrend:
     "Trading above its 200-day average price — a common longer-term uptrend marker. The % shows how far above the average it is.",
   near_52w_high: "Within 5% of its highest price over the past 52 weeks (one year).",
@@ -161,7 +167,7 @@ export function fmtValue(label: string, v: number): string {
   if (label === "watchers" || label === "posts") return v.toFixed(0);
   if (label === "score") return `${v.toFixed(0)}/100`;
   if (label === "turnover")
-    return `৳${v.toLocaleString(undefined, { maximumFractionDigits: v >= 10 ? 0 : 1 })} Cr`;
+    return formatCurrencyMillions(v);
   if (label === "pp") return `${v >= 0 ? "+" : ""}${v.toFixed(1)} pp`;
   if (label === "ROE" || label === "volatility") return `${v.toFixed(1)}%`;
   if (label === "momentum") return `${v >= 0 ? "+" : ""}${v.toFixed(0)}%`;
@@ -171,10 +177,7 @@ export function fmtValue(label: string, v: number): string {
 }
 
 function takaMn(mn: number | null | undefined): string {
-  if (mn == null) return "—";
-  if (mn >= 10)
-    return `৳${(mn / 10).toLocaleString(undefined, { maximumFractionDigits: mn >= 100 ? 0 : 1 })}Cr`;
-  return `৳${(mn * 10).toLocaleString(undefined, { maximumFractionDigits: mn >= 1 ? 0 : 1 })}L`;
+  return formatCurrencyMillions(mn);
 }
 
 function setupTone(setup: string | null | undefined): Chip["tone"] {
@@ -1060,6 +1063,8 @@ const GROUPS: { id: string; labelKey: string; advanced?: boolean }[] = [
 // institutional_buying/selling sit side by side deliberately: same disclosed category, opposite
 // direction — a user asked why only sponsors got a "selling" board when institutions can exit too.
 const FOCUS_KEYS = [
+  "institutional_13f_accumulation",
+  "institutional_13f_distribution",
   "institutional_buying", // smart money — what institutions are accumulating
   "institutional_selling", // ...and, just as real, what they're distributing
   "sponsor_selling", // insiders reducing — the red-flag counterweight
@@ -1107,6 +1112,8 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
     labelKey: "lens.smart",
     blurbKey: "lens.smart.blurb",
     keys: [
+      "institutional_13f_accumulation",
+      "institutional_13f_distribution",
       "institutional_buying",
       "institutional_selling",
       "foreign_buying",
@@ -1341,14 +1348,15 @@ function LiquidityGuide() {
 
 export function Markets() {
   const { t } = useLang();
+  const { config } = useTenantConfig();
   useSeo({
     title: {
-      bn: "মার্কেট স্ক্রিন — DSE গেইনার, লুজার, ভলিউম, ভ্যালু | Bulls of Dhaka",
-      en: "Market screens — DSE gainers, losers, volume, value | Bulls of Dhaka",
+      bn: `মার্কেট স্ক্রিন — ${config.exchange_code} গেইনার, লুজার, ভলিউম, ভ্যালু | ${config.brand_name}`,
+      en: `Market screens — ${config.exchange_code} gainers, losers, volume, value | ${config.brand_name}`,
     },
     description: {
-      bn: "ঢাকা স্টক এক্সচেঞ্জের রেডিমেড স্ক্রিন: টপ গেইনার/লুজার, অস্বাভাবিক ভলিউম, সস্তা vs খাত, প্রাতিষ্ঠানিক প্রবাহ, চার্ট প্যাটার্ন। বর্ণনামূলক তথ্য, পরামর্শ নয়।",
-      en: "Ready-made Dhaka Stock Exchange screens: top gainers/losers, unusual volume, cheap-vs-sector, institutional flow, chart patterns. Descriptive, not advice.",
+      bn: `${config.exchange_name_bn ?? config.exchange_name}-এর রেডিমেড স্ক্রিন: গেইনার/লুজার, ভলিউম, ভ্যালু ও প্রাতিষ্ঠানিক তথ্য। বর্ণনামূলক তথ্য, পরামর্শ নয়।`,
+      en: `Ready-made ${config.exchange_name} screens: gainers/losers, unusual volume, valuation and institutional evidence. Descriptive, not advice.`,
     },
   });
   const [data, setData] = useState<ScreensResponse | null>(null);

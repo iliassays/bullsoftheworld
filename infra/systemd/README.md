@@ -31,6 +31,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bullsofdhaka-worker bulls-ai-worker
 ```
 
+Official U.S. regulatory data runs independently from licensed/third-party market-data workers:
+
+```bash
+sudo cp infra/systemd/bullsofwallst-sec-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bullsofwallst-sec-worker
+```
+
 `bullsofwallst-worker.service` is deliberately not included above. Install and enable it only after
 the US market-data license, same-site API hostname, verified exchange calendar, and initial cohort
 coverage checks in `docs/architecture/multi-tenant-us-readiness.md` are complete.

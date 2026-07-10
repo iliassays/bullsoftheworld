@@ -24,7 +24,10 @@ from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     Announcement,
     Cashtag,
+    InstitutionalHoldingSummary,
     Post,
+    SecFiling,
+    SecFinancialFact,
     SignalEvent,
     Symbol,
     TickerAnalytics,
@@ -63,6 +66,7 @@ class ResearchSource(BaseModel):
     date: str | None = None
     snippet: str
     reliability: Reliability
+    url: str | None = None
 
 
 class ResearchInsight(BaseModel):
@@ -88,6 +92,8 @@ class ResearchBriefResponse(BaseModel):
 
 def _intent(question: str) -> str:
     q = question.lower()
+    if any(w in q for w in ("13f", "institution", "fund", "holding", "smart money")):
+        return "institutional"
     if any(w in q for w in ("dividend", "bonus", "record date", "cash")):
         return "dividend"
     if any(w in q for w in ("earnings", "eps", "profit", "loss", "financial")):
@@ -215,7 +221,16 @@ def _is_risk_source(source: ResearchSource) -> bool:
 def _rank_sources(
     sources: list[ResearchSource], *, question: str, intent: str
 ) -> list[ResearchSource]:
-    if intent in ("latest_news", "dividend", "earnings"):
+    if intent == "institutional":
+        return sorted(
+            [source for source in sources if source.type == "sec_13f"],
+            key=lambda source: (
+                _source_date(source) or dt.date.min,
+                _source_score(source, question),
+            ),
+            reverse=True,
+        )
+    if intent in ("latest_news", "dividend", "earnings", "institutional"):
         # News questions are date-led. Vector similarity must not surface a stale AGM notice above
         # the newest material DSE filing.
         filtered = [s for s in sources if s.reliability == "official"]
@@ -490,6 +505,26 @@ def _build_insights(
             if delta < 0
             else "Ownership is stable"
         )
+
+    institutional = next((s for s in sources if s.type == "sec_13f"), None)
+    if institutional:
+        insights.append(
+            ResearchInsight(
+                lens="ownership",
+                stance="watch",
+                title=(
+                    "প্রকাশিত প্রাতিষ্ঠানিক হোল্ডিং বদলেছে"
+                    if lang == "bn"
+                    else "Reported institutional holdings changed"
+                ),
+                detail=(
+                    "১৩এফ ত্রৈমাসিক শেষের হোল্ডিং দেখায় এবং পরে প্রকাশিত হয়; এটি প্রকৃত কেনা বা বেচার তারিখ দেখায় না।"
+                    if lang == "bn"
+                    else "13F shows quarter-end holdings disclosed later; it does not reveal the actual purchase or sale date."
+                ),
+                evidence=institutional.snippet,
+            )
+        )
         insights.append(
             ResearchInsight(
                 lens="ownership",
@@ -652,6 +687,26 @@ def _render_answer(
                 body = f"সারকথা: মিল থাকা সাম্প্রতিক অফিসিয়াল ঘোষণা পাইনি। {fact_line}"
             else:
                 body = f"Bottom line: I did not find a matching recent official announcement. {fact_line}"
+    elif intent == "institutional":
+        holdings = [s for s in sources if s.type == "sec_13f"]
+        if holdings:
+            if lang == "bn":
+                body = (
+                    f"সারকথা: অফিসিয়াল ১৩এফ তুলনায় প্রকাশিত হোল্ডিং পরিবর্তন আছে। {fact_line} "
+                    f"সর্বশেষ প্রমাণ: {holdings[0].snippet} প্রকৃত ট্রেডের তারিখ বা দাম ১৩এফে থাকে না।"
+                )
+            else:
+                body = (
+                    f"Bottom line: the official 13F comparison shows a reported holdings change. "
+                    f"{fact_line} Latest evidence: {holdings[0].snippet} "
+                    "13F does not disclose the manager's actual trade date or price."
+                )
+        else:
+            body = (
+                f"সারকথা: ${code}-এর জন্য নির্ভরযোগ্যভাবে মেলানো ১৩এফ ইতিহাস এখনো নেই। {fact_line}"
+                if lang == "bn"
+                else f"Bottom line: no confidently mapped 13F history is available for ${code} yet. {fact_line}"
+            )
     elif intent == "crowd":
         if crowd:
             if lang == "bn":
@@ -733,9 +788,100 @@ async def _announcement_sources(
     ]
 
 
-async def _post_sources(
-    session, market: str, code: str, *, tenant_id: str
-) -> list[ResearchSource]:
+async def _sec_filing_sources(session, market: str, code: str, intent: str) -> list[ResearchSource]:
+    categories: tuple[str, ...] | None = None
+    if intent == "earnings":
+        categories = ("earnings", "quarterly_report", "annual_report")
+    elif intent == "red_flags":
+        categories = ("current_report", "registration", "beneficial_ownership", "annual_report")
+    stmt = select(SecFiling).where(SecFiling.market == market, SecFiling.code == code)
+    if categories:
+        stmt = stmt.where(SecFiling.category.in_(categories))
+    rows = list(
+        await session.scalars(
+            stmt.order_by(SecFiling.filing_date.desc(), SecFiling.accepted_at.desc()).limit(8)
+        )
+    )
+    return [
+        ResearchSource(
+            type="sec_filing",
+            id=row.accession_number,
+            title=f"SEC {row.form}: {row.category.replace('_', ' ').title()}",
+            date=str(row.filing_date),
+            snippet=_snippet(row.description or row.items or f"Filed for period {row.report_date}"),
+            reliability="official",
+            url=row.filing_url,
+        )
+        for row in rows
+    ]
+
+
+async def _sec_fact_sources(session, market: str, code: str) -> list[ResearchSource]:
+    rows = list(
+        await session.scalars(
+            select(SecFinancialFact)
+            .where(SecFinancialFact.market == market, SecFinancialFact.code == code)
+            .order_by(SecFinancialFact.period_end.desc(), SecFinancialFact.filed_at.desc())
+            .limit(120)
+        )
+    )
+    by_period: dict[tuple[dt.date, str], list[SecFinancialFact]] = {}
+    for row in rows:
+        by_period.setdefault((row.period_end, row.period_type), []).append(row)
+    sources: list[ResearchSource] = []
+    for (period_end, period_type), facts in sorted(by_period.items(), reverse=True)[:4]:
+        values = ", ".join(
+            f"{fact.metric.replace('_', ' ')} {fact.value:,.2f} {fact.unit}" for fact in facts[:8]
+        )
+        source = facts[0]
+        sources.append(
+            ResearchSource(
+                type="sec_financials",
+                id=f"{code}:{period_end}:{period_type}",
+                title=f"SEC financial facts: {period_type} ending {period_end}",
+                date=str(source.filed_at),
+                snippet=_snippet(values),
+                reliability="official",
+                url=source.source_url,
+            )
+        )
+    return sources
+
+
+async def _institutional_sources(session, market: str, code: str) -> list[ResearchSource]:
+    rows = list(
+        await session.scalars(
+            select(InstitutionalHoldingSummary)
+            .where(
+                InstitutionalHoldingSummary.market == market,
+                InstitutionalHoldingSummary.code == code,
+            )
+            .order_by(InstitutionalHoldingSummary.report_date.desc())
+            .limit(4)
+        )
+    )
+    return [
+        ResearchSource(
+            type="sec_13f",
+            id=f"{code}:{row.report_date}",
+            title=f"SEC 13F holdings as of {row.report_date}",
+            date=str(row.latest_filing_date),
+            snippet=(
+                f"{row.managers_count} reporting managers held {row.total_shares:,} shares; "
+                f"quarter-over-quarter comparable-share change {row.net_change_pct:+.2f}%. "
+                f"New {row.new_positions}, increased {row.increased_positions}, "
+                f"reduced {row.reduced_positions}, exited {row.exited_positions}."
+                if row.net_change_pct is not None
+                else f"{row.managers_count} reporting managers held {row.total_shares:,} shares."
+            ),
+            reliability="official",
+            url=row.source_url,
+        )
+        for row in rows
+    ]
+
+
+async def _post_sources(session, market: str, code: str, *, tenant_id: str) -> list[ResearchSource]:
     since = dt.datetime.now(dt.UTC) - dt.timedelta(days=7)
     tagged = select(Cashtag.post_id).where(Cashtag.market == market, Cashtag.code == code)
     rows = list(
@@ -813,6 +959,7 @@ async def _vector_sources(
             date=c.source_date,
             snippet=_snippet(c.text),
             reliability=c.reliability,
+            url=(c.metadata or {}).get("url"),
         )
         for c in chunks
     ]
@@ -865,17 +1012,27 @@ async def research_brief(
         lang=lang,
         market=tenant.market,
     )
-    vector_sources = await _vector_sources(
-        session, tenant.market, code, q, tenant_id=tenant.name
-    )
+    vector_sources = await _vector_sources(session, tenant.market, code, q, tenant_id=tenant.name)
     announcement_sources = await _announcement_sources(session, tenant.market, code, intent)
-    signal_sources = await _signal_sources(
-        session, tenant.market, code, tenant_id=tenant.name
-    )
-    post_sources = await _post_sources(
-        session, tenant.market, code, tenant_id=tenant.name
-    )
-    sources = [*vector_sources, *announcement_sources, *signal_sources, *post_sources]
+    sec_filing_sources: list[ResearchSource] = []
+    sec_fact_sources: list[ResearchSource] = []
+    institutional_sources: list[ResearchSource] = []
+    if get_market_profile(tenant.market).features.sec_filings:
+        sec_filing_sources = await _sec_filing_sources(session, tenant.market, code, intent)
+        sec_fact_sources = await _sec_fact_sources(session, tenant.market, code)
+    if get_market_profile(tenant.market).features.institutional_holdings:
+        institutional_sources = await _institutional_sources(session, tenant.market, code)
+    signal_sources = await _signal_sources(session, tenant.market, code, tenant_id=tenant.name)
+    post_sources = await _post_sources(session, tenant.market, code, tenant_id=tenant.name)
+    sources = [
+        *vector_sources,
+        *announcement_sources,
+        *sec_filing_sources,
+        *sec_fact_sources,
+        *institutional_sources,
+        *signal_sources,
+        *post_sources,
+    ]
     sources = _dedupe_sources(sources)
     sources = _rank_sources(sources, question=q, intent=intent)[:8]
     official_catalyst = intent != "crowd" and any(

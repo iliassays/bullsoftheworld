@@ -70,6 +70,8 @@ class DividendRecord(Base):
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
     year: Mapped[int] = mapped_column(Integer, primary_key=True)
     cash_pct: Mapped[float | None] = mapped_column(Float)
+    # DSE discloses cash as a percentage of face value; US XBRL reports currency per share.
+    cash_per_share: Mapped[float | None] = mapped_column(Float)
     bonus_pct: Mapped[float | None] = mapped_column(Float)
 
 

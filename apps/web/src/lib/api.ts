@@ -196,6 +196,7 @@ export interface ResearchSource {
   date: string | null;
   snippet: string;
   reliability: "official" | "market" | "system" | "crowd";
+  url?: string | null;
 }
 export interface ResearchInsight {
   lens: "valuation" | "technical" | "liquidity" | "ownership" | "disclosure" | "crowd";
@@ -386,6 +387,10 @@ export interface MarketPulse {
   dsex: number | null;
   dsex_change_pct: number | null;
   turnover_cr: number | null;
+  benchmark_label?: string | null;
+  benchmark_close?: number | null;
+  benchmark_change_pct?: number | null;
+  turnover_mn?: number | null;
   turnover_vs_20d: number | null;
   advancers: number;
   decliners: number;
@@ -453,8 +458,33 @@ export interface Company {
   dividends: {
     year: number;
     cash_pct: number | null;
+    cash_per_share: number | null;
     bonus_pct: number | null;
   }[];
+  quarters: {
+    period_end: string;
+    revenue_mn: number | null;
+    net_income_mn: number | null;
+    eps: number | null;
+    source_url: string | null;
+  }[];
+  financial_health: {
+    as_of: string | null;
+    revenue_ttm_mn: number | null;
+    net_income_ttm_mn: number | null;
+    profit_margin_pct: number | null;
+    operating_cash_flow_ttm_mn: number | null;
+    capital_expenditure_ttm_mn: number | null;
+    free_cash_flow_ttm_mn: number | null;
+    assets_mn: number | null;
+    liabilities_mn: number | null;
+    equity_mn: number | null;
+    cash_mn: number | null;
+    debt_mn: number | null;
+    current_ratio: number | null;
+    debt_to_equity: number | null;
+    source_url: string | null;
+  };
 }
 export interface NewsDetails {
   // earnings
@@ -484,6 +514,11 @@ export interface NewsDetails {
   short_term?: string;
   outlook?: string;
   action?: "upgrade" | "downgrade";
+  source?: string;
+  form?: string;
+  report_date?: string;
+  items?: string;
+  accession_number?: string;
 }
 export interface NewsItem {
   published_at: string;
@@ -491,6 +526,51 @@ export interface NewsItem {
   strength: number;
   headline: string;
   details?: NewsDetails | null;
+  url?: string | null;
+}
+
+export interface InstitutionalPosition {
+  manager_cik: number;
+  manager_name: string;
+  shares: number;
+  value_usd: number;
+  prior_shares: number | null;
+  share_change: number | null;
+  change_pct: number | null;
+  change_type: "new" | "increased" | "reduced" | "unchanged" | "exited";
+  filing_date: string;
+  url: string;
+}
+
+export interface InstitutionalActivity {
+  code: string;
+  periods: Array<{
+    report_date: string;
+    prior_report_date: string | null;
+    public_by: string;
+    managers_count: number;
+    total_shares: number;
+    total_value_usd: number;
+    net_share_change: number | null;
+    net_change_pct: number | null;
+    new_positions: number;
+    increased_positions: number;
+    reduced_positions: number;
+    exited_positions: number;
+    unchanged_positions: number;
+    close_on_public_date: number | null;
+    latest_close: number | null;
+    return_since_public_pct: number | null;
+    return_30_sessions_pct: number | null;
+    source_url: string;
+  }>;
+  top_positions: InstitutionalPosition[];
+  top_new: InstitutionalPosition[];
+  top_increases: InstitutionalPosition[];
+  top_reductions: InstitutionalPosition[];
+  top_exits: InstitutionalPosition[];
+  disclosure_note: string;
+  limitations: string[];
 }
 export interface TrendingReason {
   kind: "volume" | "turnover" | "near_high" | "near_low" | "move" | "limit_up" | "limit_down";
@@ -505,6 +585,9 @@ export interface EarningsEvent {
   category?: string | null;
   meeting_date: string;
   period?: "Q1" | "H1" | "Q3" | "annual" | null;
+  status?: "confirmed" | "estimated";
+  source?: string | null;
+  url?: string | null;
 }
 export interface TrendingStock {
   code: string;
@@ -832,6 +915,8 @@ export const api = {
     request<InvestorLensResponse>(`/symbols/${code}/investor-lens`),
   buzz: (code: string) => request<Buzz>(`/symbols/${code}/buzz`),
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
+  institutionalHoldings: (code: string) =>
+    request<InstitutionalActivity>(`/symbols/${code}/institutional-holdings`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
   news: (code: string) => request<NewsItem[]>(`/symbols/${code}/news`),
   recordView: (code: string) =>

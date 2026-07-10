@@ -30,7 +30,7 @@ UPSERT_BATCH_SIZE = 1000
 
 def _user_agent() -> str:
     settings = get_settings()
-    contact = settings.support_email or "ops@bullsoftheworld.local"
+    contact = settings.sec_contact_email
     return f"BullsOfTheWorld/0.1 security-master {contact}"
 
 

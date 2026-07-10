@@ -1,11 +1,13 @@
 import { useLang } from "../lib/i18n";
 import { getLesson } from "../lib/lessons";
+import { useTenantConfig } from "../lib/tenant";
 
 // A bottom-sheet lesson: how to actually USE a metric to decide, with a worked example.
 // Descriptive education — no buy/sell.
 export function LearnSheet({ lessonId, onClose }: { lessonId: string; onClose: () => void }) {
   const { t, lang } = useLang();
-  const lesson = getLesson(lessonId, lang);
+  const { config } = useTenantConfig();
+  const lesson = getLesson(lessonId, lang, config.market);
   if (!lesson) return null;
   const rows: { label: string; body: string }[] = [
     { label: t("learn.what"), body: lesson.what },

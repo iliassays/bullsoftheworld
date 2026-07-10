@@ -15,7 +15,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_us_seo_uses_english_default_and_hides_disabled_screens() -> None:
+async def test_us_seo_uses_english_default_and_enabled_research_surfaces() -> None:
     from api.seo.render import render_path
 
     home, status = await render_path(
@@ -28,12 +28,12 @@ async def test_us_seo_uses_english_default_and_hides_disabled_screens() -> None:
     assert status == 200
     assert 'hreflang="x-default" href="https://bullsofwallst.com/en"' in home
     assert '"target": "https://bullsofwallst.com/en/s/{search_term_string}"' in home
-    assert "fundamentals" not in home
+    assert "fundamentals" in home
     assert "automated desks" not in home
 
-    disabled, disabled_status = await render_path(None, "US", "en/markets")
-    assert disabled_status == 404
-    assert "noindex" in disabled
+    markets, markets_status = await render_path(None, "US", "en/markets")
+    assert markets_status == 200
+    assert "Market screens" in markets
 
 
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres")
@@ -110,7 +110,9 @@ async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
         assert status == 200
         assert f"{code} Ltd" in html and code in html
         assert f'<link rel="canonical" href="https://bullsofdhaka.com/en/s/{code}">' in html
-        assert 'hreflang="bn"' in html and 'hreflang="en"' in html and 'hreflang="x-default"' in html
+        assert (
+            'hreflang="bn"' in html and 'hreflang="en"' in html and 'hreflang="x-default"' in html
+        )
         assert "৳123.4" in html
         assert "delayed" in html  # honesty: never a bare price
         assert "application/ld+json" in html

@@ -6,6 +6,8 @@ Everything is scoped to the active tenant's market, so Bulls of Dhaka only ever 
 from __future__ import annotations
 
 import datetime as dt
+import itertools
+import statistics
 from dataclasses import asdict
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -39,12 +41,13 @@ from bulls.core.models import (
     DailyBar,
     MarketSummary,
     QuoteSnapshot,
+    SecFiling,
     Symbol,
     TickerAnalytics,
     TrendingScore,
 )
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
-from bulls.market_data.calendar import market_close_on, session_phase, to_market_tz
+from bulls.market_data.calendar import is_trading_day, market_close_on, session_phase, to_market_tz
 
 _MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
 
@@ -259,6 +262,72 @@ class EarningsEventOut(BaseModel):
     category: str | None = None
     meeting_date: str
     period: str | None = None
+    status: str = "confirmed"
+    source: str | None = None
+    url: str | None = None
+
+
+async def _estimated_sec_reporting_windows(
+    session, market: str, since: dt.date, until: dt.date
+) -> list[EarningsEventOut]:
+    filings = list(
+        await session.scalars(
+            select(SecFiling)
+            .where(
+                SecFiling.market == market,
+                SecFiling.category.in_(("quarterly_report", "annual_report", "earnings")),
+                SecFiling.code.in_(visible_codes(market)),
+                SecFiling.filing_date >= since - dt.timedelta(days=500),
+            )
+            .order_by(SecFiling.code, SecFiling.filing_date)
+        )
+    )
+    by_code: dict[str, list[SecFiling]] = {}
+    for filing in filings:
+        by_code.setdefault(filing.code, []).append(filing)
+    estimates: dict[str, tuple[dt.date, SecFiling]] = {}
+    for code, rows in by_code.items():
+        dates = sorted({row.filing_date for row in rows})
+        intervals = [
+            (current - prior).days
+            for prior, current in itertools.pairwise(dates)
+            if 60 <= (current - prior).days <= 130
+        ]
+        if not intervals:
+            continue
+        cadence = round(statistics.median(intervals[-4:]))
+        expected = dates[-1] + dt.timedelta(days=cadence)
+        while expected < since:
+            expected += dt.timedelta(days=cadence)
+        while not is_trading_day(expected, market=market):
+            expected += dt.timedelta(days=1)
+        if expected <= until:
+            estimates[code] = (expected, rows[-1])
+    if not estimates:
+        return []
+    symbols = {
+        row.code: row
+        for row in await session.scalars(
+            select(Symbol).where(Symbol.market == market, Symbol.code.in_(estimates))
+        )
+    }
+    return sorted(
+        [
+            EarningsEventOut(
+                code=code,
+                name_en=symbols[code].name_en if code in symbols else code,
+                name_bn=symbols[code].name_bn if code in symbols else None,
+                category=symbols[code].category if code in symbols else None,
+                meeting_date=str(expected),
+                period=last.category,
+                status="estimated",
+                source="Estimated SEC filing window from the issuer's prior filing cadence",
+                url=last.filing_url,
+            )
+            for code, (expected, last) in estimates.items()
+        ],
+        key=lambda event: event.meeting_date,
+    )
 
 
 @router.get("/market/earnings-calendar")
@@ -277,6 +346,8 @@ async def earnings_calendar(
     today = to_market_tz(dt.datetime.now(dt.UTC), market=tenant.market).date()
     since = today - dt.timedelta(days=back)
     until = today + dt.timedelta(days=days)
+    if get_market_profile(tenant.market).features.sec_filings:
+        return await _estimated_sec_reporting_windows(session, tenant.market, since, until)
     meeting_date = Announcement.details["meeting_date"].astext
     rows = list(
         await session.scalars(
@@ -312,6 +383,8 @@ async def earnings_calendar(
             category=(names[code].category if code in names else None),
             meeting_date=(a.details or {}).get("meeting_date", ""),
             period=(a.details or {}).get("period"),
+            status="confirmed",
+            source="Official exchange board-meeting notice",
         )
         for code, a in by_code.items()
     ]
@@ -425,9 +498,7 @@ async def load_freshest_quotes(
             prev_close=prev_close,
             volume=bar["volume"],
             trades=0,
-            as_of=dt.datetime.combine(
-                bar["date"], market_close_on(bar["date"], market), tzinfo=tz
-            ),
+            as_of=dt.datetime.combine(bar["date"], market_close_on(bar["date"], market), tzinfo=tz),
             is_delayed=True,
         )
     return out

@@ -256,8 +256,46 @@ export const LESSONS_BN: Record<string, Lesson> = {
   },
 };
 
-export const getLesson = (id: string, lang: Lang): Lesson | undefined =>
-  (lang === "bn" ? LESSONS_BN[id] : undefined) ?? LESSONS[id];
+const US_EXAMPLES: Record<string, string> = {
+  momentum:
+    "A liquid large-cap rising steadily across 3, 6 and 12 months is a more coherent trend than a thin stock that jumped 200% in a few sessions.",
+  value_pe:
+    "A profitable bank at P/E 8 while comparable banks trade near 12 may be cheaper; falling earnings can still make it a value trap.",
+  roe:
+    "A company earning 20% ROE consistently and carrying manageable debt shows stronger quality than one with a single exceptional year.",
+  dividend:
+    "A stable company paying $3 per share on a $60 price has a 5% trailing yield; sustainability still depends on cash flow.",
+  volatility:
+    "A stock with 18% annualized volatility has historically moved more steadily than one near 70%, but neither figure predicts returns.",
+  rsi:
+    "RSI 75 after a rapid advance means momentum is stretched; it does not establish that the stock must reverse.",
+  moneyflow:
+    "A breakout with positive CMF and expanding volume has stronger participation evidence than one on thin volume.",
+  volume:
+    "Four times normal volume after an SEC filing has identifiable context; the same spike without public news needs more investigation.",
+  active_today:
+    "A liquid stock trading four times normal volume with substantial dollar turnover is genuinely active; activity still does not prove direction.",
+  smartmoney:
+    "A manager reporting more shares in consecutive 13F quarters shows disclosed accumulation, but the filing does not reveal the actual trade dates.",
+};
+
+export const getLesson = (id: string, lang: Lang, market = "DSE"): Lesson | undefined => {
+  const lesson = (lang === "bn" ? LESSONS_BN[id] : undefined) ?? LESSONS[id];
+  if (!lesson || market === "DSE") return lesson;
+  const replace = (value: string) =>
+    value
+      .split("DSE")
+      .join(lang === "bn" ? "যুক্তরাষ্ট্রের বাজার" : "the U.S. market")
+      .split("৳")
+      .join("$");
+  return {
+    title: replace(lesson.title),
+    what: replace(lesson.what),
+    use: replace(lesson.use),
+    watch: replace(lesson.watch),
+    example: lang === "en" && US_EXAMPLES[id] ? US_EXAMPLES[id] : replace(lesson.example),
+  };
+};
 
 // Which lesson backs each screen (by screen key). Screens without an entry just show the tooltip.
 export const SCREEN_LESSON: Record<string, string> = {
@@ -278,6 +316,8 @@ export const SCREEN_LESSON: Record<string, string> = {
   foreign_buying: "smartmoney",
   institutional_buying: "smartmoney",
   institutional_selling: "smartmoney",
+  institutional_13f_accumulation: "smartmoney",
+  institutional_13f_distribution: "smartmoney",
 };
 
 // Bangla screen titles + descriptions (the backend serves English). Keyed by screen key; a missing
@@ -309,6 +349,14 @@ export const SCREEN_BN: Record<string, { t: string; d: string }> = {
   foreign_buying: { t: "বিদেশি", d: "বিদেশি বিনিয়োগকারীরা শেষ প্রকাশে অংশ পরিবর্তন করেছে" },
   institutional_buying: { t: "প্রতিষ্ঠান", d: "প্রতিষ্ঠান শেষ প্রকাশে অংশ পরিবর্তন করেছে" },
   institutional_selling: { t: "প্রাতিষ্ঠানিক বিক্রি", d: "প্রতিষ্ঠান শেষ প্রকাশে অংশ কমিয়েছে" },
+  institutional_13f_accumulation: {
+    t: "১৩এফ-এ প্রাতিষ্ঠানিক বৃদ্ধি",
+    d: "ত্রৈমাসিক ১৩এফে তুলনাযোগ্য রিপোর্ট করা শেয়ার বেড়েছে",
+  },
+  institutional_13f_distribution: {
+    t: "১৩এফ-এ প্রাতিষ্ঠানিক হ্রাস",
+    d: "ত্রৈমাসিক ১৩এফে তুলনাযোগ্য রিপোর্ট করা শেয়ার কমেছে",
+  },
   most_watched: { t: "সর্বাধিক ওয়াচড", d: "যাদের সবচেয়ে বেশি ওয়াচ করা হচ্ছে" },
   most_discussed: { t: "সর্বাধিক আলোচিত", d: "যাদের নিয়ে সবচেয়ে বেশি আলোচনা" },
   attention_rising: { t: "আলোচনা বাড়ছে", d: "স্বাভাবিকের চেয়ে অনেক বেশি আলোচনা" },

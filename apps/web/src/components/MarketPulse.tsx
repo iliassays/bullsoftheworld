@@ -3,6 +3,8 @@ import { api, type MarketPulse as MarketPulseData } from "../lib/api";
 import { FreshnessTag } from "./FreshnessTag";
 import { useLang } from "../lib/i18n";
 import { Pct } from "./ui";
+import { formatCurrencyMillions } from "../lib/market";
+import { useTenantConfig } from "../lib/tenant";
 
 const riskClass: Record<MarketPulseData["risk_mode"], string> = {
   risk_on: "text-up bg-up/10 border-up/30",
@@ -32,6 +34,7 @@ function Cell({ label, value, sub }: { label: string; value: string; sub?: strin
 
 export function MarketPulse() {
   const { t } = useLang();
+  const { config } = useTenantConfig();
   const [pulse, setPulse] = useState<MarketPulseData | null>(null);
 
   useEffect(() => {
@@ -44,6 +47,7 @@ export function MarketPulse() {
   if (!pulse) return null;
   const totalBreadth = pulse.advancers + pulse.decliners || 1;
   const breadthPct = (pulse.advancers / totalBreadth) * 100;
+  const benchmarkChange = pulse.benchmark_change_pct ?? pulse.dsex_change_pct;
   const sectorSub =
     pulse.weak_sector && pulse.weak_sector_change != null
       ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)}`
@@ -71,17 +75,27 @@ export function MarketPulse() {
 
       <div className="grid grid-cols-2 gap-3 mt-3">
         <Cell
-          label="DSEX"
-          value={pulse.dsex == null ? "—" : pulse.dsex.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          label={pulse.benchmark_label ?? config.benchmark_label}
+          value={
+            (pulse.benchmark_close ?? pulse.dsex) == null
+              ? "—"
+              : (pulse.benchmark_close ?? pulse.dsex)!.toLocaleString(undefined, {
+                  maximumFractionDigits: 2,
+                })
+          }
           sub={
-            pulse.dsex_change_pct == null
+            benchmarkChange == null
               ? undefined
-              : signed(pulse.dsex_change_pct)
+              : signed(benchmarkChange)
           }
         />
         <Cell
           label={t("marketPulse.turnover")}
-          value={fmtCr(pulse.turnover_cr)}
+          value={
+            pulse.turnover_mn == null
+              ? fmtCr(pulse.turnover_cr)
+              : formatCurrencyMillions(pulse.turnover_mn)
+          }
           sub={
             pulse.turnover_vs_20d == null
               ? undefined
@@ -112,7 +126,7 @@ export function MarketPulse() {
 
       <p className="mt-3 text-[10px] text-muted">
         {t("marketPulse.footer")}{" "}
-        {pulse.dsex_change_pct != null && <Pct value={pulse.dsex_change_pct} />}
+        {benchmarkChange != null && <Pct value={benchmarkChange} />}
       </p>
     </div>
   );

@@ -119,9 +119,11 @@ export function Shell() {
   const { config } = useTenantConfig();
   usePageViewTracking(); // GA4 SPA page_view on route change + view_stock on stock pages
   const tagline = lang === "bn" ? config.tagline_bn : config.tagline_en;
-  const tabs = ALL_TABS.filter(
-    (tab) => !["/ideas", "/markets"].includes(tab.to) || config.features.curated_screens,
-  );
+  const tabs = ALL_TABS.filter((tab) => {
+    if (tab.to === "/ideas") return config.features.strategy_scanner;
+    if (tab.to === "/markets") return config.features.curated_screens;
+    return true;
+  });
   // Publish the live header height as a CSS var so page-level tab bars can stick right below
   // it (`top: var(--app-header-h)`). Measured, not hardcoded — the header wraps differently
   // per language and viewport.

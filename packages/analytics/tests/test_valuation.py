@@ -58,6 +58,23 @@ def test_high_but_sane_yield_kept():
     assert v.dividend_yield == round(0.9 / 10.0 * 100, 2)  # 9.0
 
 
+def test_cash_per_share_is_used_without_face_value():
+    v = compute_valuation(200.0, cash_dividend_per_share=3.0)
+
+    assert v.dividend_yield == 1.5
+
+
+def test_cash_per_share_takes_precedence_over_dse_percentage():
+    v = compute_valuation(
+        100.0,
+        cash_dividend_per_share=2.0,
+        cash_dividend_pct=50.0,
+        face_value=10.0,
+    )
+
+    assert v.dividend_yield == 2.0
+
+
 def test_roe_is_eps_over_nav():
     # ROE = EPS / NAV-per-share. eps 5, nav 25 -> 20%.
     v = compute_valuation(100.0, eps=5.0, nav_per_share=25.0)
