@@ -27,6 +27,7 @@ DATASET_PAGE = "https://www.sec.gov/data-research/sec-markets-data/form-13f-data
 MAX_STORED_MANAGERS_PER_SYMBOL = 150
 TOP_BY_VALUE = 100
 TOP_BY_CHANGE = 25
+MAX_LABEL_ATTEMPTS_PER_CUSIP = 8
 
 
 class SymbolIdentity(BaseModel):
@@ -141,6 +142,7 @@ _INSTRUMENT_WORDS = re.compile(
 _CLASS_WORDS = re.compile(r"\b(?:CLASS|CL)\s*([A-Z])\b")
 _SERIES_WORDS = re.compile(r"\b(?:SERIES|SER)\s*\d+\b")
 _NON_ALNUM = re.compile(r"[^A-Z0-9]+")
+_VALID_CUSIP = re.compile(r"[A-Z0-9]{9}")
 _LEGAL_WORDS = re.compile(
     r"\b(AND|CO|CORP|INC|LTD|LLC|PLC|LP|L P|THE|DE|HOLDING|HOLDINGS|HLDG|HLDGS)\b"
 )
@@ -180,13 +182,31 @@ def _identity_signature(value: str) -> tuple[str, ...]:
     return tuple(sorted(set(normalize_issuer_name(value).split())))
 
 
-def match_13f_security(
+@dataclass(frozen=True)
+class _SymbolMatchIndex:
+    by_issuer: dict[str, tuple[SymbolIdentity, ...]]
+    by_signature: dict[tuple[str, ...], tuple[SymbolIdentity, ...]]
+
+
+def _symbol_match_index(symbols: Iterable[SymbolIdentity]) -> _SymbolMatchIndex:
+    by_issuer: dict[str, list[SymbolIdentity]] = defaultdict(list)
+    by_signature: dict[tuple[str, ...], list[SymbolIdentity]] = defaultdict(list)
+    for symbol in symbols:
+        by_issuer[normalize_issuer_name(symbol.name)].append(symbol)
+        by_signature[_identity_signature(symbol.name)].append(symbol)
+    return _SymbolMatchIndex(
+        by_issuer={key: tuple(value) for key, value in by_issuer.items()},
+        by_signature={key: tuple(value) for key, value in by_signature.items()},
+    )
+
+
+def _match_13f_security(
     issuer_name: str,
     title_of_class: str,
-    symbols: Iterable[SymbolIdentity],
+    index: _SymbolMatchIndex,
 ) -> tuple[str, float, str] | None:
     issuer_key = normalize_issuer_name(issuer_name)
-    candidates = [symbol for symbol in symbols if normalize_issuer_name(symbol.name) == issuer_key]
+    candidates = index.by_issuer.get(issuer_key, ())
     if len(candidates) == 1:
         return candidates[0].code, 1.0, "exact_normalized_issuer"
     if len(candidates) > 1:
@@ -201,9 +221,7 @@ def match_13f_security(
     filing_signature = _identity_signature(f"{issuer_name} {title_of_class}")
     if not filing_signature:
         return None
-    signature_candidates = [
-        symbol for symbol in symbols if _identity_signature(symbol.name) == filing_signature
-    ]
+    signature_candidates = index.by_signature.get(filing_signature, ())
     if len(signature_candidates) == 1:
         return signature_candidates[0].code, 0.99, "exact_normalized_token_signature"
     if len(signature_candidates) > 1:
@@ -217,6 +235,18 @@ def match_13f_security(
             if len(class_matches) == 1:
                 return class_matches[0].code, 0.99, "exact_token_signature_and_class"
     return None
+
+
+def match_13f_security(
+    issuer_name: str,
+    title_of_class: str,
+    symbols: Iterable[SymbolIdentity],
+) -> tuple[str, float, str] | None:
+    return _match_13f_security(
+        issuer_name,
+        title_of_class,
+        _symbol_match_index(symbols),
+    )
 
 
 def _member_name(archive: zipfile.ZipFile, expected: str) -> str:
@@ -306,6 +336,7 @@ def parse_13f_archive(
     known_cusips: dict[str, str] | None = None,
 ) -> ArchiveResult:
     symbol_list = tuple(symbols)
+    match_index = _symbol_match_index(symbol_list)
     cusip_to_code = dict(known_cusips or {})
     matches: dict[str, CusipMatch] = {}
     unmatched_labels: dict[str, set[tuple[str, str]]] = defaultdict(set)
@@ -376,14 +407,20 @@ def parse_13f_archive(
             if (row.get("PUTCALL") or "").strip():
                 continue
             cusip = (row.get("CUSIP") or "").strip().upper()
+            if _VALID_CUSIP.fullmatch(cusip) is None:
+                continue
             code = cusip_to_code.get(cusip)
             issuer_name = (row.get("NAMEOFISSUER") or "").strip()
             title_of_class = (row.get("TITLEOFCLASS") or "").strip()
             label = (issuer_name.upper(), title_of_class.upper())
-            if code is None and label not in unmatched_labels[cusip]:
+            if (
+                code is None
+                and label not in unmatched_labels[cusip]
+                and len(unmatched_labels[cusip]) < MAX_LABEL_ATTEMPTS_PER_CUSIP
+            ):
                 had_prior_label = bool(unmatched_labels[cusip])
                 unmatched_labels[cusip].add(label)
-                matched = match_13f_security(issuer_name, title_of_class, symbol_list)
+                matched = _match_13f_security(issuer_name, title_of_class, match_index)
                 if matched:
                     code, confidence, method = matched
                     cusip_to_code[cusip] = code
@@ -411,6 +448,8 @@ def parse_13f_archive(
                 if row_number >= last_late_row:
                     break
                 cusip = (row.get("CUSIP") or "").strip().upper()
+                if _VALID_CUSIP.fullmatch(cusip) is None:
+                    continue
                 match_row = late_match_rows.get(cusip)
                 if match_row is None or row_number >= match_row:
                     continue

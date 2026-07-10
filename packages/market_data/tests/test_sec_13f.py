@@ -295,6 +295,8 @@ def test_archive_replays_earlier_rows_when_same_cusip_has_a_later_exact_label(
         "INFOTABLE.tsv": (
             "ACCESSION_NUMBER\tNAMEOFISSUER\tTITLEOFCLASS\tCUSIP\tVALUE\tSSHPRNAMT"
             "\tSSHPRNAMTTYPE\tPUTCALL\n"
+            "0000000001-26-000001\tISHARES 20 YEAR TREASURY BD\tFUND\t\t999"
+            "\t999\tSH\t\n"
             "0000000001-26-000001\tISHARES TR\t20 YR TR BD ETF\t464287432\t100"
             "\t10\tSH\t\n"
             "0000000001-26-000001\tISHARES 20 YEAR TREASURY BD\tFUND\t464287432"
