@@ -505,6 +505,19 @@ def _build_insights(
             if delta < 0
             else "Ownership is stable"
         )
+        insights.append(
+            ResearchInsight(
+                lens="ownership",
+                stance="constructive" if delta > 0 else "risk" if delta < 0 else "watch",
+                title=ownership_title,
+                detail=(
+                    "মালিকানার পরিবর্তন ধীর সিগন্যাল; এটি দামের মুভকে সমর্থন বা প্রশ্ন করতে পারে, কিন্তু অফিসিয়াল ঘোষণাকে ছাপিয়ে যাওয়া উচিত নয়।"
+                    if lang == "bn"
+                    else "Ownership change is a slow signal; it can confirm or challenge a price move but should not override disclosures."
+                ),
+                evidence=" · ".join(ownership_bits),
+            )
+        )
 
     institutional = next((s for s in sources if s.type == "sec_13f"), None)
     if institutional:
@@ -523,19 +536,6 @@ def _build_insights(
                     else "13F shows quarter-end holdings disclosed later; it does not reveal the actual purchase or sale date."
                 ),
                 evidence=institutional.snippet,
-            )
-        )
-        insights.append(
-            ResearchInsight(
-                lens="ownership",
-                stance="constructive" if delta > 0 else "risk" if delta < 0 else "watch",
-                title=ownership_title,
-                detail=(
-                    "মালিকানার পরিবর্তন ধীর সিগন্যাল; এটি দামের মুভকে সমর্থন বা প্রশ্ন করতে পারে, কিন্তু অফিসিয়াল ঘোষণাকে ছাপিয়ে যাওয়া উচিত নয়।"
-                    if lang == "bn"
-                    else "Ownership change is a slow signal; it can confirm or challenge a price move but should not override disclosures."
-                ),
-                evidence=" · ".join(ownership_bits),
             )
         )
 

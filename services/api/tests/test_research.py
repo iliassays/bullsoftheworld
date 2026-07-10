@@ -253,6 +253,38 @@ def test_institutional_question_uses_13f_and_states_timing_limit() -> None:
     assert "reported holdings change" in answer
 
 
+def test_13f_insight_does_not_require_dse_ownership_deltas() -> None:
+    class Analytics:
+        pe_ratio = 38.0
+        pe_vs_sector = 1.2
+        rsi_14 = 60.0
+        relative_volume = 1.1
+        cmf_20 = None
+        obv_slope = None
+        institute_delta = None
+        foreign_delta = None
+
+    insights = _build_insights(
+        analytics=Analytics(),
+        sources=[
+            _src(
+                type="sec_13f",
+                id="AAPL:2026-03-31",
+                title="SEC 13F holdings as of 2026-03-31",
+                snippet="Aggregate reported shares increased 1.2%.",
+            )
+        ],
+        posts_24h=0,
+        chatter_x=None,
+        market="US",
+    )
+
+    ownership = [insight for insight in insights if insight.lens == "ownership"]
+    assert len(ownership) == 1
+    assert ownership[0].stance == "watch"
+    assert "actual purchase or sale date" in ownership[0].detail
+
+
 def test_financial_insights_surface_valuation_technical_and_disclosure_lenses():
     class Analytics:
         pe_ratio = 5.9
