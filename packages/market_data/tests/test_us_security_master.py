@@ -15,6 +15,7 @@ from bulls.market_data.providers.us_security_master import (
 
 NASDAQ_LISTED = """Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
 AAPL|Apple Inc. - Common Stock|Q|N|N|40|N|N
+GOOG|Alphabet Inc. - Class C Capital Stock|Q|N|N|100|N|N
 AAPU|Direxion Daily AAPL Bull 2X ETF|G|N|N|100|Y|N
 AACIW|Armada Acquisition Corp. III - Warrant|G|N|N|100|N|N
 BADF|Deficient Issuer - Common Stock|S|N|D|100|N|N
@@ -25,6 +26,7 @@ File Creation Time: 0709202618:04
 OTHER_LISTED = """ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol
 BRK.B|Berkshire Hathaway Inc. Class B Common Stock|N|BRK.B|N|100|N|BRK-B
 BABA|Alibaba Group Holding Limited American Depositary Shares|N|BABA|N|100|N|BABA
+V|Visa Inc.|N|V|N|100|N|V
 ABR$D|Arbor Realty Trust 6.375% Series D Cumulative Redeemable Preferred Stock|N|ABRpD|N|100|N|ABR-D
 EQH-A|Equitable Holdings, Inc. Depositary Shares|N|EQH-A|N|100|N|EQH-A
 FITB-I|Fifth Third Bancorp Depositary Share repstg 1/1000th Ownership Interest Perp Pfd Series I|N|FITB-I|N|100|N|FITB-I
@@ -44,6 +46,9 @@ def test_parse_nasdaq_listed_classifies_and_filters_product_universe() -> None:
 
     assert records["AAPU"].instrument_type == "etf"
     assert records["AAPU"].is_product_eligible
+
+    assert records["GOOG"].instrument_type == "common_stock"
+    assert records["GOOG"].is_product_eligible
 
     assert records["AACIW"].instrument_type == "warrant"
     assert not records["AACIW"].is_product_eligible
@@ -69,13 +74,16 @@ def test_parse_other_listed_normalizes_symbols_and_keeps_raw_symbol() -> None:
     assert records["BABA"].instrument_type == "adr"
     assert records["BABA"].is_product_eligible
 
+    assert records["V"].instrument_type == "common_stock"
+    assert records["V"].is_product_eligible
+
     assert records["ABR-D"].instrument_type == "preferred_stock"
     assert not records["ABR-D"].is_product_eligible
     assert records["ABR-D"].exclude_reason == "preferred_stock"
 
-    assert records["EQH-A"].instrument_type == "other"
+    assert records["EQH-A"].instrument_type == "preferred_stock"
     assert not records["EQH-A"].is_product_eligible
-    assert records["EQH-A"].exclude_reason == "other"
+    assert records["EQH-A"].exclude_reason == "preferred_stock"
 
     assert records["FITB-I"].instrument_type == "preferred_stock"
     assert not records["FITB-I"].is_product_eligible

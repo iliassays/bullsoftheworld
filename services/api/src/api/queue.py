@@ -58,6 +58,6 @@ async def enqueue_post_embedding(post_id: int) -> None:
 
 async def close_pool() -> None:
     global _pool
-    if _pool is not None:
-        await _pool.aclose()
-        _pool = None
+    pool, _pool = _pool, None
+    if pool is not None:
+        await pool.aclose()

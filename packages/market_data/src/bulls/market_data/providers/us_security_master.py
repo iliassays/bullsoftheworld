@@ -78,7 +78,13 @@ def _normalize_symbol(value: str) -> str:
     return value.strip().upper()
 
 
-def classify_instrument(name: str, *, is_etf: bool, nextshares: bool = False) -> str:
+def classify_instrument(
+    name: str,
+    *,
+    is_etf: bool,
+    nextshares: bool = False,
+    assume_common: bool = False,
+) -> str:
     lower = name.lower()
     if nextshares:
         return "nextshares"
@@ -104,12 +110,24 @@ def classify_instrument(name: str, *, is_etf: bool, nextshares: bool = False) ->
         )
     ):
         return "adr"
+    # Non-American depositary shares usually represent preferred equity. ADR/ADS wording was
+    # handled above, and explicit "preferred"/"pfd" wording was handled earlier.
+    if "depositary share" in lower or "depository share" in lower:
+        return "preferred_stock"
     if any(
         token in lower
-        for token in ("common stock", "common share", "ordinary share", "ordinary shares")
+        for token in (
+            "common stock",
+            "common share",
+            "ordinary share",
+            "ordinary shares",
+            "capital stock",
+        )
     ):
         return "common_stock"
-    return "other"
+    # NYSE-family records often carry only the issuer name (for example "Visa Inc."). Reaching
+    # this fallback means every known non-common security marker above was excluded.
+    return "common_stock" if assume_common else "other"
 
 
 def eligibility_reason(
@@ -179,7 +197,7 @@ def parse_other_listed(text: str) -> list[UsSecurityRecord]:
         name = row["Security Name"]
         is_etf = _yn(row.get("ETF"))
         is_test = _yn(row.get("Test Issue"))
-        instrument_type = classify_instrument(name, is_etf=is_etf)
+        instrument_type = classify_instrument(name, is_etf=is_etf, assume_common=True)
         eligible, reason = eligibility_reason(
             instrument_type, is_test_issue=is_test, financial_status=None
         )

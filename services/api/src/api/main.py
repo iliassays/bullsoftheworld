@@ -8,6 +8,7 @@ handler can read the active tenant. Run with:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -70,8 +71,14 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.tenants = TenantRegistry.from_dir(_TENANTS_DIR, default=settings.default_tenant)
     yield
-    await close_pool()
-    await dispose_engine()
+    for name, closer in (("queue", close_pool), ("database", dispose_engine)):
+        try:
+            async with asyncio.timeout(10):
+                await closer()
+        except TimeoutError:
+            # The process is exiting; bound graceful shutdown instead of blocking deployment for
+            # systemd's full stop timeout on a stale network connection.
+            log.error("timed out closing %s resources during shutdown", name)
 
 
 app = FastAPI(title="Bulls of the World API", lifespan=lifespan)
