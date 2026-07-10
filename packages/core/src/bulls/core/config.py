@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     # --- Generated card images (served by the API, referenced from feed posts) ---
     card_dir: str = "/tmp/bulls-cards"  # writable dir for generated card PNGs
     api_public_url: str = "http://localhost:8090"  # public base the cards are served from
+    wallst_api_public_url: str = "https://api.bullsofwallst.com"
+    wallst_alert_email: str = ""  # falls back to ALERT_EMAIL, then SUPPORT_EMAIL
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> Settings:

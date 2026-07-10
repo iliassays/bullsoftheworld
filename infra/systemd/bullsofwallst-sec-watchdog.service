@@ -1,0 +1,11 @@
+[Unit]
+Description=Bulls of Wall Street SEC health watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+SuccessExitStatus=1
+WorkingDirectory=/home/ubuntu/bullsofdhaka/services/ingestion
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.sec_watchdog
+NoNewPrivileges=true

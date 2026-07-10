@@ -328,7 +328,19 @@ async def _already_current(candidate_url: str, requested_quarters: int) -> bool:
     sm = get_sessionmaker()
     async with sm() as session:
         state = await session.get(RegulatoryDataState, (MARKET, SOURCE))
-    return bool(state and _is_refresh_current(state.details, candidate_url, requested_quarters))
+        current = bool(
+            state
+            and _is_refresh_current(state.details, candidate_url, requested_quarters)
+        )
+        if current and state is not None:
+            checked_at = dt.datetime.now(dt.UTC)
+            state.last_success_at = checked_at
+            state.details = {
+                **(state.details or {}),
+                "last_checked_at": checked_at.isoformat(),
+            }
+            await session.commit()
+    return current
 
 
 async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str, int]:

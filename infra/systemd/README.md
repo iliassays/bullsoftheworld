@@ -34,10 +34,16 @@ sudo systemctl enable --now bullsofdhaka-worker bulls-ai-worker
 Official U.S. regulatory data runs independently from licensed/third-party market-data workers:
 
 ```bash
-sudo cp infra/systemd/bullsofwallst-sec-worker.service /etc/systemd/system/
+sudo cp infra/systemd/bullsofwallst-sec-worker.service \
+  infra/systemd/bullsofwallst-sec-watchdog.* /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now bullsofwallst-sec-worker
+sudo systemctl enable --now bullsofwallst-sec-worker bullsofwallst-sec-watchdog.timer
 ```
+
+The SEC watchdog has its own six-hour alert cooldown and checks worker/API liveness, daily EDGAR
+freshness, weekly 13F freshness, 8-quarter history depth, refresh failures, and ready-universe
+coverage. Set `WALLST_ALERT_EMAIL` to route these separately; otherwise it uses `ALERT_EMAIL` and
+then `SUPPORT_EMAIL`. It restarts only an inactive SEC worker and never touches DSE services.
 
 `bullsofwallst-worker.service` is deliberately not included above. Install and enable it only after
 the US market-data license, same-site API hostname, verified exchange calendar, and initial cohort
