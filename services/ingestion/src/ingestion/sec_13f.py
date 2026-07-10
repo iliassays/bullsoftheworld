@@ -374,7 +374,12 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
             for index, url in enumerate(urls):
                 path = None
                 try:
+                    print(f"  ...downloading archive {index + 1}", flush=True)
                     path, size = await _download_archive(client, Path(temp), url, index)
+                    print(
+                        f"  ...parsing archive {index + 1} ({size / 1024 / 1024:.1f} MiB)",
+                        flush=True,
+                    )
                     archive = parse_13f_archive(
                         path,
                         source_url=url,
@@ -382,7 +387,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
                         known_cusips=known_cusips,
                     )
                 except (httpx.HTTPError, ValueError) as error:
-                    print(f"  ! skipped 13F archive {url} ({error})")
+                    print(f"  ! skipped 13F archive {url} ({error})", flush=True)
                     continue
                 finally:
                     if path is not None:
@@ -409,7 +414,8 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
                 baseline = prior
                 print(
                     f"  ...stored {completed}/{history_quarters} quarters "
-                    f"({current.report_date}, {len(summaries)} symbols)"
+                    f"({current.report_date}, {len(summaries)} symbols)",
+                    flush=True,
                 )
                 if completed == history_quarters:
                     break
@@ -470,9 +476,12 @@ def _args() -> argparse.Namespace:
 
 def main() -> None:
     args = _args()
-    print(f"[sec-13f] refreshing {args.history_quarters} bounded institutional quarters")
+    print(
+        f"[sec-13f] refreshing {args.history_quarters} bounded institutional quarters",
+        flush=True,
+    )
     stats = asyncio.run(collect(force=args.force, history_quarters=args.history_quarters))
-    print(f"[sec-13f] done: {stats}")
+    print(f"[sec-13f] done: {stats}", flush=True)
 
 
 if __name__ == "__main__":
