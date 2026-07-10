@@ -45,6 +45,8 @@ SOURCE = "sec_13f"
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 RETENTION_QUARTERS = 8
 UPSERT_BATCH_ROWS = 1000
+HTTP_RETRIES = 5
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 def _headers() -> dict[str, str]:
@@ -75,16 +77,60 @@ async def _download(client: httpx.AsyncClient, url: str, target: Path) -> int:
 
 async def _dataset_urls() -> list[str]:
     async with httpx.AsyncClient(headers=_headers(), timeout=60, follow_redirects=True) as client:
-        page = await client.get(DATASET_PAGE)
-        page.raise_for_status()
+        for attempt in range(HTTP_RETRIES):
+            try:
+                page = await client.get(DATASET_PAGE)
+                page.raise_for_status()
+                break
+            except httpx.HTTPError as error:
+                if attempt == HTTP_RETRIES - 1 or not _retryable_http_error(error):
+                    raise
+                delay = _retry_delay(error, attempt)
+                print(
+                    f"  ! SEC dataset index retry {attempt + 1}/{HTTP_RETRIES} "
+                    f"in {delay:.0f}s ({type(error).__name__})",
+                    flush=True,
+                )
+                await asyncio.sleep(delay)
     return discover_dataset_urls(page.text)
+
+
+def _retryable_http_error(error: httpx.HTTPError) -> bool:
+    return isinstance(error, httpx.TransportError) or (
+        isinstance(error, httpx.HTTPStatusError)
+        and error.response.status_code in RETRYABLE_STATUS
+    )
+
+
+def _retry_delay(error: httpx.HTTPError, attempt: int) -> float:
+    if isinstance(error, httpx.HTTPStatusError):
+        retry_after = error.response.headers.get("retry-after", "")
+        try:
+            return min(60.0, max(1.0, float(retry_after)))
+        except ValueError:
+            pass
+    return min(60.0, 2.0 ** (attempt + 1))
 
 
 async def _download_archive(
     client: httpx.AsyncClient, directory: Path, url: str, index: int
 ) -> tuple[Path, int]:
     target = directory / f"dataset-{index}.zip"
-    return target, await _download(client, url, target)
+    for attempt in range(HTTP_RETRIES):
+        try:
+            return target, await _download(client, url, target)
+        except httpx.HTTPError as error:
+            target.unlink(missing_ok=True)
+            if attempt == HTTP_RETRIES - 1 or not _retryable_http_error(error):
+                raise
+            delay = _retry_delay(error, attempt)
+            print(
+                f"  ! archive retry {attempt + 1}/{HTTP_RETRIES} in {delay:.0f}s "
+                f"({type(error).__name__})",
+                flush=True,
+            )
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
 
 
 async def _symbol_context() -> tuple[list[SymbolIdentity], dict[str, str]]:

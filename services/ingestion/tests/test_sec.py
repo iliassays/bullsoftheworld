@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import datetime as dt
 
+import httpx
 import pytest
 from sqlalchemy.dialects import postgresql
 
 from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
 from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
-from ingestion.sec_13f import UPSERT_BATCH_ROWS, _is_refresh_current, _upsert_managers
+from ingestion.sec_13f import (
+    UPSERT_BATCH_ROWS,
+    _is_refresh_current,
+    _retry_delay,
+    _retryable_http_error,
+    _upsert_managers,
+)
 from ingestion.sec_13f import _upsert as _upsert_13f
 
 
@@ -89,6 +96,25 @@ def test_legacy_13f_refresh_state_represents_one_loaded_quarter() -> None:
 
     assert _is_refresh_current({"current_archive_url": url}, url, 1)
     assert not _is_refresh_current({"current_archive_url": url}, url, 2)
+
+
+def test_13f_http_retry_is_bounded_to_transient_failures() -> None:
+    request = httpx.Request("GET", "https://www.sec.gov/example")
+    unavailable = httpx.HTTPStatusError(
+        "unavailable",
+        request=request,
+        response=httpx.Response(503, headers={"Retry-After": "7"}, request=request),
+    )
+    not_found = httpx.HTTPStatusError(
+        "not found",
+        request=request,
+        response=httpx.Response(404, request=request),
+    )
+
+    assert _retryable_http_error(unavailable)
+    assert _retry_delay(unavailable, 0) == 7
+    assert not _retryable_http_error(not_found)
+    assert _retry_delay(httpx.ConnectError("offline", request=request), 2) == 8
 
 
 @pytest.mark.asyncio
