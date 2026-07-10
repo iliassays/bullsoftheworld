@@ -275,3 +275,44 @@ def test_archive_value_is_already_reported_in_us_dollars(tmp_path) -> None:
     )
 
     assert result.positions[0].value_usd == 290_512_251_859
+
+
+def test_archive_replays_earlier_rows_when_same_cusip_has_a_later_exact_label(
+    tmp_path,
+) -> None:
+    import zipfile
+
+    archive_path = tmp_path / "13f-label-variant.zip"
+    files = {
+        "COVERPAGE.tsv": (
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n"
+            "0000000001-26-000001\tExample Manager\n"
+        ),
+        "SUBMISSION.tsv": (
+            "ACCESSION_NUMBER\tCIK\tFILING_DATE\tPERIODOFREPORT\tSUBMISSIONTYPE\n"
+            "0000000001-26-000001\t1\t15-May-2026\t31-Mar-2026\t13F-HR\n"
+        ),
+        "INFOTABLE.tsv": (
+            "ACCESSION_NUMBER\tNAMEOFISSUER\tTITLEOFCLASS\tCUSIP\tVALUE\tSSHPRNAMT"
+            "\tSSHPRNAMTTYPE\tPUTCALL\n"
+            "0000000001-26-000001\tISHARES TR\t20 YR TR BD ETF\t464287432\t100"
+            "\t10\tSH\t\n"
+            "0000000001-26-000001\tISHARES 20 YEAR TREASURY BD\tFUND\t464287432"
+            "\t200\t20\tSH\t\n"
+        ),
+    }
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+
+    result = parse_13f_archive(
+        archive_path,
+        source_url="https://www.sec.gov/example.zip",
+        symbols=[SymbolIdentity(code="TLT", name="iShares 20+ Year Treasury Bond ETF")],
+    )
+
+    assert result.unmatched_cusips == 0
+    assert [(row.code, row.shares, row.value_usd) for row in result.positions] == [
+        ("TLT", 30, 300)
+    ]
+    assert result.matches[0].match_method == "exact_normalized_issuer"

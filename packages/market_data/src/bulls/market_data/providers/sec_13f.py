@@ -308,7 +308,7 @@ def parse_13f_archive(
     symbol_list = tuple(symbols)
     cusip_to_code = dict(known_cusips or {})
     matches: dict[str, CusipMatch] = {}
-    unmatched: set[str] = set()
+    unmatched_labels: dict[str, set[tuple[str, str]]] = defaultdict(set)
 
     with zipfile.ZipFile(path) as archive:
         submissions = _selected_submissions(archive)
@@ -334,43 +334,13 @@ def parse_13f_archive(
             ) > (prior_filing.filing_date, prior_filing.accession_number):
                 manager_filings[item.cik] = candidate
         aggregate: dict[tuple[str, int, dt.date], RawInstitutionalPosition] = {}
-        for row in _rows(archive, "INFOTABLE.tsv"):
-            accession = row.get("ACCESSION_NUMBER") or ""
-            submission = submissions.get(accession)
-            if submission is None:
-                continue
-            if (row.get("SSHPRNAMTTYPE") or "").strip().upper() != "SH":
-                continue
-            if (row.get("PUTCALL") or "").strip():
-                continue
-            cusip = (row.get("CUSIP") or "").strip().upper()
-            code = cusip_to_code.get(cusip)
-            if code is None and cusip not in unmatched:
-                matched = match_13f_security(
-                    row.get("NAMEOFISSUER") or "",
-                    row.get("TITLEOFCLASS") or "",
-                    symbol_list,
-                )
-                if matched:
-                    code, confidence, method = matched
-                    cusip_to_code[cusip] = code
-                    matches[cusip] = CusipMatch(
-                        code=code,
-                        cusip=cusip,
-                        issuer_name=(row.get("NAMEOFISSUER") or "").strip(),
-                        title_of_class=(row.get("TITLEOFCLASS") or "").strip(),
-                        confidence=confidence,
-                        match_method=method,
-                    )
-                else:
-                    unmatched.add(cusip)
-            if code is None:
-                continue
+
+        def add_position(row, submission: _Submission, code: str, cusip: str) -> None:
             try:
                 shares = int(float(row.get("SSHPRNAMT") or 0))
                 value_usd = float(row.get("VALUE") or 0)
             except ValueError:
-                continue
+                return
             key = (code, submission.cik, submission.report_date)
             prior = aggregate.get(key)
             if prior is None:
@@ -394,6 +364,64 @@ def parse_13f_archive(
                         "filing_date": max(prior.filing_date, submission.filing_date),
                     }
                 )
+
+        late_match_rows: dict[str, int] = {}
+        for row_number, row in enumerate(_rows(archive, "INFOTABLE.tsv")):
+            accession = row.get("ACCESSION_NUMBER") or ""
+            submission = submissions.get(accession)
+            if submission is None:
+                continue
+            if (row.get("SSHPRNAMTTYPE") or "").strip().upper() != "SH":
+                continue
+            if (row.get("PUTCALL") or "").strip():
+                continue
+            cusip = (row.get("CUSIP") or "").strip().upper()
+            code = cusip_to_code.get(cusip)
+            issuer_name = (row.get("NAMEOFISSUER") or "").strip()
+            title_of_class = (row.get("TITLEOFCLASS") or "").strip()
+            label = (issuer_name.upper(), title_of_class.upper())
+            if code is None and label not in unmatched_labels[cusip]:
+                had_prior_label = bool(unmatched_labels[cusip])
+                unmatched_labels[cusip].add(label)
+                matched = match_13f_security(issuer_name, title_of_class, symbol_list)
+                if matched:
+                    code, confidence, method = matched
+                    cusip_to_code[cusip] = code
+                    if had_prior_label:
+                        late_match_rows[cusip] = row_number
+                    unmatched_labels.pop(cusip, None)
+                    matches[cusip] = CusipMatch(
+                        code=code,
+                        cusip=cusip,
+                        issuer_name=issuer_name,
+                        title_of_class=title_of_class,
+                        confidence=confidence,
+                        match_method=method,
+                    )
+            if code is None:
+                continue
+            add_position(row, submission, code, cusip)
+
+        # A CUSIP can appear under more than one official label in the same archive. If a later
+        # label resolves exactly, replay only the earlier rows for that CUSIP so the first managers
+        # are not silently omitted from the aggregate.
+        if late_match_rows:
+            last_late_row = max(late_match_rows.values())
+            for row_number, row in enumerate(_rows(archive, "INFOTABLE.tsv")):
+                if row_number >= last_late_row:
+                    break
+                cusip = (row.get("CUSIP") or "").strip().upper()
+                match_row = late_match_rows.get(cusip)
+                if match_row is None or row_number >= match_row:
+                    continue
+                submission = submissions.get(row.get("ACCESSION_NUMBER") or "")
+                if submission is None:
+                    continue
+                if (row.get("SSHPRNAMTTYPE") or "").strip().upper() != "SH":
+                    continue
+                if (row.get("PUTCALL") or "").strip():
+                    continue
+                add_position(row, submission, cusip_to_code[cusip], cusip)
     positions = tuple(
         position for position in aggregate.values() if position.report_date == latest_report
     )
@@ -402,7 +430,7 @@ def parse_13f_archive(
         report_date=latest_report,
         positions=positions,
         matches=tuple(matches.values()),
-        unmatched_cusips=len(unmatched),
+        unmatched_cusips=len(unmatched_labels),
         manager_filings=manager_filings,
     )
 
