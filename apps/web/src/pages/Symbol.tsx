@@ -334,19 +334,19 @@ export function SymbolPage() {
           </div>
         </div>
         {q ? (
-          <div className="mt-3 flex items-end gap-3">
+          <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
             <div className="text-2xl font-bold tnum">{taka(q.ltp)}</div>
             <div className="text-sm font-semibold pb-1">
               <Pct value={q.change_pct} />
             </div>
             {bars.length > 1 && (
-              <span className="pb-1">
+              <span className="hidden pb-1 min-[430px]:inline">
                 <Sparkline data={bars.map((b) => b.close)} width={84} height={30} />
               </span>
             )}
-            <div className="ml-auto text-right text-xs text-muted tnum">
+            <div className="flex w-full justify-between text-left text-[11px] text-muted tnum min-[430px]:ml-auto min-[430px]:block min-[430px]:w-auto min-[430px]:text-right min-[430px]:text-xs">
               <div>
-                H {q.high} · L {q.low}
+                H {q.high.toFixed(config.price_decimals)} · L {q.low.toFixed(config.price_decimals)}
               </div>
               <div>Vol {q.volume.toLocaleString()}</div>
             </div>
