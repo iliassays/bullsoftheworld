@@ -97,14 +97,15 @@ uv run ruff check . && uv run ruff format .          # lint + format
 PROD_S3_BUCKET=bullsofdhaka-web PROD_CLOUDFRONT_ID=EPJ7LAHUJDDMK ./deploy-prod.sh
 
 # Bulls of Wall Street production
-WEB_S3_BUCKET=bullsofwallst-web \
-WEB_CLOUDFRONT_ID=E3DLOEKLM3136G \
-WEB_SITE_URL=https://bullsofwallst.com \
-WEB_TENANT_HOST=bullsofwallst.com \
-WEB_BRAND_NAME="Bulls of Wall Street" \
-WEB_DEFAULT_LANG=en \
-WEB_API_URL=https://api.bullsofdhaka.com \
-./deploy-web.sh
+WALLST_S3_BUCKET=bullsofwallst-web \
+WALLST_CLOUDFRONT_ID=E3DLOEKLM3136G \
+./deploy-wallst.sh
+
+# During DNS propagation only: preserve the canonical API URL and override its build-time address.
+WALLST_SITEMAP_RESOLVE_IP=203.0.113.10 \
+WALLST_S3_BUCKET=bullsofwallst-web \
+WALLST_CLOUDFRONT_ID=E3DLOEKLM3136G \
+./deploy-wallst.sh
 ```
 
 ## Design

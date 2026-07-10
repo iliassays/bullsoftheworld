@@ -6,6 +6,7 @@
 // The symbol universe changes rarely, so build-time freshness is fine. If the API is unreachable
 // the script still writes a valid sitemap of the static routes rather than failing the deploy.
 import { writeFileSync } from "node:fs";
+import https from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +22,9 @@ const LANGS = (process.env.WEB_LANGS || "bn,en")
   .map((lang) => lang.trim())
   .filter(Boolean);
 const BRAND_NAME = process.env.WEB_BRAND_NAME || "Bulls of Dhaka";
+const STRICT = process.env.WEB_SITEMAP_STRICT === "1";
+const RESOLVE_IP = process.env.WEB_SITEMAP_RESOLVE_IP;
+const API_PAGE_LIMIT = 100;
 const PATTERN_TYPES = [
   "ascending_triangle",
   "descending_triangle",
@@ -31,14 +35,58 @@ const PATTERN_TYPES = [
   "double_bottom",
 ];
 
+async function apiJson(path) {
+  const url = `${API}${path}`;
+  const headers = { "X-Tenant-Host": TENANT_HOST };
+  if (!RESOLVE_IP) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`${path} HTTP ${res.status}`);
+    return res.json();
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        headers,
+        lookup: (_hostname, options, callback) => {
+          if (options?.all) {
+            callback(null, [{ address: RESOLVE_IP, family: 4 }]);
+          } else {
+            callback(null, RESOLVE_IP, 4);
+          }
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const body = Buffer.concat(chunks).toString("utf8");
+          if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(`${path} HTTP ${res.statusCode || "unknown"}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(new Error(`${path} returned invalid JSON: ${error.message}`));
+          }
+        });
+      },
+    );
+    request.on("error", reject);
+  });
+}
+
+function handleFetchFailure(scope, error) {
+  if (STRICT) throw error;
+  console.warn(`⚠ could not fetch ${scope} (${error.message}) — sitemap will stay conservative`);
+}
+
 async function staticPaths() {
   const base = ["/", "/about"];
   try {
-    const res = await fetch(`${API}/market/config`, {
-      headers: { "X-Tenant-Host": TENANT_HOST },
-    });
-    if (!res.ok) throw new Error(`/market/config HTTP ${res.status}`);
-    const config = await res.json();
+    const config = await apiJson("/market/config");
     if (config.features?.curated_screens) {
       base.push(
         "/markets",
@@ -48,7 +96,7 @@ async function staticPaths() {
       );
     }
   } catch (e) {
-    console.warn(`⚠ could not fetch market capabilities (${e.message}) — sitemap will stay conservative`);
+    handleFetchFailure("market capabilities", e);
   }
   return base;
 }
@@ -56,20 +104,16 @@ async function staticPaths() {
 async function stockPaths() {
   try {
     const list = [];
-    const limit = 500;
+    const limit = API_PAGE_LIMIT;
     for (let offset = 0; ; offset += limit) {
-      const res = await fetch(`${API}/symbols?limit=${limit}&offset=${offset}`, {
-        headers: { "X-Tenant-Host": TENANT_HOST },
-      });
-      if (!res.ok) throw new Error(`/symbols HTTP ${res.status}`);
-      const page = await res.json();
+      const page = await apiJson(`/symbols?limit=${limit}&offset=${offset}`);
       list.push(...page);
       if (page.length < limit) break;
     }
     // Encode the code: some real DSE tickers contain XML/URL-unsafe chars (e.g. "KAY&QUE").
     return list.map((s) => `/s/${encodeURIComponent(s.code)}`);
   } catch (e) {
-    console.warn(`⚠ could not fetch symbols (${e.message}) — sitemap will list static routes only`);
+    handleFetchFailure("symbols", e);
     return [];
   }
 }

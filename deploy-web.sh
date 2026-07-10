@@ -14,6 +14,7 @@
 #   WEB_LANGS           Comma-separated language list, default bn,en
 #   WEB_HTML_TITLE      Static index.html title
 #   WEB_SITE_DESCRIPTION Static index.html meta description
+#   WEB_SITEMAP_RESOLVE_IP Override DNS only for build-time API reads (TLS still verifies hostname)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -49,7 +50,7 @@ echo "→ building frontend (VITE_API_BASE=$API_URL)"
 )
 
 echo "→ generating sitemap.xml + robots.txt ($SITE_URL)"
-WEB_API_URL="$API_URL" WEB_SITE_URL="$SITE_URL" node scripts/gen_sitemap.mjs
+WEB_API_URL="$API_URL" WEB_SITE_URL="$SITE_URL" WEB_SITEMAP_STRICT=1 node scripts/gen_sitemap.mjs
 
 echo "→ syncing hashed assets to s3://$WEB_S3_BUCKET/assets (immutable)"
 aws s3 sync apps/web/dist/assets/ "s3://$WEB_S3_BUCKET/assets/" --delete \
