@@ -4,7 +4,14 @@ display_name = "Bulls of Dhaka"
 market = "DSE"
 locale = "bn"
 timezone = "Asia/Dhaka"
-domains = ["bullsofdhaka.com", "www.bullsofdhaka.com", "localhost"]
+domains = [
+  "bullsofdhaka.com",
+  "www.bullsofdhaka.com",
+  "api.bullsofdhaka.com",
+  "bullsofdhaka.bullstreetai.com",
+  "bullsofdhaka-api.bullstreetai.com",
+  "localhost",
+]
 site_url = "https://bullsofdhaka.com"
 support_email = "hello@bullsofdhaka.com"
 email_from = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"

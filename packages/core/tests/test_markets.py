@@ -66,6 +66,8 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     registry = TenantRegistry.from_dir(tenants_dir, default="bullsofdhaka")
 
     assert registry.resolve("localhost").name == "bullsofdhaka"
+    assert registry.resolve("api.bullsofdhaka.com").name == "bullsofdhaka"
+    assert registry.resolve("bullsofdhaka-api.bullstreetai.com").name == "bullsofdhaka"
     assert registry.resolve("bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("www.bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("api.bullsofwallst.com").name == "bullsofwallst"
