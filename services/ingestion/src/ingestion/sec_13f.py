@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import re
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from arq import create_pool
@@ -48,6 +50,11 @@ UPSERT_BATCH_ROWS = 1000
 HTTP_RETRIES = 8
 RETRY_BASE_SECONDS = 5.0
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_ARCHIVE_NAME = re.compile(
+    r"^(?P<prefix>.*/)(?P<start_day>\d{2})(?P<start_month>[a-z]{3})(?P<start_year>\d{4})-"
+    r"(?P<end_day>\d{2})(?P<end_month>[a-z]{3})(?P<end_year>\d{4})_form13f\.zip$"
+)
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 
 
 def _headers() -> dict[str, str]:
@@ -111,6 +118,67 @@ def _retry_delay(error: httpx.HTTPError, attempt: int) -> float:
         except ValueError:
             pass
     return min(60.0, RETRY_BASE_SECONDS * (2**attempt))
+
+
+def _archive_sequence(checkpoint_url: str, count: int) -> list[str]:
+    """Derive prior official archive windows from a trusted SEC checkpoint URL."""
+    parsed = urlparse(checkpoint_url)
+    if parsed.scheme != "https" or parsed.hostname not in {"sec.gov", "www.sec.gov"}:
+        return []
+    match = _ARCHIVE_NAME.match(parsed.path)
+    if match is None or "/form-13f-data-sets/" not in parsed.path:
+        return []
+    try:
+        start = dt.date(
+            int(match.group("start_year")),
+            _MONTHS.index(match.group("start_month")) + 1,
+            int(match.group("start_day")),
+        )
+        provided_end = dt.date(
+            int(match.group("end_year")),
+            _MONTHS.index(match.group("end_month")) + 1,
+            int(match.group("end_day")),
+        )
+    except (ValueError, IndexError):
+        return []
+    initial_next_index = start.year * 12 + start.month - 1 + 3
+    expected_end = dt.date(
+        initial_next_index // 12,
+        initial_next_index % 12 + 1,
+        1,
+    ) - dt.timedelta(days=1)
+    if start.day != 1 or provided_end != expected_end:
+        return []
+    prefix = f"https://www.sec.gov{match.group('prefix')}"
+    urls = []
+    for _ in range(count):
+        next_start_index = start.year * 12 + start.month - 1 + 3
+        prior_start_index = start.year * 12 + start.month - 4
+        next_start = dt.date(
+            next_start_index // 12,
+            next_start_index % 12 + 1,
+            1,
+        )
+        prior_start = dt.date(
+            prior_start_index // 12,
+            prior_start_index % 12 + 1,
+            1,
+        )
+        end = next_start - dt.timedelta(days=1)
+        urls.append(
+            f"{prefix}{start:%d}{_MONTHS[start.month - 1]}{start:%Y}-"
+            f"{end:%d}{_MONTHS[end.month - 1]}{end:%Y}_form13f.zip"
+        )
+        start = prior_start
+    return urls
+
+
+async def _checkpoint_archive_urls(count: int) -> list[str]:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        state = await session.get(RegulatoryDataState, (MARKET, SOURCE))
+    checkpoint = (state.details or {}).get("current_archive_url") if state else None
+    return _archive_sequence(str(checkpoint or ""), count)
 
 
 async def _download_archive(
@@ -394,7 +462,18 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
     if not 1 <= history_quarters <= RETENTION_QUARTERS:
         raise ValueError(f"history_quarters must be between 1 and {RETENTION_QUARTERS}")
     symbols, known_cusips = await _symbol_context()
-    urls = await _dataset_urls()
+    try:
+        urls = await _dataset_urls()
+    except httpx.HTTPError:
+        if not force:
+            raise
+        urls = await _checkpoint_archive_urls(history_quarters + 1)
+        if urls:
+            print(
+                "  ! SEC index unavailable; using validated official checkpoint windows "
+                "for forced recovery",
+                flush=True,
+            )
     if not urls:
         raise RuntimeError("SEC page did not list Form 13F archives")
     if not force and await _already_current(urls[0], history_quarters):

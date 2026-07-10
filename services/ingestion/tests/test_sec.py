@@ -11,6 +11,7 @@ from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIss
 from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
 from ingestion.sec_13f import (
     UPSERT_BATCH_ROWS,
+    _archive_sequence,
     _is_refresh_current,
     _retry_delay,
     _retryable_http_error,
@@ -115,6 +116,23 @@ def test_13f_http_retry_is_bounded_to_transient_failures() -> None:
     assert _retry_delay(unavailable, 0) == 7
     assert not _retryable_http_error(not_found)
     assert _retry_delay(httpx.ConnectError("offline", request=request), 2) == 20
+
+
+def test_forced_13f_recovery_derives_only_validated_official_quarter_windows() -> None:
+    checkpoint = (
+        "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/"
+        "01mar2026-31may2026_form13f.zip"
+    )
+
+    assert _archive_sequence(checkpoint, 3) == [
+        checkpoint,
+        "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/"
+        "01dec2025-28feb2026_form13f.zip",
+        "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/"
+        "01sep2025-30nov2025_form13f.zip",
+    ]
+    assert _archive_sequence(checkpoint.replace("www.sec.gov", "example.com"), 3) == []
+    assert _archive_sequence(checkpoint.replace("31may2026", "30may2026"), 3) == []
 
 
 @pytest.mark.asyncio
