@@ -333,6 +333,7 @@ async def institutional_holdings(
         limitations=[
             "13F does not disclose exact trade dates or entry prices.",
             "Short positions are not reported; options and unresolved CUSIPs are excluded here.",
+            "Aggregate changes can also reflect changes in the population of reporting managers.",
             "A manager may rebalance for flows, mandates, taxes, or risk rather than a directional view.",
         ],
     )

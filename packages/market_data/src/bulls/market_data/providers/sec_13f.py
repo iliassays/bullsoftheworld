@@ -400,7 +400,7 @@ def build_holding_changes(
         counts = defaultdict(int)
         total_shares = 0
         total_value = 0.0
-        prior_total_shares = 0
+        prior_total_shares = sum(row.shares for row in prior.positions if row.code == code)
         latest_filing = current.report_date
         for manager_cik in managers:
             cur = current_map.get((code, manager_cik))
@@ -432,7 +432,6 @@ def build_holding_changes(
             else:
                 continue
             latest_filing = max(latest_filing, filing_date)
-            prior_total_shares += prev.shares if prev else 0
             counts[change_type] += 1
             changes.append(
                 InstitutionalPositionChange(

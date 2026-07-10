@@ -577,9 +577,9 @@ async def _institutional_13f(
         key=f"institutional_13f_{direction}",
         title=f"13F reported {direction}",
         description=(
-            "Largest quarter-over-quarter increases in comparable reported shares"
+            "Largest quarter-over-quarter increases in aggregate reported shares"
             if accumulation
-            else "Largest quarter-over-quarter reductions in comparable reported shares"
+            else "Largest quarter-over-quarter reductions in aggregate reported shares"
         ),
         value_label="% reported shares",
         group="value",

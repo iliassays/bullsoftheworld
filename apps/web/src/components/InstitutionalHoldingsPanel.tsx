@@ -134,7 +134,9 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
           <div className="text-base font-semibold tnum">{compactUsd(latest.total_value_usd)}</div>
         </div>
         <div className="py-2 border-b border-border/60">
-          <div className="text-[10px] text-muted">{bn ? "তুলনাযোগ্য শেয়ার পরিবর্তন" : "Comparable share change"}</div>
+          <div className="text-[10px] text-muted">
+            {bn ? "রিপোর্ট করা মোট শেয়ারের পরিবর্তন" : "Aggregate reported share change"}
+          </div>
           <div className={`text-base font-semibold tnum ${(latest.net_change_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>
             {signedPct(latest.net_change_pct)}
           </div>

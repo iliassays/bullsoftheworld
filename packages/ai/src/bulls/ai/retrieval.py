@@ -295,9 +295,9 @@ async def index_institutional_summary(session, market: str, code: str, report_da
     if summary is None:
         return 0
     change = (
-        f"Comparable shares changed {summary.net_change_pct:+.2f}% quarter over quarter. "
+        f"Aggregate reported shares changed {summary.net_change_pct:+.2f}% quarter over quarter. "
         if summary.net_change_pct is not None
-        else "A comparable quarter-over-quarter percentage was unavailable. "
+        else "An aggregate quarter-over-quarter percentage was unavailable. "
     )
     text = (
         f"{summary.managers_count} reporting managers held {summary.total_shares:,} shares "

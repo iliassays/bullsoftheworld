@@ -167,6 +167,33 @@ def test_missing_current_manager_filing_is_not_called_an_exit() -> None:
     assert summaries == []
 
 
+def test_aggregate_change_is_not_inflated_by_manager_cik_migration() -> None:
+    prior_date = dt.date(2025, 12, 31)
+    current_date = dt.date(2026, 3, 31)
+    prior = ArchiveResult(
+        source_url="https://www.sec.gov/prior.zip",
+        report_date=prior_date,
+        positions=(_position("AAPL", 1, 100, 1000, prior_date),),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={1: _filing(1, prior_date)},
+    )
+    current = ArchiveResult(
+        source_url="https://www.sec.gov/current.zip",
+        report_date=current_date,
+        positions=(_position("AAPL", 2, 100, 1200, current_date),),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={2: _filing(2, current_date)},
+    )
+
+    positions, summaries = build_holding_changes(current, prior)
+
+    assert [row.change_type for row in positions] == ["new"]
+    assert summaries[0].net_share_change == 0
+    assert summaries[0].net_change_pct == 0
+
+
 def test_archive_value_is_already_reported_in_us_dollars(tmp_path) -> None:
     import zipfile
 
