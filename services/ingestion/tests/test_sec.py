@@ -114,7 +114,7 @@ def test_13f_http_retry_is_bounded_to_transient_failures() -> None:
     assert _retryable_http_error(unavailable)
     assert _retry_delay(unavailable, 0) == 7
     assert not _retryable_http_error(not_found)
-    assert _retry_delay(httpx.ConnectError("offline", request=request), 2) == 8
+    assert _retry_delay(httpx.ConnectError("offline", request=request), 2) == 20
 
 
 @pytest.mark.asyncio

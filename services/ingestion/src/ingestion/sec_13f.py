@@ -45,7 +45,8 @@ SOURCE = "sec_13f"
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 RETENTION_QUARTERS = 8
 UPSERT_BATCH_ROWS = 1000
-HTTP_RETRIES = 5
+HTTP_RETRIES = 8
+RETRY_BASE_SECONDS = 5.0
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
@@ -109,7 +110,7 @@ def _retry_delay(error: httpx.HTTPError, attempt: int) -> float:
             return min(60.0, max(1.0, float(retry_after)))
         except ValueError:
             pass
-    return min(60.0, 2.0 ** (attempt + 1))
+    return min(60.0, RETRY_BASE_SECONDS * (2**attempt))
 
 
 async def _download_archive(
