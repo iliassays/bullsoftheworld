@@ -1,11 +1,10 @@
 // CloudFront Function (viewer-request) — bot/social-scraper routing for SEO.
+import cf from "cloudfront";
 //
 // The site is a client-rendered SPA on S3; search engines (unreliably) and social scrapers
 // (never) run JS, so they'd see one generic HTML shell for every route. This function detects
-// crawler/social user-agents and rewrites their request URI from "/<path>" to "/seo/<path>", which
-// a cache behavior routes to the API origin (api.bullsofdhaka.com) — where /seo/* renders real
-// per-page HTML (title, description, canonical, hreflang, OG, JSON-LD). Humans fall through
-// untouched to the S3 SPA.
+// crawler/social user-agents, rewrites "/<path>" to "/seo/<path>", and selects the tenant API
+// origin already configured in each distribution. Humans fall through untouched to the S3 SPA.
 //
 // CloudFront Functions (not Lambda@Edge): sub-ms, no cold starts, runs on viewer-request. This is
 // pure JS (ECMAScript 5.1-ish runtime) — no async, no fetch, keep it tiny.
@@ -37,6 +36,9 @@ function handler(event) {
 
   if (!isAsset && BOT_RE.test(ua)) {
     request.uri = "/seo" + uri;
+    // URI rewrites do not reselect a cache behavior. Select the standardized per-distribution API
+    // origin directly; the same function remains tenant-agnostic across every branded domain.
+    cf.selectRequestOriginById("tenant-api-seo");
   }
   return request;
 }

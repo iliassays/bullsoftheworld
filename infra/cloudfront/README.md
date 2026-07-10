@@ -19,9 +19,9 @@ unused and shared links keep showing the generic card.
 ## What it does
 
 `bot-router.js` (a CloudFront **Function**, viewer-request — sub-ms, no cold starts) checks the
-User-Agent; for known crawlers/scrapers it rewrites `/<path>` → `/seo/<path>`. A cache behavior
-sends `/seo/*` to the API origin, which renders the HTML. Not cloaking: `/seo/<path>` serves the
-same content a human sees at `<path>`, just without needing JS.
+User-Agent; for known crawlers/scrapers it rewrites `/<path>` → `/seo/<path>` and selects the
+distribution's standardized `tenant-api-seo` origin. Not cloaking: `/seo/<path>` serves the same
+content a human sees at `<path>`, just without needing JS.
 
 ## Steps
 
@@ -31,34 +31,36 @@ same content a human sees at `<path>`, just without needing JS.
 ./infra/cloudfront/create-function.sh          # needs aws CLI with CloudFront perms
 ```
 
-**2. Add the API as a second origin** on distribution `EPJ7LAHUJDDMK` (console: CloudFront →
-Distributions → EPJ7LAHUJDDMK → Origins → Create origin):
-- Origin domain: `api.bullsofdhaka.com`
-- Protocol: HTTPS only
-- Origin ID: e.g. `bulls-api`
+**2. Configure each distribution** (idempotent; preserves unrelated origins and behaviors):
+
+```bash
+./infra/cloudfront/configure-seo.sh \
+  EPJ7LAHUJDDMK api.bullsofdhaka.com
+./infra/cloudfront/configure-seo.sh \
+  E3DLOEKLM3136G api.bullsofwallst.com
+```
 
 The viewer-request function copies the public `Host` into `X-Tenant-Host`; keep that header in the
 origin request policy. The API intentionally rejects unknown production hosts instead of falling
 back to a tenant.
 
-**3. Add a cache behavior** for the renderer (Behaviors → Create behavior):
+The script creates a cache behavior for the renderer with:
 - Path pattern: `/seo/*`
-- Origin: `bulls-api` (from step 2)
+- Origin: the tenant's API hostname
 - Viewer protocol policy: Redirect HTTP to HTTPS
 - Allowed methods: GET, HEAD
 - Cache policy: **CachingDisabled** (or a short-TTL policy — the renderer already sends
   `Cache-Control: public, max-age=900`)
 - Origin request policy: **AllViewer** (forwards the User-Agent etc.)
-- Function associations → Viewer request: **none** here (the function belongs on the DEFAULT
-  behavior, step 4 — it must run on the human/S3 path so it can rewrite INTO `/seo/*`).
+- Function associations → Viewer request: **none** on this behavior.
 
-**4. Attach the function to the DEFAULT behavior** (Behaviors → Default (`*`) → Edit → Function
-associations → Viewer request → CloudFront Functions → `bulls-bot-router`). This is what inspects
-the UA on every request and rewrites bot requests to `/seo/*` (which then matches the step-3
-behavior). Assets, `/seo/*`, `/robots.txt`, `/sitemap.xml`, and any path with a file extension are
-skipped inside the function.
+It also attaches `bulls-bot-router` to the DEFAULT behavior's viewer-request event. This inspects
+the UA on the human/S3 path, rewrites crawler requests into `/seo/*`, and directly selects the API
+origin. CloudFront does not reselect a behavior after a viewer-request URI rewrite, so explicit
+origin selection is required. Assets, `/seo/*`, `/robots.txt`, `/sitemap.xml`, and paths with a file
+extension are skipped inside the function.
 
-**5. Verify** (after the distribution finishes deploying, ~5 min):
+**3. Verify** (after the distribution finishes deploying, ~5 min):
 
 ```bash
 # Bot UA → should return server-rendered HTML with a real per-stock <title>:
