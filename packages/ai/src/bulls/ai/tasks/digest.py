@@ -16,6 +16,7 @@ from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.digest import DIGEST_SYSTEM_V1
 from bulls.ai.prompts.language import language_directive
+from bulls.core.config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -105,12 +106,13 @@ def _render(facts: SymbolFacts) -> str:
     return "\n".join(lines)
 
 
-def _safe_fallback(facts: SymbolFacts) -> str:
+def _safe_fallback(facts: SymbolFacts, *, language: str = "English") -> str:
     """Deterministic, advice-free one-liner — used if the model trips the compliance gate."""
     total = facts.bull_posts + facts.bear_posts + facts.neutral_posts
     parts = [f"${facts.code} — {facts.last_price} ({facts.change_pct_1d:+.2f}%)"]
     if total:
-        parts.append(f"{total} posts ({facts.bull_posts}▲/{facts.bear_posts}▼)")
+        label = "টি পোস্ট" if language.startswith("Bengali") else "posts"
+        parts.append(f"{total} {label} ({facts.bull_posts}▲/{facts.bear_posts}▼)")
     return " · ".join(parts)
 
 
@@ -120,12 +122,18 @@ async def summarize_symbol(facts: SymbolFacts, *, language: str = "English") -> 
     The output passes the no-advice compliance gate; anything that trips it is replaced with a
     safe deterministic summary rather than shown to a user.
     """
+    if get_settings().ai_provider == "disabled":
+        return _safe_fallback(facts, language=language)
     system = f"{DIGEST_SYSTEM_V1}\n\n{language_directive(language)}"
-    result = await structured_complete(system, _render(facts), DigestOut)
+    try:
+        result = await structured_complete(system, _render(facts), DigestOut)
+    except Exception:
+        log.exception("symbol digest generation unavailable; using deterministic fallback")
+        return _safe_fallback(facts, language=language)
     summary = result.summary.strip()
 
     finding = contains_advice(summary)
     if finding.is_advice:
         log.warning("digest tripped no-advice gate for $%s: %s", facts.code, finding.matches)
-        return _safe_fallback(facts)
+        return _safe_fallback(facts, language=language)
     return summary

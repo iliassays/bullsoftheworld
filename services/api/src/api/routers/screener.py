@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
 
-from api.deps import CurrentTenant, DbSession, visible_codes
+from api.deps import CurrentTenant, DbSession, enforce_market_feature, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
@@ -99,6 +99,7 @@ def _screenable_codes(market: str):
         Symbol.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
+        Symbol.data_status == "ready",
     ]
     if _screen_settings(market).dse_category_filter:
         conds.append(or_(Symbol.category.is_(None), Symbol.category != "Z"))
@@ -598,13 +599,16 @@ async def _most_watched(session, market: str, tenant_id: str, limit: int = PER_S
     )
 
 
-async def _attention_rising(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _attention_rising(
+    session, market: str, tenant_id: str, limit: int = PER_SCREEN
+) -> ScreenOut:
     """Symbols whose chatter is well above their own usual pace, from the buzz snapshots."""
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    today = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     rows = (
         await session.execute(
             select(TickerBuzzDaily.code, TickerBuzzDaily.date, TickerBuzzDaily.posts_24h).where(
                 TickerBuzzDaily.market == market,
+                TickerBuzzDaily.tenant_id == tenant_id,
                 TickerBuzzDaily.date >= today - dt.timedelta(days=_BUZZ_HISTORY),
                 TickerBuzzDaily.code.in_(visible_codes(market)),
             )
@@ -937,7 +941,7 @@ async def _execution_context(
 async def _recent_catalysts(session, market: str, codes: list[str]) -> dict[str, Announcement]:
     if not codes:
         return {}
-    cutoff = to_market_tz(dt.datetime.now(dt.UTC)).date() - dt.timedelta(days=21)
+    cutoff = to_market_tz(dt.datetime.now(dt.UTC), market=market).date() - dt.timedelta(days=21)
     rows = list(
         await session.scalars(
             select(Announcement)
@@ -1399,7 +1403,7 @@ async def build_screen(
     if key == "most_discussed":
         return await _most_discussed(session, market, tenant_id=tenant_id, limit=limit)
     if key == "attention_rising":
-        return await _attention_rising(session, market, limit=limit)
+        return await _attention_rising(session, market, tenant_id=tenant_id, limit=limit)
     spec = _SPEC_BY_KEY.get(key)
     return await _build_spec(session, market, spec, limit) if spec else None
 
@@ -1418,6 +1422,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     screen rankings refresh). Within a poll window every request is a ~ms Redis read; the heavy
     multi-screen compute runs once per poll, not once per request.
     """
+    enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
@@ -1426,7 +1431,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
     # changes — the key folds in data freshness, but only a version bump invalidates on code
     # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
-    key = f"screens:v8:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v9:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1463,7 +1468,7 @@ async def _build_screens(
         out.append(await _chart_pattern_board(session, tenant.market, pattern_type=pattern_type))
     out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
     out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))
-    out.append(await _attention_rising(session, tenant.market))
+    out.append(await _attention_rising(session, tenant.market, tenant.name))
 
     await _enrich(session, tenant.market, out)
     as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
@@ -1569,6 +1574,7 @@ def _risk_mode(dsex_pct: float | None, turnover_vs_20d: float | None, adv: int, 
 @router.get("/market-pulse")
 async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulseOut:
     """One institutional-style market regime read before drilling into individual screens."""
+    enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
     summary = await session.scalar(
         select(MarketSummary)
@@ -1627,6 +1633,7 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
 async def sectors(tenant: CurrentTenant, session: DbSession) -> list[SectorRow]:
     """Today's move aggregated by sector — DSE retail thinks in sectors (bank, pharma, textile…).
     Average change + advancers/decliners breadth across the visible universe, hottest first."""
+    enforce_market_feature(tenant, "curated_screens")
     return await _sector_rows(session, tenant.market)
 
 
@@ -1746,6 +1753,7 @@ async def screen_detail(
     direction: str | None = Query(None, description="ownership only: buy | sell"),
 ) -> ScreenOut:
     """One screen's full list — for the explore page's tab view."""
+    enforce_market_feature(tenant, "curated_screens")
     if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
         screen = await _movers_period(
             session,

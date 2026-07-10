@@ -4,6 +4,7 @@ import { Link } from "../lib/nav";
 import { api, type Portfolio as PortfolioData } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { PortfolioGrowthChart } from "../components/PortfolioGrowthChart";
 import { PriceAlertSheet } from "../components/PriceAlertSheet";
@@ -19,10 +20,11 @@ const ago = (iso: string) => {
 };
 
 // Manual holdings only: quantity + average buy price, typed in by the user. We never connect to a
-// broker account — this is a notebook with live (delayed) prices, not a trading surface.
+// broker account — this is a notebook valued with the tenant's available delayed market data.
 export function Portfolio() {
   const { user } = useAuth();
   const { t } = useLang();
+  const { config } = useTenantConfig();
   useSeo({ noindex: true }); // private/personal — keep out of the index
   const [pf, setPf] = useState<PortfolioData | null>(null);
   const [adding, setAdding] = useState(false);
@@ -32,7 +34,7 @@ export function Portfolio() {
   const [err, setErr] = useState<string | null>(null);
   const [alertSheetFor, setAlertSheetFor] = useState<string | null>(null);
   // Closing the loop: right after a NEW holding is added (not an edit of an existing one),
-  // nudge the user toward a price alert — a real DSE order becomes a watched position.
+  // Nudge users toward an alert only where the tenant has a validated alerting feed.
   const [justAdded, setJustAdded] = useState<string | null>(null);
 
   const load = () =>
@@ -62,7 +64,9 @@ export function Portfolio() {
       setCode("");
       setQty("");
       setCost("");
-      if (upserted.status === "created") setJustAdded(upserted.code);
+      if (upserted.status === "created" && config.features.price_alerts) {
+        setJustAdded(upserted.code);
+      }
       load();
     } catch {
       setErr(t("pf.unknownCode"));
@@ -158,7 +162,7 @@ export function Portfolio() {
                   {h.latest_alert_at && <span className="tnum"> · {ago(h.latest_alert_at)}</span>}
                 </Link>
               )}
-              <div className="mt-1.5 ml-[38px]">
+              {config.features.price_alerts && <div className="mt-1.5 ml-[38px]">
                 {h.has_price_alert ? (
                   <button
                     onClick={() => setAlertSheetFor(h.code)}
@@ -174,8 +178,8 @@ export function Portfolio() {
                     {t("pf.setAlert")}
                   </button>
                 )}
-              </div>
-              {alertSheetFor === h.code && (
+              </div>}
+              {config.features.price_alerts && alertSheetFor === h.code && (
                 <div className="mt-2">
                   <PriceAlertSheet
                     code={h.code}
@@ -189,7 +193,7 @@ export function Portfolio() {
         </div>
       )}
 
-      {justAdded && (
+      {config.features.price_alerts && justAdded && (
         <div className="bg-surface border border-accent/40 rounded-2xl p-3.5 flex items-center gap-3">
           <span className="text-lg">🔔</span>
           <p className="text-xs text-muted flex-1">{t("pf.postAddPrompt")}</p>
@@ -232,7 +236,7 @@ export function Portfolio() {
             <input
               value={cost}
               onChange={(e) => setCost(e.target.value)}
-              placeholder={t("pf.costPh")}
+              placeholder={`${t("pf.costPh")} ${config.currency_symbol}`}
               inputMode="decimal"
               className="bg-bg border border-border rounded-xl px-3 py-2 text-sm flex-1 tnum"
             />
@@ -262,7 +266,9 @@ export function Portfolio() {
         </button>
       )}
 
-      <p className="text-[10px] text-muted text-center px-4">{t("pf.disclaimer")}</p>
+      <p className="text-[10px] text-muted text-center px-4">
+        {t(config.features.intraday_quotes ? "pf.disclaimer" : "pf.disclaimerEod")}
+      </p>
     </div>
   );
 }

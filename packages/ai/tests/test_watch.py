@@ -4,7 +4,7 @@ a '+12.6%' price surge (the real move was ~+1%)."""
 
 from __future__ import annotations
 
-from bulls.ai.tasks.watch import WatchItem, _allowed_pcts, _ungrounded_pcts
+from bulls.ai.tasks.watch import Breadth, WatchItem, _allowed_pcts, _fallback, _ungrounded_pcts
 
 _ITEMS = [
     WatchItem(code="SILVAPHL", change_pct=9.86, posts=3, bull=2, bear=0),
@@ -46,3 +46,14 @@ def test_tolerance_allows_rounding():
     allowed = _allowed_pcts(items, None)
     assert _ungrounded_pcts("X rose almost 10%", allowed) == []  # 10 vs 9.86 within tol
     assert _ungrounded_pcts("X rose 14%", allowed) == ["14%"]  # fabricated
+
+
+def test_deterministic_watch_fallback_is_localized_and_grounded() -> None:
+    breadth = Breadth(advancers=100, decliners=50, unchanged=10, total=160)
+
+    english = _fallback(_ITEMS, breadth, language="English")
+    bangla = _fallback(_ITEMS, breadth, language="Bengali (Bangla)")
+
+    assert "100 advanced" in english and "$BSRMLTD +10.0%" in english
+    assert "১০০" not in bangla  # market counts remain source-faithful ASCII numerals
+    assert "100টি শেয়ার বেড়েছে" in bangla and "$BSRMLTD +10.0%" in bangla

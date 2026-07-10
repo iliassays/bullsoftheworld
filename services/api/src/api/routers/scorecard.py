@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
+from api.routers.market import load_freshest_quotes
 from bulls.analytics import RedFlags, Scorecard, build_red_flags, build_scorecard
-from bulls.core.models import QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.core.markets import get_market_profile
+from bulls.core.models import Symbol, TickerAnalytics
 
 router = APIRouter(tags=["scorecard"])
 
@@ -27,20 +28,24 @@ class ScorecardResponse(BaseModel):
 async def get_scorecard(
     code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> ScorecardResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     sym = await session.get(Symbol, (tenant.market, code))
-    if sym is None:
+    if sym is None or not sym.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     ta = await session.get(TickerAnalytics, (tenant.market, code))
     if ta is None:
         raise HTTPException(status_code=404, detail=f"No analytics for {code!r} yet")
 
     adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 and ta.last_close else None
-    today_change_pct = await session.scalar(
-        select(QuoteSnapshot.change_pct).where(
-            QuoteSnapshot.market == tenant.market, QuoteSnapshot.code == code
+    quote = (
+        await load_freshest_quotes(
+            session,
+            tenant.market,
+            [code],
+            get_market_profile(tenant.market).tz,
         )
-    )
+    ).get(code)
 
     scorecard = build_scorecard(
         code=code,
@@ -65,6 +70,6 @@ async def get_scorecard(
         roe=ta.roe,
         dividend_yield=ta.dividend_yield,
         free_float_cap_mn=ta.free_float_cap_mn,
-        today_change_pct=today_change_pct,
+        today_change_pct=quote.change_pct if quote else None,
     )
     return ScorecardResponse(scorecard=scorecard, red_flags=red_flags)

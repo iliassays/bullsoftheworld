@@ -26,11 +26,17 @@ export function Feed() {
   const { user } = useAuth();
   const { t } = useLang();
   const { config, siteUrl } = useTenantConfig();
+  const hasDesks = !!config.features.automated_desks;
+  const hasCuratedMarket = !!config.features.curated_screens;
+  const hasDisclosures = !!config.features.official_disclosures;
+  const hasQuiz = !!config.features.learning_quiz;
+  const hasToday = hasCuratedMarket || hasDisclosures || hasQuiz;
   useSeo({ jsonLd: siteJsonLd(config, siteUrl) }); // home uses site-default title/description + Organization/WebSite
   const [params, setParams] = useSearchParams();
   // /bulls redirects to /?feed=desks so old links (and the FB page) keep working.
   const requested = params.get("feed") as Chip | null;
-  const chip: Chip = requested ?? (user ? "all" : "desks");
+  const defaultChip: Chip = user ? "all" : hasDesks ? "desks" : "people";
+  const chip: Chip = requested === "desks" && !hasDesks ? defaultChip : requested ?? defaultChip;
   // Which single desk to narrow to within the combined "Desks" stream — restored per user
   // request after the redesign merged per-beat chips into one; a dropdown (not a chip row)
   // avoids the header clutter that merge was meant to fix (docs/redesign/2026-07-drops.md).
@@ -46,8 +52,8 @@ export function Feed() {
   }, [chip]);
 
   const chips: Chip[] = user
-    ? ["all", "desks", "people", "myStocks", "portfolio"]
-    : ["desks", "people"];
+    ? ["all", ...(hasDesks ? (["desks"] as Chip[]) : []), "people", "myStocks", "portfolio"]
+    : [...(hasDesks ? (["desks"] as Chip[]) : []), "people"];
   const chipLabel: Record<Chip, string> = {
     all: t("feedchip.all"),
     desks: t("feedchip.desks"),
@@ -73,7 +79,7 @@ export function Feed() {
     </div>
   );
 
-  const pick = (c: Chip) => setParams(c === (user ? "all" : "desks") ? {} : { feed: c });
+  const pick = (c: Chip) => setParams(c === defaultChip ? {} : { feed: c });
   const pickDesk = (handle: string) => {
     const next = new URLSearchParams(params);
     if (handle) next.set("desk", handle);
@@ -87,11 +93,15 @@ export function Feed() {
           (Ticker strip dropped and the personalized "Your Watchlist" card removed 2026-07-04 —
           it duplicated /watchlist with a subtly unscoped 'latest note' lookup; the ☆ Watchlist
           feed chip below covers the same job better. See docs/redesign/2026-07-drops.md.) */}
-      {sectionLabel(t("home.today"))}
-      <DhakaMood />
-      <TodaysWatch />
-      <EarningsWeek scope="today" />
-      <QuizCard />
+      {hasToday && (
+        <>
+          {sectionLabel(t("home.today"))}
+          {config.market === "DSE" && hasCuratedMarket && <DhakaMood />}
+          {hasCuratedMarket && <TodaysWatch />}
+          {hasDisclosures && <EarningsWeek scope="today" />}
+          {hasQuiz && <QuizCard />}
+        </>
+      )}
 
       {sectionLabel(t("home.myFeed"))}
       <div className="flex gap-2 overflow-x-auto pb-0.5 px-1">
@@ -129,7 +139,9 @@ export function Feed() {
         // Logged out: desk notes stay fully browsable; sell the personalized feed alongside.
         <div className="bg-surface border border-border rounded-2xl p-4 text-center">
           <div className="font-bold">{t("home.signedOutTitle")}</div>
-          <p className="text-sm text-muted mt-1.5 leading-relaxed">{t("home.signedOutBody")}</p>
+          <p className="text-sm text-muted mt-1.5 leading-relaxed">
+            {t(hasDesks ? "home.signedOutBody" : "home.signedOutBodyCommunity")}
+          </p>
           <Link
             to="/me"
             className="inline-block mt-3 rounded-full px-5 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
@@ -151,16 +163,20 @@ export function Feed() {
         <div className="bg-surface border border-border rounded-2xl p-5 text-center">
           <div className="text-2xl">🌱</div>
           <div className="font-bold mt-2">{t("home.emptyTitle")}</div>
-          <p className="text-sm text-muted mt-1.5 leading-relaxed">{t("home.emptyBody")}</p>
+          <p className="text-sm text-muted mt-1.5 leading-relaxed">
+            {t(hasDesks ? "home.emptyBody" : "home.emptyBodyCommunity")}
+          </p>
           <div className="flex gap-2 justify-center mt-3">
-            <button
-              onClick={() => pick("desks")}
-              className="rounded-full px-4 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
-            >
-              {t("home.followDesks")}
-            </button>
+            {hasDesks && (
+              <button
+                onClick={() => pick("desks")}
+                className="rounded-full px-4 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
+              >
+                {t("home.followDesks")}
+              </button>
+            )}
             <Link
-              to="/markets"
+              to={hasCuratedMarket ? "/markets" : "/watchlist"}
               className="rounded-full px-4 py-2 text-sm font-semibold border border-border hover:border-accent hover:text-accent"
             >
               {t("home.watchStocks")}

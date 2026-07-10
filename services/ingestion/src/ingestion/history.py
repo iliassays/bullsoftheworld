@@ -18,16 +18,21 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import json
 import os
+import re
 import sys
 from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, Symbol
 from bulls.market_data import get_provider
+from bulls.market_data.calendar import to_market_tz
 
 BACKFILL_DAYS = 760  # a bit over 2y; the endpoint caps at ~474 rows anyway
 DAILY_LOOKBACK_DAYS = 10  # re-pull a short window daily to catch late corrections
@@ -35,9 +40,47 @@ US_BACKFILL_DAYS = 3653  # 10y including leap days; enough for long-cycle drawdo
 US_DAILY_LOOKBACK_DAYS = 14
 CONCURRENCY = 4
 RETRIES = 3
+MIN_READY_BARS = 252
+MAX_READY_STALENESS_DAYS = 10
 
 BACKFILL_DAYS_BY_MARKET = {"DSE": BACKFILL_DAYS, "US": US_BACKFILL_DAYS}
 DAILY_LOOKBACK_DAYS_BY_MARKET = {"DSE": DAILY_LOOKBACK_DAYS, "US": US_DAILY_LOOKBACK_DAYS}
+_SYMBOL_RE = re.compile(r"^[A-Z0-9.-]{1,16}$")
+
+
+@dataclass(frozen=True)
+class CohortManifest:
+    name: str
+    market: str
+    backfill_years: float
+    symbols: tuple[str, ...]
+
+
+def _load_cohort(path: str | Path, expected_market: str) -> CohortManifest:
+    payload = json.loads(Path(path).read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("cohort manifest must be a JSON object")
+    market = str(payload.get("market", "")).upper()
+    if market != expected_market.upper():
+        raise ValueError(f"cohort market {market!r} does not match {expected_market!r}")
+    raw_symbols = payload.get("symbols")
+    if not isinstance(raw_symbols, list) or not raw_symbols:
+        raise ValueError("cohort symbols must be a non-empty list")
+    symbols = tuple(str(code).strip().upper() for code in raw_symbols)
+    if len(set(symbols)) != len(symbols):
+        raise ValueError("cohort symbols must be unique")
+    invalid = [code for code in symbols if not _SYMBOL_RE.fullmatch(code)]
+    if invalid:
+        raise ValueError(f"invalid cohort symbols: {', '.join(invalid)}")
+    backfill_years = float(payload.get("backfill_years", 10))
+    if not 1 <= backfill_years <= 20:
+        raise ValueError("cohort backfill_years must be between 1 and 20")
+    return CohortManifest(
+        name=str(payload.get("name") or Path(path).stem),
+        market=market,
+        backfill_years=backfill_years,
+        symbols=symbols,
+    )
 
 
 async def _upsert_bars(session, bars) -> int:
@@ -61,6 +104,23 @@ async def _collect_symbol(provider, code: str, start: dt.date, end: dt.date) -> 
             sm = get_sessionmaker()
             async with sm() as session:
                 n = await _upsert_bars(session, bars)
+                if bars:
+                    symbol = await session.get(Symbol, (provider.market, code))
+                    if symbol is not None:
+                        first = min(bar.date for bar in bars)
+                        last = max(bar.date for bar in bars)
+                        if symbol.data_first_date is None or first < symbol.data_first_date:
+                            symbol.data_first_date = first
+                        if symbol.data_last_date is None or last > symbol.data_last_date:
+                            symbol.data_last_date = last
+                        if symbol.data_status != "ready":
+                            total_bars = await session.scalar(
+                                select(func.count())
+                                .select_from(DailyBar)
+                                .where(DailyBar.market == provider.market, DailyBar.code == code)
+                            )
+                            if _is_ready(int(total_bars or 0), last, end):
+                                symbol.data_status = "ready"
                 await session.commit()
             return n
         except Exception as e:
@@ -70,25 +130,47 @@ async def _collect_symbol(provider, code: str, start: dt.date, end: dt.date) -> 
     return 0
 
 
-async def _active_codes_from_db(market: str) -> list[str]:
+async def _active_codes_from_db(market: str, *, include_reference: bool) -> list[str]:
     sm = get_sessionmaker()
     async with sm() as session:
-        rows = list(
-            await session.scalars(
-                select(Symbol.code)
-                .where(
-                    Symbol.market == market,
-                    Symbol.is_active.is_(True),
-                    Symbol.is_hidden.is_(False),
-                )
-                .order_by(Symbol.code)
-            )
+        stmt = select(Symbol.code).where(
+            Symbol.market == market,
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
         )
+        if not include_reference:
+            stmt = stmt.where(Symbol.data_status == "ready")
+        rows = list(await session.scalars(stmt.order_by(Symbol.code)))
     return rows
 
 
-async def _symbol_codes(market: str, provider) -> list[str]:
-    codes = await _active_codes_from_db(market)
+def _is_ready(total_bars: int, latest_bar: dt.date, requested_end: dt.date) -> bool:
+    """Require enough depth for SMA-200/52-week analytics and a reasonably current last bar."""
+    return (
+        total_bars >= MIN_READY_BARS
+        and (requested_end - latest_bar).days <= MAX_READY_STALENESS_DAYS
+    )
+
+
+async def _mark_onboarding(market: str, codes: list[str]) -> None:
+    if not codes:
+        return
+    sm = get_sessionmaker()
+    async with sm() as session:
+        await session.execute(
+            update(Symbol)
+            .where(
+                Symbol.market == market,
+                Symbol.code.in_(codes),
+                Symbol.data_status == "reference_only",
+            )
+            .values(data_status="onboarding")
+        )
+        await session.commit()
+
+
+async def _symbol_codes(market: str, provider, *, include_reference: bool) -> list[str]:
+    codes = await _active_codes_from_db(market, include_reference=include_reference)
     if codes:
         return codes
     symbols = await provider.list_symbols()
@@ -121,14 +203,18 @@ async def collect(
     codes: Iterable[str] | None = None,
     limit: int | None = None,
     offset: int = 0,
+    include_reference: bool = False,
 ) -> dict[str, int]:
     """Pull `days` of daily bars for every instrument and upsert. Returns run stats."""
     market = market.upper()
     provider = get_provider(market)
-    all_codes = await _symbol_codes(market, provider)
+    all_codes = await _symbol_codes(market, provider, include_reference=include_reference)
     selected_codes = _select_codes(all_codes, wanted=codes, offset=offset, limit=limit)
-    end = dt.datetime.now(dt.UTC).date()
+    end = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     start = end - dt.timedelta(days=days)
+
+    if include_reference:
+        await _mark_onboarding(market, selected_codes)
 
     sem = asyncio.Semaphore(concurrency)
     done = 0
@@ -173,7 +259,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--years", type=float, help="calendar years to request")
     parser.add_argument("--limit", type=int, help="maximum symbols to process")
     parser.add_argument("--offset", type=int, default=0, help="stable offset into active symbols")
-    parser.add_argument("--codes", help="comma-separated symbol codes to process")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--codes", help="comma-separated symbol codes to process")
+    selection.add_argument("--cohort", help="versioned JSON cohort manifest")
     parser.add_argument("--concurrency", type=int, default=CONCURRENCY)
     return parser.parse_args(argv)
 
@@ -185,15 +273,26 @@ def main() -> None:
         raise SystemExit("mode must be 'daily' or 'backfill'")
     if args.days is not None and args.years is not None:
         raise SystemExit("use --days or --years, not both")
+    cohort = _load_cohort(args.cohort, market) if args.cohort else None
     days = (
         args.days
         if args.days is not None
         else round(args.years * 365.25)
         if args.years is not None
+        else round(cohort.backfill_years * 365.25)
+        if cohort is not None and mode == "backfill"
         else _default_days(market, mode)
     )
-    codes = [c.strip() for c in args.codes.split(",")] if args.codes else None
-    scope = f"codes={','.join(codes)}" if codes else f"offset={args.offset} limit={args.limit or 'all'}"
+    codes = list(cohort.symbols) if cohort else (
+        [c.strip() for c in args.codes.split(",")] if args.codes else None
+    )
+    scope = (
+        f"cohort={cohort.name} symbols={len(codes or [])}"
+        if cohort
+        else f"codes={','.join(codes)}"
+        if codes
+        else f"offset={args.offset} limit={args.limit or 'all'}"
+    )
     print(
         f"[history] {market} {mode}: pulling ~{days}d daily bars "
         f"(concurrency={args.concurrency}, {scope})"
@@ -206,6 +305,7 @@ def main() -> None:
             codes=codes,
             limit=args.limit,
             offset=args.offset,
+            include_reference=mode == "backfill",
         )
     )
     print(f"[history] done: {stats}")

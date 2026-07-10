@@ -17,6 +17,13 @@ async def test_market_config_preserves_dse_defaults() -> None:
         locale="bn",
         timezone="Asia/Dhaka",
         domains=["localhost", "bullsofdhaka.com"],
+        site_url="https://bullsofdhaka.com",
+        support_email="hello@bullsofdhaka.com",
+        email_from="Bulls of Dhaka <no-reply@bullsofdhaka.com>",
+        logo_url="https://bullsofdhaka.com/logo-mark-v2.png",
+        tagline_en="Facts, not rumours",
+        tagline_bn="তথ্যে চলুন, গুজবে নয়",
+        social_url="https://facebook.example/bullsofdhaka",
     )
 
     config = await market_config(tenant)
@@ -33,7 +40,12 @@ async def test_market_config_preserves_dse_defaults() -> None:
     assert config.market_cap_money_units[0]["suffix"] == " Cr"
     assert config.default_locale == "bn"
     assert config.features["dse_categories"] is True
+    assert config.features["learning_quiz"] is True
+    assert config.features["interpreted_analytics"] is True
+    assert config.features["price_alerts"] is True
+    assert config.features["intraday_quotes"] is True
     assert config.features["sec_filings"] is False
+    assert config.social_url == "https://facebook.example/bullsofdhaka"
 
 
 @pytest.mark.asyncio
@@ -45,6 +57,12 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
         locale="en",
         timezone="America/New_York",
         domains=["bullsofwallst.com", "www.bullsofwallst.com", "wallst.localhost"],
+        site_url="https://bullsofwallst.com",
+        support_email="hello@bullsofwallst.com",
+        email_from="Bulls of Wall Street <no-reply@bullsofwallst.com>",
+        logo_url="https://bullsofwallst.com/logo-mark-v2.png",
+        tagline_en="US market intelligence, not noise",
+        tagline_bn="যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়",
     )
 
     config = await market_config(tenant)
@@ -52,6 +70,7 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     assert config.market == "US"
     assert config.tenant_name == "bullsofwallst"
     assert config.brand_name == "Bulls of Wall Street"
+    assert config.site_url == "https://bullsofwallst.com"
     assert config.currency_symbol == "$"
     assert config.exchange_label_bn == "যুক্তরাষ্ট্রের শেয়ারবাজার"
     assert config.timezone_label == "ET"
@@ -63,4 +82,10 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     assert config.market_cap_money_units[1]["suffix"] == "M"
     assert config.features["dse_categories"] is False
     assert config.features["shareholding_breakdown"] is False
-    assert config.features["sec_filings"] is True
+    assert config.features["sec_filings"] is False
+    assert config.features["curated_screens"] is False
+    assert config.features["learning_quiz"] is False
+    assert config.features["interpreted_analytics"] is True
+    assert config.features["price_alerts"] is False
+    assert config.features["intraday_quotes"] is False
+    assert config.social_url is None

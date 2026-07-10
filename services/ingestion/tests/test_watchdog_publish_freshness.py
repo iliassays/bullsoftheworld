@@ -48,7 +48,7 @@ async def test_publish_freshness_catches_missing_morning_watch_and_missing_signa
 
         # Setting the same dedup key the real /admin/fb/publish endpoint sets on a successful
         # post must clear the flag — this check reads exactly that key, nothing separate.
-        redis_key = f"fb:posted:morning_watch:{_TRADING_DAY}"
+        redis_key = f"fb:posted:bullsofdhaka:morning_watch:{_TRADING_DAY}"
         r = aioredis.from_url(get_settings().redis_url)
         await r.set(redis_key, "test-post-id")
         try:
@@ -66,6 +66,7 @@ async def test_publish_freshness_catches_missing_morning_watch_and_missing_signa
         async with sm() as session:
             session.add(
                 SignalEvent(
+                    tenant_id="bullsofdhaka",
                     agent="BullsOfDhakaLevels",
                     event_type="breakout",
                     market="DSE",

@@ -12,10 +12,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
 from api.i18n import language_for
 from bulls.ai.tasks.explainer import TechnicalsFacts, explain_technicals
-from bulls.analytics import compute
+from bulls.analytics import adjust_bars, compute
 from bulls.core.config import get_settings
 from bulls.core.models import DailyBar, Symbol, TickerAnalytics
 
@@ -43,9 +43,10 @@ class ExplainerResponse(BaseModel):
 async def get_explainer(
     code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> ExplainerResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None:
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     bars = list(
@@ -58,11 +59,11 @@ async def get_explainer(
     )
     if not bars:
         raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
-    ta = compute(list(reversed(bars)))
+    ta = compute(adjust_bars(list(reversed(bars))))
     # Precomputed fundamentals/ownership/momentum — lets the AI tell the fuller story (cheap: 1 row).
     row = await session.get(TickerAnalytics, (tenant.market, code))
 
-    cache_key = f"explainer:v3:{tenant.market}:{code}:{locale}:{ta.as_of_date}"
+    cache_key = f"explainer:v4:{tenant.name}:{tenant.market}:{code}:{locale}:{ta.as_of_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)

@@ -53,6 +53,8 @@ class Bar(BaseModel):
     low: float
     close: float
     volume: int
+    adjusted_close: float | None = None
+    source: str = "unknown"
 
 
 class MarketSummary(BaseModel):

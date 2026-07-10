@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -12,18 +12,28 @@ from bulls.core.db import Base
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "handle", name="uq_users_tenant_handle"),
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        UniqueConstraint("tenant_id", "phone", name="uq_users_tenant_phone"),
+        CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
+        CheckConstraint("locale IN ('en', 'bn')", name="ck_users_locale"),
+        CheckConstraint("auth_version >= 0", name="ck_users_auth_version"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    handle: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    handle: Mapped[str] = mapped_column(String(32))
     name: Mapped[str] = mapped_column(String(120))
     # Nullable: existing accounts + agent users have no email. Stored lowercased; unique when present.
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, default=None)
+    email: Mapped[str | None] = mapped_column(String(255), default=None)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Phone (BD, normalized +8801XXXXXXXXX). Unique when present. OTP verification is a later phase.
-    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, default=None)
+    phone: Mapped[str | None] = mapped_column(String(20), default=None)
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     password_hash: Mapped[str] = mapped_column(String(255))
+    # Incrementing this invalidates previously issued access and password-reset tokens.
+    auth_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     locale: Mapped[str] = mapped_column(String(8), default="bn")
     # Official verified account — an automated desk (or a vetted analyst). Drives the verified badge
     # and the desk profile; independent of the handle so renames don't affect detection.

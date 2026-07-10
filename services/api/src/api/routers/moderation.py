@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 
-from api.deps import CurrentTenant, DbSession, require_admin
+from api.deps import DbSession, SelectedAdminTenant, require_admin
 from api.moderation import record_event
 from bulls.core.models import Cashtag, ModerationEvent, Post, User
 from bulls.moderation import Action, Category, Decision
@@ -44,7 +44,7 @@ class QueueOut(BaseModel):
 
 @router.get("/queue")
 async def queue(
-    tenant: CurrentTenant,
+    tenant: SelectedAdminTenant,
     session: DbSession,
     status: str = Query("pending", pattern="^(pending|held)$"),
     limit: int = Query(50, le=200),
@@ -111,7 +111,7 @@ async def queue(
 
 
 @router.get("/stats")
-async def stats(tenant: CurrentTenant, session: DbSession) -> dict[str, int]:
+async def stats(tenant: SelectedAdminTenant, session: DbSession) -> dict[str, int]:
     """Queue depth by status — for a quick health glance (backlog is the risk to watch)."""
     rows = await session.execute(
         select(Post.moderation_status, func.count())
@@ -145,7 +145,10 @@ class ReviewNote(BaseModel):
 
 @router.post("/{post_id}/approve")
 async def approve(
-    post_id: int, tenant: CurrentTenant, session: DbSession, body: ReviewNote | None = None
+    post_id: int,
+    tenant: SelectedAdminTenant,
+    session: DbSession,
+    body: ReviewNote | None = None,
 ) -> dict[str, str]:
     """Clear a pending/held post to the public feed."""
     await _set_status(
@@ -156,7 +159,10 @@ async def approve(
 
 @router.post("/{post_id}/block")
 async def block(
-    post_id: int, tenant: CurrentTenant, session: DbSession, body: ReviewNote | None = None
+    post_id: int,
+    tenant: SelectedAdminTenant,
+    session: DbSession,
+    body: ReviewNote | None = None,
 ) -> dict[str, str]:
     """Reject a pending/held post."""
     await _set_status(

@@ -7,7 +7,7 @@ by hand once (or after a server rebuild). They live here so the config is versio
 
 `bullsofdhaka-watchdog.{service,timer}` run `ingestion.watchdog` every 5 minutes, **independent of
 the arq worker**, so a dead or crash-looping worker can't take its own monitor down. It checks worker
-liveness, quote freshness during trading hours, and API `/health`; on a fault it restarts the worker
+liveness, quote freshness during trading hours, and API `/ready`; on a fault it restarts the worker
 once and emails an alert via Resend (Redis-cooldown'd to once per hour).
 
 Install / update:
@@ -21,5 +21,16 @@ sudo systemctl enable --now bullsofdhaka-watchdog.timer
 Requires `ALERT_EMAIL` in `/home/ubuntu/bullsofdhaka/.env` (comma-separated recipients; falls back to
 `SUPPORT_EMAIL`). The service runs as root so it can `systemctl restart bullsofdhaka-worker`.
 
-> The pre-existing `bullsofdhaka-worker.service` (arq cron) is also server-only; capture it here too
-> if it ever changes.
+## Workers
+
+The three arq workers use separate Redis queues. Install the DSE and AI workers with:
+
+```bash
+sudo cp infra/systemd/bullsofdhaka-worker.service infra/systemd/bulls-ai-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bullsofdhaka-worker bulls-ai-worker
+```
+
+`bullsofwallst-worker.service` is deliberately not included above. Install and enable it only after
+the US market-data license, same-site API hostname, verified exchange calendar, and initial cohort
+coverage checks in `docs/architecture/multi-tenant-us-readiness.md` are complete.

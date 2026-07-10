@@ -40,11 +40,17 @@ from bulls.moderation import Action, parse_cashtags
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 async def _valid_codes(session, market: str, codes: list[str]) -> list[str]:
-    """Keep only codes that exist as symbols in this market."""
+    """Keep only retail-visible codes in this market."""
     if not codes:
         return []
     rows = await session.scalars(
-        select(Symbol.code).where(Symbol.market == market, Symbol.code.in_(codes))
+        select(Symbol.code).where(
+            Symbol.market == market,
+            Symbol.code.in_(codes),
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
+            Symbol.data_status == "ready",
+        )
     )
     found = set(rows)
     return [c for c in codes if c in found]
@@ -59,7 +65,12 @@ def _localized_body(p: Post, locale: str) -> str:
 
 
 async def _decorate(
-    session, posts: list[Post], *, viewer_id: int | None, locale: str
+    session,
+    posts: list[Post],
+    *,
+    market: str,
+    viewer_id: int | None,
+    locale: str,
 ) -> list[PostOut]:
     """Attach authors, cashtags, reply counts, reaction tallies, and the caller's stance.
 
@@ -86,6 +97,7 @@ async def _decorate(
         for code, chg in (
             await session.execute(
                 select(QuoteSnapshot.code, QuoteSnapshot.change_pct).where(
+                    QuoteSnapshot.market == market,
                     QuoteSnapshot.code.in_(all_codes)
                 )
             )
@@ -311,7 +323,13 @@ async def feed(
         )
     stmt = stmt.order_by(Post.created_at.desc()).limit(limit).offset(offset)
     posts = list(await session.scalars(stmt))
-    return await _decorate(session, posts, viewer_id=viewer.id if viewer else None, locale=locale)
+    return await _decorate(
+        session,
+        posts,
+        market=tenant.market,
+        viewer_id=viewer.id if viewer else None,
+        locale=locale,
+    )
 
 
 class NoteBeat(BaseModel):
@@ -371,7 +389,11 @@ async def top_post(
         )
     )
     decorated = await _decorate(
-        session, candidates, viewer_id=viewer.id if viewer else None, locale=locale
+        session,
+        candidates,
+        market=tenant.market,
+        viewer_id=viewer.id if viewer else None,
+        locale=locale,
     )
     ranked = [p for p in decorated if (p.agree + p.disagree + p.reply_count) > 0]
     if not ranked:
@@ -399,7 +421,11 @@ async def replies(
         )
     )
     return await _decorate(
-        session, children, viewer_id=viewer.id if viewer else None, locale=locale
+        session,
+        children,
+        market=tenant.market,
+        viewer_id=viewer.id if viewer else None,
+        locale=locale,
     )
 
 
@@ -426,6 +452,9 @@ async def react(
 async def unreact(
     post_id: int, user: CurrentUser, tenant: CurrentTenant, session: DbSession
 ) -> None:
+    post = await session.get(Post, post_id)
+    if post is None or post.tenant_id != tenant.name:
+        raise HTTPException(status_code=404, detail="Post not found")
     existing = await session.get(PostReaction, (post_id, user.id))
     if existing is not None:
         await session.delete(existing)

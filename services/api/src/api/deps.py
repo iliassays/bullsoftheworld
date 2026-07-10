@@ -5,20 +5,32 @@ from __future__ import annotations
 import secrets
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bulls.core.config import get_settings
 from bulls.core.db import get_session
+from bulls.core.markets import get_market_profile
 from bulls.core.models import Symbol, User
-from bulls.core.security import decode_token
+from bulls.core.security import decode_access_token_claims
 from bulls.core.tenancy import Tenant
 
 
 def current_tenant(request: Request) -> Tenant:
     return request.state.tenant
+
+
+def selected_admin_tenant(
+    request: Request,
+    tenant: Annotated[str, Query(description="Explicit tenant name for an admin operation")],
+) -> Tenant:
+    """Resolve an admin-selected tenant by name; never fall back through request headers."""
+    selected = request.app.state.tenants.get(tenant)
+    if selected is None:
+        raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
+    return selected
 
 
 # Languages the portal renders generated content in. The client picks one (persisted) and sends it
@@ -41,7 +53,15 @@ def visible_codes(market: str) -> Select:
         Symbol.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
+        Symbol.data_status == "ready",
     )
+
+
+def enforce_market_feature(tenant: Tenant, feature: str) -> None:
+    """Fail closed when a tenant has not enabled a product capability."""
+    features = get_market_profile(tenant.market).features
+    if not getattr(features, feature, False):
+        raise HTTPException(status_code=404, detail="Feature is not available for this market")
 
 
 def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None:
@@ -53,6 +73,7 @@ def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None
 
 
 CurrentTenant = Annotated[Tenant, Depends(current_tenant)]
+SelectedAdminTenant = Annotated[Tenant, Depends(selected_admin_tenant)]
 CurrentLocale = Annotated[str, Depends(current_locale)]
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
@@ -64,10 +85,15 @@ async def current_user(
     session: DbSession,
     creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
 ) -> User:
-    subject = decode_token(creds.credentials)
+    claims = decode_access_token_claims(creds.credentials, tenant_id=tenant.name)
+    subject = claims.get("sub") if claims else None
     user = await session.get(User, int(subject)) if subject and subject.isdigit() else None
     # cross-tenant guard: a token is only valid within its own tenant
-    if user is None or user.tenant_id != tenant.name:
+    if (
+        user is None
+        or user.tenant_id != tenant.name
+        or user.auth_version != claims.get("ver")
+    ):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
 
@@ -89,9 +115,14 @@ async def optional_user(
     """
     if creds is None:
         return None
-    subject = decode_token(creds.credentials)
+    claims = decode_access_token_claims(creds.credentials, tenant_id=tenant.name)
+    subject = claims.get("sub") if claims else None
     user = await session.get(User, int(subject)) if subject and subject.isdigit() else None
-    if user is None or user.tenant_id != tenant.name:
+    if (
+        user is None
+        or user.tenant_id != tenant.name
+        or user.auth_version != claims.get("ver")
+    ):
         return None
     return user
 

@@ -6,6 +6,10 @@ without this they see one generic page for every stock and every shared link. Th
 bot/social user-agents to the API's `/seo/*` renderer (real per-page HTML); humans keep getting the
 SPA from S3.
 
+Repeat the same origin, behavior, and function association on the Bulls of Wall Street
+distribution. Its API origin should be `api.bullsofwallst.com`; the function forwards the viewer
+host, so the shared backend resolves the correct tenant without market-specific function code.
+
 **Everything else in the SEO work is already live** (bilingual URLs, per-page meta, sitemap,
 robots, GA ticker tracking). This is the one piece that needs a change to the CloudFront
 distribution, which is managed by hand — so it's documented here for you to apply (or grant AWS CLI
@@ -33,7 +37,9 @@ Distributions → EPJ7LAHUJDDMK → Origins → Create origin):
 - Protocol: HTTPS only
 - Origin ID: e.g. `bulls-api`
 
-(The API resolves the DSE tenant by default for any host, so no Host-forwarding is required.)
+The viewer-request function copies the public `Host` into `X-Tenant-Host`; keep that header in the
+origin request policy. The API intentionally rejects unknown production hosts instead of falling
+back to a tenant.
 
 **3. Add a cache behavior** for the renderer (Behaviors → Create behavior):
 - Path pattern: `/seo/*`

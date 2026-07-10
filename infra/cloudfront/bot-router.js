@@ -18,6 +18,10 @@ var BOT_RE =
 
 function handler(event) {
   var request = event.request;
+  // Preserve the viewer domain for a shared API origin. The API fails closed on unknown hosts.
+  if (request.headers.host) {
+    request.headers["x-tenant-host"] = { value: request.headers.host.value };
+  }
   var ua = "";
   if (request.headers["user-agent"]) ua = request.headers["user-agent"].value;
 

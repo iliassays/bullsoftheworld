@@ -42,6 +42,10 @@ def market_close(market: str | None = "DSE") -> dt.time:
     return _profile_for(market).close_time
 
 
+def market_close_on(date: dt.date, market: str | None = "DSE") -> dt.time:
+    return _profile_for(market).close_time_on(date)
+
+
 def to_market_tz(
     when: dt.datetime, tz: ZoneInfo | None = None, *, market: str | None = "DSE"
 ) -> dt.datetime:
@@ -77,7 +81,7 @@ def is_trading_hours(
     local = to_market_tz(when, tz, market=market)
     return (
         is_trading_day(local.date(), market=profile.market)
-        and profile.open_time <= local.time() <= profile.close_time
+        and profile.open_time <= local.time() <= profile.close_time_on(local.date())
     )
 
 
@@ -92,6 +96,6 @@ def session_phase(
     t = local.time()
     if t < profile.open_time:
         return Session.PRE_OPEN
-    if t <= profile.close_time:
+    if t <= profile.close_time_on(local.date()):
         return Session.OPEN
     return Session.POST_CLOSE

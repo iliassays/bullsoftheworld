@@ -8,6 +8,7 @@ from api.main import app
 def test_health_and_tenant():
     with TestClient(app) as client:
         assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/live").json() == {"status": "ok"}
         who = client.get("/whoami").json()
         assert who["tenant"] == "bullsofdhaka"
         assert who["market"] == "DSE"
@@ -32,3 +33,11 @@ def test_tenant_sensitive_api_responses_are_not_http_cached():
         assert res.headers["cache-control"] == "no-store"
         vary = {part.strip().lower() for part in res.headers["vary"].split(",")}
         assert {"origin", "x-tenant-host", "referer"}.issubset(vary)
+
+
+def test_request_id_is_propagated_or_generated():
+    with TestClient(app) as client:
+        supplied = client.get("/health", headers={"X-Request-ID": "trace-123"})
+        assert supplied.headers["x-request-id"] == "trace-123"
+        generated = client.get("/health")
+        assert len(generated.headers["x-request-id"]) == 32

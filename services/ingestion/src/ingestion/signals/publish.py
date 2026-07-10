@@ -21,6 +21,7 @@ async def already_fired(
     event_type: str,
     occurrence_key: str,
     *,
+    tenant_id: str,
     today: dt.date,
     cooldown_days: int,
 ) -> bool:
@@ -28,6 +29,7 @@ async def already_fired(
     since = today - dt.timedelta(days=cooldown_days)
     hit = await session.scalar(
         select(SignalEvent.id).where(
+            SignalEvent.tenant_id == tenant_id,
             SignalEvent.market == market,
             SignalEvent.code == code,
             SignalEvent.event_type == event_type,
@@ -68,6 +70,7 @@ async def publish_note(
         session.add(Cashtag(post_id=post.id, market=market, code=code))
     session.add(
         SignalEvent(
+            tenant_id=tenant_id,
             market=market,
             code=code,
             agent=agent_handle,
@@ -82,6 +85,7 @@ async def publish_note(
         # Market-wide notes (no cashtag) stay feed-only — the feed already reaches everyone.
         await fan_out_note_alert(
             session,
+            tenant_id=tenant_id,
             market=market,
             code=code,
             event_type=event_type,

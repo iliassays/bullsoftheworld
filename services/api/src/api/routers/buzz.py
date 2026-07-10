@@ -17,7 +17,15 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from api.deps import CurrentTenant, DbSession
-from bulls.core.models import Cashtag, Post, PostReaction, Symbol, TickerBuzzDaily, WatchlistItem
+from bulls.core.models import (
+    Cashtag,
+    Post,
+    PostReaction,
+    Symbol,
+    TickerBuzzDaily,
+    User,
+    WatchlistItem,
+)
 from bulls.market_data.calendar import to_market_tz
 
 router = APIRouter(tags=["buzz"])
@@ -65,7 +73,7 @@ def shown_watcher_delta(watchers: int, delta: int | None) -> int | None:
     return None
 
 
-async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
+async def gather_buzz(session, market: str, code: str, *, tenant_id: str) -> BuzzResponse:
     """Compute a symbol's buzz: live current counts + thresholded baseline-relative trend.
 
     Shared by the /buzz endpoint and the digest so the attention signal is computed one way.
@@ -73,12 +81,19 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
     code = code.upper()
     now = dt.datetime.now(dt.UTC)
     since = now - _WINDOW
-    today = to_market_tz(now).date()
+    today = to_market_tz(now, market=market).date()
     tagged = select(Cashtag.post_id).where(Cashtag.market == market, Cashtag.code == code)
 
     # current values — live, always fresh
     watchers = await session.scalar(
-        select(func.count()).where(WatchlistItem.market == market, WatchlistItem.code == code)
+        select(func.count())
+        .select_from(WatchlistItem)
+        .join(User, User.id == WatchlistItem.user_id)
+        .where(
+            WatchlistItem.market == market,
+            WatchlistItem.code == code,
+            User.tenant_id == tenant_id,
+        )
     )
     posts_24h = await session.scalar(
         select(func.count(func.distinct(Post.id)))
@@ -86,6 +101,7 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
         .where(
             Cashtag.market == market,
             Cashtag.code == code,
+            Post.tenant_id == tenant_id,
             Post.created_at >= since,
             Post.moderation_status == "published",
         )
@@ -96,6 +112,7 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
         .join(Post, Post.id == PostReaction.post_id)
         .where(
             PostReaction.post_id.in_(tagged),
+            Post.tenant_id == tenant_id,
             PostReaction.created_at >= since,
             Post.moderation_status == "published",
         )
@@ -103,6 +120,7 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
     replies_24h = await session.scalar(
         select(func.count()).where(
             Post.id.in_(tagged),
+            Post.tenant_id == tenant_id,
             Post.parent_id.is_not(None),
             Post.created_at >= since,
             Post.moderation_status == "published",
@@ -114,6 +132,7 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
         await session.scalars(
             select(TickerBuzzDaily.posts_24h).where(
                 TickerBuzzDaily.market == market,
+                TickerBuzzDaily.tenant_id == tenant_id,
                 TickerBuzzDaily.code == code,
                 TickerBuzzDaily.date < today,
                 TickerBuzzDaily.date >= today - dt.timedelta(days=_BASELINE_DAYS),
@@ -128,6 +147,7 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
         select(TickerBuzzDaily.watchers_total)
         .where(
             TickerBuzzDaily.market == market,
+            TickerBuzzDaily.tenant_id == tenant_id,
             TickerBuzzDaily.code == code,
             TickerBuzzDaily.date <= today - dt.timedelta(days=5),
             TickerBuzzDaily.date >= today - dt.timedelta(days=9),
@@ -153,6 +173,7 @@ async def gather_buzz(session, market: str, code: str) -> BuzzResponse:
 @router.get("/symbols/{code}/buzz")
 async def get_buzz(code: str, tenant: CurrentTenant, session: DbSession) -> BuzzResponse:
     code = code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
-    return await gather_buzz(session, tenant.market, code)
+    return await gather_buzz(session, tenant.market, code, tenant_id=tenant.name)

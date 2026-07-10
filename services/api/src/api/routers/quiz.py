@@ -72,11 +72,11 @@ async def _stats(session, user_id: int, today: dt.date) -> tuple[int, int]:
     return current_streak(days, today), int(correct or 0) * POINTS_PER_CORRECT
 
 
-async def _question_of_the_day(session, today: dt.date) -> QuizQuestion | None:
+async def _question_of_the_day(session, today: dt.date, market: str) -> QuizQuestion | None:
     ids = list(
         await session.scalars(
             select(QuizQuestion.id)
-            .where(QuizQuestion.is_active.is_(True))
+            .where(QuizQuestion.market == market, QuizQuestion.is_active.is_(True))
             .order_by(QuizQuestion.id)
         )
     )
@@ -92,8 +92,8 @@ async def today(
     session: DbSession,
     locale: CurrentLocale,
 ) -> QuizToday:
-    day = to_market_tz(dt.datetime.now(dt.UTC)).date()
-    q = await _question_of_the_day(session, day)
+    day = to_market_tz(dt.datetime.now(dt.UTC), market=tenant.market).date()
+    q = await _question_of_the_day(session, day, tenant.market)
     if q is None:
         raise HTTPException(status_code=404, detail="No quiz configured")
     prior = await session.get(QuizAnswer, (user.id, day))
@@ -123,8 +123,8 @@ async def answer(
     session: DbSession,
     locale: CurrentLocale,
 ) -> QuizToday:
-    day = to_market_tz(dt.datetime.now(dt.UTC)).date()
-    q = await _question_of_the_day(session, day)
+    day = to_market_tz(dt.datetime.now(dt.UTC), market=tenant.market).date()
+    q = await _question_of_the_day(session, day, tenant.market)
     if q is None or q.id != body.question_id:
         raise HTTPException(status_code=409, detail="That question is no longer today's quiz")
     if body.choice_idx >= len(q.choices_i18n.get("en", [])):

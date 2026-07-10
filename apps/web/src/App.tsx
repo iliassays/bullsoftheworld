@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { About } from "./pages/About";
 import { Shell } from "./components/Shell";
@@ -19,6 +19,7 @@ import { UserProfile } from "./pages/UserProfile";
 import { Watchlist } from "./pages/Watchlist";
 import { Welcome } from "./pages/Welcome";
 import { type Lang, SUPPORTED, currentLang, useLang } from "./lib/i18n";
+import { useTenantConfig } from "./lib/tenant";
 
 // Language layout: every canonical URL is prefixed with /bn or /en (for SEO + hreflang). This
 // validates the segment, drives the i18n state from the URL, and bounces any unprefixed/legacy
@@ -52,30 +53,36 @@ function RootRedirect() {
   return <Navigate to={`/${currentLang()}${rest}${loc.search}`} replace />;
 }
 
+function CapabilityRoute({ feature, children }: { feature: string; children: ReactNode }) {
+  const { config } = useTenantConfig();
+  const { lang } = useParams();
+  return config.features[feature] ? <>{children}</> : <Navigate to={`/${lang ?? currentLang()}`} replace />;
+}
+
 export function App() {
   return (
     <Routes>
       <Route path=":lang" element={<LangLayout />}>
         <Route element={<Shell />}>
           <Route index element={<Feed />} />
-          <Route path="markets" element={<Markets />} />
-          <Route path="markets/:key" element={<ScreenExplore />} />
-          <Route path="learn/patterns" element={<PatternLibrary />} />
-          <Route path="learn/patterns/:type" element={<PatternDetail />} />
-          <Route path="ideas" element={<Scanner />} />
+          <Route path="markets" element={<CapabilityRoute feature="curated_screens"><Markets /></CapabilityRoute>} />
+          <Route path="markets/:key" element={<CapabilityRoute feature="curated_screens"><ScreenExplore /></CapabilityRoute>} />
+          <Route path="learn/patterns" element={<CapabilityRoute feature="curated_screens"><PatternLibrary /></CapabilityRoute>} />
+          <Route path="learn/patterns/:type" element={<CapabilityRoute feature="curated_screens"><PatternDetail /></CapabilityRoute>} />
+          <Route path="ideas" element={<CapabilityRoute feature="curated_screens"><Scanner /></CapabilityRoute>} />
           <Route path="portfolio" element={<Portfolio />} />
           <Route path="alerts" element={<Alerts />} />
           {/* Redesign 2026-07: Bulls tab merged into Home (desks filter chip); Scanner renamed Ideas. */}
-          <Route path="bulls" element={<LocaleRedirect to="/?feed=desks" />} />
+          <Route path="bulls" element={<CapabilityRoute feature="automated_desks"><LocaleRedirect to="/?feed=desks" /></CapabilityRoute>} />
           <Route path="scanner" element={<LocaleRedirect to="/ideas" />} />
-          <Route path="desk/:handle" element={<DeskProfile />} />
+          <Route path="desk/:handle" element={<CapabilityRoute feature="automated_desks"><DeskProfile /></CapabilityRoute>} />
           <Route path="u/:handle" element={<UserProfile />} />
           <Route path="watchlist" element={<Watchlist />} />
           <Route path="s/:code" element={<SymbolPage />} />
           {/* Admin-only (token-gated in the page itself); deliberately not linked from any nav. */}
-          <Route path="cockpit" element={<Cockpit />} />
+          <Route path="cockpit" element={<CapabilityRoute feature="automated_desks"><Cockpit /></CapabilityRoute>} />
           <Route path="me" element={<Profile />} />
-          <Route path="welcome" element={<Welcome />} />
+          <Route path="welcome" element={<CapabilityRoute feature="curated_screens"><Welcome /></CapabilityRoute>} />
           <Route path="about" element={<About />} />
           <Route path="forgot" element={<ForgotPassword />} />
           <Route path="reset" element={<ResetPassword />} />

@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
-from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession
+from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, enforce_market_feature
 from bulls.core.models import AlertEvent, PriceAlert, Symbol
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -62,7 +62,11 @@ async def list_alerts(
     rows = (
         await session.scalars(
             select(AlertEvent)
-            .where(AlertEvent.user_id == user.id, AlertEvent.market == tenant.market)
+            .where(
+                AlertEvent.tenant_id == tenant.name,
+                AlertEvent.user_id == user.id,
+                AlertEvent.market == tenant.market,
+            )
             .order_by(AlertEvent.created_at.desc(), AlertEvent.id.desc())
             .limit(limit)
             .offset(offset)
@@ -91,6 +95,7 @@ async def unread_count(
         .select_from(AlertEvent)
         .where(
             AlertEvent.user_id == user.id,
+            AlertEvent.tenant_id == tenant.name,
             AlertEvent.market == tenant.market,
             AlertEvent.read_at.is_(None),
         )
@@ -104,6 +109,7 @@ async def mark_read(user: CurrentUser, tenant: CurrentTenant, session: DbSession
         update(AlertEvent)
         .where(
             AlertEvent.user_id == user.id,
+            AlertEvent.tenant_id == tenant.name,
             AlertEvent.market == tenant.market,
             AlertEvent.read_at.is_(None),
         )
@@ -119,8 +125,11 @@ async def list_price_alerts(
     session: DbSession,
     code: str | None = Query(None),
 ) -> list[PriceAlertOut]:
+    enforce_market_feature(tenant, "price_alerts")
     stmt = select(PriceAlert).where(
-        PriceAlert.user_id == user.id, PriceAlert.market == tenant.market
+        PriceAlert.tenant_id == tenant.name,
+        PriceAlert.user_id == user.id,
+        PriceAlert.market == tenant.market,
     )
     if code:
         stmt = stmt.where(PriceAlert.code == code.upper())
@@ -137,17 +146,25 @@ async def list_price_alerts(
 async def create_price_alert(
     body: PriceAlertIn, user: CurrentUser, tenant: CurrentTenant, session: DbSession
 ) -> PriceAlertOut:
+    enforce_market_feature(tenant, "price_alerts")
     code = body.code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     active = await session.scalar(
         select(func.count())
         .select_from(PriceAlert)
-        .where(PriceAlert.user_id == user.id, PriceAlert.triggered_at.is_(None))
+        .where(
+            PriceAlert.tenant_id == tenant.name,
+            PriceAlert.user_id == user.id,
+            PriceAlert.market == tenant.market,
+            PriceAlert.triggered_at.is_(None),
+        )
     )
     if int(active or 0) >= MAX_PRICE_ALERTS_PER_USER:
         raise HTTPException(status_code=429, detail="Too many active price alerts")
     alert = PriceAlert(
+        tenant_id=tenant.name,
         user_id=user.id,
         market=tenant.market,
         code=code,
@@ -169,6 +186,12 @@ async def create_price_alert(
 async def delete_price_alert(
     alert_id: int, user: CurrentUser, tenant: CurrentTenant, session: DbSession
 ) -> None:
+    enforce_market_feature(tenant, "price_alerts")
     alert = await session.get(PriceAlert, alert_id)
-    if alert is not None and alert.user_id == user.id:
+    if (
+        alert is not None
+        and alert.user_id == user.id
+        and alert.tenant_id == tenant.name
+        and alert.market == tenant.market
+    ):
         await session.delete(alert)

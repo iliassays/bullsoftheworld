@@ -15,6 +15,7 @@ from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.explainer import EXPLAINER_SYSTEM_V1
 from bulls.ai.prompts.language import language_directive
+from bulls.core.config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -103,31 +104,59 @@ def _render(f: TechnicalsFacts) -> str:
     return "\n".join(lines)
 
 
-def _safe_fallback(f: TechnicalsFacts) -> ExplainerOut:
+def _safe_fallback(f: TechnicalsFacts, *, language: str = "English") -> ExplainerOut:
     """Deterministic, advice-free summary if the model trips the compliance gate."""
+    bn = language.startswith("Bengali")
     points = [
-        ExplainPoint(tag="chart", text=f"${f.code} closed at {f.last_close} on {f.as_of_date}."),
+        ExplainPoint(
+            tag="চার্ট" if bn else "chart",
+            text=(
+                f"${f.code} {f.as_of_date} তারিখে {f.last_close} দরে ক্লোজ করেছে।"
+                if bn
+                else f"${f.code} closed at {f.last_close} on {f.as_of_date}."
+            ),
+        ),
     ]
     if f.rsi_14 is not None:
-        points.append(ExplainPoint(tag="chart", text=f"RSI is {f.rsi_14:.0f}."))
+        points.append(
+            ExplainPoint(
+                tag="চার্ট" if bn else "chart",
+                text=f"RSI {f.rsi_14:.0f}।" if bn else f"RSI is {f.rsi_14:.0f}.",
+            )
+        )
     if f.nearest_support is not None and f.nearest_resistance is not None:
         points.append(
             ExplainPoint(
-                tag="chart",
-                text=f"Support ~{f.nearest_support}, resistance ~{f.nearest_resistance}.",
+                tag="চার্ট" if bn else "chart",
+                text=(
+                    f"সাপোর্ট প্রায় {f.nearest_support}, রেজিস্ট্যান্স প্রায় {f.nearest_resistance}।"
+                    if bn
+                    else f"Support ~{f.nearest_support}, resistance ~{f.nearest_resistance}."
+                ),
             )
         )
-    return ExplainerOut(headline=f"${f.code} snapshot ({f.as_of_date})", points=points)
+    headline = (
+        f"${f.code} তথ্যচিত্র ({f.as_of_date})"
+        if bn
+        else f"${f.code} snapshot ({f.as_of_date})"
+    )
+    return ExplainerOut(headline=headline, points=points)
 
 
 async def explain_technicals(facts: TechnicalsFacts, *, language: str = "English") -> ExplainerOut:
     """A scannable, advice-free read: one-line headline + 2-4 short labelled points."""
+    if get_settings().ai_provider == "disabled":
+        return _safe_fallback(facts, language=language)
     system = f"{EXPLAINER_SYSTEM_V1}\n\n{language_directive(language)}"
-    result = await structured_complete(system, _render(facts), ExplainerOut)
+    try:
+        result = await structured_complete(system, _render(facts), ExplainerOut)
+    except Exception:
+        log.exception("technicals explanation unavailable; using deterministic fallback")
+        return _safe_fallback(facts, language=language)
 
     blob = result.headline + " " + " ".join(p.text for p in result.points)
     finding = contains_advice(blob)
     if finding.is_advice:
         log.warning("explainer tripped no-advice gate for $%s: %s", facts.code, finding.matches)
-        return _safe_fallback(facts)
+        return _safe_fallback(facts, language=language)
     return result

@@ -15,11 +15,18 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func, or_, select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession, visible_codes
+from api.deps import (
+    CurrentLocale,
+    CurrentTenant,
+    DbSession,
+    enforce_market_feature,
+    visible_codes,
+)
 from bulls.analytics import (
     AnalyticsResult,
     MoodIndex,
     PatternMatch,
+    adjust_bars,
     build_mood,
     compute,
     detect_patterns,
@@ -37,7 +44,7 @@ from bulls.core.models import (
     TrendingScore,
 )
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
-from bulls.market_data.calendar import market_close, session_phase
+from bulls.market_data.calendar import market_close_on, session_phase, to_market_tz
 
 _MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
 
@@ -82,6 +89,12 @@ class MarketConfigOut(BaseModel):
     features: dict[str, bool]
     tenant_name: str
     brand_name: str
+    site_url: str
+    support_email: str
+    logo_url: str
+    tagline_en: str
+    tagline_bn: str
+    social_url: str | None
 
 
 @router.get("/market/config")
@@ -111,6 +124,12 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         features=asdict(profile.features),
         tenant_name=tenant.name,
         brand_name=tenant.display_name,
+        site_url=tenant.site_url,
+        support_email=tenant.support_email,
+        logo_url=tenant.logo_url,
+        tagline_en=tenant.tagline_en,
+        tagline_bn=tenant.tagline_bn,
+        social_url=tenant.social_url,
     )
 
 
@@ -161,6 +180,7 @@ async def trending_stocks(
 ) -> list[TrendingStockOut]:
     """Precomputed nightly by the worker (anomaly-ranked by self-normalized volume + turnover surge,
     liquidity-gated). The frontend just reads this ordered list."""
+    enforce_market_feature(tenant, "curated_screens")
     rows = list(
         await session.scalars(
             select(TrendingScore)
@@ -253,7 +273,8 @@ async def earnings_calendar(
     Descriptive heads-up only: the date + period come straight from the decoded DSE board-meeting
     notice (companies can still reschedule). One row per company, nearest date first.
     """
-    today = dt.datetime.now(dt.UTC).date()
+    enforce_market_feature(tenant, "official_disclosures")
+    today = to_market_tz(dt.datetime.now(dt.UTC), market=tenant.market).date()
     since = today - dt.timedelta(days=back)
     until = today + dt.timedelta(days=days)
     meeting_date = Announcement.details["meeting_date"].astext
@@ -316,45 +337,100 @@ async def get_symbol_logo(code: str, tenant: CurrentTenant, session: DbSession) 
 _ANALYTICS_LOOKBACK = 260
 
 
-async def _freshest_quote(
-    session, market: str, code: str, snapshot: QuoteSnapshot | None, tz: ZoneInfo
-) -> QuoteOut | None:
-    """Prefer the latest EOD bar when it's newer than the intraday snapshot.
+async def load_freshest_quotes(
+    session, market: str, codes: list[str], tz: ZoneInfo
+) -> dict[str, QuoteOut]:
+    """Batch current snapshots with adjusted EOD fallback for markets without intraday data.
 
     The intraday scrape (QuoteSnapshot) and the EOD bars update on different schedules; after the
     close the bar is the freshest truth, so the header price/date matches the analytics cards
     instead of showing a day-stale snapshot.
     """
-    bars = list(
-        await session.scalars(
-            select(DailyBar)
-            .where(DailyBar.market == market, DailyBar.code == code)
-            .order_by(DailyBar.date.desc())
-            .limit(2)
+    if not codes:
+        return {}
+    snapshots = {
+        q.code: q
+        for q in await session.scalars(
+            select(QuoteSnapshot).where(
+                QuoteSnapshot.market == market,
+                QuoteSnapshot.code.in_(codes),
+            )
         )
+    }
+    ranked = (
+        select(
+            DailyBar.code.label("code"),
+            DailyBar.date.label("date"),
+            DailyBar.open.label("open"),
+            DailyBar.high.label("high"),
+            DailyBar.low.label("low"),
+            DailyBar.close.label("close"),
+            DailyBar.adjusted_close.label("adjusted_close"),
+            DailyBar.volume.label("volume"),
+            func.row_number()
+            .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+            .label("row_num"),
+        )
+        .where(DailyBar.market == market, DailyBar.code.in_(codes))
+        .subquery()
     )
-    if bars and (snapshot is None or bars[0].date > snapshot.as_of.date()):
+    bars_by_code: dict[str, list[Any]] = {}
+    for row in (
+        await session.execute(
+            select(ranked)
+            .where(ranked.c.row_num <= 2)
+            .order_by(ranked.c.code, ranked.c.date.desc())
+        )
+    ).mappings():
+        bars_by_code.setdefault(row["code"], []).append(row)
+
+    out: dict[str, QuoteOut] = {}
+    for code in codes:
+        snapshot = snapshots.get(code)
+        bars = bars_by_code.get(code, [])
+        snapshot_date = snapshot.as_of.astimezone(tz).date() if snapshot else None
+        if not bars or (snapshot_date is not None and bars[0]["date"] <= snapshot_date):
+            if snapshot is not None:
+                out[code] = QuoteOut.model_validate(snapshot)
+            continue
+
         bar = bars[0]
-        prev_close = bars[1].close if len(bars) > 1 else None
-        change = bar.close - prev_close if prev_close is not None else 0.0
+        factor = (
+            bar["adjusted_close"] / bar["close"]
+            if bar["adjusted_close"] is not None and bar["close"] > 0
+            else 1.0
+        )
+        close = bar["close"] * factor
+        prev_close = None
+        if len(bars) > 1:
+            previous = bars[1]
+            prev_factor = (
+                previous["adjusted_close"] / previous["close"]
+                if previous["adjusted_close"] is not None and previous["close"] > 0
+                else 1.0
+            )
+            prev_close = previous["close"] * prev_factor
+        change = close - prev_close if prev_close is not None else 0.0
         change_pct = (change / prev_close * 100) if prev_close else 0.0
-        return QuoteOut(
-            market=bar.market,
-            code=bar.code,
-            ltp=bar.close,
+        out[code] = QuoteOut(
+            market=market,
+            code=code,
+            ltp=close,
             change=round(change, 2),
             change_pct=round(change_pct, 2),
-            open=bar.open,
-            high=bar.high,
-            low=bar.low,
-            close=bar.close,
+            open=bar["open"] * factor,
+            high=bar["high"] * factor,
+            low=bar["low"] * factor,
+            close=close,
             prev_close=prev_close,
-            volume=bar.volume,
+            volume=bar["volume"],
             trades=0,
-            as_of=dt.datetime.combine(bar.date, market_close(market), tzinfo=tz),
+            as_of=dt.datetime.combine(
+                bar["date"], market_close_on(bar["date"], market), tzinfo=tz
+            ),
             is_delayed=True,
         )
-    return QuoteOut.model_validate(snapshot) if snapshot else None
+    return out
 
 
 @router.get("/quotes")
@@ -363,6 +439,25 @@ async def get_quotes(
     session: DbSession,
     codes: str | None = Query(None, description="Comma-separated codes, e.g. GP,BEXIMCO"),
 ) -> list[QuoteOut]:
+    profile = get_market_profile(tenant.market)
+    if not profile.features.intraday_quotes:
+        wanted = [c.strip().upper() for c in codes.split(",") if c.strip()] if codes else None
+        stmt = select(Symbol.code).where(Symbol.code.in_(visible_codes(tenant.market)))
+        if wanted:
+            stmt = stmt.where(Symbol.code.in_(wanted))
+        else:
+            stmt = stmt.order_by(Symbol.code).limit(500)
+        public_codes = list(await session.scalars(stmt))
+        quotes = await load_freshest_quotes(
+            session,
+            tenant.market,
+            public_codes,
+            ZoneInfo(tenant.timezone),
+        )
+        if wanted:
+            return [quotes[code] for code in wanted if code in quotes]
+        return sorted(quotes.values(), key=lambda quote: quote.change_pct, reverse=True)[:50]
+
     stmt = select(QuoteSnapshot).where(
         QuoteSnapshot.market == tenant.market,
         QuoteSnapshot.code.in_(visible_codes(tenant.market)),
@@ -392,6 +487,7 @@ async def list_symbols(
             Symbol.market == tenant.market,
             Symbol.is_active.is_(True),
             Symbol.is_hidden.is_(False),
+            Symbol.data_status == "ready",
         )
         .offset(offset)
         .limit(limit)
@@ -428,10 +524,11 @@ async def list_symbols(
 async def get_symbol(code: str, tenant: CurrentTenant, session: DbSession) -> SymbolDetail:
     key = (tenant.market, code.upper())
     symbol = await session.get(Symbol, key)
-    if symbol is None:
+    if symbol is None or symbol.data_status != "ready" or symbol.is_hidden or not symbol.is_active:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
-    snapshot = await session.get(QuoteSnapshot, key)
-    quote = await _freshest_quote(session, key[0], key[1], snapshot, ZoneInfo(tenant.timezone))
+    quote = (await load_freshest_quotes(session, key[0], [key[1]], ZoneInfo(tenant.timezone))).get(
+        key[1]
+    )
     return SymbolDetail(symbol=SymbolOut.model_validate(symbol), quote=quote)
 
 
@@ -446,13 +543,19 @@ async def get_bars(
     code = code.upper()
     stmt = (
         select(DailyBar)
-        .where(DailyBar.market == tenant.market, DailyBar.code == code)
+        .where(
+            DailyBar.market == tenant.market,
+            DailyBar.code == code,
+            DailyBar.code.in_(visible_codes(tenant.market)),
+        )
         .order_by(DailyBar.date.desc())
         .limit(limit)
     )
     rows = list(await session.scalars(stmt))
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No public price history for {code!r} yet")
     rows.reverse()  # charts want ascending time
-    out = [BarOut.model_validate(r) for r in rows]
+    out = [BarOut.from_daily_bar(r) for r in rows]
 
     snapshot = await session.get(QuoteSnapshot, (tenant.market, code))
     if snapshot is not None:
@@ -497,7 +600,7 @@ async def get_analytics(
     """
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None:
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
 
     stmt = (
@@ -509,9 +612,9 @@ async def get_analytics(
     rows = list(await session.scalars(stmt))
     if not rows:
         raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
-    rows.reverse()  # engine expects oldest-first
-    result = compute(rows)
-    return AnalyticsWithPatterns(**result.model_dump(), patterns=detect_patterns(rows))
+    adjusted = adjust_bars(list(reversed(rows)))
+    result = compute(adjusted)
+    return AnalyticsWithPatterns(**result.model_dump(), patterns=detect_patterns(adjusted))
 
 
 async def _mood_inputs(session, market: str) -> dict[str, Any]:
@@ -591,7 +694,8 @@ async def market_mood(
 ) -> MoodIndex:
     """Dhaka Mood Index — a descriptive 0-100 fear/greed read built from breadth, strength,
     52-week highs/lows and DSEX volatility. Deterministic and templated (no AI); cached per day."""
-    cache_key = f"mood:v1:{tenant.market}:{locale}"
+    enforce_market_feature(tenant, "curated_screens")
+    cache_key = f"mood:v2:{tenant.name}:{tenant.market}:{locale}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)

@@ -24,6 +24,7 @@ from bulls.core.models import (
     Post,
     PostReaction,
     TickerBuzzDaily,
+    User,
     WatchlistItem,
 )
 from bulls.market_data.calendar import to_market_tz
@@ -31,11 +32,11 @@ from bulls.market_data.calendar import to_market_tz
 WINDOW = dt.timedelta(hours=24)
 
 
-async def snapshot_all(market: str) -> dict[str, int]:
+async def snapshot_all(market: str, *, tenant_id: str) -> dict[str, int]:
     """Compute + upsert today's buzz row for every symbol with activity or watchers."""
     now = dt.datetime.now(dt.UTC)
     since = now - WINDOW
-    day = to_market_tz(now).date()
+    day = to_market_tz(now, market=market).date()
     sm = get_sessionmaker()
 
     async with sm() as session:
@@ -45,7 +46,12 @@ async def snapshot_all(market: str) -> dict[str, int]:
                 await session.execute(
                     select(Cashtag.code, func.count(func.distinct(Post.id)))
                     .join(Post, Cashtag.post_id == Post.id)
-                    .where(Cashtag.market == market, Post.created_at >= since)
+                    .where(
+                        Cashtag.market == market,
+                        Post.tenant_id == tenant_id,
+                        Post.created_at >= since,
+                        Post.moderation_status == "published",
+                    )
                     .group_by(Cashtag.code)
                 )
             ).all()
@@ -55,7 +61,13 @@ async def snapshot_all(market: str) -> dict[str, int]:
                 await session.execute(
                     select(Cashtag.code, func.count())
                     .join(PostReaction, Cashtag.post_id == PostReaction.post_id)
-                    .where(Cashtag.market == market, PostReaction.created_at >= since)
+                    .join(Post, Post.id == PostReaction.post_id)
+                    .where(
+                        Cashtag.market == market,
+                        Post.tenant_id == tenant_id,
+                        PostReaction.created_at >= since,
+                        Post.moderation_status == "published",
+                    )
                     .group_by(Cashtag.code)
                 )
             ).all()
@@ -67,6 +79,7 @@ async def snapshot_all(market: str) -> dict[str, int]:
                     .join(Post, Cashtag.post_id == Post.id)
                     .where(
                         Cashtag.market == market,
+                        Post.tenant_id == tenant_id,
                         Post.parent_id.is_not(None),
                         Post.created_at >= since,
                     )
@@ -78,7 +91,11 @@ async def snapshot_all(market: str) -> dict[str, int]:
             (
                 await session.execute(
                     select(WatchlistItem.code, func.count())
-                    .where(WatchlistItem.market == market)
+                    .join(User, User.id == WatchlistItem.user_id)
+                    .where(
+                        WatchlistItem.market == market,
+                        User.tenant_id == tenant_id,
+                    )
                     .group_by(WatchlistItem.code)
                 )
             ).all()
@@ -89,7 +106,11 @@ async def snapshot_all(market: str) -> dict[str, int]:
             (
                 await session.execute(
                     select(PageViewEvent.code, func.count(func.distinct(viewer_key)))
-                    .where(PageViewEvent.market == market, PageViewEvent.created_at >= since)
+                    .where(
+                        PageViewEvent.tenant_id == tenant_id,
+                        PageViewEvent.market == market,
+                        PageViewEvent.created_at >= since,
+                    )
                     .group_by(PageViewEvent.code)
                 )
             ).all()
@@ -98,6 +119,7 @@ async def snapshot_all(market: str) -> dict[str, int]:
         codes = set(posts) | set(reactions) | set(replies) | set(watchers) | set(viewers)
         for code in codes:
             row = {
+                "tenant_id": tenant_id,
                 "market": market,
                 "code": code,
                 "date": day,
@@ -112,7 +134,7 @@ async def snapshot_all(market: str) -> dict[str, int]:
                 c: getattr(stmt.excluded, c) for c in row if c not in ("market", "code", "date")
             }
             stmt = stmt.on_conflict_do_update(
-                index_elements=["market", "code", "date"], set_=update_cols
+                index_elements=["tenant_id", "market", "code", "date"], set_=update_cols
             )
             await session.execute(stmt)
         await session.commit()
@@ -120,14 +142,15 @@ async def snapshot_all(market: str) -> dict[str, int]:
     return {"symbols": len(codes)}
 
 
-async def _run(market: str) -> None:
-    counts = await snapshot_all(market)
+async def _run(market: str, tenant_id: str) -> None:
+    counts = await snapshot_all(market, tenant_id=tenant_id)
     print(f"[buzz] {market}: snapshotted {counts['symbols']} symbols")
 
 
 def main() -> None:
     market = sys.argv[1] if len(sys.argv) > 1 else "DSE"
-    asyncio.run(_run(market))
+    tenant_id = sys.argv[2] if len(sys.argv) > 2 else "bullsofdhaka"
+    asyncio.run(_run(market, tenant_id))
 
 
 if __name__ == "__main__":

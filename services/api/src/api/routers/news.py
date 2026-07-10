@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentTenant, DbSession, enforce_market_feature
 from bulls.core.models import Announcement, Symbol
 
 router = APIRouter(tags=["news"])
@@ -43,8 +43,10 @@ class NewsOut(BaseModel):
 async def symbol_news(
     code: str, tenant: CurrentTenant, session: DbSession, limit: int = Query(40, le=100)
 ) -> list[NewsOut]:
+    enforce_market_feature(tenant, "official_disclosures")
     code = code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     rows = await session.scalars(
         select(Announcement)

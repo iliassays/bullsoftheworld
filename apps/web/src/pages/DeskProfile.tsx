@@ -9,12 +9,14 @@ import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { PostCard } from "../components/PostCard";
 import { useSeo } from "../components/Seo";
 import { Empty, Spinner, VerifiedBadge } from "../components/ui";
+import { useTenantConfig } from "../lib/tenant";
 
 // Official desk profile — StockTwits-style: header (name + verified badge + official label + bio +
 // joined + post count) then all of the desk's posts. Follow arrives in Phase 3.
 export function DeskProfile() {
   const { handle = "" } = useParams();
   const { t } = useLang();
+  const { config } = useTenantConfig();
   const { user } = useAuth();
   const [desk, setDesk] = useState<Desk | null>(null);
   const [failed, setFailed] = useState(false);
@@ -54,12 +56,12 @@ export function DeskProfile() {
   const deskName = desk?.name || handle;
   useSeo({
     title: {
-      bn: `${deskName} — Bulls of Dhaka ডেস্ক`,
-      en: `${deskName} — Bulls of Dhaka desk`,
+      bn: `${deskName} — ${config.brand_name} ডেস্ক`,
+      en: `${deskName} — ${config.brand_name} desk`,
     },
     description: {
-      bn: `${deskName} ডেস্কের সব ডেস্ক-নোট ও সংকেত — ঢাকা স্টক এক্সচেঞ্জ। বর্ণনামূলক তথ্য, পরামর্শ নয়।`,
-      en: `All desk notes and signals from the ${deskName} desk — Dhaka Stock Exchange. Descriptive data, not advice.`,
+      bn: `${deskName} ডেস্কের সব ডেস্ক-নোট ও সংকেত — ${config.exchange_name_bn || config.exchange_name}। বর্ণনামূলক তথ্য, পরামর্শ নয়।`,
+      en: `All desk notes and signals from the ${deskName} desk — ${config.exchange_name}. Descriptive data, not advice.`,
     },
   });
 

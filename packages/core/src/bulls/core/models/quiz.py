@@ -18,6 +18,7 @@ class QuizQuestion(Base):
     __tablename__ = "quiz_questions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    market: Mapped[str] = mapped_column(String(8), default="DSE", server_default="DSE", index=True)
     topic: Mapped[str] = mapped_column(String(32))  # valuation | market_basics | risk | ownership
     question_i18n: Mapped[dict] = mapped_column(JSON)  # {"en": ..., "bn": ...}
     choices_i18n: Mapped[dict] = mapped_column(JSON)  # {"en": [...], "bn": [...]} same order

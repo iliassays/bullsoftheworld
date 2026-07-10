@@ -11,17 +11,19 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession
 from bulls.core.models import (
     AlertEvent,
+    DailyBar,
     PortfolioHolding,
     PortfolioSnapshot,
     PriceAlert,
     QuoteSnapshot,
     Symbol,
 )
+from bulls.market_data.calendar import market_close_on, market_timezone
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -168,6 +170,61 @@ def compute_portfolio(
 _LATEST_ALERT_WINDOW = dt.timedelta(days=21)
 
 
+async def load_quote_views(session, market: str, codes: list[str]) -> dict[str, QuoteView]:
+    """Load current quotes, falling back to each security's latest adjusted EOD close."""
+    quotes: dict[str, QuoteView] = {}
+    if not codes:
+        return quotes
+
+    for q in await session.scalars(
+        select(QuoteSnapshot).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+    ):
+        quotes[q.code] = QuoteView(
+            ltp=q.ltp, change=q.change, change_pct=q.change_pct, as_of=q.as_of
+        )
+
+    missing = [code for code in codes if code not in quotes]
+    if not missing:
+        return quotes
+
+    effective_close = func.coalesce(DailyBar.adjusted_close, DailyBar.close)
+    ranked = (
+        select(
+            DailyBar.code.label("code"),
+            DailyBar.date.label("date"),
+            effective_close.label("close"),
+            func.lead(effective_close)
+            .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+            .label("prev_close"),
+            func.row_number()
+            .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+            .label("row_num"),
+        )
+        .where(DailyBar.market == market, DailyBar.code.in_(missing))
+        .subquery()
+    )
+    for code, date, close, prev_close in await session.execute(
+        select(
+            ranked.c.code,
+            ranked.c.date,
+            ranked.c.close,
+            ranked.c.prev_close,
+        ).where(ranked.c.row_num == 1)
+    ):
+        change = close - prev_close if prev_close else 0.0
+        quotes[code] = QuoteView(
+            ltp=close,
+            change=change,
+            change_pct=(change / prev_close * 100) if prev_close else 0.0,
+            as_of=dt.datetime.combine(
+                date,
+                market_close_on(date, market),
+                tzinfo=market_timezone(market),
+            ),
+        )
+    return quotes
+
+
 @router.get("")
 async def get_portfolio(
     user: CurrentUser, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
@@ -185,14 +242,7 @@ async def get_portfolio(
     latest_alerts: dict[str, AlertView] = {}
     alert_codes: set[str] = set()
     if codes:
-        for q in await session.scalars(
-            select(QuoteSnapshot).where(
-                QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes)
-            )
-        ):
-            quotes[q.code] = QuoteView(
-                ltp=q.ltp, change=q.change, change_pct=q.change_pct, as_of=q.as_of
-            )
+        quotes = await load_quote_views(session, tenant.market, codes)
         for code, name in await session.execute(
             select(Symbol.code, Symbol.name_en).where(
                 Symbol.market == tenant.market, Symbol.code.in_(codes)
@@ -206,6 +256,7 @@ async def get_portfolio(
             select(AlertEvent.code, AlertEvent.title_i18n, AlertEvent.created_at)
             .where(
                 AlertEvent.user_id == user.id,
+                AlertEvent.tenant_id == tenant.name,
                 AlertEvent.market == tenant.market,
                 AlertEvent.code.in_(codes),
                 AlertEvent.created_at >= since,
@@ -218,6 +269,7 @@ async def get_portfolio(
             await session.scalars(
                 select(PriceAlert.code).where(
                     PriceAlert.user_id == user.id,
+                    PriceAlert.tenant_id == tenant.name,
                     PriceAlert.market == tenant.market,
                     PriceAlert.code.in_(codes),
                     PriceAlert.triggered_at.is_(None),
@@ -271,7 +323,8 @@ async def upsert_holding(
     body: HoldingIn, user: CurrentUser, tenant: CurrentTenant, session: DbSession
 ) -> dict[str, str]:
     code = body.code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     existing = await session.get(PortfolioHolding, (user.id, tenant.market, code))
     if existing is not None:

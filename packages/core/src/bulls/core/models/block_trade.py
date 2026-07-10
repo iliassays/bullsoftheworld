@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, Integer, String, func
+from sqlalchemy import BigInteger, Date, DateTime, Float, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -17,6 +17,7 @@ from bulls.core.db import Base
 
 class BlockTrade(Base):
     __tablename__ = "block_trades"
+    __table_args__ = (Index("ix_block_trades_trade_date", "trade_date"),)
 
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)

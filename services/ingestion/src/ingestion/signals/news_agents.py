@@ -97,7 +97,7 @@ def render(
     return f"{code} — " + tmpl.format(headline=fact or headline)
 
 
-async def run_news_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
+async def run_news_agents(market: str, *, tenant_id: str) -> dict[str, int]:
     """Post one note per new material dividend/earnings/rating announcement."""
     since = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=_RECENT_DAYS)
     sm = get_sessionmaker()
@@ -119,6 +119,7 @@ async def run_news_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> di
             # exact-key dedup: one note per announcement, ever
             seen = await session.scalar(
                 select(SignalEvent.id).where(
+                    SignalEvent.tenant_id == tenant_id,
                     SignalEvent.market == market,
                     SignalEvent.code == a.code,
                     SignalEvent.event_type == event_type,

@@ -37,10 +37,10 @@ function defaultTitle(config: MarketConfig, lang: Lang): string {
 }
 
 function defaultDesc(config: MarketConfig, lang: Lang): string {
-  if (config.market === "US") {
+  if (!config.features.company_fundamentals && !config.features.interpreted_analytics) {
     return lang === "bn"
-      ? "যুক্তরাষ্ট্রের শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।"
-      : "US share prices, fundamentals, chart patterns and community — in one place. Descriptive data, not investment advice.";
+      ? `${config.exchange_name_bn || config.exchange_name}-এর শেয়ারের সর্বশেষ দাম, দামের ইতিহাস ও কমিউনিটি আলোচনা। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।`
+      : `${config.exchange_name} share prices, price history and community discussion. Descriptive data, not investment advice.`;
   }
   return lang === "bn"
     ? "DSE-র শেয়ারের দাম, ফান্ডামেন্টাল, চার্ট প্যাটার্ন ও কমিউনিটি — এক জায়গায়। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।"
@@ -156,6 +156,7 @@ function SeoHead({ values }: { values: SeoValues | null }) {
   const canonical = `${siteUrl}/${lang}${suffix}`;
   const altBn = `${siteUrl}/bn${suffix}`;
   const altEn = `${siteUrl}/en${suffix}`;
+  const altDefault = config.default_locale === "en" ? altEn : altBn;
   const t = pick(v.title, lang) ?? defaultTitle(config, lang);
   const d = pick(v.description, lang) ?? defaultDesc(config, lang);
   const img = v.image ?? `${siteUrl}/og.png`;
@@ -169,7 +170,7 @@ function SeoHead({ values }: { values: SeoValues | null }) {
     upsertLink("canonical", null, canonical);
     upsertLink("alternate", "bn", altBn);
     upsertLink("alternate", "en", altEn);
-    upsertLink("alternate", "x-default", altBn);
+    upsertLink("alternate", "x-default", altDefault);
     upsertMeta("property", "og:title", t);
     upsertMeta("property", "og:description", d);
     upsertMeta("property", "og:url", canonical);
@@ -188,7 +189,7 @@ function SeoHead({ values }: { values: SeoValues | null }) {
       s.textContent = JSON.stringify(block);
       document.head.appendChild(s);
     }
-  }, [t, d, canonical, altBn, altEn, img, lang, v.noindex, jsonLdStr]);
+  }, [t, d, canonical, altBn, altEn, altDefault, img, lang, v.noindex, jsonLdStr]);
 
   return null;
 }

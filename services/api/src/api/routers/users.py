@@ -16,8 +16,8 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from api.deps import CurrentTenant, DbSession
-from api.routers.portfolio import QuoteView, compute_portfolio
-from bulls.core.models import PortfolioHolding, PortfolioSnapshot, Post, QuoteSnapshot, Symbol, User
+from api.routers.portfolio import compute_portfolio, load_quote_views
+from bulls.core.models import PortfolioHolding, PortfolioSnapshot, Post, Symbol, User
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -94,17 +94,9 @@ async def user_portfolio(
         )
     ).all()
     codes = [h.code for h in holdings]
-    quotes: dict[str, QuoteView] = {}
     names: dict[str, str | None] = {}
+    quotes = await load_quote_views(session, tenant.market, codes)
     if codes:
-        for q in await session.scalars(
-            select(QuoteSnapshot).where(
-                QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes)
-            )
-        ):
-            quotes[q.code] = QuoteView(
-                ltp=q.ltp, change=q.change, change_pct=q.change_pct, as_of=q.as_of
-            )
         for code, name in await session.execute(
             select(Symbol.code, Symbol.name_en).where(
                 Symbol.market == tenant.market, Symbol.code.in_(codes)

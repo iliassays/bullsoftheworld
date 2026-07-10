@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentTenant, DbSession, enforce_market_feature
 from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
@@ -87,8 +87,10 @@ class CompanyResponse(BaseModel):
 
 @router.get("/symbols/{code}/company")
 async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> CompanyResponse:
+    enforce_market_feature(tenant, "company_fundamentals")
     code = code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     ta = await session.get(TickerAnalytics, (tenant.market, code))

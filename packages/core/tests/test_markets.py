@@ -27,6 +27,8 @@ def test_dse_profile_preserves_current_product_defaults() -> None:
     assert dse.benchmark_label == "DSEX"
     assert dse.features.dse_categories
     assert dse.features.shareholding_breakdown
+    assert dse.features.interpreted_analytics
+    assert dse.features.price_alerts
     assert format_price(123.4, "DSE") == "৳123.4"
     assert format_money_millions(5, "DSE") == "৳50L"
     assert format_money_millions(12.5, "DSE") == "৳1.2cr"
@@ -49,7 +51,10 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert us.benchmark_label == "S&P 500"
     assert not us.features.dse_categories
     assert not us.features.shareholding_breakdown
-    assert us.features.sec_filings
+    assert not us.features.sec_filings
+    assert not us.features.curated_screens
+    assert us.features.interpreted_analytics
+    assert not us.features.price_alerts
     assert format_price(123.4, "US") == "$123.40"
     assert format_money_millions(500, "US") == "$500.0M"
     assert format_money_millions(1250, "US") == "$1.2B"
@@ -63,6 +68,7 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     assert registry.resolve("localhost").name == "bullsofdhaka"
     assert registry.resolve("bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("www.bullsofwallst.com").name == "bullsofwallst"
+    assert registry.resolve("api.bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("wallst.localhost").name == "bullsofwallst"
     assert registry.resolve("wallst.localhost").display_name == "Bulls of Wall Street"
     assert registry.resolve("wallst.localhost").market == "US"
@@ -78,3 +84,4 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     assert registry.resolve("bullsofdhaka.com", tenant_host="bullsofwallst.com").name == (
         "bullsofdhaka"
     )
+    assert registry.resolve_known("unknown.example") is None

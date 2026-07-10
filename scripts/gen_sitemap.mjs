@@ -31,14 +31,27 @@ const PATTERN_TYPES = [
   "double_bottom",
 ];
 
-const STATIC_PATHS = [
-  "/",
-  "/markets",
-  "/ideas",
-  "/learn/patterns",
-  "/about",
-  ...PATTERN_TYPES.map((t) => `/learn/patterns/${t}`),
-];
+async function staticPaths() {
+  const base = ["/", "/about"];
+  try {
+    const res = await fetch(`${API}/market/config`, {
+      headers: { "X-Tenant-Host": TENANT_HOST },
+    });
+    if (!res.ok) throw new Error(`/market/config HTTP ${res.status}`);
+    const config = await res.json();
+    if (config.features?.curated_screens) {
+      base.push(
+        "/markets",
+        "/ideas",
+        "/learn/patterns",
+        ...PATTERN_TYPES.map((t) => `/learn/patterns/${t}`),
+      );
+    }
+  } catch (e) {
+    console.warn(`⚠ could not fetch market capabilities (${e.message}) — sitemap will stay conservative`);
+  }
+  return base;
+}
 
 async function stockPaths() {
   try {
@@ -72,7 +85,7 @@ function urlEntries(path) {
   return LANGS.map((lang) => `  <url>\n    <loc>${abs(lang, path)}</loc>\n${alts}\n  </url>`).join("\n");
 }
 
-const paths = [...STATIC_PATHS, ...(await stockPaths())];
+const paths = [...(await staticPaths()), ...(await stockPaths())];
 const xml =
   `<?xml version="1.0" encoding="UTF-8"?>\n` +
   `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
-from api.deps import CurrentTenant, DbSession, OptionalUser
+from api.deps import CurrentTenant, DbSession, OptionalUser, enforce_market_feature
 from api.routers.screener import ScreenItem, ScreenOut, _enrich
 from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
 from bulls.core.models import (
@@ -93,6 +93,7 @@ def _clean_codes(market: str):
         Symbol.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
+        Symbol.data_status == "ready",
         or_(Symbol.category.is_(None), Symbol.category != "Z"),
     )
 
@@ -1044,6 +1045,7 @@ async def radar(
     watched: bool = Query(False),
     limit: int = Query(10, ge=1, le=25),
 ) -> ScannerResponse:
+    enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
     keys = _TABS.get(tab, _TABS["today"])
 

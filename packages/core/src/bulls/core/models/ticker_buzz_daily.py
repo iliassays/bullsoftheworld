@@ -18,6 +18,7 @@ from bulls.core.db import Base
 class TickerBuzzDaily(Base):
     __tablename__ = "ticker_buzz_daily"
 
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
     date: Mapped[dt.date] = mapped_column(Date, primary_key=True)

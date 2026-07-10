@@ -40,6 +40,7 @@ async def publish_evening_wrap_to_feed(
 
     existing = await session.scalar(
         select(SignalEvent).where(
+            SignalEvent.tenant_id == tenant_id,
             SignalEvent.market == market,
             SignalEvent.code == _MARKET_CODE,
             SignalEvent.event_type == _EVENT,
@@ -49,12 +50,14 @@ async def publish_evening_wrap_to_feed(
     if existing and not force:
         return {"status": "already_posted", "post_id": existing.post_id, "ref_date": ref_date}
 
-    agent = await session.scalar(select(User).where(User.handle == _MARKET_AGENT))
+    agent = await session.scalar(
+        select(User).where(User.tenant_id == tenant_id, User.handle == _MARKET_AGENT)
+    )
     if agent is None:
         raise FeedPublishError(f"agent {_MARKET_AGENT} not found (seed signal agents first)")
 
     s = get_settings()
-    fname = f"evening-wrap-{ref_date}.png"
+    fname = f"{tenant_id}-evening-wrap-{ref_date}.png"
     await asyncio.to_thread(_render_and_save, data, s.card_dir, fname)
     image_url = f"{s.api_public_url.rstrip('/')}/cards/{fname}"
 
@@ -74,6 +77,7 @@ async def publish_evening_wrap_to_feed(
     else:
         session.add(
             SignalEvent(
+                tenant_id=tenant_id,
                 market=market,
                 code=_MARKET_CODE,
                 agent=_MARKET_AGENT,

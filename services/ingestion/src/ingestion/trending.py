@@ -25,6 +25,7 @@ import numpy as np
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from bulls.analytics import adjust_bars
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import CompanyProfile, DailyBar, Symbol, TrendingScore
 
@@ -95,7 +96,10 @@ async def compute_trending(market: str) -> dict[str, int]:
             s.code: s
             for s in await session.scalars(
                 select(Symbol).where(
-                    Symbol.market == market, Symbol.is_active.is_(True), Symbol.is_hidden.is_(False)
+                    Symbol.market == market,
+                    Symbol.is_active.is_(True),
+                    Symbol.is_hidden.is_(False),
+                    Symbol.data_status == "ready",
                 )
             )
         }
@@ -125,7 +129,7 @@ async def compute_trending(market: str) -> dict[str, int]:
             )
             if len(bars) < MIN_BARS:
                 continue
-            bars = list(reversed(bars))  # ascending; last = today
+            bars = adjust_bars(list(reversed(bars)))  # ascending; last = today
             t = bars[-1]
             closes = np.array([b.close for b in bars], dtype=float)
             vols = np.array([b.volume for b in bars], dtype=float)

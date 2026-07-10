@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -16,6 +16,14 @@ from bulls.core.db import Base
 
 class Post(Base):
     __tablename__ = "posts"
+    __table_args__ = (
+        CheckConstraint("sentiment IS NULL OR sentiment IN ('bull', 'bear')", name="ck_posts_sentiment"),
+        CheckConstraint("kind IN ('user', 'note')", name="ck_posts_kind"),
+        CheckConstraint(
+            "moderation_status IN ('published', 'pending', 'held', 'blocked', 'deleted')",
+            name="ck_posts_moderation_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -35,7 +43,7 @@ class Post(Base):
     # Feed reads must filter to 'published'. 'held' = a reviewer parked it; 'blocked' = rejected.
     moderation_status: Mapped[str] = mapped_column(
         String(10), server_default="published", index=True
-    )  # 'published' | 'pending' | 'held' | 'blocked'
+    )  # 'published' | 'pending' | 'held' | 'blocked' | 'deleted'
     moderation_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Hash of the L0-normalized body — repost/duplicate detection + de-dupe of blocked text.
     normalized_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -60,6 +68,9 @@ class PostReaction(Base):
     """
 
     __tablename__ = "post_reactions"
+    __table_args__ = (
+        CheckConstraint("kind IN ('agree', 'disagree')", name="ck_post_reactions_kind"),
+    )
 
     post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)

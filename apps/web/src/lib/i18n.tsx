@@ -110,7 +110,7 @@ const STRINGS: Record<string, Entry> = {
   "pf.addTitle": { en: "Add a holding", bn: "হোল্ডিং যোগ করুন" },
   "pf.codePh": { en: "Ticker e.g. GP", bn: "টিকার যেমন GP" },
   "pf.qtyPh": { en: "Quantity", bn: "পরিমাণ" },
-  "pf.costPh": { en: "Avg buy price ৳", bn: "গড় কেনা দাম ৳" },
+  "pf.costPh": { en: "Avg buy price", bn: "গড় কেনা দাম" },
   "pf.save": { en: "Save", bn: "সংরক্ষণ" },
   "pf.cancel": { en: "Cancel", bn: "বাতিল" },
   "pf.invalid": {
@@ -129,6 +129,10 @@ const STRINGS: Record<string, Entry> = {
   "pf.disclaimer": {
     en: "Prices delayed 15 min. We describe your entries — we never advise, and we never see your broker account.",
     bn: "দাম ১৫ মিনিট বিলম্বিত। আমরা শুধু আপনার এন্ট্রি দেখাই — পরামর্শ দিই না, ব্রোকার অ্যাকাউন্টও দেখি না।",
+  },
+  "pf.disclaimerEod": {
+    en: "Valuations use the latest available EOD close. We describe your entries — we never advise, and we never see your broker account.",
+    bn: "মূল্যায়নে সর্বশেষ পাওয়া সমাপনী দাম ব্যবহার করা হয়। আমরা শুধু আপনার এন্ট্রি দেখাই — পরামর্শ দিই না, ব্রোকার অ্যাকাউন্টও দেখি না।",
   },
   "pf.alertSet": { en: "Alert set", bn: "অ্যালার্ট সেট করা" },
   "pf.setAlert": { en: "+ Set alert", bn: "+ অ্যালার্ট" },
@@ -658,6 +662,10 @@ const STRINGS: Record<string, Entry> = {
     en: "Sign in to follow official desks and watch companies — their posts and alerts land right here, just the signals you care about.",
     bn: "সাইন ইন করুন — অফিসিয়াল ডেস্ক ফলো করুন ও কোম্পানি ওয়াচ করুন, তাদের পোস্ট ও অ্যালার্ট ঠিক এখানে আসবে, শুধু আপনার পছন্দের সংকেত।",
   },
+  "home.signedOutBodyCommunity": {
+    en: "Sign in to follow companies and join the market discussion — watched stocks, posts and alerts stay together here.",
+    bn: "সাইন ইন করে কোম্পানি ফলো করুন ও বাজারের আলোচনায় যোগ দিন — ওয়াচ করা শেয়ার, পোস্ট ও অ্যালার্ট এখানে একসাথে থাকবে।",
+  },
   "home.signInCta": { en: "Sign in / Create account", bn: "সাইন ইন / অ্যাকাউন্ট খুলুন" },
   "home.browseBulls": {
     en: "Or browse everything in 🐂 Bulls →",
@@ -667,6 +675,10 @@ const STRINGS: Record<string, Entry> = {
   "home.emptyBody": {
     en: "It fills with posts from the official desks you follow and the companies you watch. Follow a few to get started.",
     bn: "আপনি যে অফিসিয়াল ডেস্ক ফলো করেন ও যে কোম্পানি ওয়াচ করেন, তাদের পোস্টে এটি ভরে ওঠে। শুরু করতে কয়েকটি ফলো করুন।",
+  },
+  "home.emptyBodyCommunity": {
+    en: "It fills with posts about companies you watch. Add a few stocks or join the discussion to get started.",
+    bn: "আপনি যে কোম্পানিগুলো ওয়াচ করেন সেগুলোর পোস্ট এখানে আসবে। শুরু করতে কয়েকটি শেয়ার যোগ করুন বা আলোচনায় অংশ নিন।",
   },
   "home.followDesks": { en: "Follow desks", bn: "ডেস্ক ফলো করুন" },
   "home.watchStocks": { en: "Watch stocks", bn: "শেয়ার ওয়াচ করুন" },
@@ -1039,8 +1051,8 @@ const STRINGS: Record<string, Entry> = {
   "session.default": { en: "Today's Watch", bn: "আজকের নজর" },
   "watch.flat": { en: "flat", bn: "অপরিবর্তিত" },
   "watch.aiFooter": {
-    en: "AI-generated from today's moves + chatter. Not financial advice.",
-    bn: "আজকের মুভ ও আলোচনা থেকে AI-নির্মিত। আর্থিক পরামর্শ নয়।",
+    en: "Computed from today's moves and discussion. Descriptive, not financial advice.",
+    bn: "আজকের দামের মুভ ও আলোচনা থেকে হিসাব করা। বর্ণনামূলক তথ্য, আর্থিক পরামর্শ নয়।",
   },
 };
 

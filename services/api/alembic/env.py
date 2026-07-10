@@ -13,9 +13,24 @@ from bulls.core.db import Base
 
 target_metadata = Base.metadata
 
+_UNMANAGED_TABLES = {"hedge_log"}
+
+
+def _include_object(obj, name, type_, reflected, compare_to):
+    """Keep utility-owned tables outside the application migration boundary."""
+    if reflected and type_ == "table" and name in _UNMANAGED_TABLES:
+        return False
+
+    table = getattr(obj, "table", None)
+    return not (reflected and table is not None and table.name in _UNMANAGED_TABLES)
+
 
 def _run(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=_include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

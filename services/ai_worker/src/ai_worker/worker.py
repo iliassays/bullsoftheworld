@@ -1,7 +1,7 @@
-"""arq worker — async AI jobs off Redis.
+"""arq worker — local embeddings plus optional LLM jobs off Redis.
 
-The API ENQUEUES jobs and returns immediately; a slow/expensive Claude call NEVER blocks a web
-request. Run with:
+The API enqueues jobs and returns immediately. Embedding jobs use local FastEmbed; LLM jobs are
+opt-in and no-op when generation is disabled. Run with:
 
     uv run arq ai_worker.worker.WorkerSettings
 """
@@ -35,6 +35,8 @@ _SAFETY_CATEGORY = {
 
 async def tag_sentiment(ctx, post_id: int) -> str:
     """Classify a post and persist a bull/bear tag (neutral leaves it untagged)."""
+    if get_settings().ai_provider == "disabled":
+        return "llm-disabled"
     sm = get_sessionmaker()
     async with sm() as session:
         post = await session.get(Post, post_id)
@@ -147,3 +149,4 @@ class WorkerSettings:
     on_startup: ClassVar = startup
     on_shutdown: ClassVar = shutdown
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
+    queue_name: ClassVar = get_settings().ai_queue_name

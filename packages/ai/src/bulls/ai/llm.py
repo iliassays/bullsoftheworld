@@ -20,7 +20,9 @@ async def structured_complete[T: BaseModel](system: str, user: str, schema: type
         return await _ollama(system, user, schema)
     if provider == "claude":
         return await _claude(system, user, schema)
-    raise ValueError(f"Unknown AI_PROVIDER {provider!r} (use 'ollama' or 'claude')")
+    if provider == "disabled":
+        raise RuntimeError("LLM features are disabled; configure AI_PROVIDER to enable this route")
+    raise ValueError(f"Unknown AI_PROVIDER {provider!r} (use 'disabled', 'ollama', or 'claude')")
 
 
 async def _claude[T: BaseModel](system: str, user: str, schema: type[T]) -> T:

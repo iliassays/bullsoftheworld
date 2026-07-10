@@ -18,7 +18,9 @@ from api.deps import CurrentTenant, DbSession, require_admin
 from api.fb import compose as fbcompose
 from api.fb import feed as fbfeed
 from bulls.core.config import get_settings
+from bulls.core.markets import get_market_profile
 from bulls.core.models import BlockTrade, Symbol
+from bulls.core.tenancy import Tenant
 
 # pillar key -> composer; add a pillar by adding its composer here
 _FB_COMPOSERS = {
@@ -30,6 +32,13 @@ _FB_COMPOSERS = {
 }
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+
+def _require_social_publishing(tenant: Tenant) -> None:
+    if not tenant.social_url or not get_market_profile(tenant.market).features.automated_desks:
+        raise HTTPException(
+            status_code=404, detail="Social publishing is not enabled for this tenant"
+        )
 
 
 class BlockTradeOut(BaseModel):
@@ -130,8 +139,9 @@ class FbPostIn(BaseModel):
 
 
 @router.get("/fb/status")
-async def fb_status() -> dict:
+async def fb_status(tenant: CurrentTenant) -> dict:
     """Verify the Page token works (non-publishing): returns page name + follower count."""
+    _require_social_publishing(tenant)
     try:
         return await facebook.page_info()
     except facebook.FacebookError as e:
@@ -139,8 +149,9 @@ async def fb_status() -> dict:
 
 
 @router.post("/fb/post")
-async def fb_post(body: FbPostIn) -> dict:
+async def fb_post(body: FbPostIn, tenant: CurrentTenant) -> dict:
     """Publish a post to the Bulls of Dhaka page. Photo if image_url is given, else text/link."""
+    _require_social_publishing(tenant)
     try:
         if body.image_url:
             post_id = await facebook.post_photo(body.image_url, body.message)
@@ -166,6 +177,7 @@ async def fb_card(
     tenant: CurrentTenant, session: DbSession, kind: str = Query("evening_wrap")
 ) -> Response:
     """Render the branded card PNG for a pillar (preview only — does not post)."""
+    _require_social_publishing(tenant)
     post = await _compose(kind, session, tenant.market)
     return Response(content=post.png, media_type="image/png")
 
@@ -175,6 +187,7 @@ async def fb_preview(
     tenant: CurrentTenant, session: DbSession, kind: str = Query("evening_wrap")
 ) -> dict:
     """Preview the caption + card link for a pillar without posting."""
+    _require_social_publishing(tenant)
     post = await _compose(kind, session, tenant.market)
     return {
         "kind": post.kind,
@@ -192,8 +205,9 @@ async def fb_publish(
     force: bool = Query(False, description="Repost even if already posted for this ref_date"),
 ) -> dict:
     """Compose + publish a pillar's card to the page. Idempotent per (kind, ref_date)."""
+    _require_social_publishing(tenant)
     post = await _compose(kind, session, tenant.market)
-    key = f"fb:posted:{kind}:{post.ref_date}"
+    key = f"fb:posted:{tenant.name}:{kind}:{post.ref_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         if not force and (existing := await redis.get(key)):
@@ -220,6 +234,7 @@ async def fb_publish_feed(
     force: bool = Query(False, description="Repost even if already in the feed for this ref_date"),
 ) -> dict:
     """Publish a pillar's card into the in-app Bulls feed (agent note + card image)."""
+    _require_social_publishing(tenant)
     if kind != "evening_wrap":
         raise HTTPException(status_code=404, detail=f"unsupported feed kind: {kind}")
     try:

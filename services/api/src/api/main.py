@@ -8,12 +8,16 @@ handler can read the active tenant. Run with:
 
 from __future__ import annotations
 
+import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.queue import close_pool
@@ -55,10 +59,14 @@ from bulls.core.tenancy import TenantRegistry
 
 # tenants/ lives at the repo root: services/api/src/api/main.py -> up 5 -> repo root
 _TENANTS_DIR = Path(__file__).resolve().parents[4] / "tenants"
+log = logging.getLogger("api.requests")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Lifespan owns the API pool. This also makes repeated in-process app starts deterministic
+    # (test runners and ASGI reloaders can otherwise inherit a pool bound to a previous event loop).
+    await dispose_engine()
     settings = get_settings()
     app.state.tenants = TenantRegistry.from_dir(_TENANTS_DIR, default=settings.default_tenant)
     yield
@@ -82,14 +90,46 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Propagate a bounded request ID and emit one latency record per request."""
+    supplied = request.headers.get("x-request-id", "")
+    request_id = supplied if 0 < len(supplied) <= 128 else uuid.uuid4().hex
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    response.headers["X-Request-ID"] = request_id
+    tenant = getattr(request.state, "tenant", None)
+    log.info(
+        "request_complete method=%s path=%s status=%s duration_ms=%s tenant=%s request_id=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+        tenant.name if tenant else "unresolved",
+        request_id,
+    )
+    return response
+
+
+@app.middleware("http")
 async def resolve_tenant(request: Request, call_next):
     registry: TenantRegistry = request.app.state.tenants
-    request.state.tenant = registry.resolve(
+    tenant = registry.resolve_known(
         request.headers.get("host"),
         tenant_host=request.headers.get("x-tenant-host"),
         origin=request.headers.get("origin"),
         referer=request.headers.get("referer"),
     )
+    settings = get_settings()
+    local_env = settings.env.lower() in {"local", "dev", "development", "test"}
+    probe = request.url.path in {"/health", "/live", "/ready"}
+    if tenant is None and settings.strict_tenant_resolution and not local_env and not probe:
+        return JSONResponse(
+            status_code=421,
+            content={"detail": "Request host does not map to a configured tenant"},
+        )
+    request.state.tenant = tenant or registry.resolve(request.headers.get("host"))
     return await call_next(request)
 
 

@@ -5,42 +5,51 @@ import { useLang } from "../lib/i18n";
 import { DeskIcon } from "../lib/deskIcons";
 import { useSeo } from "../components/Seo";
 import { VerifiedBadge } from "../components/ui";
-
-const FB_URL = "https://www.facebook.com/1214682241723822";
+import { useTenantConfig } from "../lib/tenant";
 
 export function About() {
   const { lang } = useLang();
+  const { config } = useTenantConfig();
   const bn = lang === "bn";
+  const exchange = bn ? config.exchange_name_bn || config.exchange_name : config.exchange_name;
   useSeo({
     title: {
-      bn: "Bulls of Dhaka সম্পর্কে — DSE-র জন্য তথ্যভিত্তিক প্ল্যাটফর্ম",
-      en: "About Bulls of Dhaka — a facts-first platform for the DSE",
+      bn: `${config.brand_name} সম্পর্কে — ${exchange}-এর জন্য তথ্যভিত্তিক প্ল্যাটফর্ম`,
+      en: `About ${config.brand_name} — a facts-first platform for ${exchange}`,
     },
     description: {
-      bn: "Bulls of Dhaka কী, কেন 'তথ্যে চলুন, গুজবে নয়', আর কোন কোন অটোমেটেড ডেস্ক DSE-র ডেটা তুলে ধরে — সব এক জায়গায়।",
-      en: "What Bulls of Dhaka is, why 'facts, not rumours', and the automated desks that surface Dhaka Stock Exchange data.",
+      bn: `${config.brand_name} কী, কেন '${config.tagline_bn}', আর কীভাবে ${exchange}-এর তথ্য সহজভাবে তুলে ধরে।`,
+      en: `What ${config.brand_name} is, why '${config.tagline_en}', and how it makes ${exchange} data easier to understand.`,
     },
   });
   const [desks, setDesks] = useState<NoteBeat[]>([]);
   useEffect(() => {
+    if (!config.features.automated_desks) {
+      setDesks([]);
+      return;
+    }
     api
       .noteBeats()
       .then(setDesks)
       .catch(() => setDesks([]));
-  }, []);
+  }, [config.features.automated_desks]);
 
   const principles = bn
     ? [
         { icon: "📊", t: "তথ্য, গুজব নয়", d: "আমরা বাজারের তথ্য দেখাই — টিপস বা গুজব নয়।" },
         { icon: "🚫", t: "কোনো কেনা-বেচার পরামর্শ নয়", d: "ডেটা কী বলছে তা বর্ণনা করি; সিদ্ধান্ত আপনার।" },
         { icon: "⏱️", t: "বিলম্বিত, তবে সৎ", d: "প্রতিটি সংখ্যা ‘বিলম্বিত / as-of’ স্ট্যাম্প করা — আমরা তথ্যকে টাটকা বলে চালাই না।" },
-        { icon: "🐂", t: "অফিসিয়াল ডেস্ক", d: "ভেরিফায়েড স্বয়ংক্রিয় ডেস্ক সারা বাজার জুড়ে শুধু তথ্য পোস্ট করে।" },
+        ...(config.features.automated_desks
+          ? [{ icon: "🐂", t: "অফিসিয়াল ডেস্ক", d: "ভেরিফায়েড স্বয়ংক্রিয় ডেস্ক সারা বাজার জুড়ে শুধু তথ্য পোস্ট করে।" }]
+          : []),
       ]
     : [
         { icon: "📊", t: "Facts, not rumours", d: "We show what the market data says — never tips or hype." },
         { icon: "🚫", t: "No buy/sell advice", d: "We describe what the data shows; the decision is yours." },
         { icon: "⏱️", t: "Delayed, but honest", d: "Every number is stamped delayed / as-of. We never fake freshness." },
-        { icon: "🐂", t: "Official desks", d: "Verified automated desks post facts across the whole market." },
+        ...(config.features.automated_desks
+          ? [{ icon: "🐂", t: "Official desks", d: "Verified automated desks post facts across the whole market." }]
+          : []),
       ];
 
   return (
@@ -50,18 +59,18 @@ export function About() {
         <div className="h-1.5 bg-accent" />
         <div className="p-6 text-center">
           <img
-            src="/logo-mark-v2.png"
-            alt="Bulls of Dhaka"
+            src={config.logo_url}
+            alt={config.brand_name}
             className="w-16 h-16 mx-auto"
           />
-          <h1 className="text-2xl font-extrabold mt-3">Bulls of Dhaka</h1>
+          <h1 className="text-2xl font-extrabold mt-3">{config.brand_name}</h1>
           <div className="text-accent font-semibold text-sm mt-0.5">
-            {bn ? "তথ্য চলুন, গুজবে নয়" : "Facts, not rumours"}
+            {bn ? config.tagline_bn : config.tagline_en}
           </div>
           <p className="text-sm text-muted leading-relaxed mt-3 max-w-md mx-auto">
             {bn
-              ? "ঢাকা স্টক এক্সচেঞ্জের প্রাতিষ্ঠানিক মানের ডেটা — সাধারণ বিনিয়োগকারীর জন্য সহজ, সৎ ও বিনামূল্যে।"
-              : "Institution-grade Dhaka Stock Exchange data — made simple, honest, and free to explore for every retail investor."}
+              ? `${exchange}-এর তথ্য — সাধারণ বিনিয়োগকারীর জন্য সহজ, সৎ ও বিনামূল্যে।`
+              : `${exchange} data — made simple, honest, and free to explore for retail investors.`}
           </p>
         </div>
       </div>
@@ -78,7 +87,7 @@ export function About() {
       </div>
 
       {/* Meet the desks */}
-      <div className="bg-surface border border-border rounded-2xl p-4">
+      {config.features.automated_desks && <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-center gap-1.5 font-bold text-sm">
           {bn ? "অফিসিয়াল ডেস্কের সাথে পরিচিত হোন" : "Meet the official desks"}
           <VerifiedBadge size={15} />
@@ -102,7 +111,7 @@ export function About() {
             </Link>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* CTA */}
       <div className="bg-card rounded-2xl p-5 text-center">
@@ -111,31 +120,39 @@ export function About() {
         </div>
         <p className="text-xs text-muted mt-1">
           {bn
-            ? "প্রতিদিনের মার্কেট আপডেট ফেসবুকে পান, আর অ্যাপে সব ডেস্কের ফিড দেখুন।"
-            : "Get the daily market wrap on Facebook, and the full desk feed in the app."}
+            ? config.social_url
+              ? "প্রতিদিনের মার্কেট আপডেট ফেসবুকে পান, আর অ্যাপে সব ডেস্কের ফিড দেখুন।"
+              : "আপনার পছন্দের শেয়ার ও বাজারের আলোচনা অ্যাপে অনুসরণ করুন।"
+            : config.social_url
+              ? "Get the daily market wrap on Facebook, and the full desk feed in the app."
+              : "Follow the stocks and market discussions you care about in the app."}
         </p>
         <div className="flex gap-2 justify-center mt-3">
-          <a
-            href={FB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-full px-4 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
-          >
-            {bn ? "ফেসবুকে ফলো করুন" : "Follow on Facebook"}
-          </a>
+          {config.social_url && (
+            <a
+              href={config.social_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full px-4 py-2 text-sm font-bold bg-accent text-bg hover:opacity-90"
+            >
+              {bn ? "ফেসবুকে ফলো করুন" : "Follow on Facebook"}
+            </a>
+          )}
           <Link
-            to="/bulls"
+            to={config.features.automated_desks ? "/bulls" : "/watchlist"}
             className="rounded-full px-4 py-2 text-sm font-semibold border border-border hover:border-accent hover:text-accent"
           >
-            🐂 {bn ? "বুলস ফিড" : "Bulls feed"}
+            {config.features.automated_desks
+              ? `🐂 ${bn ? "বুলস ফিড" : "Bulls feed"}`
+              : `☆ ${bn ? "ওয়াচলিস্ট" : "Watchlist"}`}
           </Link>
         </div>
       </div>
 
       <p className="text-[10.5px] text-muted text-center leading-relaxed px-4">
         {bn
-          ? "শুধুই তথ্য · কোনো বিনিয়োগ পরামর্শ নয় · DSE EOD ডেটা, সংশোধনযোগ্য"
-          : "Data only · Not investment advice · DSE EOD data, subject to correction"}
+          ? `শুধুই তথ্য · কোনো বিনিয়োগ পরামর্শ নয় · ${config.exchange_code} ডেটা, সংশোধনযোগ্য`
+          : `Data only · Not investment advice · ${config.exchange_code} data, subject to correction`}
       </p>
     </div>
   );

@@ -62,6 +62,12 @@ def test_no_posts_states_absence():
     assert "কোনো পোস্ট নেই" in _render_digest_bn(f)
 
 
+def test_eod_digest_does_not_claim_an_intraday_move():
+    f = _facts(change_pct_1d=1.25)
+    assert "in the latest session" in _render_digest_en(f, currency="$", eod=True)
+    assert "সর্বশেষ সেশনে" in _render_digest_bn(f, currency="$", eod=True)
+
+
 def test_attention_clause_only_when_rising():
     f = _facts(bull_posts=5, bear_posts=1)
     rising = _buzz(attention="rising", chatter_x=3.0, watchers_delta_7d=6)

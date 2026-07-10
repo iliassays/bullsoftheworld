@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from sqlalchemy import func, select, union
 
-from bulls.core.models import AlertEvent, PortfolioHolding, PriceAlert, WatchlistItem
+from bulls.core.markets import get_market_profile
+from bulls.core.models import AlertEvent, PortfolioHolding, PriceAlert, User, WatchlistItem
 
 # Short bilingual headlines per levels-agent event type. The full note body rides along as the
 # alert body, so the inbox row reads: what happened (title) + the desk's own words (body).
@@ -134,13 +135,27 @@ def should_trigger(direction: str, level: float, ltp: float) -> bool:
     return ltp >= level if direction == "above" else ltp <= level
 
 
-async def _interested_user_ids(session, market: str, code: str) -> list[int]:
+async def _interested_user_ids(
+    session, tenant_id: str, market: str, code: str
+) -> list[int]:
     """Watchers plus holders — the audience for a stock's data events."""
-    watchers = select(WatchlistItem.user_id).where(
-        WatchlistItem.market == market, WatchlistItem.code == code
+    watchers = (
+        select(WatchlistItem.user_id)
+        .join(User, User.id == WatchlistItem.user_id)
+        .where(
+            User.tenant_id == tenant_id,
+            WatchlistItem.market == market,
+            WatchlistItem.code == code,
+        )
     )
-    holders = select(PortfolioHolding.user_id).where(
-        PortfolioHolding.market == market, PortfolioHolding.code == code
+    holders = (
+        select(PortfolioHolding.user_id)
+        .join(User, User.id == PortfolioHolding.user_id)
+        .where(
+            User.tenant_id == tenant_id,
+            PortfolioHolding.market == market,
+            PortfolioHolding.code == code,
+        )
     )
     return list(await session.scalars(union(watchers, holders)))
 
@@ -148,6 +163,7 @@ async def _interested_user_ids(session, market: str, code: str) -> list[int]:
 async def fan_out_note_alert(
     session,
     *,
+    tenant_id: str,
     market: str,
     code: str,
     event_type: str,
@@ -155,12 +171,13 @@ async def fan_out_note_alert(
     ref_post_id: int | None,
 ) -> int:
     """One inbox row per interested user. Returns the fan-out count (for logs)."""
-    user_ids = await _interested_user_ids(session, market, code)
+    user_ids = await _interested_user_ids(session, tenant_id, market, code)
     title = note_alert_title(event_type, code)
     kind = note_alert_kind(event_type)
     for uid in user_ids:
         session.add(
             AlertEvent(
+                tenant_id=tenant_id,
                 user_id=uid,
                 market=market,
                 code=code,
@@ -174,19 +191,25 @@ async def fan_out_note_alert(
 
 
 def _price_cross_texts(
-    code: str, direction: str, level: float, ltp: float, set_on: object = None
+    code: str,
+    direction: str,
+    level: float,
+    ltp: float,
+    set_on: object = None,
+    *,
+    currency: str = "৳",
 ) -> tuple[dict, dict]:
     arrow = "above" if direction == "above" else "below"
     arrow_bn = "উপরে" if direction == "above" else "নিচে"
     when = f" on {set_on:%d %b}" if set_on else ""
     when_bn = f" {set_on:%d %b} তারিখে" if set_on else ""
     title = {
-        "en": f"Price alert: ${code} crossed {arrow} ৳{level:g}",
-        "bn": f"দামের অ্যালার্ট: ${code} ৳{level:g} এর {arrow_bn} গেছে",
+        "en": f"Price alert: ${code} crossed {arrow} {currency}{level:g}",
+        "bn": f"দামের অ্যালার্ট: ${code} {currency}{level:g} এর {arrow_bn} গেছে",
     }
     body = {
-        "en": f"The level you set{when}. Now ৳{ltp:g}.",
-        "bn": f"আপনি{when_bn} এই দাম সেট করেছিলেন। এখন ৳{ltp:g}।",
+        "en": f"The level you set{when}. Now {currency}{ltp:g}.",
+        "bn": f"আপনি{when_bn} এই দাম সেট করেছিলেন। এখন {currency}{ltp:g}।",
     }
     return title, body
 
@@ -211,10 +234,16 @@ async def check_price_alerts(session, market: str, prices: dict[str, float]) -> 
             continue
         alert.triggered_at = func.now()
         title, body = _price_cross_texts(
-            alert.code, alert.direction, alert.level, ltp, alert.created_at
+            alert.code,
+            alert.direction,
+            alert.level,
+            ltp,
+            alert.created_at,
+            currency=get_market_profile(market).currency_symbol,
         )
         session.add(
             AlertEvent(
+                tenant_id=alert.tenant_id,
                 user_id=alert.user_id,
                 market=market,
                 code=alert.code,

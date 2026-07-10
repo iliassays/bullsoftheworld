@@ -129,7 +129,11 @@ async def _enqueue_embeddings(announcement_ids: list[int]) -> None:
     if not announcement_ids:
         return
     try:
-        pool = await create_pool(RedisSettings.from_dsn(get_settings().redis_url))
+        settings = get_settings()
+        pool = await create_pool(
+            RedisSettings.from_dsn(settings.redis_url),
+            default_queue_name=settings.ai_queue_name,
+        )
         try:
             for announcement_id in announcement_ids:
                 await pool.enqueue_job("embed_announcement", announcement_id)

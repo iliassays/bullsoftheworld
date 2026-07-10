@@ -1,6 +1,6 @@
 """Run the levels-agent over the universe: detect → dedupe → publish notes into stock feeds.
 
-    uv run python -m ingestion.signals.runner DSE   # one-shot
+    uv run python -m ingestion.signals.runner DSE bullsofdhaka   # one-shot
 
 Detection re-derives yesterday from the bars, so it's safe to re-run — the signal_events ledger
 (unique per occurrence) plus a per-event cooldown stop duplicate or repetitive notes.
@@ -14,7 +14,7 @@ import sys
 
 from sqlalchemy import func, or_, select
 
-from bulls.analytics import compute
+from bulls.analytics import adjust_bars, compute
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
@@ -37,7 +37,7 @@ _COOLDOWN_DAYS = 5  # don't repeat the same event on a name within this many day
 _OWN_COOLDOWN_DAYS = 20  # ownership discloses monthly — don't refire within a disclosure window
 
 
-async def run_levels_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
+async def run_levels_agent(market: str, *, tenant_id: str) -> dict[str, int]:
     sm = get_sessionmaker()
     handle = AGENTS[BEAT][0]
     published = 0
@@ -50,6 +50,7 @@ async def run_levels_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> d
                     Symbol.market == market,
                     Symbol.is_active.is_(True),
                     Symbol.is_hidden.is_(False),
+                    Symbol.data_status == "ready",
                 )
             )
         )
@@ -65,7 +66,7 @@ async def run_levels_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> d
             )
             if len(bars) < 2:
                 continue
-            asc = list(reversed(bars))
+            asc = adjust_bars(list(reversed(bars)))
             today = compute(asc)
             prev = compute(asc[:-1])
 
@@ -76,6 +77,7 @@ async def run_levels_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> d
                     code,
                     sig.event_type,
                     sig.occurrence_key,
+                    tenant_id=tenant_id,
                     today=today.as_of_date,
                     cooldown_days=_COOLDOWN_DAYS,
                 ):
@@ -98,7 +100,7 @@ async def run_levels_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> d
     return {"symbols": len(codes), "published": published}
 
 
-async def run_ownership_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
+async def run_ownership_agents(market: str, *, tenant_id: str) -> dict[str, int]:
     """Compare each symbol's two latest shareholding disclosures; post material stake changes."""
     sm = get_sessionmaker()
     published = 0
@@ -136,6 +138,7 @@ async def run_ownership_agents(market: str, *, tenant_id: str = "bullsofdhaka") 
                     code,
                     sig.event_type,
                     sig.occurrence_key,
+                    tenant_id=tenant_id,
                     today=latest.as_of_date,
                     cooldown_days=_OWN_COOLDOWN_DAYS,
                 ):
@@ -161,7 +164,7 @@ async def run_ownership_agents(market: str, *, tenant_id: str = "bullsofdhaka") 
     return {"symbols": len(codes), "published": published}
 
 
-async def run_volume_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
+async def run_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
     """Flag unusual intraday volume vs the expected-by-now pace. Fires once per name per day."""
     now = dt.datetime.now(dt.UTC)
     fraction = volume.session_fraction(now)
@@ -213,6 +216,7 @@ async def run_volume_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> d
                 code,
                 sig.event_type,
                 sig.occurrence_key,
+                tenant_id=tenant_id,
                 today=today,
                 cooldown_days=1,
             ):
@@ -237,7 +241,7 @@ async def run_volume_agent(market: str, *, tenant_id: str = "bullsofdhaka") -> d
     return {"published": published}
 
 
-async def run_factor_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
+async def run_factor_agents(market: str, *, tenant_id: str) -> dict[str, int]:
     """Descriptive factor notes (momentum / quality-value / smart-money / relative strength) from the
     precomputed analytics row + today's price vs the index. Once per name per factor per month."""
     now = dt.datetime.now(dt.UTC)
@@ -302,6 +306,7 @@ async def run_factor_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> 
                     ta.code,
                     sig.event_type,
                     sig.occurrence_key,
+                    tenant_id=tenant_id,
                     today=ta.as_of_date,
                     cooldown_days=sig.cooldown_days,
                 ):
@@ -326,7 +331,7 @@ async def run_factor_agents(market: str, *, tenant_id: str = "bullsofdhaka") -> 
     return {"symbols": len(rows), "published": published}
 
 
-async def run_market_update(market: str, *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
+async def run_market_update(market: str, *, tenant_id: str) -> dict[str, int]:
     """One market-wide close wrap (DSEX + breadth + turnover). No cashtag — global feed only."""
     sm = get_sessionmaker()
     async with sm() as session:
@@ -352,6 +357,7 @@ async def run_market_update(market: str, *, tenant_id: str = "bullsofdhaka") -> 
             market_wrap.MARKET_CODE,
             "market_wrap",
             key,
+            tenant_id=tenant_id,
             today=summary.date,
             cooldown_days=1,
         ):
@@ -376,12 +382,12 @@ async def run_market_update(market: str, *, tenant_id: str = "bullsofdhaka") -> 
     return {"published": 1}
 
 
-async def _run(market: str) -> None:
-    lv = await run_levels_agent(market)
-    ow = await run_ownership_agents(market)
-    vo = await run_volume_agent(market)
-    fa = await run_factor_agents(market)
-    mk = await run_market_update(market)
+async def _run(market: str, tenant_id: str) -> None:
+    lv = await run_levels_agent(market, tenant_id=tenant_id)
+    ow = await run_ownership_agents(market, tenant_id=tenant_id)
+    vo = await run_volume_agent(market, tenant_id=tenant_id)
+    fa = await run_factor_agents(market, tenant_id=tenant_id)
+    mk = await run_market_update(market, tenant_id=tenant_id)
     print(
         f"[signals] {market}: levels={lv['published']} ownership={ow['published']} "
         f"volume={vo['published']} factors={fa['published']} market={mk['published']}"
@@ -389,7 +395,9 @@ async def _run(market: str) -> None:
 
 
 def main() -> None:
-    asyncio.run(_run(sys.argv[1] if len(sys.argv) > 1 else "DSE"))
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: python -m ingestion.signals.runner MARKET TENANT_ID")
+    asyncio.run(_run(sys.argv[1].upper(), sys.argv[2]))
 
 
 if __name__ == "__main__":

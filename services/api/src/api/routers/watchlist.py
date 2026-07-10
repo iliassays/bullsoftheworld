@@ -6,9 +6,11 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, CurrentUser, DbSession
-from bulls.core.models import QuoteSnapshot, Symbol, WatchlistItem
-from bulls.core.schemas.market import QuoteOut, SymbolDetail, SymbolOut
+from api.routers.market import load_freshest_quotes
+from bulls.core.models import Symbol, WatchlistItem
+from bulls.core.schemas.market import SymbolDetail, SymbolOut
 from bulls.core.schemas.social import WatchlistAdd
+from bulls.market_data.calendar import market_timezone
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
@@ -19,7 +21,7 @@ async def add(
 ) -> dict[str, str]:
     code = body.code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None:
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     if await session.get(WatchlistItem, (user.id, tenant.market, code)) is None:
         session.add(WatchlistItem(user_id=user.id, market=tenant.market, code=code))
@@ -50,17 +52,18 @@ async def list_watchlist(
     symbols = {
         s.code: s
         for s in await session.scalars(
-            select(Symbol).where(Symbol.market == tenant.market, Symbol.code.in_(codes))
-        )
-    }
-    quotes = {
-        q.code: q
-        for q in await session.scalars(
-            select(QuoteSnapshot).where(
-                QuoteSnapshot.market == tenant.market, QuoteSnapshot.code.in_(codes)
+            select(Symbol).where(
+                Symbol.market == tenant.market,
+                Symbol.code.in_(codes),
+                Symbol.data_status == "ready",
+                Symbol.is_active.is_(True),
+                Symbol.is_hidden.is_(False),
             )
         )
     }
+    quotes = await load_freshest_quotes(
+        session, tenant.market, codes, market_timezone(tenant.market)
+    )
     out = []
     for code in codes:
         if code in symbols:
@@ -68,7 +71,7 @@ async def list_watchlist(
             out.append(
                 SymbolDetail(
                     symbol=SymbolOut.model_validate(symbols[code]),
-                    quote=QuoteOut.model_validate(q) if q else None,
+                    quote=q,
                 )
             )
     return out

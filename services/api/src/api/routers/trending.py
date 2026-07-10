@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
 from api.i18n import language_for
 from api.routers.screener import build_screen, sectors
 from bulls.ai.tasks.watch import Breadth, WatchItem, todays_watch
@@ -55,7 +55,9 @@ async def _breadth(session, market: str) -> Breadth:
     return Breadth(advancers=row[0], decliners=row[1], unchanged=row[2], total=row[3])
 
 
-async def _trending(session, market: str, *, days: int, limit: int) -> list[WatchItem]:
+async def _trending(
+    session, market: str, *, tenant_id: str, days: int, limit: int
+) -> list[WatchItem]:
     """Top cashtags by post count over the window, with sentiment tally + latest price move."""
     since = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
     bull = func.count(case((Post.sentiment == "bull", 1)))
@@ -65,6 +67,7 @@ async def _trending(session, market: str, *, days: int, limit: int) -> list[Watc
         .join(Post, Cashtag.post_id == Post.id)
         .where(
             Cashtag.market == market,
+            Post.tenant_id == tenant_id,
             Post.created_at >= since,
             Post.moderation_status == "published",
         )
@@ -96,12 +99,19 @@ async def trending(
     days: int = Query(2, ge=1, le=30),
     limit: int = Query(10, ge=1, le=50),
 ) -> list[WatchItem]:
-    return await _trending(session, tenant.market, days=days, limit=limit)
+    return await _trending(
+        session, tenant.market, tenant_id=tenant.name, days=days, limit=limit
+    )
 
 
-async def _watch_items(session, market: str) -> list[WatchItem]:
+async def _watch_items(session, market: str, *, tenant_id: str) -> list[WatchItem]:
     """Merge trending chatter with the biggest price movers."""
-    items = {it.code: it for it in await _trending(session, market, days=2, limit=6)}
+    items = {
+        it.code: it
+        for it in await _trending(
+            session, market, tenant_id=tenant_id, days=2, limit=6
+        )
+    }
     movers = await session.scalars(
         select(QuoteSnapshot)
         .where(QuoteSnapshot.market == market)
@@ -183,16 +193,18 @@ async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
 async def todays_watch_endpoint(
     tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> WatchResponse:
+    enforce_market_feature(tenant, "curated_screens")
     now = dt.datetime.now(dt.UTC)
     phase = session_phase(now, ZoneInfo(tenant.timezone), market=tenant.market)
-    cache_key = f"watch:v2:{tenant.market}:{locale}:{now.date()}"
+    local_date = now.astimezone(ZoneInfo(tenant.timezone)).date()
+    cache_key = f"watch:v4:{tenant.name}:{tenant.market}:{locale}:{local_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
         if cached:
             content = WatchContent.model_validate_json(cached)
         else:
-            items = await _watch_items(session, tenant.market)
+            items = await _watch_items(session, tenant.market, tenant_id=tenant.name)
             breadth = await _breadth(session, tenant.market)
             extras = await _watch_extras(tenant, session)
             summary = await todays_watch(

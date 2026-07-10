@@ -10,9 +10,10 @@ import datetime as dt
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 
 from api.deps import CurrentTenant, CurrentUser, DbSession
 from api.emails import password_reset, verify_welcome
@@ -40,12 +41,13 @@ from bulls.core.schemas.social import (
 from bulls.core.security import (
     create_access_token,
     create_purpose_token,
-    decode_purpose_token,
+    decode_purpose_token_claims,
     hash_password,
     hash_refresh,
     new_refresh_token,
     verify_password,
 )
+from bulls.core.tenancy import Tenant
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = logging.getLogger(__name__)
@@ -54,18 +56,18 @@ _RESET_TTL_MIN = 30
 _VERIFY_TTL_MIN = 60 * 24
 
 
-def _link(path: str, token: str) -> str:
-    return f"{get_settings().app_base_url.rstrip('/')}{path}?token={token}"
+def _link(tenant: Tenant, path: str, token: str) -> str:
+    return f"{tenant.site_url.rstrip('/')}{path}?token={token}"
 
 
 async def _issue_tokens(
-    session, user_id: int, request: Request, *, family: str | None = None
+    session, user: User, request: Request, *, family: str | None = None
 ) -> TokenOut:
     """Mint the access+refresh pair; persist only the refresh hash."""
     raw = new_refresh_token()
     session.add(
         RefreshSession(
-            user_id=user_id,
+            user_id=user.id,
             token_hash=hash_refresh(raw),
             family=family or uuid.uuid4().hex,
             expires_at=dt.datetime.now(dt.UTC)
@@ -75,7 +77,12 @@ async def _issue_tokens(
         )
     )
     await session.flush()
-    return TokenOut(access_token=create_access_token(str(user_id)), refresh_token=raw)
+    return TokenOut(
+        access_token=create_access_token(
+            str(user.id), user.tenant_id, version=user.auth_version
+        ),
+        refresh_token=raw,
+    )
 
 
 async def _revoke_all_sessions(session, user_id: int) -> None:
@@ -88,19 +95,63 @@ async def _revoke_all_sessions(session, user_id: int) -> None:
 
 
 class RefreshIn(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None
+
+
+def _refresh_value(body: RefreshIn, request: Request) -> str | None:
+    settings = get_settings()
+    return body.refresh_token or request.cookies.get(settings.refresh_cookie_name)
+
+
+def _browser_tokens(response: Response, tokens: TokenOut) -> TokenOut:
+    """Store refresh credentials outside JavaScript in production; retain a dev fallback."""
+    if not tokens.refresh_token:
+        return tokens
+    settings = get_settings()
+    response.set_cookie(
+        key=settings.refresh_cookie_name,
+        value=tokens.refresh_token,
+        max_age=settings.refresh_token_ttl_days * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.production_cookies,
+        samesite=settings.refresh_cookie_samesite,
+        path="/auth",
+    )
+    if settings.production_cookies:
+        return tokens.model_copy(update={"refresh_token": None})
+    return tokens
+
+
+async def _flush_identity(session) -> None:
+    """Turn concurrent tenant-identity uniqueness races into a stable API conflict."""
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="That account identifier is already in use") from exc
 
 
 @router.post("/refresh")
-async def refresh(body: RefreshIn, request: Request, session: DbSession) -> TokenOut:
+async def refresh(
+    body: RefreshIn,
+    request: Request,
+    response: Response,
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> TokenOut:
     """Rotate the refresh token and mint a fresh access token.
 
     Reuse detection: a token that was already rotated (or revoked) coming back means replay —
     the entire family dies, forcing a real re-login on every device that shared the chain."""
     await throttle(f"refresh:{client_ip(request)}", limit=60, window_s=300)
     now = dt.datetime.now(dt.UTC)
+    raw_refresh = _refresh_value(body, request)
+    if not raw_refresh:
+        raise HTTPException(status_code=401, detail="Session expired — please log in again.")
     row = await session.scalar(
-        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(body.refresh_token))
+        select(RefreshSession)
+        .where(RefreshSession.token_hash == hash_refresh(raw_refresh))
+        .with_for_update()
     )
     if row is None:
         raise HTTPException(status_code=401, detail="Session expired — please log in again.")
@@ -117,30 +168,48 @@ async def refresh(body: RefreshIn, request: Request, session: DbSession) -> Toke
     if row.expires_at <= now:
         raise HTTPException(status_code=401, detail="Session expired — please log in again.")
 
-    out = await _issue_tokens(session, row.user_id, request, family=row.family)
+    user = await session.get(User, row.user_id)
+    if user is None or user.tenant_id != tenant.name:
+        row.revoked_at = now
+        raise HTTPException(status_code=401, detail="Session expired — please log in again.")
+    out = await _issue_tokens(session, user, request, family=row.family)
     new_row = await session.scalar(
         select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(out.refresh_token))
     )
     row.revoked_at = now
     row.replaced_by_id = new_row.id if new_row else None
     row.last_used_at = now
-    return out
+    return _browser_tokens(response, out)
 
 
 @router.post("/logout")
-async def logout(body: RefreshIn, session: DbSession) -> dict[str, str]:
+async def logout(
+    body: RefreshIn,
+    request: Request,
+    response: Response,
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> dict[str, str]:
     """Revoke this device's refresh session (the client drops the access token itself)."""
+    raw_refresh = _refresh_value(body, request)
     row = await session.scalar(
-        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(body.refresh_token))
-    )
+        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(raw_refresh))
+    ) if raw_refresh else None
     if row is not None and row.revoked_at is None:
-        row.revoked_at = dt.datetime.now(dt.UTC)
+        user = await session.get(User, row.user_id)
+        if user is not None and user.tenant_id == tenant.name:
+            row.revoked_at = dt.datetime.now(dt.UTC)
+    response.delete_cookie(get_settings().refresh_cookie_name, path="/auth")
     return {"status": "ok"}
 
 
 @router.post("/register", status_code=201)
 async def register(
-    body: RegisterIn, request: Request, tenant: CurrentTenant, session: DbSession
+    body: RegisterIn,
+    request: Request,
+    response: Response,
+    tenant: CurrentTenant,
+    session: DbSession,
 ) -> TokenOut:
     # Cap account creation from a single source (stops scripted signup floods).
     await throttle(f"register:{client_ip(request)}", limit=10, window_s=3600)
@@ -155,18 +224,22 @@ async def register(
         phone = normalize_phone(contact)
         if phone is None:
             raise HTTPException(status_code=400, detail="Enter a valid email or phone number")
-    if email and await session.scalar(select(User.id).where(User.email == email)):
+    if email and await session.scalar(
+        select(User.id).where(User.tenant_id == tenant.name, User.email == email)
+    ):
         raise HTTPException(
             status_code=409, detail="This email is already registered — please log in"
         )
-    if phone and await session.scalar(select(User.id).where(User.phone == phone)):
+    if phone and await session.scalar(
+        select(User.id).where(User.tenant_id == tenant.name, User.phone == phone)
+    ):
         raise HTTPException(
             status_code=409, detail="This phone is already registered — please log in"
         )
 
     user = User(
         tenant_id=tenant.name,
-        handle=await generate_handle(session, body.name, email, phone),
+        handle=await generate_handle(session, tenant.name, body.name, email, phone),
         name=body.name.strip(),
         email=email,
         phone=phone,
@@ -174,28 +247,40 @@ async def register(
         locale=body.locale,
     )
     session.add(user)
-    await session.flush()  # assign user.id before we mint tokens
+    await _flush_identity(session)  # assign user.id before we mint tokens
 
     # Welcome + email confirmation (only if they gave an email; best-effort — never blocks signup).
     if email:
         try:
-            token = create_purpose_token(str(user.id), "verify", _VERIFY_TTL_MIN)
-            subject, html, text = verify_welcome(user.name, _link("/verify", token), user.locale)
-            await send_email(email, subject, html, text)
+            token = create_purpose_token(
+                str(user.id),
+                "verify",
+                _VERIFY_TTL_MIN,
+                tenant_id=tenant.name,
+                email=email,
+            )
+            subject, html, text = verify_welcome(
+                user.name, _link(tenant, "/verify", token), user.locale, tenant
+            )
+            await send_email(email, subject, html, text, tenant=tenant)
         except Exception:
             log.exception("welcome/verify email failed for %s", email)
 
-    return await _issue_tokens(session, user.id, request)
+    return _browser_tokens(response, await _issue_tokens(session, user, request))
 
 
 @router.post("/login")
 async def login(
-    body: LoginIn, request: Request, tenant: CurrentTenant, session: DbSession
+    body: LoginIn,
+    request: Request,
+    response: Response,
+    tenant: CurrentTenant,
+    session: DbSession,
 ) -> TokenOut:
     # Layer 1: throttle by source IP. Layer 2: lock the specific identifier after repeated failures.
     await throttle(f"login:{client_ip(request)}", limit=20, window_s=300)
     ident = body.identifier.strip()
-    key = ident.lower()
+    key = f"{tenant.name}:{ident.lower()}"
     await assert_not_locked(key)
 
     # Match the identifier as email, phone, or auto-handle.
@@ -212,7 +297,7 @@ async def login(
         # Generic message — never reveal whether the account exists or the password was wrong.
         raise HTTPException(status_code=401, detail="Invalid login or password")
     await reset_failures(key)
-    return await _issue_tokens(session, user.id, request)
+    return _browser_tokens(response, await _issue_tokens(session, user, request))
 
 
 @router.post("/forgot", status_code=202)
@@ -227,34 +312,68 @@ async def forgot_password(
     )
     if user is not None:
         try:
-            token = create_purpose_token(str(user.id), "reset", _RESET_TTL_MIN)
-            subject, html, text = password_reset(user.name, _link("/reset", token), user.locale)
-            await send_email(email, subject, html, text)
+            token = create_purpose_token(
+                str(user.id),
+                "reset",
+                _RESET_TTL_MIN,
+                tenant_id=tenant.name,
+                version=user.auth_version,
+                email=user.email,
+            )
+            subject, html, text = password_reset(
+                user.name, _link(tenant, "/reset", token), user.locale, tenant
+            )
+            await send_email(email, subject, html, text, tenant=tenant)
         except Exception:
             log.exception("reset email failed for %s", email)
     return {"status": "sent"}
 
 
 @router.post("/reset")
-async def reset_password(body: ResetIn, request: Request, session: DbSession) -> TokenOut:
+async def reset_password(
+    body: ResetIn,
+    request: Request,
+    response: Response,
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> TokenOut:
     """Consume a reset token and set a new password; log the user straight in."""
-    uid = decode_purpose_token(body.token, "reset")
-    user = await session.get(User, int(uid)) if uid and uid.isdigit() else None
-    if user is None:
+    claims = decode_purpose_token_claims(body.token, "reset", tenant_id=tenant.name)
+    uid = claims.get("sub") if claims else None
+    user = (
+        await session.get(User, int(uid), with_for_update=True)
+        if uid and uid.isdigit()
+        else None
+    )
+    token_version = claims.get("ver", 0) if claims else None
+    if (
+        user is None
+        or user.tenant_id != tenant.name
+        or token_version != user.auth_version
+        or claims.get("email") != user.email
+    ):
         raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
     user.password_hash = hash_password(body.password)
     user.email_verified = True  # using the emailed link also proves the address
+    user.auth_version += 1
     # A password reset means the old credentials can't be trusted — every session dies.
     await _revoke_all_sessions(session, user.id)
     await session.flush()
-    return await _issue_tokens(session, user.id, request)
+    return _browser_tokens(response, await _issue_tokens(session, user, request))
 
 
 @router.post("/verify")
-async def verify_email(body: VerifyIn, session: DbSession) -> dict[str, str]:
-    uid = decode_purpose_token(body.token, "verify")
+async def verify_email(
+    body: VerifyIn, tenant: CurrentTenant, session: DbSession
+) -> dict[str, str]:
+    claims = decode_purpose_token_claims(body.token, "verify", tenant_id=tenant.name)
+    uid = claims.get("sub") if claims else None
     user = await session.get(User, int(uid)) if uid and uid.isdigit() else None
-    if user is None:
+    if (
+        user is None
+        or user.tenant_id != tenant.name
+        or claims.get("email") != user.email
+    ):
         raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
     user.email_verified = True
     await session.flush()
@@ -266,46 +385,76 @@ async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)
 
 
-async def _send_verify(user: User) -> None:
+async def _send_verify(user: User, tenant: Tenant) -> None:
     """Best-effort verification email (never raises)."""
     try:
-        token = create_purpose_token(str(user.id), "verify", _VERIFY_TTL_MIN)
-        subject, html, text = verify_welcome(user.name, _link("/verify", token), user.locale)
-        await send_email(user.email, subject, html, text)
+        token = create_purpose_token(
+            str(user.id),
+            "verify",
+            _VERIFY_TTL_MIN,
+            tenant_id=user.tenant_id,
+            email=user.email,
+        )
+        subject, html, text = verify_welcome(
+            user.name, _link(tenant, "/verify", token), user.locale, tenant
+        )
+        await send_email(user.email, subject, html, text, tenant=tenant)
     except Exception:
         log.exception("verify email failed for %s", user.email)
 
 
 @router.patch("/me")
-async def update_contact(body: ContactUpdateIn, user: CurrentUser, session: DbSession) -> UserOut:
+async def update_contact(
+    body: ContactUpdateIn,
+    user: CurrentUser,
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> UserOut:
     """Add or change email / phone after signup. Changing a contact resets its verified flag."""
+    send_verification = False
     if body.email is not None:
         email = body.email.strip().lower()
         if not is_email(email):
             raise HTTPException(status_code=400, detail="Enter a valid email")
         if email != user.email:
-            if await session.scalar(select(User.id).where(User.email == email, User.id != user.id)):
+            if await session.scalar(
+                select(User.id).where(
+                    User.tenant_id == user.tenant_id,
+                    User.email == email,
+                    User.id != user.id,
+                )
+            ):
                 raise HTTPException(status_code=409, detail="This email is already in use")
             user.email = email
             user.email_verified = False
-            await _send_verify(user)
+            send_verification = True
     if body.phone is not None:
         phone = normalize_phone(body.phone)
         if phone is None:
             raise HTTPException(status_code=400, detail="Enter a valid phone number")
         if phone != user.phone:
-            if await session.scalar(select(User.id).where(User.phone == phone, User.id != user.id)):
+            if await session.scalar(
+                select(User.id).where(
+                    User.tenant_id == user.tenant_id,
+                    User.phone == phone,
+                    User.id != user.id,
+                )
+            ):
                 raise HTTPException(status_code=409, detail="This phone is already in use")
             user.phone = phone
             user.phone_verified = False  # phone OTP verification is a later phase
-    await session.flush()
+    await _flush_identity(session)
+    if send_verification:
+        await _send_verify(user, tenant)
     return UserOut.model_validate(user)
 
 
 @router.post("/resend-verify", status_code=202)
-async def resend_verify(user: CurrentUser, request: Request) -> dict[str, str]:
+async def resend_verify(
+    user: CurrentUser, request: Request, tenant: CurrentTenant
+) -> dict[str, str]:
     """Re-send the email verification link to the user's current (unverified) email."""
     await throttle(f"verify:{client_ip(request)}", limit=5, window_s=900)
     if user.email and not user.email_verified:
-        await _send_verify(user)
+        await _send_verify(user, tenant)
     return {"status": "sent"}

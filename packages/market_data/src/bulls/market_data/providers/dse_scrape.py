@@ -165,6 +165,7 @@ def parse_bars(html: str) -> list[Bar]:
                 low=low,
                 close=close,
                 volume=int(_num(_col(row, headers, "VOLUME")) or 0),
+                source="dse_archive",
             )
         )
     return bars

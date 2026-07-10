@@ -14,8 +14,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
-from bulls.analytics import LevelsInsight, build_levels, compute
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
+from bulls.analytics import LevelsInsight, adjust_bars, build_levels, compute
+from bulls.core.markets import get_market_profile
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.market_data.calendar import Session, session_phase
 
@@ -48,39 +49,43 @@ def _relation(price: float, support: float | None, resistance: float | None) -> 
     return "unknown"
 
 
-def _live_en(price: float, rel: str, s: float | None, r: float | None) -> str:
+def _live_en(
+    price: float, rel: str, s: float | None, r: float | None, currency: str = "৳"
+) -> str:
     # Build only the selected branch: _relation guarantees s (resp. r) is set for the support
     # (resp. resistance) cases, but a dict literal would eagerly format every branch and crash on
     # a one-sided level where the other side is None.
-    p = f"Live (delayed) ৳{price:g}"
+    p = f"Live (delayed) {currency}{price:g}"
     if rel == "below_support":
-        return f"{p} — now below the ৳{s:g} support from last close; a daily close below confirms a break."
+        return f"{p} — now below the {currency}{s:g} support from last close; a daily close below confirms a break."
     if rel == "near_support":
-        return f"{p} — now testing the ৳{s:g} support from last close."
+        return f"{p} — now testing the {currency}{s:g} support from last close."
     if rel == "above_resistance":
-        return f"{p} — now above the ৳{r:g} resistance from last close; a daily close above confirms a breakout."
+        return f"{p} — now above the {currency}{r:g} resistance from last close; a daily close above confirms a breakout."
     if rel == "near_resistance":
-        return f"{p} — now testing the ৳{r:g} resistance from last close."
+        return f"{p} — now testing the {currency}{r:g} resistance from last close."
     if rel == "between":
-        return f"{p} — trading between support ৳{s:g} and resistance ৳{r:g} (from last close)."
+        return f"{p} — trading between support {currency}{s:g} and resistance {currency}{r:g} (from last close)."
     return f"{p}."
 
 
-def _live_bn(price: float, rel: str, s: float | None, r: float | None) -> str:
+def _live_bn(
+    price: float, rel: str, s: float | None, r: float | None, currency: str = "৳"
+) -> str:
     # Build only the selected branch — see _live_en: a dict literal crashes on one-sided levels.
-    p = f"লাইভ (বিলম্বিত) ৳{price:g}"
+    p = f"লাইভ (বিলম্বিত) {currency}{price:g}"
     if rel == "below_support":
-        return f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্টের নিচে; দিন শেষে নিচে ক্লোজ হলে ব্রেক নিশ্চিত।"
+        return f"{p} — এখন গত ক্লোজের {currency}{s:g} সাপোর্টের নিচে; দিন শেষে নিচে ক্লোজ হলে ব্রেক নিশ্চিত।"
     if rel == "near_support":
-        return f"{p} — এখন গত ক্লোজের ৳{s:g} সাপোর্ট পরীক্ষা করছে।"
+        return f"{p} — এখন গত ক্লোজের {currency}{s:g} সাপোর্ট পরীক্ষা করছে।"
     if rel == "above_resistance":
         return (
-            f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্সের উপরে; দিন শেষে উপরে ক্লোজ হলে ব্রেকআউট নিশ্চিত।"
+            f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্সের উপরে; দিন শেষে উপরে ক্লোজ হলে ব্রেকআউট নিশ্চিত।"
         )
     if rel == "near_resistance":
-        return f"{p} — এখন গত ক্লোজের ৳{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।"
+        return f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।"
     if rel == "between":
-        return f"{p} — গত ক্লোজের সাপোর্ট ৳{s:g} ও রেজিস্ট্যান্স ৳{r:g} এর মধ্যে লেনদেন হচ্ছে।"
+        return f"{p} — গত ক্লোজের সাপোর্ট {currency}{s:g} ও রেজিস্ট্যান্স {currency}{r:g} এর মধ্যে লেনদেন হচ্ছে।"
     return f"{p}।"
 
 
@@ -88,7 +93,7 @@ def _f(n: float | None) -> str:
     return "—" if n is None else f"{n:g}"
 
 
-def _render_en(code: str, i: LevelsInsight) -> list[str]:
+def _render_en(code: str, i: LevelsInsight, currency: str = "৳") -> list[str]:
     lines: list[str] = []
     if i.pa_change_pct is not None:
         verb = {"rising": "risen", "falling": "fallen", "flat": "been roughly flat"}[i.pa_direction]
@@ -98,13 +103,13 @@ def _render_en(code: str, i: LevelsInsight) -> list[str]:
     if i.resistance is not None:
         vol = "above" if i.volume_confirms else "below"
         lines.append(
-            f"Resistance ৳{_f(i.resistance)} — a daily close above this is a breakout, confirmed "
+            f"Resistance {currency}{_f(i.resistance)} — a daily close above this is a breakout, confirmed "
             f"on above-average volume; on weak volume technicians treat it as unconfirmed and prone "
             f"to failing. (Volume is {vol} its 20-day average now.)"
         )
     if i.support is not None:
         lines.append(
-            f"Support ৳{_f(i.support)} — a close below this breaks support, and the next lower "
+            f"Support {currency}{_f(i.support)} — a close below this breaks support, and the next lower "
             f"level comes into focus. A dip below that closes back above is a support reclaim."
         )
     if i.rsi is not None and i.rsi_zone:
@@ -129,7 +134,7 @@ def _render_en(code: str, i: LevelsInsight) -> list[str]:
     return lines
 
 
-def _render_bn(code: str, i: LevelsInsight) -> list[str]:
+def _render_bn(code: str, i: LevelsInsight, currency: str = "৳") -> list[str]:
     lines: list[str] = []
     if i.pa_change_pct is not None:
         verb = {
@@ -141,13 +146,13 @@ def _render_bn(code: str, i: LevelsInsight) -> list[str]:
     if i.resistance is not None:
         vol = "উপরে" if i.volume_confirms else "নিচে"
         lines.append(
-            f"রেজিস্ট্যান্স ৳{_f(i.resistance)} — এর উপরে দিন শেষে ক্লোজ হলে তাকে ব্রেকআউট বলে; "
+            f"রেজিস্ট্যান্স {currency}{_f(i.resistance)} — এর উপরে দিন শেষে ক্লোজ হলে তাকে ব্রেকআউট বলে; "
             f"গড়ের বেশি ভলিউমে হলে তা নিশ্চিত ধরা হয়, কম ভলিউমে অনিশ্চিত ও ব্যর্থ হতে পারে। "
             f"(এখন ভলিউম তার ২০-দিনের গড়ের {vol}।)"
         )
     if i.support is not None:
         lines.append(
-            f"সাপোর্ট ৳{_f(i.support)} — এর নিচে ক্লোজ হলে সাপোর্ট ভেঙে যায়, পরের নিচের লেভেল "
+            f"সাপোর্ট {currency}{_f(i.support)} — এর নিচে ক্লোজ হলে সাপোর্ট ভেঙে যায়, পরের নিচের লেভেল "
             f"গুরুত্বপূর্ণ হয়ে ওঠে। নিচে নেমে আবার উপরে ক্লোজ করলে তাকে সাপোর্ট রিক্লেইম বলে।"
         )
     if i.rsi is not None and i.rsi_zone:
@@ -177,9 +182,10 @@ def _render_bn(code: str, i: LevelsInsight) -> list[str]:
 async def get_levels(
     code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> LevelsResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None:
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     bars = list(
@@ -192,9 +198,10 @@ async def get_levels(
     )
     if not bars:
         raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
-    bars.reverse()
+    bars = adjust_bars(list(reversed(bars)))
     result = compute(bars)
     insight = build_levels(result, [b.close for b in bars])
+    currency = get_market_profile(tenant.market).currency_symbol
 
     render = _render_bn if locale == "bn" else _render_en
 
@@ -209,12 +216,12 @@ async def get_levels(
         price = quote.ltp if quote else result.last_close
         rel = _relation(price, insight.support, insight.resistance)
         live_fn = _live_bn if locale == "bn" else _live_en
-        live_line = live_fn(price, rel, insight.support, insight.resistance)
+        live_line = live_fn(price, rel, insight.support, insight.resistance, currency)
 
     return LevelsResponse(
         code=code,
         as_of=str(result.as_of_date),
         insight=insight,
-        lines=render(code, insight),
+        lines=render(code, insight, currency),
         live_line=live_line,
     )

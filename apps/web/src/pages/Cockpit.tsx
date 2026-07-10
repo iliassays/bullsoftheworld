@@ -216,7 +216,7 @@ function AgentCard({ agent, token }: { agent: AgentSummary; token: string }) {
 
 export function Cockpit() {
   const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem(ADMIN_TOKEN_KEY),
+    sessionStorage.getItem(ADMIN_TOKEN_KEY),
   );
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +232,7 @@ export function Cockpit() {
       })
       .catch((e: unknown) => {
         if (e instanceof ApiError && e.status === 403) {
+          sessionStorage.removeItem(ADMIN_TOKEN_KEY);
           localStorage.removeItem(ADMIN_TOKEN_KEY);
           setToken(null);
         } else setError("Could not load agents — is the API up?");
@@ -244,7 +245,8 @@ export function Cockpit() {
     return (
       <TokenGate
         onSet={(t) => {
-          localStorage.setItem(ADMIN_TOKEN_KEY, t);
+          sessionStorage.setItem(ADMIN_TOKEN_KEY, t);
+          localStorage.removeItem(ADMIN_TOKEN_KEY);
           setToken(t);
         }}
       />

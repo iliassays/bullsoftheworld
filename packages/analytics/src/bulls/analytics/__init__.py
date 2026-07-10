@@ -3,6 +3,7 @@
 Computes descriptive facts (trend, momentum, levels, volume) over daily bars. No AI, no I/O.
 """
 
+from bulls.analytics.adjustments import AdjustedBar, adjust_bars
 from bulls.analytics.circuit import AT_LIMIT_TOLERANCE_PP, at_circuit, circuit_band
 from bulls.analytics.engine import AnalyticsResult, BarLike, Level, compute
 from bulls.analytics.indicators import (
@@ -53,6 +54,7 @@ from bulls.analytics.valuation import ValuationResult, compute_valuation
 __all__ = [
     "AT_LIMIT_TOLERANCE_PP",
     "STRATEGIES",
+    "AdjustedBar",
     "AnalyticsResult",
     "BarLike",
     "Dimension",
@@ -72,6 +74,7 @@ __all__ = [
     "Snapshot",
     "StrategySpec",
     "ValuationResult",
+    "adjust_bars",
     "at_circuit",
     "atr",
     "buffett_quality_score",

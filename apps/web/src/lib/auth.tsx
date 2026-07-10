@@ -18,11 +18,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // A stored refresh token counts as "signed in": even if the 30-min access token has
-    // expired, api.me()'s 401 auto-rotates it and the session continues seamlessly.
-    if (!tokenStore.get() && !refreshStore.get()) return setLoading(false);
+    // Access tokens live only in memory. Restore from the HttpOnly refresh cookie on each load;
+    // local development can still supply the legacy body token while using plain HTTP.
     api
-      .me()
+      .restoreSession(refreshStore.get())
+      .then((tokens) => {
+        tokenStore.set(tokens.access_token);
+        if (tokens.refresh_token) refreshStore.set(tokens.refresh_token);
+        else refreshStore.clear();
+        return api.me();
+      })
       .then(setUser)
       .catch(() => {
         tokenStore.clear();
@@ -34,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const finishAuth = async (token: string, refreshToken?: string | null) => {
     tokenStore.set(token);
     if (refreshToken) refreshStore.set(refreshToken);
+    else refreshStore.clear();
     setUser(await api.me());
   };
 
@@ -55,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout: () => {
           // Best-effort server-side revocation — the tokens are cleared locally regardless.
           const rt = refreshStore.get();
-          if (rt) api.logout(rt).catch(() => {});
+          api.logout(rt).catch(() => {});
           tokenStore.clear();
           refreshStore.clear();
           setUser(null);

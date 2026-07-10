@@ -34,6 +34,7 @@ def embedding_model_name() -> str:
 
 
 async def embed_text(text: str) -> list[float]:
+    """Backward-compatible generic embedding; new retrieval code uses role-specific helpers."""
     s = get_settings()
     if s.ai_embedding_provider == "fastembed":
         return _fastembed_embedding(text)
@@ -49,6 +50,18 @@ async def embed_text(text: str) -> list[float]:
     )
 
 
+async def embed_query_text(text: str) -> list[float]:
+    if get_settings().ai_embedding_provider == "fastembed":
+        return _fastembed_embedding(text, role="query")
+    return await embed_text(text)
+
+
+async def embed_document_text(text: str) -> list[float]:
+    if get_settings().ai_embedding_provider == "fastembed":
+        return _fastembed_embedding(text, role="passage")
+    return await embed_text(text)
+
+
 @lru_cache(maxsize=2)
 def _fastembed_model(model_name: str, cache_dir: str) -> Any:
     try:
@@ -61,10 +74,15 @@ def _fastembed_model(model_name: str, cache_dir: str) -> Any:
     return TextEmbedding(model_name=model_name, cache_dir=cache_dir)
 
 
-def _fastembed_embedding(text: str) -> list[float]:
+def _fastembed_embedding(text: str, *, role: str = "document") -> list[float]:
     s = get_settings()
     model = _fastembed_model(s.ai_embedding_model, s.ai_embedding_cache_dir)
-    embedding = next(iter(model.embed([text or " "])))
+    if role == "query":
+        embedding = next(iter(model.query_embed(text or " ")))
+    elif role == "passage":
+        embedding = next(iter(model.passage_embed([text or " "])))
+    else:
+        embedding = next(iter(model.embed([text or " "])))
     if hasattr(embedding, "tolist"):
         embedding = embedding.tolist()
     return _validate_dim([float(x) for x in embedding], s.ai_embedding_model)

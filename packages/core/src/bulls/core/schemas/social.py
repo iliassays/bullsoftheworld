@@ -18,7 +18,7 @@ class RegisterIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     contact: str = Field(min_length=3, max_length=255)  # email OR phone — handle auto-generated
     password: str = Field(min_length=8, max_length=128)
-    locale: str = "bn"
+    locale: Literal["en", "bn"] = "bn"
 
 
 class LoginIn(BaseModel):

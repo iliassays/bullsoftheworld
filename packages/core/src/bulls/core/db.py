@@ -30,7 +30,20 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     """Process-wide async sessionmaker. Use in workers; the api uses get_session()."""
     global _engine, _sessionmaker
     if _sessionmaker is None:
-        _engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
+        settings = get_settings()
+        _engine = create_async_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_timeout=settings.database_pool_timeout_s,
+            connect_args={
+                "server_settings": {
+                    "application_name": "bulls-of-the-world",
+                    "statement_timeout": str(settings.database_statement_timeout_ms),
+                }
+            },
+        )
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _sessionmaker
 

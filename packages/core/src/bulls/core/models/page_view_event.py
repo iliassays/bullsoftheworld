@@ -21,6 +21,7 @@ class PageViewEvent(Base):
     __tablename__ = "page_view_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     market: Mapped[str] = mapped_column(String(8))
     code: Mapped[str] = mapped_column(String(16))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
@@ -29,4 +30,12 @@ class PageViewEvent(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("ix_page_view_market_code_created", "market", "code", "created_at"),)
+    __table_args__ = (
+        Index(
+            "ix_page_view_tenant_market_code_created",
+            "tenant_id",
+            "market",
+            "code",
+            "created_at",
+        ),
+    )

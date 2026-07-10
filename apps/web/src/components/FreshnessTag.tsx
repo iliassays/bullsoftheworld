@@ -1,13 +1,9 @@
+import { useEffect, useState } from "react";
+import { api, type MarketStatus } from "../lib/api";
 import { useLang } from "../lib/i18n";
-import { formatDhakaTime } from "../lib/time";
-
-// DSE trades Sun–Thu, 10:00–14:30 BDT (04:00–08:30 UTC); +buffer for the last delayed snapshot.
-function marketLive(): boolean {
-  const now = new Date();
-  const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const dhakaDay = new Date(now.getTime() + 6 * 3600_000).getUTCDay(); // 0=Sun … 6=Sat
-  return dhakaDay <= 4 && utcMin >= 4 * 60 && utcMin <= 8 * 60 + 45;
-}
+import { marketUiFromConfig } from "../lib/market";
+import { useTenantConfig } from "../lib/tenant";
+import { formatMarketTime } from "../lib/time";
 
 // One honest freshness signal (no per-widget badges): during the session show a live dot + the
 // real last-quote time; after the close show the close date. Kills "is this live or yesterday?".
@@ -27,9 +23,20 @@ export function FreshnessTag({
   className?: string;
 }) {
   const { t } = useLang();
-  const live = marketLive();
-  if (live && quoteAsOf) {
-    const time = formatDhakaTime(quoteAsOf);
+  const { config } = useTenantConfig();
+  const [status, setStatus] = useState<MarketStatus | null>(null);
+  useEffect(() => {
+    let active = true;
+    api
+      .marketStatus()
+      .then((next) => active && setStatus(next))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (status?.phase === "open" && quoteAsOf) {
+    const time = formatMarketTime(quoteAsOf, marketUiFromConfig(config));
     return (
       <div className={`text-[10px] text-muted flex items-center gap-1 ${className}`}>
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-up animate-pulse" />

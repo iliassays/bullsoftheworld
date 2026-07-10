@@ -1,13 +1,20 @@
 // Cockpit API client — admin-only endpoints, authenticated with X-Admin-Token.
-// No consumer login here; the token is the single ops credential, kept in localStorage.
+// No consumer login here; the token is the single ops credential, kept only for this tab session.
 
 const BASE = (import.meta.env.VITE_API_BASE as string) || "http://127.0.0.1:8090";
 const ADMIN_TOKEN_KEY = "bulls.admintoken";
+const TENANT_HOST = (import.meta.env.VITE_TENANT_HOST as string) || "bullsofdhaka.com";
 
 export const adminTokenStore = {
-  get: () => localStorage.getItem(ADMIN_TOKEN_KEY),
-  set: (t: string) => localStorage.setItem(ADMIN_TOKEN_KEY, t),
-  clear: () => localStorage.removeItem(ADMIN_TOKEN_KEY),
+  get: () => sessionStorage.getItem(ADMIN_TOKEN_KEY),
+  set: (token: string) => {
+    sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  },
+  clear: () => {
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  },
 };
 
 export class ApiError extends Error {
@@ -23,6 +30,7 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = adminTokenStore.get();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Tenant-Host": TENANT_HOST,
     ...(token ? { "X-Admin-Token": token } : {}),
     ...(opts.headers as Record<string, string>),
   };
@@ -120,10 +128,18 @@ export const api = {
     request<AdminOverview>(`/admin/overview?tenant=${encodeURIComponent(tenant)}`),
   analytics: (tenant: string, days: number) =>
     request<Analytics>(`/admin/analytics?tenant=${encodeURIComponent(tenant)}&days=${days}`),
-  modQueue: (status: "pending" | "held") =>
-    request<{ count: number; items: ModQueueItem[] }>(`/moderation/queue?status=${status}`),
-  modApprove: (postId: number) =>
-    request<{ status: string }>(`/moderation/${postId}/approve`, { method: "POST", body: "{}" }),
-  modBlock: (postId: number) =>
-    request<{ status: string }>(`/moderation/${postId}/block`, { method: "POST", body: "{}" }),
+  modQueue: (tenant: string, status: "pending" | "held") =>
+    request<{ count: number; items: ModQueueItem[] }>(
+      `/moderation/queue?tenant=${encodeURIComponent(tenant)}&status=${status}`,
+    ),
+  modApprove: (tenant: string, postId: number) =>
+    request<{ status: string }>(
+      `/moderation/${postId}/approve?tenant=${encodeURIComponent(tenant)}`,
+      { method: "POST", body: "{}" },
+    ),
+  modBlock: (tenant: string, postId: number) =>
+    request<{ status: string }>(
+      `/moderation/${postId}/block?tenant=${encodeURIComponent(tenant)}`,
+      { method: "POST", body: "{}" },
+    ),
 };

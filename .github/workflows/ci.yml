@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, feat/redesign-2026-07]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: bulls
+          POSTGRES_PASSWORD: bulls
+          POSTGRES_DB: bulls
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bulls -d bulls"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ENV: test
+      DATABASE_URL: postgresql+asyncpg://bulls:bulls@localhost:5432/bulls
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-not-for-production-32-byte-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - working-directory: services/api
+        run: uv run alembic upgrade head
+      - working-directory: services/api
+        run: uv run alembic check
+      - run: uv run python scripts/seed_test_reference_data.py
+      - run: uv run pytest
+        env:
+          DB_TESTS: "1"
+          DISABLE_RATELIMIT: "1"
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        app: [web, admin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
+      - working-directory: apps/${{ matrix.app }}
+        run: npm ci
+      - working-directory: apps/${{ matrix.app }}
+        run: npm run build
+        env:
+          VITE_DEFAULT_LANG: en
+          VITE_HTML_TITLE: Bulls of the World
+          VITE_HTML_DESCRIPTION: Facts-first market research
+          VITE_OG_SITE_NAME: Bulls of the World
+          VITE_OG_TITLE: Bulls of the World
+          VITE_OG_DESCRIPTION: Facts-first market research
+          VITE_SITE_URL: https://example.com
+          VITE_TWITTER_TITLE: Bulls of the World
+          VITE_TWITTER_DESCRIPTION: Facts-first market research

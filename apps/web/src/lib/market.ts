@@ -50,6 +50,14 @@ export const US_MARKET: MarketUiConfig = {
   ],
 };
 
+// One browser session serves one tenant. Components can use the compact formatting helpers without
+// threading market metadata through every leaf; the tenant provider sets this before children render.
+let activeMarket: MarketUiConfig = DSE_MARKET;
+
+export function setActiveMarket(market: MarketUiConfig): void {
+  activeMarket = market;
+}
+
 export function marketUiFromConfig(config: {
   market: string;
   exchange_code: string;
@@ -97,7 +105,7 @@ export function marketUiFromConfig(config: {
 
 export function formatMoney(
   n: number,
-  market: MarketUiConfig = DSE_MARKET,
+  market: MarketUiConfig = activeMarket,
   digits = market.priceDecimals,
 ) {
   return `${market.currencySymbol}${n.toLocaleString("en-US", {
@@ -106,9 +114,9 @@ export function formatMoney(
   })}`;
 }
 
-export function formatCurrencyMillions(n: number | null | undefined, market = DSE_MARKET) {
+export function formatCurrencyMillions(n: number | null | undefined, market = activeMarket) {
   if (n == null) return "—";
-  const units = market.compactMoneyUnits.length ? market.compactMoneyUnits : DSE_MARKET.compactMoneyUnits;
+  const units = market.compactMoneyUnits.length ? market.compactMoneyUnits : activeMarket.compactMoneyUnits;
   const unit = units.find((candidate) => n >= candidate.minValueMn) ?? units[units.length - 1];
   return `${market.currencySymbol}${(n / unit.divisorMn).toLocaleString(undefined, {
     minimumFractionDigits: unit.decimals,

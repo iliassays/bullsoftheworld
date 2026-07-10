@@ -11,6 +11,7 @@ import { SearchBar } from "./SearchBar";
 // Live, holiday-aware market status + the delay note — a pulsing green dot while open.
 function MarketStatusPill() {
   const { t } = useLang();
+  const { config } = useTenantConfig();
   const [st, setSt] = useState<MarketStatus | null>(null);
   useEffect(() => {
     let live = true;
@@ -31,7 +32,7 @@ function MarketStatusPill() {
   const preopen = phase === "pre_open";
   const dot = open ? "bg-up" : preopen ? "bg-accent" : "bg-muted";
   const label = open ? t("mkt.open") : preopen ? t("mkt.preOpen") : t("mkt.closed");
-  const delayed = open || preopen;
+  const delayed = config.features.intraday_quotes && (open || preopen);
   return (
     <span className="flex items-center gap-1.5 text-muted border border-border px-2 py-1 rounded-2xl shrink-0">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot} ${open ? "animate-pulse" : ""}`} />
@@ -43,7 +44,7 @@ function MarketStatusPill() {
   );
 }
 
-const tabs = [
+const ALL_TABS = [
   { to: "/", icon: "🏠", key: "nav.home", end: true },
   { to: "/ideas", icon: "💡", key: "nav.ideas" },
   { to: "/markets", icon: "📊", key: "nav.markets" },
@@ -117,12 +118,10 @@ export function Shell() {
   const { lang, t } = useLang();
   const { config } = useTenantConfig();
   usePageViewTracking(); // GA4 SPA page_view on route change + view_stock on stock pages
-  const tagline =
-    config.market === "US"
-      ? lang === "bn"
-        ? "যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়"
-        : "US market intelligence, not noise"
-      : t("tagline");
+  const tagline = lang === "bn" ? config.tagline_bn : config.tagline_en;
+  const tabs = ALL_TABS.filter(
+    (tab) => !["/ideas", "/markets"].includes(tab.to) || config.features.curated_screens,
+  );
   // Publish the live header height as a CSS var so page-level tab bars can stick right below
   // it (`top: var(--app-header-h)`). Measured, not hardcoded — the header wraps differently
   // per language and viewport.
@@ -145,7 +144,7 @@ export function Shell() {
       >
         <div className="flex items-center gap-2.5">
           <Link to="/" aria-label={`${config.brand_name} — home`} className="flex items-center gap-2.5 min-w-0">
-            <img src="/logo-mark-v2.png" alt={config.brand_name} className="w-9 h-9 shrink-0" />
+            <img src={config.logo_url} alt={config.brand_name} className="w-9 h-9 shrink-0" />
             <div className="leading-tight min-w-0">
               <div className="font-bold text-base whitespace-nowrap">{config.brand_name}</div>
               <div lang={lang} className="text-[11px] text-accent font-semibold truncate">

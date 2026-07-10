@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type MarketConfig } from "./api";
+import { marketUiFromConfig, setActiveMarket } from "./market";
 
 const DSE_FALLBACK: MarketConfig = {
   market: "DSE",
@@ -25,9 +26,31 @@ const DSE_FALLBACK: MarketConfig = {
     { min_value_mn: 0, divisor_mn: 0.1, suffix: "L", decimals: 0 },
   ],
   market_cap_money_units: [{ min_value_mn: 0, divisor_mn: 10, suffix: " Cr", decimals: 0 }],
-  features: {},
+  features: {
+    intraday_quotes: true,
+    curated_screens: true,
+    official_disclosures: true,
+    company_fundamentals: true,
+    automated_desks: true,
+    learning_quiz: true,
+    interpreted_analytics: true,
+    price_alerts: true,
+    dse_categories: true,
+    circuit_breakers: true,
+    shareholding_breakdown: true,
+    sponsor_director_disclosures: true,
+    block_trades: true,
+    sec_filings: false,
+    extended_hours: false,
+  },
   tenant_name: "bullsofdhaka",
   brand_name: "Bulls of Dhaka",
+  site_url: "https://bullsofdhaka.com",
+  support_email: "hello@bullsofdhaka.com",
+  logo_url: "https://bullsofdhaka.com/logo-mark-v2.png",
+  tagline_en: "Facts, not rumours",
+  tagline_bn: "তথ্যে চলুন, গুজবে নয়",
+  social_url: "https://www.facebook.com/1214682241723822",
 };
 
 const US_FALLBACK: MarketConfig = {
@@ -58,8 +81,15 @@ const US_FALLBACK: MarketConfig = {
     { min_value_mn: 1000, divisor_mn: 1000, suffix: "B", decimals: 1 },
     { min_value_mn: 0, divisor_mn: 1, suffix: "M", decimals: 0 },
   ],
+  features: { interpreted_analytics: true },
   tenant_name: "bullsofwallst",
   brand_name: "Bulls of Wall Street",
+  site_url: "https://bullsofwallst.com",
+  support_email: "hello@bullsofwallst.com",
+  logo_url: "https://bullsofwallst.com/logo-mark-v2.png",
+  tagline_en: "US market intelligence, not noise",
+  tagline_bn: "যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়",
+  social_url: null,
 };
 
 function fallbackConfig(): MarketConfig {
@@ -85,7 +115,11 @@ const TenantContext = createContext<TenantContextValue>({
 });
 
 export function TenantConfigProvider({ children }: { children: ReactNode }) {
-  const [config, setConfig] = useState<MarketConfig>(() => fallbackConfig());
+  const [config, setConfig] = useState<MarketConfig>(() => {
+    const initial = fallbackConfig();
+    setActiveMarket(marketUiFromConfig(initial));
+    return initial;
+  });
   const siteUrl = useMemo(() => siteOrigin(), []);
 
   useEffect(() => {
@@ -93,7 +127,10 @@ export function TenantConfigProvider({ children }: { children: ReactNode }) {
     api
       .marketConfig()
       .then((next) => {
-        if (live) setConfig(next);
+        if (live) {
+          setActiveMarket(marketUiFromConfig(next));
+          setConfig(next);
+        }
       })
       .catch(() => {});
     return () => {

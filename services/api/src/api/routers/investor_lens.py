@@ -11,14 +11,15 @@ import datetime as dt
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
+from api.routers.market import load_freshest_quotes
 from bulls.analytics import InvestorLensResponse, build_investor_lens
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     Announcement,
     AnnualFinancial,
     CompanyProfile,
     DividendRecord,
-    QuoteSnapshot,
     Symbol,
     TickerAnalytics,
 )
@@ -30,16 +31,24 @@ router = APIRouter(tags=["investor-lens"])
 async def get_investor_lens(
     code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> InvestorLensResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     sym = await session.get(Symbol, (tenant.market, code))
-    if sym is None:
+    if sym is None or not sym.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     ta = await session.get(TickerAnalytics, (tenant.market, code))
     if ta is None:
         raise HTTPException(status_code=404, detail=f"No analytics for {code!r} yet")
 
-    quote = await session.get(QuoteSnapshot, (tenant.market, code))
+    quote = (
+        await load_freshest_quotes(
+            session,
+            tenant.market,
+            [code],
+            get_market_profile(tenant.market).tz,
+        )
+    ).get(code)
     adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 else None
 
     # Balance-sheet leverage from the company profile (loans vs book equity), so the lenses can SHOW

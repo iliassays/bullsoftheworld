@@ -44,3 +44,6 @@ class DailyBar(Base):
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(BigInteger)
+    # Raw provider close is retained above; adjusted close supports split/distribution-safe analytics.
+    adjusted_close: Mapped[float | None] = mapped_column(Float, default=None)
+    source: Mapped[str] = mapped_column(String(32), default="unknown", server_default="unknown")

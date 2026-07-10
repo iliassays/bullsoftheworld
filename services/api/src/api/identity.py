@@ -48,8 +48,10 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
-async def generate_handle(session, name: str, email: str | None, phone: str | None) -> str:
-    """Unique, URL-safe handle from the name; falls back to email/phone (e.g. for Bangla names)."""
+async def generate_handle(
+    session, tenant_id: str, name: str, email: str | None, phone: str | None
+) -> str:
+    """Create a tenant-unique URL-safe handle, with contact-based fallbacks."""
     base = _slug(name)[:14]
     if len(base) < 3 and email:
         base = _slug(email.split("@")[0])[:14]
@@ -58,7 +60,9 @@ async def generate_handle(session, name: str, email: str | None, phone: str | No
     if len(base) < 3:
         base = "bull"
     handle, n = base, 1
-    while await session.scalar(select(User.id).where(func.lower(User.handle) == handle)):
+    while await session.scalar(
+        select(User.id).where(User.tenant_id == tenant_id, func.lower(User.handle) == handle)
+    ):
         n += 1
         handle = f"{base}{n}"
     return handle

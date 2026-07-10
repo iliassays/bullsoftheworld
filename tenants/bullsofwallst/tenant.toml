@@ -7,9 +7,16 @@ timezone = "America/New_York"
 domains = [
   "bullsofwallst.com",
   "www.bullsofwallst.com",
+  "api.bullsofwallst.com",
   "wallst.localhost",
   "bullsofwallst.localhost",
 ]
+site_url = "https://bullsofwallst.com"
+support_email = "hello@bullsofwallst.com"
+email_from = "Bulls of Wall Street <no-reply@bullsofwallst.com>"
+logo_url = "https://bullsofwallst.com/logo-mark-v2.png"
+tagline_en = "US market intelligence, not noise"
+tagline_bn = "যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়"
 
 [theme]
 accent = "#2563EB"

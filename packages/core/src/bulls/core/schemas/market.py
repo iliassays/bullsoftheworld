@@ -52,3 +52,20 @@ class BarOut(BaseModel):
     low: float
     close: float
     volume: int
+
+    @classmethod
+    def from_daily_bar(cls, bar) -> BarOut:
+        """Return split/distribution-adjusted OHLC when the provider supplies an adjusted close."""
+        factor = (
+            bar.adjusted_close / bar.close
+            if bar.adjusted_close is not None and bar.close > 0
+            else 1.0
+        )
+        return cls(
+            date=bar.date,
+            open=bar.open * factor,
+            high=bar.high * factor,
+            low=bar.low * factor,
+            close=bar.close * factor,
+            volume=bar.volume,
+        )

@@ -15,6 +15,7 @@ from bulls.ai.compliance import contains_advice
 from bulls.ai.llm import structured_complete
 from bulls.ai.prompts.language import language_directive
 from bulls.ai.prompts.watch import WATCH_SYSTEM_V2
+from bulls.core.config import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -58,10 +59,25 @@ def _render(items: list[WatchItem], breadth: Breadth | None, extras: list[str] |
     return "\n".join(lines)
 
 
-def _fallback(items: list[WatchItem]) -> str:
-    """Deterministic, advice-free note if the model trips the compliance gate."""
+def _fallback(
+    items: list[WatchItem], breadth: Breadth | None = None, *, language: str = "English"
+) -> str:
+    """Deterministic, localized, advice-free note for disabled/unavailable generation."""
     top = sorted(items, key=lambda i: abs(i.change_pct), reverse=True)[:3]
-    return "Movers: " + ", ".join(f"${i.code} {i.change_pct:+.1f}%" for i in top)
+    movers = ", ".join(f"${i.code} {i.change_pct:+.1f}%" for i in top)
+    if language.startswith("Bengali"):
+        prefix = (
+            f"বাজারে {breadth.advancers}টি শেয়ার বেড়েছে, {breadth.decliners}টি কমেছে। "
+            if breadth and breadth.total
+            else ""
+        )
+        return f"{prefix}উল্লেখযোগ্য দামের মুভ: {movers}।"
+    prefix = (
+        f"Market breadth: {breadth.advancers} advanced and {breadth.decliners} declined. "
+        if breadth and breadth.total
+        else ""
+    )
+    return f"{prefix}Notable price moves: {movers}."
 
 
 # Numbers written with a "%" must be real price/return moves. Ownership deltas (given as "pp") are
@@ -108,11 +124,17 @@ async def todays_watch(
     """
     if not items:
         return ""
+    if get_settings().ai_provider == "disabled":
+        return _fallback(items, breadth, language=language)
     system = f"{WATCH_SYSTEM_V2}\n\n{language_directive(language)}"
     user = _render(items, breadth, extras)
     allowed = _allowed_pcts(items, extras)
 
-    result = await structured_complete(system, user, WatchOut)
+    try:
+        result = await structured_complete(system, user, WatchOut)
+    except Exception:
+        log.exception("today's watch generation unavailable; using deterministic fallback")
+        return _fallback(items, breadth, language=language)
     summary = result.summary.strip()
 
     # Hard grounding gate: every "%" in the prose must be a real price/return move. If the model
@@ -126,13 +148,17 @@ async def todays_watch(
             "data above (likely an ownership 'pp' figure written as a price '%'). Rewrite using "
             "only the price percentages explicitly listed beside each stock."
         )
-        result = await structured_complete(system, correction, WatchOut)
+        try:
+            result = await structured_complete(system, correction, WatchOut)
+        except Exception:
+            log.exception("today's watch correction unavailable; using deterministic fallback")
+            return _fallback(items, breadth, language=language)
         summary = result.summary.strip()
         if _ungrounded_pcts(summary, allowed):
             log.warning("today's watch still ungrounded; using fallback")
-            return _fallback(items)
+            return _fallback(items, breadth, language=language)
 
     if contains_advice(summary).is_advice:
         log.warning("today's watch tripped no-advice gate; using fallback")
-        return _fallback(items)
+        return _fallback(items, breadth, language=language)
     return summary

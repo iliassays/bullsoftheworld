@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
 from bulls.analytics import build_plain_read
 from bulls.core.models import Symbol, TickerAnalytics
 
@@ -35,8 +35,10 @@ class PlainReadResponse(BaseModel):
 async def get_plain_read(
     code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> PlainReadResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     ta = await session.get(TickerAnalytics, (tenant.market, code))
     if ta is None:

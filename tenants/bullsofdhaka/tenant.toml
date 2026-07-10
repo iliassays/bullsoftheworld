@@ -5,6 +5,13 @@ market = "DSE"
 locale = "bn"
 timezone = "Asia/Dhaka"
 domains = ["bullsofdhaka.com", "www.bullsofdhaka.com", "localhost"]
+site_url = "https://bullsofdhaka.com"
+support_email = "hello@bullsofdhaka.com"
+email_from = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"
+logo_url = "https://bullsofdhaka.com/logo-mark-v2.png"
+tagline_en = "Facts, not rumours"
+tagline_bn = "তথ্যে চলুন, গুজবে নয়"
+social_url = "https://www.facebook.com/1214682241723822"
 
 [theme]
 accent = "#F5B82E"   # Bull Gold

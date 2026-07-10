@@ -52,7 +52,18 @@ def test_escape_like_treats_user_wildcards_as_literals() -> None:
 @pytest.mark.asyncio
 async def test_symbol_search_builds_server_side_filter_and_ranking() -> None:
     session = _FakeSession()
-    tenant = Tenant(name="wallst", display_name="Wall St", market="US", locale="en")
+    tenant = Tenant(
+        name="wallst",
+        display_name="Wall St",
+        market="US",
+        locale="en",
+        site_url="https://example.com",
+        support_email="support@example.com",
+        email_from="Wall St <no-reply@example.com>",
+        logo_url="https://example.com/logo.png",
+        tagline_en="Facts first",
+        tagline_bn="তথ্য আগে",
+    )
 
     rows = await list_symbols(tenant, session, limit=5, offset=10, q="aa")
 

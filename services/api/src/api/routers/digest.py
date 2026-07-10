@@ -14,11 +14,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession
+from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
 from api.routers.buzz import BuzzResponse, gather_buzz
+from api.routers.market import load_freshest_quotes
 from bulls.ai.tasks.digest import SymbolFacts, crowd_mood
-from bulls.analytics import compute
-from bulls.core.models import Cashtag, DailyBar, Post, QuoteSnapshot, Symbol
+from bulls.analytics import adjust_bars, compute
+from bulls.core.markets import get_market_profile
+from bulls.core.models import Cashtag, DailyBar, Post, Symbol
 
 router = APIRouter(tags=["digest"])
 
@@ -33,9 +35,11 @@ class DigestResponse(BaseModel):
     change_pct_1d: float
 
 
-async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
+async def _gather_facts(
+    session, market: str, code: str, *, tenant_id: str
+) -> SymbolFacts | None:
     symbol = await session.get(Symbol, (market, code))
-    if symbol is None:
+    if symbol is None or not symbol.is_retail_ready:
         return None
 
     bars = list(
@@ -46,10 +50,11 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
             .limit(260)  # enough for the 200-day SMA the analytics engine needs
         )
     )
-    quote = await session.get(QuoteSnapshot, (market, code))
+    profile = get_market_profile(market)
+    quote = (await load_freshest_quotes(session, market, [code], profile.tz)).get(code)
 
     # Deterministic technicals from the analytics engine (descriptive facts the LLM can weave in).
-    ta = compute(list(reversed(bars))) if bars else None
+    ta = compute(adjust_bars(list(reversed(bars)))) if bars else None
 
     last_price = quote.ltp if quote else (bars[0].close if bars else 0.0)
     change_1d = quote.change_pct if quote else 0.0
@@ -72,6 +77,7 @@ async def _gather_facts(session, market: str, code: str) -> SymbolFacts | None:
             select(Post)
             .where(
                 Post.id.in_(tagged),
+                Post.tenant_id == tenant_id,
                 Post.created_at >= since,
                 Post.moderation_status == "published",
             )
@@ -126,7 +132,13 @@ def _attention_extras_en(buzz: BuzzResponse | None) -> list[str]:
     return extras
 
 
-def _render_digest_en(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
+def _render_digest_en(
+    f: SymbolFacts,
+    buzz: BuzzResponse | None = None,
+    currency: str = "৳",
+    *,
+    eod: bool = False,
+) -> str:
     def move(pct: float) -> str:
         if pct > _FLAT:
             return f"rose {pct:.2f}%"
@@ -135,7 +147,10 @@ def _render_digest_en(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
         return f"was little changed ({pct:+.2f}%)"
 
     delayed = " (delayed)" if f.is_delayed else ""
-    parts = [f"{_head(f)} {move(f.change_pct_1d)} today to ৳{f.last_price:g}{delayed}."]
+    period = "in the latest session" if eod else "today"
+    parts = [
+        f"{_head(f)} {move(f.change_pct_1d)} {period} to {currency}{f.last_price:g}{delayed}."
+    ]
     if f.change_pct_5d is not None:
         parts.append(f"Over the last 5 sessions it {move(f.change_pct_5d)}.")
     rel = _rel_volume(f)
@@ -170,7 +185,13 @@ def _attention_extras_bn(buzz: BuzzResponse | None) -> list[str]:
     return extras
 
 
-def _render_digest_bn(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
+def _render_digest_bn(
+    f: SymbolFacts,
+    buzz: BuzzResponse | None = None,
+    currency: str = "৳",
+    *,
+    eod: bool = False,
+) -> str:
     def move(pct: float) -> str:
         if pct > _FLAT:
             return f"{pct:.2f}% বেড়েছে"
@@ -179,7 +200,8 @@ def _render_digest_bn(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
         return f"প্রায় অপরিবর্তিত ({pct:+.2f}%)"
 
     delayed = " (বিলম্বিত)" if f.is_delayed else ""
-    parts = [f"{_head(f)} আজ {move(f.change_pct_1d)}, দর ৳{f.last_price:g}{delayed}।"]
+    period = "সর্বশেষ সেশনে" if eod else "আজ"
+    parts = [f"{_head(f)} {period} {move(f.change_pct_1d)}, দর {currency}{f.last_price:g}{delayed}।"]
     if f.change_pct_5d is not None:
         parts.append(f"গত ৫ সেশনে {move(f.change_pct_5d)}।")
     rel = _rel_volume(f)
@@ -208,16 +230,22 @@ def _render_digest_bn(f: SymbolFacts, buzz: BuzzResponse | None = None) -> str:
 async def get_digest(
     code: str, tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> DigestResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
-    facts = await _gather_facts(session, tenant.market, code)
+    facts = await _gather_facts(session, tenant.market, code, tenant_id=tenant.name)
     if facts is None:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
-    buzz = await gather_buzz(session, tenant.market, code)
+    buzz = await gather_buzz(session, tenant.market, code, tenant_id=tenant.name)
     render = _render_digest_bn if locale == "bn" else _render_digest_en
     return DigestResponse(
         code=code,
-        summary=render(facts, buzz),
+        summary=render(
+            facts,
+            buzz,
+            get_market_profile(tenant.market).currency_symbol,
+            eod=not get_market_profile(tenant.market).features.intraday_quotes,
+        ),
         mood=crowd_mood(facts.bull_posts, facts.bear_posts, facts.neutral_posts),
         posts=facts.bull_posts + facts.bear_posts + facts.neutral_posts,
         change_pct_1d=facts.change_pct_1d,

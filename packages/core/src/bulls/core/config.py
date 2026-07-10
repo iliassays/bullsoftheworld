@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The single repo-root .env, resolved absolutely so it loads no matter which service's directory
@@ -20,10 +22,18 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: str = "postgresql+asyncpg://bulls:bulls@localhost:5433/bulls"
+    database_pool_size: int = 10
+    database_max_overflow: int = 10
+    database_pool_timeout_s: int = 10
+    database_statement_timeout_ms: int = 30_000
     redis_url: str = "redis://localhost:6379/0"
+    ai_queue_name: str = "arq:ai"
+    dse_ingestion_queue_name: str = "arq:ingestion:dse"
+    us_ingestion_queue_name: str = "arq:ingestion:us"
+    us_eod_min_coverage: float = Field(default=0.90, gt=0, le=1)
 
-    # AI provider: "ollama" (free, local) or "claude" (Anthropic API). Same code path either way.
-    ai_provider: str = "ollama"
+    # LLM-only features are opt-in. Retrieval embeddings remain local and free when this is disabled.
+    ai_provider: Literal["disabled", "ollama", "claude"] = "disabled"
 
     anthropic_api_key: str = ""
     # Used when ai_provider="claude". Cheaper tier (claude-haiku-4-5) is a cost call you own.
@@ -34,17 +44,23 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5"
     # Retrieval embeddings. "fastembed" is the free local semantic path for production workers.
     # "hash" stays available as the dependency-free fallback; "ollama"/"openai" are opt-in only.
-    ai_embedding_provider: str = "hash"
-    ai_embedding_model: str = "BAAI/bge-base-en-v1.5"
+    ai_embedding_provider: Literal["fastembed", "hash", "openai", "ollama"] = "fastembed"
+    ai_embedding_model: str = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
     ai_embedding_dimensions: int = 768
     ai_embedding_api_base_url: str = "https://api.openai.com/v1"
     ai_embedding_api_key: str = ""
     ai_embedding_cache_dir: str = ".cache/fastembed"
 
     jwt_secret: str = "change-me-in-prod"
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     access_token_ttl_min: int = 30  # short-lived by design; the refresh token carries persistence
     refresh_token_ttl_days: int = 60  # rotating opaque token — sliding 60-day sign-in
+    refresh_cookie_name: str = "bulls_refresh"
+    refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+
+    @property
+    def production_cookies(self) -> bool:
+        return self.env.lower() not in {"local", "dev", "development", "test"}
 
     # Shared token guarding /admin routes (sent as X-Admin-Token). Empty = admin locked.
     admin_token: str = ""
@@ -60,6 +76,7 @@ class Settings(BaseSettings):
     moderation_l4_enabled: bool = False
 
     default_tenant: str = "bullsofdhaka"
+    strict_tenant_resolution: bool = True
 
     # CORS origins for the web client (comma-separated in env).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
@@ -91,6 +108,24 @@ class Settings(BaseSettings):
     # --- Generated card images (served by the API, referenced from feed posts) ---
     card_dir: str = "/tmp/bulls-cards"  # writable dir for generated card PNGs
     api_public_url: str = "http://localhost:8090"  # public base the cards are served from
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> Settings:
+        """Refuse to start an internet-facing service with development credentials."""
+        if self.ai_embedding_dimensions != 768:
+            raise ValueError("AI_EMBEDDING_DIMENSIONS must match the pgvector schema width (768)")
+        if self.moderation_l4_enabled and self.ai_provider == "disabled":
+            raise ValueError("MODERATION_L4_ENABLED requires a configured LLM provider")
+        if self.env.lower() not in {"local", "dev", "development", "test"} and (
+            self.jwt_secret == "change-me-in-prod" or len(self.jwt_secret) < 32
+        ):
+            raise ValueError("JWT_SECRET must be a random value of at least 32 characters")
+        if (
+            self.env.lower() not in {"local", "dev", "development", "test"}
+            and self.ai_embedding_provider == "hash"
+        ):
+            raise ValueError("AI_EMBEDDING_PROVIDER=hash is not allowed outside local/test")
+        return self
 
     @property
     def email_enabled(self) -> bool:

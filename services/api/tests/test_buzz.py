@@ -37,8 +37,14 @@ def test_buzz_endpoint_cold_start():
     with TestClient(app) as c:
         handle = "t" + uuid.uuid4().hex[:12]
         reg = c.post(
-            "/auth/register", json={"handle": handle, "name": "Buzzer", "password": "password123"}
+            "/auth/register",
+            json={
+                "name": "Buzzer",
+                "contact": f"{handle}@example.com",
+                "password": "password123",
+            },
         )
+        assert reg.status_code == 201, reg.text
         auth = {"Authorization": f"Bearer {reg.json()['access_token']}"}
 
         c.post("/posts", json={"body": "$GP buzzing", "sentiment": "bull"}, headers=auth)

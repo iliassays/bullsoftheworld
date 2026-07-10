@@ -12,7 +12,7 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Theme(BaseModel):
@@ -28,8 +28,15 @@ class Tenant(BaseModel):
     market: str  # MarketId, e.g. "DSE"
     locale: str  # e.g. "bn"
     timezone: str = "Asia/Dhaka"  # IANA tz for the market's clock (sessions, daily rhythm)
-    domains: list[str] = []
-    theme: Theme = Theme()
+    domains: list[str] = Field(default_factory=list)
+    site_url: str
+    support_email: str
+    email_from: str
+    logo_url: str
+    tagline_en: str
+    tagline_bn: str
+    social_url: str | None = None
+    theme: Theme = Field(default_factory=Theme)
 
 
 class TenantRegistry:
@@ -76,6 +83,22 @@ class TenantRegistry:
         identify the frontend tenant through `X-Tenant-Host`; browser-loaded assets fall back to
         Origin/Referer. Only configured tenant domains are accepted.
         """
+        return self.resolve_known(
+            host,
+            tenant_host=tenant_host,
+            origin=origin,
+            referer=referer,
+        ) or self._by_name[self._default]
+
+    def resolve_known(
+        self,
+        host: str | None,
+        *,
+        tenant_host: str | None = None,
+        origin: str | None = None,
+        referer: str | None = None,
+    ) -> Tenant | None:
+        """Resolve only configured context, with no default-tenant fallback."""
         candidates = (
             host,
             tenant_host,
@@ -86,7 +109,7 @@ class TenantRegistry:
             hostname = self._hostname(candidate)
             if hostname in self._by_domain:
                 return self._by_domain[hostname]
-        return self._by_name[self._default]
+        return None
 
     def get(self, name: str) -> Tenant | None:
         """Look up a tenant by name (for admin tooling that selects a tenant explicitly)."""

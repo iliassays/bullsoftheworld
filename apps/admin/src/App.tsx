@@ -122,7 +122,7 @@ export function App() {
       const [o, a, q] = await Promise.all([
         api.overview(tenant),
         api.analytics(tenant, days),
-        api.modQueue("pending"),
+        api.modQueue(tenant, "pending"),
       ]);
       setOv(o);
       setAn(a);
@@ -138,7 +138,7 @@ export function App() {
 
   async function act(id: number, kind: "approve" | "block") {
     try {
-      await (kind === "approve" ? api.modApprove(id) : api.modBlock(id));
+      await (kind === "approve" ? api.modApprove(tenant, id) : api.modBlock(tenant, id));
       await load();
     } catch (e) {
       fail(e);

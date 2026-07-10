@@ -16,15 +16,15 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from api.deps import CurrentTenant, DbSession
+from api.deps import CurrentTenant, DbSession, enforce_market_feature
 from api.routers.buzz import gather_buzz
+from api.routers.market import QuoteOut, load_freshest_quotes
 from bulls.ai.retrieval import retrieve
 from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     Announcement,
     Cashtag,
     Post,
-    QuoteSnapshot,
     SignalEvent,
     Symbol,
     TickerAnalytics,
@@ -245,7 +245,7 @@ def _quality_label(evidence_quality: EvidenceQuality, lang: Lang) -> str:
 def _facts(
     *,
     code: str,
-    quote: QuoteSnapshot | None,
+    quote: QuoteOut | None,
     analytics: TickerAnalytics | None,
     posts_24h: int,
     chatter_x: float | None,
@@ -255,17 +255,20 @@ def _facts(
     facts: list[str] = []
     profile = get_market_profile(market)
     if quote:
+        period_bn = "আজ" if profile.features.intraday_quotes else "সর্বশেষ সেশনে"
+        period_en = "today" if profile.features.intraday_quotes else "in the latest session"
         if lang == "bn":
             delayed = " বিলম্বিত" if quote.is_delayed else ""
             facts.append(
                 f"${code} সর্বশেষ {profile.currency_symbol}{quote.ltp:g} দরে ট্রেড করেছে "
-                f"({quote.change_pct:+.2f}% আজ, ভলিউম {quote.volume:,},"
+                f"({quote.change_pct:+.2f}% {period_bn}, ভলিউম {quote.volume:,},"
                 f"{delayed} সময় {quote.as_of.isoformat()})।"
             )
         else:
             delayed = " delayed" if quote.is_delayed else ""
             facts.append(
-                f"${code} last traded at {profile.currency_symbol}{quote.ltp:g} ({quote.change_pct:+.2f}% today,"
+                f"${code} last traded at {profile.currency_symbol}{quote.ltp:g} "
+                f"({quote.change_pct:+.2f}% {period_en},"
                 f" volume {quote.volume:,},{delayed} as of {quote.as_of.isoformat()})."
             )
     if analytics and analytics.relative_volume is not None:
@@ -730,7 +733,9 @@ async def _announcement_sources(
     ]
 
 
-async def _post_sources(session, market: str, code: str) -> list[ResearchSource]:
+async def _post_sources(
+    session, market: str, code: str, *, tenant_id: str
+) -> list[ResearchSource]:
     since = dt.datetime.now(dt.UTC) - dt.timedelta(days=7)
     tagged = select(Cashtag.post_id).where(Cashtag.market == market, Cashtag.code == code)
     rows = list(
@@ -738,6 +743,7 @@ async def _post_sources(session, market: str, code: str) -> list[ResearchSource]
             select(Post)
             .where(
                 Post.id.in_(tagged),
+                Post.tenant_id == tenant_id,
                 Post.created_at >= since,
                 Post.moderation_status == "published",
                 Post.kind == "user",
@@ -759,11 +765,17 @@ async def _post_sources(session, market: str, code: str) -> list[ResearchSource]
     ]
 
 
-async def _signal_sources(session, market: str, code: str) -> list[ResearchSource]:
+async def _signal_sources(
+    session, market: str, code: str, *, tenant_id: str
+) -> list[ResearchSource]:
     rows = list(
         await session.scalars(
             select(SignalEvent)
-            .where(SignalEvent.market == market, SignalEvent.code == code)
+            .where(
+                SignalEvent.tenant_id == tenant_id,
+                SignalEvent.market == market,
+                SignalEvent.code == code,
+            )
             .order_by(SignalEvent.created_at.desc())
             .limit(4)
         )
@@ -781,9 +793,13 @@ async def _signal_sources(session, market: str, code: str) -> list[ResearchSourc
     ]
 
 
-async def _vector_sources(session, market: str, code: str, question: str) -> list[ResearchSource]:
+async def _vector_sources(
+    session, market: str, code: str, question: str, *, tenant_id: str
+) -> list[ResearchSource]:
     try:
-        chunks = await retrieve(session, question, market=market, code=code, k=8)
+        chunks = await retrieve(
+            session, question, market=market, tenant_id=tenant_id, code=code, k=8
+        )
     except Exception as e:
         # Vector search is an enhancement. During rollout/backfills/model outages, the research
         # endpoint must still answer from direct SQL evidence.
@@ -822,15 +838,23 @@ async def research_brief(
     q: str = Query("Why is this moving?", min_length=3, max_length=240),
     lang: Lang = _LANG_QUERY,
 ) -> ResearchBriefResponse:
+    enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None:
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     intent = _intent(q)
-    quote = await session.get(QuoteSnapshot, (tenant.market, code))
+    quote = (
+        await load_freshest_quotes(
+            session,
+            tenant.market,
+            [code],
+            get_market_profile(tenant.market).tz,
+        )
+    ).get(code)
     analytics = await session.get(TickerAnalytics, (tenant.market, code))
-    buzz = await gather_buzz(session, tenant.market, code)
+    buzz = await gather_buzz(session, tenant.market, code, tenant_id=tenant.name)
 
     facts = _facts(
         code=code,
@@ -841,10 +865,16 @@ async def research_brief(
         lang=lang,
         market=tenant.market,
     )
-    vector_sources = await _vector_sources(session, tenant.market, code, q)
+    vector_sources = await _vector_sources(
+        session, tenant.market, code, q, tenant_id=tenant.name
+    )
     announcement_sources = await _announcement_sources(session, tenant.market, code, intent)
-    signal_sources = await _signal_sources(session, tenant.market, code)
-    post_sources = await _post_sources(session, tenant.market, code)
+    signal_sources = await _signal_sources(
+        session, tenant.market, code, tenant_id=tenant.name
+    )
+    post_sources = await _post_sources(
+        session, tenant.market, code, tenant_id=tenant.name
+    )
     sources = [*vector_sources, *announcement_sources, *signal_sources, *post_sources]
     sources = _dedupe_sources(sources)
     sources = _rank_sources(sources, question=q, intent=intent)[:8]

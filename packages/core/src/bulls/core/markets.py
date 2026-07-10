@@ -14,6 +14,14 @@ from zoneinfo import ZoneInfo
 
 @dataclass(frozen=True)
 class MarketFeatures:
+    intraday_quotes: bool = False
+    curated_screens: bool = False
+    official_disclosures: bool = False
+    company_fundamentals: bool = False
+    automated_desks: bool = False
+    learning_quiz: bool = False
+    interpreted_analytics: bool = False
+    price_alerts: bool = False
     dse_categories: bool = False
     circuit_breakers: bool = False
     shareholding_breakdown: bool = False
@@ -49,6 +57,7 @@ class MarketProfile:
     close_time: dt.time
     trading_isoweekdays: frozenset[int]
     holidays: frozenset[dt.date] = field(default_factory=frozenset)
+    early_closes: dict[dt.date, dt.time] = field(default_factory=dict)
     settlement_cycle: str = "T+2"
     benchmark_label: str = "Market"
     default_locale: str = "en"
@@ -74,6 +83,9 @@ class MarketProfile:
     def place_label(self, lang: str = "en") -> str:
         return self.place_label_bn if lang == "bn" else self.place_label_en
 
+    def close_time_on(self, date: dt.date) -> dt.time:
+        return self.early_closes.get(date, self.close_time)
+
 
 DSE_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
     {
@@ -81,8 +93,8 @@ DSE_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
     }
 )
 
-# Seeded with the standard NYSE/Nasdaq full-day holidays for 2026. Early closes are not modeled yet;
-# the US provider should still mark quote freshness honestly through Quote.is_delayed/as_of.
+# Verified against the NYSE 2026 calendar. Keep the worker's verified-year gate closed until each
+# later year's full holidays and early closes have been reviewed and added here.
 US_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
     {
         dt.date(2026, 1, 1),
@@ -97,6 +109,11 @@ US_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
         dt.date(2026, 12, 25),
     }
 )
+US_EARLY_CLOSES_2026: dict[dt.date, dt.time] = {
+    dt.date(2026, 11, 27): dt.time(13, 0),
+    dt.date(2026, 12, 24): dt.time(13, 0),
+}
+US_VERIFIED_CALENDAR_YEARS = frozenset({2026})
 
 
 MARKET_PROFILES: dict[str, MarketProfile] = {
@@ -129,6 +146,14 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
             MoneyUnit(min_value_mn=0, divisor_mn=10, suffix=" Cr", decimals=0),
         ),
         features=MarketFeatures(
+            intraday_quotes=True,
+            curated_screens=True,
+            official_disclosures=True,
+            company_fundamentals=True,
+            automated_desks=True,
+            learning_quiz=True,
+            interpreted_analytics=True,
+            price_alerts=True,
             dse_categories=True,
             circuit_breakers=True,
             shareholding_breakdown=True,
@@ -153,6 +178,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         close_time=dt.time(16, 0),
         trading_isoweekdays=frozenset({1, 2, 3, 4, 5}),
         holidays=US_HOLIDAYS_2026,
+        early_closes=US_EARLY_CLOSES_2026,
         settlement_cycle="T+1",
         benchmark_label="S&P 500",
         default_locale="en",
@@ -165,7 +191,9 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
             MoneyUnit(min_value_mn=1000, divisor_mn=1000, suffix="B", decimals=1),
             MoneyUnit(min_value_mn=0, divisor_mn=1, suffix="M", decimals=0),
         ),
-        features=MarketFeatures(sec_filings=True, extended_hours=True),
+        # Technical interpretation is computed from adjusted EOD bars and does not depend on
+        # DSE-only fundamentals, ownership, disclosures, or intraday quote infrastructure.
+        features=MarketFeatures(interpreted_analytics=True),
     ),
 }
 

@@ -46,6 +46,7 @@ from ingestion.trending import compute_trending
 
 log = logging.getLogger(__name__)
 MARKET = "DSE"
+TENANT_ID = "bullsofdhaka"
 EOD_START_UTC_HOUR = 13
 
 
@@ -168,8 +169,8 @@ async def recover_eod_chain(ctx) -> str:
     analytics = await compute_all(MARKET)
     portfolios = await snapshot_portfolios_run(MARKET)
     trending = await compute_trending(MARKET)
-    levels = await run_levels_agent(MARKET)
-    factors = await run_factor_agents(MARKET)
+    levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
+    factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
     log.info(
         "eod recovery: bars=%s summary=%s analytics=%s portfolios=%s trending=%s "
         "levels=%s factors=%s",
@@ -217,7 +218,7 @@ async def snapshot_buzz(ctx) -> str:
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
-    counts = await snapshot_all(MARKET)
+    counts = await snapshot_all(MARKET, tenant_id=TENANT_ID)
     log.info("buzz snapshot: %s symbols", counts["symbols"])
     return f"buzz={counts['symbols']}"
 
@@ -230,7 +231,7 @@ async def run_signals(ctx) -> str:
         return "skipped: before signals window"
     if not is_trading_day(today):
         return "skipped: non-trading day"
-    counts = await run_levels_agent(MARKET)
+    counts = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
     log.info("signals: %s notes published", counts["published"])
     return f"signals={counts['published']}"
 
@@ -241,7 +242,7 @@ async def run_ownership_signals(ctx) -> str:
     today = to_market_tz(now).date()
     if today.weekday() != 4 or not _after_market_date_utc_time(now, today, 14, 10):
         return "skipped: before ownership window"
-    counts = await run_ownership_agents(MARKET)
+    counts = await run_ownership_agents(MARKET, tenant_id=TENANT_ID)
     log.info("ownership signals: %s notes published", counts["published"])
     return f"ownership={counts['published']}"
 
@@ -250,7 +251,7 @@ async def run_volume_signals(ctx) -> str:
     """Flag unusual intraday volume — only while the market is open."""
     if not is_trading_hours(dt.datetime.now(dt.UTC)):
         return "skipped: market closed"
-    counts = await run_volume_agent(MARKET)
+    counts = await run_volume_agent(MARKET, tenant_id=TENANT_ID)
     log.info("volume signals: %s notes published", counts["published"])
     return f"volume={counts['published']}"
 
@@ -258,7 +259,7 @@ async def run_volume_signals(ctx) -> str:
 async def pull_news(ctx) -> str:
     """Onboard DSE news (classify + score, drop noise), then fire the news agents on new items."""
     counts = await news.collect(MARKET, days=news.DAILY_LOOKBACK_DAYS)
-    sig = await run_news_agents(MARKET)
+    sig = await run_news_agents(MARKET, tenant_id=TENANT_ID)
     log.info(
         "news: kept %s / %s fetched, %s notes", counts["kept"], counts["fetched"], sig["published"]
     )
@@ -284,7 +285,7 @@ async def _trigger_publish(paths: list[str]) -> dict[str, str]:
     s = get_settings()
     if not s.admin_token:
         return {"_": "skipped: no ADMIN_TOKEN"}
-    headers = {"X-Admin-Token": s.admin_token}
+    headers = {"X-Admin-Token": s.admin_token, "X-Tenant-Host": "bullsofdhaka.com"}
     base = s.api_public_url.rstrip("/")
     out: dict[str, str] = {}
     async with httpx.AsyncClient(timeout=90) as client:
@@ -375,7 +376,7 @@ async def run_factor_signals(ctx) -> str:
         return "skipped: before factor window"
     if not is_trading_day(today):
         return "skipped: non-trading day"
-    counts = await run_factor_agents(MARKET)
+    counts = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
     log.info("factor signals: %s notes published", counts["published"])
     return f"factors={counts['published']}"
 
@@ -471,3 +472,4 @@ class WorkerSettings:
         cron(pull_block_trades, hour=9, minute=30, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
+    queue_name: ClassVar = get_settings().dse_ingestion_queue_name

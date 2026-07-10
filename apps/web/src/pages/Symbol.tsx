@@ -14,7 +14,8 @@ import {
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useTenantConfig } from "../lib/tenant";
-import { formatDhakaDateTime } from "../lib/time";
+import { formatCurrencyMillions } from "../lib/market";
+import { formatMarketDateTime } from "../lib/time";
 import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { CandleChart } from "../components/CandleChart";
 import { Composer } from "../components/Composer";
@@ -50,11 +51,6 @@ const TABS: { id: Tab; icon?: string; key: string }[] = [
   { id: "financials", key: "tab.financials" },
   { id: "ownership", key: "tab.ownership" },
 ];
-
-const crore = (mn: number | null | undefined) =>
-  mn == null
-    ? "—"
-    : `৳${(mn / 10).toLocaleString(undefined, { maximumFractionDigits: 0 })} Cr`;
 
 function QuickStrip({
   f,
@@ -95,10 +91,10 @@ function QuickStrip({
   return (
     <>
       <div className="flex justify-between mt-3 pt-3 border-t border-border overflow-x-auto">
-        {cell(t("stat.mktCap"), crore(f.market_cap_mn))}
+        {cell(t("stat.mktCap"), formatCurrencyMillions(f.market_cap_mn))}
         {cell(t("stat.vol"), volume != null ? volume.toLocaleString() : "—", volTag)}
         {cell(t("stat.pe"), f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—", peTag)}
-        {cell(t("stat.eps"), f.eps != null ? `৳${f.eps}` : "—")}
+        {cell(t("stat.eps"), f.eps != null ? taka(f.eps) : "—")}
         {cell(t("stat.freeFloat"), freeFloat)}
       </div>
       {f.week52_low != null && f.week52_high != null && price != null && (
@@ -142,10 +138,14 @@ export function SymbolPage() {
       .bars(sym, 90)
       .then(setBars)
       .catch(() => setBars([]));
-    api
-      .news(sym)
-      .then(setNews)
-      .catch(() => setNews([]));
+    if (config.features.official_disclosures) {
+      api
+        .news(sym)
+        .then(setNews)
+        .catch(() => setNews([]));
+    } else {
+      setNews([]);
+    }
     api
       .topPost(sym)
       .then(setTopPost)
@@ -154,16 +154,18 @@ export function SymbolPage() {
       .buzz(sym)
       .then(setBuzz)
       .catch(() => setBuzz(null));
-    api
-      .company(sym)
-      .then(setCompany)
-      .catch(() => setCompany(null));
+    if (config.features.company_fundamentals) {
+      api
+        .company(sym)
+        .then(setCompany)
+        .catch(() => setCompany(null));
+    }
     api.recordView(sym).catch(() => {}); // internal analytics; fire-and-forget
     if (user)
       api
         .watchlist()
         .then((w) => setWatched(w.some((i) => i.symbol.code === sym)));
-  }, [sym, user]);
+  }, [sym, user, config.features.company_fundamentals, config.features.official_disclosures]);
 
   const toggleWatch = async () => {
     if (watched) await api.watchRemove(sym);
@@ -188,6 +190,38 @@ export function SymbolPage() {
       : "";
   const exchange = config.exchange_code;
   const brand = config.brand_name;
+  const hasResearchData =
+    config.features.company_fundamentals ||
+    config.features.interpreted_analytics ||
+    config.features.official_disclosures;
+  const marketUi = {
+    market: config.market,
+    exchangeCode: config.exchange_code,
+    currencyCode: config.currency_code,
+    currencySymbol: config.currency_symbol,
+    timezone: config.timezone,
+    timezoneLabel: config.timezone_label,
+    priceDecimals: config.price_decimals,
+    compactMoneyUnits: config.compact_money_units.map((u) => ({
+      minValueMn: u.min_value_mn,
+      divisorMn: u.divisor_mn,
+      suffix: u.suffix,
+      decimals: u.decimals,
+    })),
+    marketCapMoneyUnits: config.market_cap_money_units.map((u) => ({
+      minValueMn: u.min_value_mn,
+      divisorMn: u.divisor_mn,
+      suffix: u.suffix,
+      decimals: u.decimals,
+    })),
+  };
+  const tabs = TABS.filter(
+    (candidate) =>
+      (candidate.id !== "ownership" || config.features.shareholding_breakdown) &&
+      (candidate.id !== "lens" || config.features.interpreted_analytics) &&
+      (candidate.id !== "financials" || config.features.company_fundamentals) &&
+      (candidate.id !== "news" || config.features.official_disclosures),
+  );
   useSeo({
     title:
       lang === "bn"
@@ -195,8 +229,12 @@ export function SymbolPage() {
         : `${seoName} (${sym}) share price ${priceTxt} — ${exchange} | ${brand}`,
     description:
       lang === "bn"
-        ? `${seoName}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল (P/E, EPS, মার্কেট ক্যাপ), চার্ট প্যাটার্ন ও খবর${seoSector ? ` · খাত: ${seoSector}` : ""}। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।`
-        : `${seoName} latest share price, fundamentals (P/E, EPS, market cap), chart patterns and news${seoSector ? ` · Sector: ${seoSector}` : ""}. Descriptive data, not investment advice.`,
+        ? hasResearchData
+          ? `${seoName}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল, চার্ট বিশ্লেষণ, অফিশিয়াল খবর ও কমিউনিটি আলোচনা${seoSector ? ` · খাত: ${seoSector}` : ""}। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।`
+          : `${seoName}-এর সর্বশেষ শেয়ার দাম, দামের ইতিহাস ও কমিউনিটি আলোচনা${seoSector ? ` · খাত: ${seoSector}` : ""}। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।`
+        : hasResearchData
+          ? `${seoName} latest share price, fundamentals, chart analysis, official news and community discussion${seoSector ? ` · Sector: ${seoSector}` : ""}. Descriptive data, not investment advice.`
+          : `${seoName} latest share price, price history and community discussion${seoSector ? ` · Sector: ${seoSector}` : ""}. Descriptive data, not investment advice.`,
     jsonLd: breadcrumbJsonLd(lang, [
       { name: lang === "bn" ? "হোম" : "Home", path: "/" },
       { name: `${seoName} (${sym})`, path: `/s/${sym}` },
@@ -236,7 +274,7 @@ export function SymbolPage() {
                 )}
               </span>
             )}
-            {user && (
+            {user && config.features.price_alerts && (
               <button
                 onClick={() => setAlertsOpen((v) => !v)}
                 aria-label={t("pa.title")}
@@ -298,7 +336,7 @@ export function SymbolPage() {
           <div className="text-muted text-sm mt-2">{t("noQuote")}</div>
         )}
         <div className="text-[10px] text-muted mt-2">
-          ⏱ {t("delayedAsOf")} {formatDhakaDateTime(q?.as_of)}
+          ⏱ {t("delayedAsOf")} {formatMarketDateTime(q?.as_of, marketUi)}
         </div>
         {buzz?.attention === "rising" && (
           <div className="mt-2 inline-flex items-center gap-1 text-xs text-accent bg-accent/10 rounded-full px-2 py-0.5 w-fit">
@@ -311,14 +349,16 @@ export function SymbolPage() {
         )}
       </div>
 
-      {alertsOpen && <PriceAlertSheet code={sym} onClose={() => setAlertsOpen(false)} />}
+      {alertsOpen && config.features.price_alerts && (
+        <PriceAlertSheet code={sym} onClose={() => setAlertsOpen(false)} />
+      )}
 
       {/* tab bar — pinned below the app header so switching tabs never needs a scroll-up */}
       <div
         className="sticky z-10 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur flex gap-2 overflow-x-auto"
         style={{ top: "var(--app-header-h, 96px)" }}
       >
-        {TABS.map((tb) => (
+        {tabs.map((tb) => (
           <button
             key={tb.id}
             onClick={() => setTab(tb.id)}
@@ -340,10 +380,14 @@ export function SymbolPage() {
               flags → structure → checklist. Digest/Explainer/Pulse/Technicals moved or dropped —
               see docs/redesign/2026-07-drops.md. */}
           <CandleChart code={sym} />
-          <PlainReadCard code={sym} />
-          <ResearchCard code={sym} />
-          <ScorecardCard code={sym} />
-          <KeyLevels code={sym} />
+          {config.features.interpreted_analytics && (
+            <>
+              <PlainReadCard code={sym} />
+              <ResearchCard code={sym} />
+              <ScorecardCard code={sym} />
+              <KeyLevels code={sym} />
+            </>
+          )}
           <BeforeYouTrade />
         </>
       )}

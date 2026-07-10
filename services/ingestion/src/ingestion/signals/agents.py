@@ -42,7 +42,10 @@ async def ensure_agents(session, tenant_id: str) -> dict[str, int]:
     existing = {
         u.handle: u
         for u in await session.scalars(
-            select(User).where(User.handle.in_([h for h, _ in AGENTS.values()]))
+            select(User).where(
+                User.tenant_id == tenant_id,
+                User.handle.in_([h for h, _ in AGENTS.values()]),
+            )
         )
     }
     ids: dict[str, int] = {}

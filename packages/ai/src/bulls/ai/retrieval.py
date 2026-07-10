@@ -13,10 +13,10 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from bulls.ai.embeddings import embed_text, embedding_model_name
+from bulls.ai.embeddings import embed_document_text, embed_query_text, embedding_model_name
 from bulls.core.models import Announcement, Cashtag, KnowledgeChunk, Post, SignalEvent
 
 Reliability = Literal["official", "market", "system", "crowd"]
@@ -24,6 +24,7 @@ Reliability = Literal["official", "market", "system", "crowd"]
 _CHUNK_CHARS = 1200
 _CHUNK_OVERLAP = 160
 _FETCH_MULTIPLIER = 4
+_MIN_SEMANTIC_SCORE = 0.20
 
 
 class RetrievedChunk(BaseModel):
@@ -77,8 +78,9 @@ async def upsert_source_chunks(session, source: ChunkInput) -> int:
     """Embed and upsert chunks for one source. Returns number of chunks written."""
     written = 0
     model = embedding_model_name()
-    for idx, text in enumerate(_chunks(source.text)):
-        embedding = await embed_text(f"{source.title}\n\n{text}")
+    texts = _chunks(source.text)
+    for idx, text in enumerate(texts):
+        embedding = await embed_document_text(f"{source.title}\n\n{text}")
         row = {
             "tenant_id": source.tenant_id,
             "market": source.market,
@@ -114,6 +116,23 @@ async def upsert_source_chunks(session, source: ChunkInput) -> int:
         )
         await session.execute(stmt)
         written += 1
+    # A corrected/shorter source must not leave old tail chunks retrievable.
+    tenant_scope = (
+        KnowledgeChunk.tenant_id.is_(None)
+        if source.tenant_id is None
+        else KnowledgeChunk.tenant_id == source.tenant_id
+    )
+    await session.execute(
+        delete(KnowledgeChunk).where(
+            tenant_scope,
+            KnowledgeChunk.market == source.market,
+            KnowledgeChunk.code == source.code,
+            KnowledgeChunk.source_type == source.source_type,
+            KnowledgeChunk.source_id == source.source_id,
+            KnowledgeChunk.embedding_model == model,
+            KnowledgeChunk.chunk_index >= len(texts),
+        )
+    )
     return written
 
 
@@ -171,6 +190,7 @@ async def index_signal_event(session, signal_event_id: int) -> int:
     return await upsert_source_chunks(
         session,
         ChunkInput(
+            tenant_id=s.tenant_id,
             market=s.market,
             code=s.code,
             source_type="signal",
@@ -189,23 +209,32 @@ async def retrieve(
     query: str,
     *,
     market: str,
+    tenant_id: str,
     code: str | None = None,
     k: int = 6,
 ) -> list[RetrievedChunk]:
-    query_embedding = await embed_text(query)
+    query_embedding = await embed_query_text(query)
     model = embedding_model_name()
-    distance = KnowledgeChunk.embedding.cosine_distance(query_embedding).label("distance")
-    stmt = select(KnowledgeChunk, distance).where(
-        KnowledgeChunk.market == market,
-        KnowledgeChunk.embedding_model == model,
+    stmt = _retrieval_statement(
+        query_embedding,
+        model=model,
+        market=market,
+        tenant_id=tenant_id,
+        code=code,
+        limit=k * _FETCH_MULTIPLIER,
     )
-    if code:
-        stmt = stmt.where(KnowledgeChunk.code == code)
-    stmt = stmt.order_by(distance).limit(k * _FETCH_MULTIPLIER)
     rows = (await session.execute(stmt)).all()
     out: list[RetrievedChunk] = []
+    seen_sources: set[tuple[str, str, str | None]] = set()
     for chunk, dist in rows:
-        score = _rerank_score(chunk, float(dist or 0.0))
+        distance = float(dist or 0.0)
+        if 1.0 - distance < _MIN_SEMANTIC_SCORE:
+            continue
+        source_key = (chunk.source_type, chunk.source_id, chunk.code)
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        score = _rerank_score(chunk, distance)
         out.append(
             RetrievedChunk(
                 source_type=chunk.source_type,
@@ -222,6 +251,28 @@ async def retrieve(
     return sorted(out, key=lambda x: x.score, reverse=True)[:k]
 
 
+def _retrieval_statement(
+    query_embedding: list[float],
+    *,
+    model: str,
+    market: str,
+    tenant_id: str,
+    code: str | None,
+    limit: int,
+):
+    distance = KnowledgeChunk.embedding.cosine_distance(query_embedding).label("distance")
+    stmt = select(KnowledgeChunk, distance).where(
+        KnowledgeChunk.market == market,
+        KnowledgeChunk.embedding_model == model,
+        # Exchange filings/signals are shared within a market (tenant_id IS NULL); community
+        # evidence is private to the tenant that produced it.
+        or_(KnowledgeChunk.tenant_id.is_(None), KnowledgeChunk.tenant_id == tenant_id),
+    )
+    if code:
+        stmt = stmt.where(KnowledgeChunk.code == code)
+    return stmt.order_by(distance).limit(limit)
+
+
 def _rerank_score(chunk: KnowledgeChunk, distance: float) -> float:
     semantic = max(0.0, 1.0 - distance)
     reliability = {"official": 0.18, "market": 0.12, "system": 0.10, "crowd": 0.02}.get(
@@ -229,7 +280,7 @@ def _rerank_score(chunk: KnowledgeChunk, distance: float) -> float:
     )
     recency = 0.0
     if chunk.source_date:
-        age = (dt.datetime.now(dt.UTC).date() - chunk.source_date).days
+        age = max(0, (dt.datetime.now(dt.UTC).date() - chunk.source_date).days)
         if age <= 7:
             recency = 0.12
         elif age <= 30:

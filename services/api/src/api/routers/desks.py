@@ -13,7 +13,14 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from api.deps import CurrentLocale, CurrentTenant, CurrentUser, DbSession, OptionalUser
+from api.deps import (
+    CurrentLocale,
+    CurrentTenant,
+    CurrentUser,
+    DbSession,
+    OptionalUser,
+    enforce_market_feature,
+)
 from bulls.core.models import Follow, Post, User
 
 router = APIRouter(tags=["desks"])
@@ -103,6 +110,7 @@ class DeskOut(BaseModel):
 
 
 async def _resolve_desk(session, tenant, handle: str) -> User:
+    enforce_market_feature(tenant, "automated_desks")
     u = await session.scalar(
         select(User).where(User.tenant_id == tenant.name, User.handle == handle)
     )

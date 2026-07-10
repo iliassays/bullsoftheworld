@@ -18,12 +18,13 @@ import datetime as dt
 import html
 import json
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bulls.core.markets import format_money_millions, get_market_profile
+from bulls.core.markets import format_money_millions, format_price, get_market_profile
 from bulls.core.models import Symbol, TickerAnalytics
-from bulls.core.models.quote import QuoteSnapshot
-from bulls.market_data.calendar import to_market_tz
+from bulls.core.models.quote import DailyBar, QuoteSnapshot
+from bulls.market_data.calendar import market_close_on, market_timezone, to_market_tz
 
 SITE = "https://bullsofdhaka.com"
 LANGS = ("bn", "en")
@@ -51,6 +52,7 @@ def _doc(
     body: str,
     site: str = SITE,
     brand: str = "Bulls of Dhaka",
+    default_lang: str = "bn",
     noindex: bool = False,
     og_image: str | None = None,
     json_ld: list[dict] | None = None,
@@ -62,7 +64,7 @@ def _doc(
     alts = "".join(
         f'<link rel="alternate" hreflang="{lg}" href="{site}/{lg}{suffix}">' for lg in LANGS
     )
-    alts += f'<link rel="alternate" hreflang="x-default" href="{site}/bn{suffix}">'
+    alts += f'<link rel="alternate" hreflang="x-default" href="{site}/{default_lang}{suffix}">'
     robots = '<meta name="robots" content="noindex,follow">' if noindex else ""
     ld = "".join(
         f'<script type="application/ld+json">{json.dumps(b, ensure_ascii=False)}</script>'
@@ -93,10 +95,16 @@ def _doc(
     )
 
 
-def _delayed_note(lang: str, as_of: dt.datetime, market: str) -> str:
+def _price_note(lang: str, as_of: dt.datetime, market: str, *, is_eod: bool) -> str:
     profile = get_market_profile(market)
     local = to_market_tz(as_of, market=market).strftime("%d %b %Y, %H:%M")
     place = profile.place_label(lang)
+    if is_eod:
+        return (
+            f"সর্বশেষ সমাপনী দাম · {local} ({place})"
+            if lang == "bn"
+            else f"Latest EOD close · as of {local} ({place})"
+        )
     return (
         f"১৫ মিনিট বিলম্বিত · সর্বশেষ {local} ({place})"
         if lang == "bn"
@@ -123,34 +131,70 @@ async def _render_stock(
     profile = get_market_profile(market)
     exchange = profile.exchange_label(lang)
     sym = await session.get(Symbol, (market, code))
-    if sym is None:
+    if sym is None or not sym.is_retail_ready:
         return None
     quote = await session.get(QuoteSnapshot, (market, code))
+    bar = await session.scalar(
+        select(DailyBar)
+        .where(DailyBar.market == market, DailyBar.code == code)
+        .order_by(DailyBar.date.desc())
+        .limit(1)
+    )
     ta = await session.get(TickerAnalytics, (market, code))
     name = (sym.name_bn or sym.name_en) if lang == "bn" else sym.name_en
     sector = sym.sector
-    price = f"{profile.currency_symbol}{quote.ltp:g}" if quote else ""
-    delayed = _delayed_note(lang, quote.as_of, market) if quote else ""
-
+    price_value: float | None = quote.ltp if quote else None
+    price_as_of: dt.datetime | None = quote.as_of if quote else None
+    price_is_eod = False
+    if bar is not None:
+        bar_as_of = dt.datetime.combine(
+            bar.date,
+            market_close_on(bar.date, market),
+            tzinfo=market_timezone(market),
+        )
+        if price_as_of is None or price_as_of < bar_as_of:
+            price_value = bar.adjusted_close if bar.adjusted_close is not None else bar.close
+            price_as_of = bar_as_of
+            price_is_eod = True
+    price = format_price(price_value, market) if price_value is not None else ""
+    price_note = (
+        _price_note(lang, price_as_of, market, is_eod=price_is_eod) if price_as_of else ""
+    )
     if lang == "bn":
         title = f"{name} ({code}) শেয়ার দাম {price} — {exchange} | {brand}"
+        topics = ["দামের ইতিহাস"]
+        if profile.features.company_fundamentals:
+            topics.append("ফান্ডামেন্টাল")
+        if profile.features.interpreted_analytics:
+            topics.append("চার্ট বিশ্লেষণ")
+        if profile.features.official_disclosures:
+            topics.append("অফিশিয়াল খবর")
+        topics.append("কমিউনিটি আলোচনা")
         desc = (
-            f"{name}-এর সর্বশেষ শেয়ার দাম, ফান্ডামেন্টাল (P/E, EPS, মার্কেট ক্যাপ), চার্ট প্যাটার্ন ও খবর"
+            f"{name}-এর সর্বশেষ শেয়ার দাম, {', '.join(topics)}"
             + (f" · খাত: {sector}" if sector else "")
-            + "। দাম ১৫ মিনিট বিলম্বিত। বিনিয়োগ পরামর্শ নয়।"
+            + "। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।"
         )
         h1 = f"{name} ({code}) — শেয়ার দাম ও তথ্য"
     else:
         title = f"{name} ({code}) share price {price} — {profile.exchange_code} | {brand}"
+        topics = ["price history"]
+        if profile.features.company_fundamentals:
+            topics.append("fundamentals")
+        if profile.features.interpreted_analytics:
+            topics.append("chart analysis")
+        if profile.features.official_disclosures:
+            topics.append("official news")
+        topics.append("community discussion")
         desc = (
-            f"{name} latest share price, fundamentals (P/E, EPS, market cap), chart patterns and news"
+            f"{name} latest share price, {', '.join(topics)}"
             + (f" · Sector: {sector}" if sector else "")
-            + ". Price 15-min delayed. Not investment advice."
+            + ". Descriptive data, not investment advice."
         )
         h1 = f"{name} ({code}) — share price & data"
 
     stats = []
-    if ta is not None:
+    if ta is not None and profile.features.company_fundamentals:
         if ta.pe_ratio is not None:
             stats.append(("P/E", f"{ta.pe_ratio:.1f}"))
         cap = _market_cap_text(ta.market_cap_mn, market)
@@ -164,7 +208,11 @@ async def _render_stock(
 
     body = (
         f"<h1>{_e(h1)}</h1>"
-        + (f"<p><strong>{_e(price)}</strong> <small>{_e(delayed)}</small></p>" if quote else "")
+        + (
+            f"<p><strong>{_e(price)}</strong> <small>{_e(price_note)}</small></p>"
+            if price_value is not None
+            else ""
+        )
         + (f"<p>{_e('খাত' if lang == 'bn' else 'Sector')}: {_e(sector)}</p>" if sector else "")
         + (f"<ul>{stats_html}</ul>" if stats_html else "")
         + f"<p>{_e(desc)}</p>"
@@ -195,6 +243,7 @@ async def _render_stock(
         body=body,
         site=site,
         brand=brand,
+        default_lang=profile.default_locale,
         json_ld=[breadcrumb],
     )
 
@@ -228,6 +277,7 @@ async def _render_pattern_detail(
         body=body,
         site=site,
         brand=brand,
+        default_lang=profile.default_locale,
     )
 
 
@@ -295,6 +345,41 @@ def _static_page(
             ),
         },
     }
+    if path == "/":
+        home_topics_en = ["share prices", "price history"]
+        home_topics_bn = ["শেয়ারের সর্বশেষ দাম", "দামের ইতিহাস"]
+        if profile.features.company_fundamentals:
+            home_topics_en.append("fundamentals")
+            home_topics_bn.append("ফান্ডামেন্টাল")
+        if profile.features.interpreted_analytics:
+            home_topics_en.append("chart analysis")
+            home_topics_bn.append("চার্ট বিশ্লেষণ")
+        if profile.features.official_disclosures:
+            home_topics_en.append("official news")
+            home_topics_bn.append("অফিশিয়াল খবর")
+        home_topics_en.append("community discussion")
+        home_topics_bn.append("কমিউনিটি আলোচনা")
+        pages["/"] = {
+            "bn": (
+                f"{brand} — {exchange_name}-এর তথ্য, গুজব নয়",
+                f"{exchange_name}-এর {', '.join(home_topics_bn)}। বর্ণনামূলক তথ্য, বিনিয়োগ পরামর্শ নয়।",
+            ),
+            "en": (
+                f"{brand} — {profile.exchange_name} data, not noise",
+                f"{profile.exchange_name} {', '.join(home_topics_en)}. Descriptive data, not investment advice.",
+            ),
+        }
+    if path == "/about" and not profile.features.automated_desks:
+        pages["/about"] = {
+            "bn": (
+                f"{brand} সম্পর্কে — {exchange_name}-এর জন্য তথ্যভিত্তিক প্ল্যাটফর্ম",
+                f"{brand} কী এবং কীভাবে {exchange_name}-এর দামের ইতিহাস ও কমিউনিটি তথ্য তুলে ধরে।",
+            ),
+            "en": (
+                f"About {brand} — a facts-first platform for {profile.exchange_code}",
+                f"What {brand} is and how it surfaces {profile.exchange_name} price history and community context.",
+            ),
+        }
     title, desc = pages[path][lang]
     json_ld = None
     if path == "/":
@@ -313,7 +398,7 @@ def _static_page(
                 "url": site,
                 "potentialAction": {
                     "@type": "SearchAction",
-                    "target": f"{site}/bn/s/{{search_term_string}}",
+                    "target": f"{site}/{profile.default_locale}/s/{{search_term_string}}",
                     "query-input": "required name=search_term_string",
                 },
             },
@@ -326,6 +411,7 @@ def _static_page(
         body=f"<h1>{_e(title)}</h1><p>{_e(desc)}</p>",
         site=site,
         brand=brand,
+        default_lang=profile.default_locale,
         json_ld=json_ld,
     )
 
@@ -343,9 +429,25 @@ async def render_path(
     Unknown/private paths render a valid noindex page rather than erroring — the CloudFront rule
     only routes bots here, and robots.txt already disallows the private ones, so this is a safety net.
     """
+    profile = get_market_profile(market)
     parts = [p for p in raw_path.strip("/").split("/") if p]
-    lang = parts[0] if parts and parts[0] in LANGS else "bn"
+    lang = parts[0] if parts and parts[0] in LANGS else profile.default_locale
     rest = parts[1:] if parts and parts[0] in LANGS else parts
+
+    curated_route = rest[:1] in (["markets"], ["ideas"], ["learn"])
+    if curated_route and not profile.features.curated_screens:
+        title = f"Not found — {brand}" if lang == "en" else f"পাওয়া যায়নি — {brand}"
+        return _doc(
+            lang=lang,
+            path="/",
+            title=title,
+            description=title,
+            body=f"<h1>{_e(title)}</h1>",
+            site=site,
+            brand=brand,
+            default_lang=profile.default_locale,
+            noindex=True,
+        ), 404
 
     # /{lang}  (home)
     if not rest:
@@ -379,6 +481,7 @@ async def render_path(
             body=f"<h1>{_e(title)}</h1>",
             site=site,
             brand=brand,
+            default_lang=profile.default_locale,
             noindex=True,
         ), 404
 
@@ -392,5 +495,6 @@ async def render_path(
         body=f"<h1>{_e(title)}</h1>",
         site=site,
         brand=brand,
+        default_lang=profile.default_locale,
         noindex=True,
     ), 200

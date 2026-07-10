@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, String, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, Float, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -19,6 +19,7 @@ class AlertEvent(Base):
     __tablename__ = "alert_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     market: Mapped[str] = mapped_column(String(8))
     code: Mapped[str | None] = mapped_column(String(16), default=None)  # None = market-wide
@@ -37,8 +38,13 @@ class AlertEvent(Base):
 
 class PriceAlert(Base):
     __tablename__ = "price_alerts"
+    __table_args__ = (
+        CheckConstraint("direction IN ('above', 'below')", name="ck_price_alerts_direction"),
+        CheckConstraint("level > 0", name="ck_price_alerts_level_positive"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     market: Mapped[str] = mapped_column(String(8))
     code: Mapped[str] = mapped_column(String(16), index=True)

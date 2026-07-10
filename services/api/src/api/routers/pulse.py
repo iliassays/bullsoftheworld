@@ -70,7 +70,8 @@ def participation_gauge(unique_authors: int, total_posts: int) -> Gauge:
 @router.get("/symbols/{code}/pulse")
 async def get_pulse(code: str, tenant: CurrentTenant, session: DbSession) -> PulseResponse:
     code = code.upper()
-    if await session.get(Symbol, (tenant.market, code)) is None:
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     since = dt.datetime.now(dt.UTC) - _WINDOW
@@ -84,6 +85,7 @@ async def get_pulse(code: str, tenant: CurrentTenant, session: DbSession) -> Pul
                 func.count(func.distinct(Post.id)).filter(Post.sentiment == "bear"),
             ).where(
                 Post.id.in_(tagged),
+                Post.tenant_id == tenant.name,
                 Post.created_at >= since,
                 Post.moderation_status == "published",
             )
@@ -92,7 +94,7 @@ async def get_pulse(code: str, tenant: CurrentTenant, session: DbSession) -> Pul
     total, authors, bull, bear = (int(x) for x in row)
     neutral = total - bull - bear
 
-    buzz = await gather_buzz(session, tenant.market, code)
+    buzz = await gather_buzz(session, tenant.market, code, tenant_id=tenant.name)
     return PulseResponse(
         code=code,
         sentiment=sentiment_gauge(bull, bear, neutral),

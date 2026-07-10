@@ -11,7 +11,7 @@ import datetime as dt
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Date, DateTime, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -47,10 +47,27 @@ class KnowledgeChunk(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "tenant_id",
+            "market",
             "source_type",
             "source_id",
             "code",
             "chunk_index",
+            "embedding_model",
             name="uq_knowledge_chunk_source",
+            postgresql_nulls_not_distinct=True,
+        ),
+        Index(
+            "ix_knowledge_chunks_retrieval_scope",
+            "market",
+            "code",
+            "embedding_model",
+            "tenant_id",
+        ),
+        Index(
+            "ix_knowledge_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )

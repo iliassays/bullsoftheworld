@@ -5,7 +5,7 @@ It checks the things that, if broken, make the site silently wrong:
 
   1. the worker unit is alive          (systemctl is-active bullsofdhaka-worker)
   2. quotes are fresh in trading hours  (max(quote_snapshots.as_of) not older than STALE_AFTER)
-  3. the API answers /health            (HTTP 200)
+  3. the API answers /ready             (HTTP 200 with Postgres + Redis available)
   4. today's EOD chain ran              (see _eod_problems)
   5. no impossible values got ingested  (see _data_quality_problems — OHLC/shareholding/
      dividend/index invariants; second line of defense behind the parser-level checks in
@@ -49,13 +49,15 @@ from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_mark
 logging.basicConfig(level=logging.INFO, format="%(asctime)s watchdog %(levelname)s %(message)s")
 log = logging.getLogger("watchdog")
 
+MARKET = "DSE"
+TENANT_ID = "bullsofdhaka"
 WORKER_UNIT = "bullsofdhaka-worker"
 STALE_AFTER = dt.timedelta(minutes=35)  # poll is every 15 min; 35 tolerates one missed cycle
 # (a transient blip self-heals next poll) but still flags a truly dead worker, whose data only
 # grows staler. Tight enough to catch real faults within ~2 poll cycles, loose enough not to page
 # on a single hiccup or a deploy-restart landing on a poll boundary.
 COOLDOWN_SECONDS = 60 * 60  # page at most once an hour for an ongoing incident
-_COOLDOWN_KEY = "watchdog:alerted"
+_COOLDOWN_KEY = f"watchdog:{TENANT_ID}:alerted"
 # The EOD chain runs 13:00-13:50 UTC. After it should be done, on a trading day, today's bars +
 # trending must exist. Check window 14:00-17:59 UTC (20:00-23:59 Dhaka): after the chain completes,
 # before the Dhaka date rolls. Catches a hung cron loop (the 2026-06-29 incident) that the intraday
@@ -116,7 +118,7 @@ async def _quote_age() -> dt.timedelta | None:
 
 
 async def _api_ok(base_url: str) -> bool:
-    url = f"{base_url.rstrip('/')}/health"
+    url = f"{base_url.rstrip('/')}/ready"
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -172,7 +174,7 @@ async def _publish_freshness_problems(now: dt.datetime) -> list[str]:
     if now >= _utc_check_start(today, MORNING_WATCH_CHECK_FROM_UTC_HOUR):
         try:
             r = aioredis.from_url(get_settings().redis_url)
-            posted = await r.get(f"fb:posted:morning_watch:{today}")
+            posted = await r.get(f"fb:posted:{TENANT_ID}:morning_watch:{today}")
             await r.aclose()
         except Exception:
             log.warning("could not check morning_watch post key", exc_info=True)
@@ -191,9 +193,10 @@ async def _publish_freshness_problems(now: dt.datetime) -> list[str]:
                 await session.execute(
                     text(
                         "select count(*) from signal_events "
-                        "where created_at::date = :today and agent not like '%Volume%'"
+                        "where tenant_id = :tenant_id and market = :market "
+                        "and created_at::date = :today and agent not like '%Volume%'"
                     ),
-                    {"today": today},
+                    {"tenant_id": TENANT_ID, "market": MARKET, "today": today},
                 )
             ).scalar_one()
         if count == 0:
@@ -204,7 +207,7 @@ async def _publish_freshness_problems(now: dt.datetime) -> list[str]:
     return problems
 
 
-async def _data_quality_problems() -> list[str]:
+async def _data_quality_problems(market: str = MARKET) -> list[str]:
     """Independent, second-line check of the invariants the parsers are supposed to enforce
     (packages/market_data/providers/dse_scrape.py, lankabd.py) — catches the case where a NEW
     bug, a manual DB edit, or a backfill script bypasses those parsers and writes something
@@ -219,9 +222,11 @@ async def _data_quality_problems() -> list[str]:
             await session.execute(
                 text(
                     "select code, date from daily_bars "
-                    "where high < low or close <= 0 or open <= 0 or high <= 0 or low <= 0 "
+                    "where market = :market and "
+                    "(high < low or close <= 0 or open <= 0 or high <= 0 or low <= 0) "
                     "order by date desc limit 5"
-                )
+                ),
+                {"market": market},
             )
         ).all()
         if bad_bars:
@@ -229,8 +234,10 @@ async def _data_quality_problems() -> list[str]:
                 await session.execute(
                     text(
                         "select count(*) from daily_bars "
-                        "where high < low or close <= 0 or open <= 0 or high <= 0 or low <= 0"
-                    )
+                        "where market = :market and "
+                        "(high < low or close <= 0 or open <= 0 or high <= 0 or low <= 0)"
+                    ),
+                    {"market": market},
                 )
             ).scalar_one()
             sample = ", ".join(f"{c}:{d}" for c, d in bad_bars)
@@ -240,10 +247,12 @@ async def _data_quality_problems() -> list[str]:
             await session.execute(
                 text(
                     "select code, as_of_date from shareholding_snapshots "
-                    "where sponsor_director + coalesce(govt,0) + institute + foreign_pct + public "
+                    "where market = :market and "
+                    "sponsor_director + coalesce(govt,0) + institute + foreign_pct + public "
                     "not between 90 and 110 "
                     "order by as_of_date desc limit 5"
-                )
+                ),
+                {"market": market},
             )
         ).all()
         if bad_sh:
@@ -254,7 +263,11 @@ async def _data_quality_problems() -> list[str]:
 
         bad_div = (
             await session.execute(
-                text("select count(*) from company_dividends where cash_pct < 0 or bonus_pct < 0")
+                text(
+                    "select count(*) from company_dividends where market = :market "
+                    "and (cash_pct < 0 or bonus_pct < 0)"
+                ),
+                {"market": market},
             )
         ).scalar_one()
         if bad_div:
@@ -262,7 +275,11 @@ async def _data_quality_problems() -> list[str]:
 
         bad_idx = (
             await session.execute(
-                text("select count(*) from market_summary where dsex <= 0 or dsex > 20000")
+                text(
+                    "select count(*) from market_summary where market = :market "
+                    "and (dsex <= 0 or dsex > 20000)"
+                ),
+                {"market": market},
             )
         ).scalar_one()
         if bad_idx:
@@ -277,10 +294,12 @@ async def _data_quality_problems() -> list[str]:
                     "select code, date, close, prev_close from ("
                     "  select code, date, close,"
                     "    lag(close) over (partition by code order by date) as prev_close"
-                    "  from daily_bars where date >= current_date - interval '3 days'"
+                    "  from daily_bars where market = :market "
+                    "  and date >= current_date - interval '3 days'"
                     ") t where prev_close > 0 and abs(close / prev_close - 1) > 0.4 "
                     "limit 5"
-                )
+                ),
+                {"market": market},
             )
         ).all()
         if big_moves:
@@ -292,7 +311,9 @@ async def _data_quality_problems() -> list[str]:
     return problems
 
 
-async def _agent_problems(now: dt.datetime) -> list[str]:
+async def _agent_problems(
+    now: dt.datetime, *, market: str = MARKET, tenant_id: str = TENANT_ID
+) -> list[str]:
     """Invariants of the agent model portfolios (services/ingestion/agent_trader.py). Every one
     of these is impossible if the engine is correct — a hit means an engine bug or a manual edit,
     so alert-only: a worker bounce can't fix wrong money numbers."""
@@ -304,8 +325,10 @@ async def _agent_problems(now: dt.datetime) -> list[str]:
             await session.execute(
                 text(
                     "select u.handle, a.cash_settled from agent_portfolios a "
-                    "join users u on u.id = a.user_id where a.cash_settled < -0.01"
-                )
+                    "join users u on u.id = a.user_id where a.market = :market "
+                    "and u.tenant_id = :tenant_id and a.cash_settled < -0.01"
+                ),
+                {"market": market, "tenant_id": tenant_id},
             )
         ).all()
         for handle, cash in neg:
@@ -318,10 +341,11 @@ async def _agent_problems(now: dt.datetime) -> list[str]:
                 text(
                     "select u.handle, t.code, t.settles_on from agent_trades t "
                     "join users u on u.id = t.user_id "
-                    "where t.settled = false and t.settles_on < :today "
+                    "where t.market = :market and u.tenant_id = :tenant_id "
+                    "and t.settled = false and t.settles_on < :today "
                     "order by t.settles_on limit 5"
                 ),
-                {"today": today},
+                {"market": market, "tenant_id": tenant_id, "today": today},
             )
         ).all()
         if overdue:
@@ -342,8 +366,10 @@ async def _agent_problems(now: dt.datetime) -> list[str]:
                     "  on h.user_id = l.user_id and h.market = l.market and h.code = l.code "
                     "join agent_portfolios a on a.user_id = coalesce(h.user_id, l.user_id) "
                     "join users u on u.id = a.user_id "
-                    "where coalesce(h.quantity, 0) <> coalesce(l.left_qty, 0) limit 5"
-                )
+                    "where a.market = :market and u.tenant_id = :tenant_id "
+                    "and coalesce(h.quantity, 0) <> coalesce(l.left_qty, 0) limit 5"
+                ),
+                {"market": market, "tenant_id": tenant_id},
             )
         ).all()
         if drift:
@@ -356,10 +382,11 @@ async def _agent_problems(now: dt.datetime) -> list[str]:
             await session.execute(
                 text(
                     "select u.handle, count(*) from agent_trades t "
-                    "join users u on u.id = t.user_id where t.trade_date = :today "
+                    "join users u on u.id = t.user_id where t.market = :market "
+                    "and u.tenant_id = :tenant_id and t.trade_date = :today "
                     "group by u.handle having count(*) > 12"
                 ),
-                {"today": today},
+                {"market": market, "tenant_id": tenant_id, "today": today},
             )
         ).all()
         for handle, n in churn:
@@ -419,7 +446,7 @@ async def main() -> int:
             worker_fault = True
 
     if not await _api_ok(s.api_public_url):
-        problems.append(f"API health check failed ({s.api_public_url}/health)")
+        problems.append(f"API readiness check failed ({s.api_public_url}/ready)")
 
     # EOD staleness: restart the worker. EOD jobs are run_at_startup and guarded by their own
     # "after close" checks, so this now recovers a missed chain instead of requiring a manual rerun.

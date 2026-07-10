@@ -5,9 +5,7 @@ import { api, ApiError, type User } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
-
-// Real, monitored mailbox — also set as Reply-To on transactional email.
-const SUPPORT_EMAIL = "hello@bullsofdhaka.com";
+import { useTenantConfig } from "../lib/tenant";
 
 const PHONE_RE = /^\+?\d{7,15}$/; // lenient: BD (01…) or international (+cc…); server normalizes
 
@@ -179,12 +177,13 @@ const FB_URL = "https://www.facebook.com/1214682241723822";
 
 function ContactLine() {
   const { t } = useLang();
+  const { config } = useTenantConfig();
   return (
     <div className="mt-2 flex flex-col gap-1.5 text-center">
       <p className="text-muted text-xs">
         {t("profile.contact")}{" "}
-        <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent">
-          {SUPPORT_EMAIL}
+        <a href={`mailto:${config.support_email}`} className="text-accent">
+          {config.support_email}
         </a>
       </p>
       {/* Relocated from the header (2026-07 noise cut) — reachable, not omnipresent. */}
@@ -192,10 +191,14 @@ function ContactLine() {
         <Link to="/about" className="text-accent">
           ⓘ {t("nav.about")}
         </Link>
-        {" · "}
-        <a href={FB_URL} target="_blank" rel="noopener noreferrer" className="text-accent">
-          Facebook ↗
-        </a>
+        {config.market === "DSE" && (
+          <>
+            {" · "}
+            <a href={FB_URL} target="_blank" rel="noopener noreferrer" className="text-accent">
+              Facebook ↗
+            </a>
+          </>
+        )}
       </p>
     </div>
   );

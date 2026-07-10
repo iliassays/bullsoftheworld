@@ -1,7 +1,7 @@
 """Daily portfolio value snapshot — lets Portfolio show growth over time.
 
-We snapshot only the AGGREGATE (total value, total cost) per user per day, using the same
-QuoteSnapshot prices the live Portfolio view already reads. We deliberately never backfill: a
+We snapshot only the AGGREGATE (total value, total cost) per user per day, using current quotes
+or the latest adjusted EOD close when a market has no intraday feed. We deliberately never backfill: a
 holding's quantity/avg_cost can change at any point (add/edit/delete), so projecting today's
 holdings backward across historical prices would show a fictional "what if you always held this"
 line, not what the user actually experienced. Idempotent (upsert by user+market+date) — a re-run
@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import PortfolioHolding, PortfolioSnapshot, QuoteSnapshot
+from bulls.core.models import DailyBar, PortfolioHolding, PortfolioSnapshot, QuoteSnapshot
 from bulls.market_data.calendar import to_market_tz
 
 
 async def run(market: str = "DSE") -> dict[str, int]:
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    today = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     sm = get_sessionmaker()
     async with sm() as session:
         holdings = (
@@ -41,6 +41,16 @@ async def run(market: str = "DSE") -> dict[str, int]:
                 )
             )
         }
+        missing = codes - ltp_by_code.keys()
+        if missing:
+            effective_close = func.coalesce(DailyBar.adjusted_close, DailyBar.close)
+            for code, close in await session.execute(
+                select(DailyBar.code, effective_close)
+                .where(DailyBar.market == market, DailyBar.code.in_(missing))
+                .distinct(DailyBar.code)
+                .order_by(DailyBar.code, DailyBar.date.desc())
+            ):
+                ltp_by_code[code] = close
 
         by_user: dict[int, list[PortfolioHolding]] = {}
         for h in holdings:

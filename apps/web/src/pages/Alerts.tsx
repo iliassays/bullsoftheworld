@@ -4,7 +4,9 @@ import { Link } from "../lib/nav";
 import { api, type AlertItem } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
-import { formatDhakaDateTime } from "../lib/time";
+import { marketUiFromConfig } from "../lib/market";
+import { useTenantConfig } from "../lib/tenant";
+import { formatMarketDateTime } from "../lib/time";
 import { Empty, Spinner } from "../components/ui";
 
 // Icon per alert kind — visual state first, text second, so the inbox scans at a glance.
@@ -18,6 +20,7 @@ const KIND_ICON: Record<string, string> = {
 export function Alerts() {
   const { user } = useAuth();
   const { t } = useLang();
+  const { config } = useTenantConfig();
   useSeo({ noindex: true }); // private/personal — keep out of the index
   const [items, setItems] = useState<AlertItem[] | null>(null);
 
@@ -75,7 +78,7 @@ export function Alerts() {
                 <div className="text-xs text-muted mt-1 leading-relaxed">{a.body}</div>
               )}
               <div className="text-[10px] text-muted mt-1.5 tnum">
-                {formatDhakaDateTime(a.created_at)}
+                {formatMarketDateTime(a.created_at, marketUiFromConfig(config))}
               </div>
             </div>
           </div>

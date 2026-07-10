@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections import defaultdict
+from types import SimpleNamespace
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from bulls.analytics import compute, compute_valuation, detect_patterns
+from bulls.analytics import adjust_bars, compute, compute_valuation, detect_patterns
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
     AnnualFinancial,
@@ -30,6 +32,7 @@ from bulls.core.models import (
 )
 
 _LOOKBACK = 300  # enough for the 200-day SMA and 12-1 month momentum (needs ~253 bars)
+_BATCH_SIZE = 250
 _FIELDS = (
     "last_close",
     "sma_50",
@@ -193,11 +196,138 @@ def _extra_row(
     return row
 
 
+async def _load_bar_batch(session, market: str, codes: list[str]) -> dict[str, list]:
+    """Load the latest lookback per code in one windowed query."""
+    ranked = (
+        select(
+            DailyBar.code.label("code"),
+            DailyBar.date.label("date"),
+            DailyBar.open.label("open"),
+            DailyBar.high.label("high"),
+            DailyBar.low.label("low"),
+            DailyBar.close.label("close"),
+            DailyBar.volume.label("volume"),
+            DailyBar.adjusted_close.label("adjusted_close"),
+            func.row_number()
+            .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
+            .label("row_num"),
+        )
+        .where(DailyBar.market == market, DailyBar.code.in_(codes))
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(ranked)
+            .where(ranked.c.row_num <= _LOOKBACK)
+            .order_by(ranked.c.code, ranked.c.date)
+        )
+    ).mappings()
+    grouped: dict[str, list] = defaultdict(list)
+    for row in rows:
+        grouped[row["code"]].append(
+            SimpleNamespace(
+                market=market,
+                code=row["code"],
+                date=row["date"],
+                open=row["open"],
+                high=row["high"],
+                low=row["low"],
+                close=row["close"],
+                volume=row["volume"],
+                adjusted_close=row["adjusted_close"],
+            )
+        )
+    return grouped
+
+
+async def _persist_symbol_analytics(
+    session,
+    market: str,
+    code: str,
+    bars: list,
+    profiles,
+    cash_dividends,
+    sector_pe,
+    ownership,
+    eps_growth,
+) -> tuple[int, int]:
+    if not bars:
+        return 0, 0
+    ascending = adjust_bars(bars)
+    result = compute(ascending)
+    profile = profiles.get(code)
+    row = {"market": market, "code": code, "as_of_date": result.as_of_date}
+    row.update({field: getattr(result, field) for field in _FIELDS})
+    row.update(_valuation_row(result.last_close, profile, cash_dividends.get(code)))
+    row.update(
+        _extra_row(
+            code,
+            row["pe_ratio"],
+            profile.sector if profile else None,
+            sector_pe,
+            ownership,
+            eps_growth,
+        )
+    )
+
+    stmt = pg_insert(TickerAnalytics).values(row)
+    update_cols = {col: getattr(stmt.excluded, col) for col in row if col not in ("market", "code")}
+    await session.execute(
+        stmt.on_conflict_do_update(index_elements=["market", "code"], set_=update_cols)
+    )
+
+    matches = detect_patterns(ascending)
+    if not matches:
+        await session.execute(
+            delete(TickerPattern).where(TickerPattern.market == market, TickerPattern.code == code)
+        )
+        return 1, 0
+
+    match = matches[0]
+    pattern_row = {
+        "market": market,
+        "code": code,
+        "as_of_date": result.as_of_date,
+        "pattern_type": match.pattern_type,
+        "status": match.status,
+        "start_date": match.start_date,
+        "end_date": match.end_date,
+        "breakout_date": match.breakout_date,
+        "strength_score": match.strength_score,
+        "payload": match.model_dump(mode="json"),
+    }
+    pattern_stmt = pg_insert(TickerPattern).values(pattern_row)
+    pattern_updates = {
+        col: getattr(pattern_stmt.excluded, col)
+        for col in pattern_row
+        if col not in ("market", "code")
+    }
+    await session.execute(
+        pattern_stmt.on_conflict_do_update(
+            index_elements=["market", "code"], set_=pattern_updates
+        )
+    )
+    return 1, 1
+
+
 async def compute_all(market: str) -> dict[str, int]:
     """Compute + upsert analytics for every symbol with price history. Returns counts."""
     sm = get_sessionmaker()
     async with sm() as session:
-        codes = list(await session.scalars(select(Symbol.code).where(Symbol.market == market)))
+        codes = list(
+            await session.scalars(
+                select(Symbol.code).where(
+                    Symbol.market == market,
+                    Symbol.is_active.is_(True),
+                    Symbol.is_hidden.is_(False),
+                    Symbol.data_status == "ready",
+                    exists().where(
+                        DailyBar.market == market,
+                        DailyBar.code == Symbol.code,
+                    ),
+                )
+            )
+        )
         # Fundamentals for daily valuation — keyed by code, from the weekly company scrape.
         profiles = {
             p.code: p
@@ -219,75 +349,24 @@ async def compute_all(market: str) -> dict[str, int]:
     computed = 0
     patterns_found = 0
     async with sm() as session:
-        for code in codes:
-            bars = list(
-                await session.scalars(
-                    select(DailyBar)
-                    .where(DailyBar.market == market, DailyBar.code == code)
-                    .order_by(DailyBar.date.desc())
-                    .limit(_LOOKBACK)
-                )
-            )
-            if not bars:
-                continue
-            ascending = list(reversed(bars))
-            result = compute(ascending)
-            profile = profiles.get(code)
-            row = {"market": market, "code": code, "as_of_date": result.as_of_date}
-            row.update({f: getattr(result, f) for f in _FIELDS})
-            row.update(_valuation_row(result.last_close, profile, cash_dividends.get(code)))
-            row.update(
-                _extra_row(
+        for start in range(0, len(codes), _BATCH_SIZE):
+            batch = codes[start : start + _BATCH_SIZE]
+            bars_by_code = await _load_bar_batch(session, market, batch)
+            for code in batch:
+                done, patterns = await _persist_symbol_analytics(
+                    session,
+                    market,
                     code,
-                    row["pe_ratio"],
-                    profile.sector if profile else None,
+                    bars_by_code.get(code, []),
+                    profiles,
+                    cash_dividends,
                     sector_pe,
                     ownership,
                     eps_growth,
                 )
-            )
-
-            stmt = pg_insert(TickerAnalytics).values(row)
-            update_cols = {c: getattr(stmt.excluded, c) for c in row if c not in ("market", "code")}
-            stmt = stmt.on_conflict_do_update(index_elements=["market", "code"], set_=update_cols)
-            await session.execute(stmt)
-            computed += 1
-
-            # Chart patterns reuse the same bars fetched above — no extra DB read. A stock that no
-            # longer shows a qualifying pattern loses its row entirely (never a stale leftover).
-            matches = detect_patterns(ascending)
-            if matches:
-                m = matches[0]
-                pattern_row = {
-                    "market": market,
-                    "code": code,
-                    "as_of_date": result.as_of_date,
-                    "pattern_type": m.pattern_type,
-                    "status": m.status,
-                    "start_date": m.start_date,
-                    "end_date": m.end_date,
-                    "breakout_date": m.breakout_date,
-                    "strength_score": m.strength_score,
-                    "payload": m.model_dump(mode="json"),
-                }
-                pstmt = pg_insert(TickerPattern).values(pattern_row)
-                pupdate_cols = {
-                    c: getattr(pstmt.excluded, c)
-                    for c in pattern_row
-                    if c not in ("market", "code")
-                }
-                pstmt = pstmt.on_conflict_do_update(
-                    index_elements=["market", "code"], set_=pupdate_cols
-                )
-                await session.execute(pstmt)
-                patterns_found += 1
-            else:
-                await session.execute(
-                    delete(TickerPattern).where(
-                        TickerPattern.market == market, TickerPattern.code == code
-                    )
-                )
-        await session.commit()
+                computed += done
+                patterns_found += patterns
+            await session.commit()
 
     return {"symbols": len(codes), "computed": computed, "patterns": patterns_found}
 

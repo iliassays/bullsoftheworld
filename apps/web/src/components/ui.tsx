@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { useLang } from "../lib/i18n";
 
-import { DSE_MARKET, formatMoney } from "../lib/market";
+import { formatMoney } from "../lib/market";
 
 export const money = formatMoney;
-export const taka = (n: number) => formatMoney(n, DSE_MARKET);
+// Legacy name retained while callers migrate; output follows the active tenant market.
+export const taka = (n: number) => formatMoney(n);
 
 // A bare "▲3.32%" is assumed to be the day's move — that's the default meaning everywhere on the
 // site. `period="sinceBuy"` is the one case that actually needs a label: a portfolio holding's

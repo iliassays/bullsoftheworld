@@ -90,6 +90,13 @@ def test_us_calendar_uses_us_weekdays_hours_and_holidays():
     assert session_phase(_utc(2026, 6, 26, 21, 0), market="US") is Session.POST_CLOSE
 
 
+def test_us_calendar_honors_early_close():
+    # NYSE's 2026-11-27 session closes at 13:00 ET, not the regular 16:00 ET.
+    assert is_trading_hours(_utc(2026, 11, 27, 18, 0), market="US")
+    assert not is_trading_hours(_utc(2026, 11, 27, 18, 1), market="US")
+    assert session_phase(_utc(2026, 11, 27, 18, 1), market="US") is Session.POST_CLOSE
+
+
 def test_us_add_trading_days_skips_weekends_and_us_holidays():
     # Thu 2026-07-02 + 1 skips the observed Fri holiday and weekend -> Mon 2026-07-06.
     assert add_trading_days(dt.date(2026, 7, 2), 1, market="US") == dt.date(2026, 7, 6)

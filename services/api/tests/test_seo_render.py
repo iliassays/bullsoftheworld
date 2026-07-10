@@ -14,17 +14,40 @@ import uuid
 import pytest
 
 
+@pytest.mark.asyncio
+async def test_us_seo_uses_english_default_and_hides_disabled_screens() -> None:
+    from api.seo.render import render_path
+
+    home, status = await render_path(
+        None,
+        "US",
+        "",
+        site="https://bullsofwallst.com",
+        brand="Bulls of Wall Street",
+    )
+    assert status == 200
+    assert 'hreflang="x-default" href="https://bullsofwallst.com/en"' in home
+    assert '"target": "https://bullsofwallst.com/en/s/{search_term_string}"' in home
+    assert "fundamentals" not in home
+    assert "automated desks" not in home
+
+    disabled, disabled_status = await render_path(None, "US", "en/markets")
+    assert disabled_status == 404
+    assert "noindex" in disabled
+
+
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres")
 @pytest.mark.asyncio
 async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
     from api.seo.render import render_path
     from bulls.core.db import dispose_engine, get_sessionmaker
     from bulls.core.models import Symbol
-    from bulls.core.models.quote import QuoteSnapshot
+    from bulls.core.models.quote import DailyBar, QuoteSnapshot
 
     await dispose_engine()
     sm = get_sessionmaker()
     code = "T" + uuid.uuid4().hex[:8].upper()
+    us_code = "U" + uuid.uuid4().hex[:8].upper()
     async with sm() as session:
         session.add(
             Symbol(
@@ -36,6 +59,7 @@ async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
                 category="A",
                 is_active=True,
                 is_hidden=False,
+                data_status="ready",
             )
         )
         session.add(
@@ -54,6 +78,31 @@ async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
                 is_delayed=True,
             )
         )
+        session.add(
+            Symbol(
+                market="US",
+                code=us_code,
+                name_en=f"{us_code} Corp",
+                sector="Technology",
+                is_active=True,
+                is_hidden=False,
+                data_status="ready",
+            )
+        )
+        session.add(
+            DailyBar(
+                market="US",
+                code=us_code,
+                date=dt.date(2026, 7, 2),
+                open=100.0,
+                high=104.0,
+                low=99.0,
+                close=102.0,
+                adjusted_close=51.0,
+                volume=100_000,
+                source="test",
+            )
+        )
         await session.commit()
 
         # English stock page
@@ -66,6 +115,20 @@ async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
         assert "delayed" in html  # honesty: never a bare price
         assert "application/ld+json" in html
         assert "noindex" not in html  # a real stock page is indexable
+
+        # EOD-only markets expose the adjusted close and never claim intraday/fundamental coverage.
+        us_html, us_status = await render_path(
+            session,
+            "US",
+            f"en/s/{us_code}",
+            site="https://bullsofwallst.com",
+            brand="Bulls of Wall Street",
+        )
+        assert us_status == 200
+        assert "$51.00" in us_html
+        assert "Latest EOD close" in us_html
+        assert "15-min" not in us_html
+        assert "fundamentals" not in us_html
 
         # Bangla uses the Bangla name
         html_bn, _ = await render_path(session, "DSE", f"bn/s/{code}")
@@ -93,4 +156,10 @@ async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
         q = await session.get(QuoteSnapshot, ("DSE", code))
         if q:
             await session.delete(q)
+        us_bar = await session.get(DailyBar, ("US", us_code, dt.date(2026, 7, 2)))
+        if us_bar:
+            await session.delete(us_bar)
+        us_symbol = await session.get(Symbol, ("US", us_code))
+        if us_symbol:
+            await session.delete(us_symbol)
         await session.commit()

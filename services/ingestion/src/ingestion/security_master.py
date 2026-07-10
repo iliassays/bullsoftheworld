@@ -56,6 +56,7 @@ def _symbol_rows(records: list[UsSecurityRecord]) -> list[dict]:
             "category": None,
             "is_active": True,
             "is_hidden": False,
+            "data_status": "reference_only",
         }
         for record in records
         if record.is_product_eligible

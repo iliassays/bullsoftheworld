@@ -1,0 +1,56 @@
+[
+  {
+    "id": "seapearl_official_reason_en",
+    "tenant_id": "bullsofdhaka",
+    "market": "DSE",
+    "code": "SEAPEARL",
+    "query": "Is there an official reason for SEAPEARL moving today?",
+    "expected_source_types": ["announcement"],
+    "max_rank": 3
+  },
+  {
+    "id": "seapearl_official_reason_bn",
+    "tenant_id": "bullsofdhaka",
+    "market": "DSE",
+    "code": "SEAPEARL",
+    "query": "SEAPEARL বাড়ার কোনো অফিসিয়াল কারণ আছে?",
+    "expected_source_types": ["announcement"],
+    "max_rank": 3
+  },
+  {
+    "id": "seapearl_risk_en",
+    "tenant_id": "bullsofdhaka",
+    "market": "DSE",
+    "code": "SEAPEARL",
+    "query": "What risks should I understand in the recent SEAPEARL move?",
+    "expected_source_types": ["announcement", "signal"],
+    "max_rank": 3
+  },
+  {
+    "id": "bsc_latest_filing_en",
+    "tenant_id": "bullsofdhaka",
+    "market": "DSE",
+    "code": "BSC",
+    "query": "What is the latest material official filing for BSC?",
+    "expected_source_types": ["announcement"],
+    "max_rank": 3
+  },
+  {
+    "id": "bsc_latest_filing_bn",
+    "tenant_id": "bullsofdhaka",
+    "market": "DSE",
+    "code": "BSC",
+    "query": "BSC-এর সর্বশেষ গুরুত্বপূর্ণ অফিসিয়াল খবর কী?",
+    "expected_source_types": ["announcement"],
+    "max_rank": 3
+  },
+  {
+    "id": "bsc_crowd_en",
+    "tenant_id": "bullsofdhaka",
+    "market": "DSE",
+    "code": "BSC",
+    "query": "What are people discussing about BSC?",
+    "expected_source_types": ["post"],
+    "max_rank": 3
+  }
+]

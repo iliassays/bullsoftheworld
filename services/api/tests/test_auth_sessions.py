@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import os
 import uuid
+from types import SimpleNamespace
 
 import pytest
+from fastapi import Response
 from fastapi.testclient import TestClient
 
+from bulls.core.schemas.social import TokenOut
 from bulls.core.security import hash_refresh, new_refresh_token
 
 
@@ -27,6 +30,32 @@ def test_hash_refresh_is_deterministic_sha256() -> None:
     assert hash_refresh(t) == hash_refresh(t)
     assert len(hash_refresh(t)) == 64
     assert hash_refresh(t) != hash_refresh(t + "x")
+
+
+def test_production_refresh_token_is_httponly_cookie(monkeypatch) -> None:
+    from api.routers import auth
+
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: SimpleNamespace(
+            refresh_cookie_name="bulls_refresh",
+            refresh_token_ttl_days=60,
+            refresh_cookie_samesite="lax",
+            production_cookies=True,
+        ),
+    )
+    response = Response()
+    returned = auth._browser_tokens(
+        response, TokenOut(access_token="access", refresh_token="secret-refresh")
+    )
+
+    cookie = response.headers["set-cookie"]
+    assert returned.refresh_token is None
+    assert "bulls_refresh=secret-refresh" in cookie
+    assert "HttpOnly" in cookie
+    assert "Secure" in cookie
+    assert "SameSite=lax" in cookie
 
 
 def test_security_headers_on_every_response() -> None:

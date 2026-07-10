@@ -1,0 +1,19 @@
+[Unit]
+Description=Bulls of the World AI and embedding worker
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka/services/ai_worker
+EnvironmentFile=/home/ubuntu/bullsofdhaka/.env
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/arq ai_worker.worker.WorkerSettings
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 
-from api.deps import DbSession, require_admin
+from api.deps import CurrentTenant, DbSession, require_admin
 from bulls.analytics import STRATEGIES
 from bulls.core.models import (
     AgentLot,
@@ -103,7 +103,7 @@ async def _summarize(
             )
         )
     }
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    today = to_market_tz(dt.datetime.now(dt.UTC), market=agent.market).date()
     matured: dict[str, int] = {}
     for lot in await session.scalars(
         select(AgentLot).where(AgentLot.user_id == agent.user_id, AgentLot.quantity_left > 0)
@@ -186,11 +186,16 @@ async def _summarize(
 
 
 @router.get("")
-async def list_agents(session: DbSession) -> list[AgentSummary]:
+async def list_agents(tenant: CurrentTenant, session: DbSession) -> list[AgentSummary]:
     """All agent portfolios with live-priced equity — the cockpit's overview table."""
     rows = (
         await session.execute(
-            select(AgentPortfolio, User).join(User, User.id == AgentPortfolio.user_id)
+            select(AgentPortfolio, User)
+            .join(User, User.id == AgentPortfolio.user_id)
+            .where(
+                AgentPortfolio.market == tenant.market,
+                User.tenant_id == tenant.name,
+            )
         )
     ).all()
     out = []
@@ -202,14 +207,20 @@ async def list_agents(session: DbSession) -> list[AgentSummary]:
 
 
 @router.get("/{handle}")
-async def agent_detail(handle: str, session: DbSession) -> AgentDetail:
+async def agent_detail(
+    handle: str, tenant: CurrentTenant, session: DbSession
+) -> AgentDetail:
     """One agent's full book: holdings (with sellable vs settling split) + every trade with its
     reason, newest first."""
     row = (
         await session.execute(
             select(AgentPortfolio, User)
             .join(User, User.id == AgentPortfolio.user_id)
-            .where(User.handle == handle)
+            .where(
+                User.handle == handle,
+                User.tenant_id == tenant.name,
+                AgentPortfolio.market == tenant.market,
+            )
         )
     ).one_or_none()
     if row is None:

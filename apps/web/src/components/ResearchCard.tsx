@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type ResearchBrief } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 import { Spinner } from "./ui";
 
 const QUESTIONS = [
@@ -24,14 +25,12 @@ const QUALITY_BN: Record<ResearchBrief["evidence_quality"], string> = {
 };
 
 const REL: Record<string, string> = {
-  official: "DSE",
   market: "Market",
   system: "Signal",
   crowd: "Crowd",
 };
 
 const REL_BN: Record<string, string> = {
-  official: "ডিএসই",
   market: "বাজার",
   system: "সিগন্যাল",
   crowd: "আলোচনা",
@@ -83,6 +82,7 @@ function dateShort(date: string | null): string {
 
 export function ResearchCard({ code }: { code: string }) {
   const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const bn = lang === "bn";
   const [question, setQuestion] = useState(QUESTIONS[0].en);
   const [brief, setBrief] = useState<ResearchBrief | null>(null);
@@ -230,7 +230,11 @@ export function ResearchCard({ code }: { code: string }) {
                   <div key={`${s.type}:${s.id}`} className="rounded-xl border border-border p-3">
                     <div className="flex items-center gap-2 text-[11px] text-muted">
                       <span className="font-bold text-accent">
-                        {(bn ? REL_BN : REL)[s.reliability] ?? s.type}
+                        {s.reliability === "official"
+                          ? bn
+                            ? config.exchange_label_bn || config.exchange_code
+                            : config.exchange_code
+                          : (bn ? REL_BN : REL)[s.reliability] ?? s.type}
                       </span>
                       {dateShort(s.date) && <span className="tnum">{dateShort(s.date)}</span>}
                     </div>

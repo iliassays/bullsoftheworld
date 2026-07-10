@@ -60,6 +60,12 @@ def parse_yahoo_chart(data: dict[str, Any], *, market: str, code: str) -> list[B
     lows = quote.get("low") or []
     closes = quote.get("close") or []
     volumes = quote.get("volume") or []
+    adjusted_sets = indicators.get("adjclose") or []
+    adjusted = (
+        adjusted_sets[0].get("adjclose") or []
+        if adjusted_sets and isinstance(adjusted_sets[0], dict)
+        else []
+    )
 
     out: list[Bar] = []
     for i, ts in enumerate(timestamps):
@@ -89,6 +95,12 @@ def parse_yahoo_chart(data: dict[str, Any], *, market: str, code: str) -> list[B
                 low=low_f,
                 close=close_f,
                 volume=int(volume or 0),
+                adjusted_close=(
+                    float(adjusted[i])
+                    if i < len(adjusted) and adjusted[i] is not None
+                    else None
+                ),
+                source="yahoo_chart",
             )
         )
     return out

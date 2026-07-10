@@ -1,6 +1,6 @@
 import { currentLang } from "./i18n";
 
-// Minimal typed API client. Token is injected from localStorage.
+// Minimal typed API client. The short-lived access token is injected from memory.
 // Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
 // which the API doesn't bind. Override with VITE_API_BASE if needed.
 const BASE =
@@ -8,7 +8,7 @@ const BASE =
 
 // Direct URL for a company logo image (served by the API; 404s when we have none → UI falls back).
 export const logoUrl = (code: string) => `${BASE}/symbols/${encodeURIComponent(code)}/logo`;
-const TOKEN_KEY = "bulls.token";
+const LEGACY_TOKEN_KEY = "bulls.token";
 
 function tenantHost(): string | undefined {
   return typeof window === "undefined" ? undefined : window.location.hostname;
@@ -19,10 +19,17 @@ function tenantHeaders(): Record<string, string> {
   return host ? { "X-Tenant-Host": host } : {};
 }
 
+let accessToken: string | null = null;
 export const tokenStore = {
-  get: () => localStorage.getItem(TOKEN_KEY),
-  set: (t: string) => localStorage.setItem(TOKEN_KEY, t),
-  clear: () => localStorage.removeItem(TOKEN_KEY),
+  get: () => accessToken,
+  set: (token: string) => {
+    accessToken = token;
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  },
+  clear: () => {
+    accessToken = null;
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  },
 };
 
 // The long-lived half of the pair: rotated by the server on every /auth/refresh.
@@ -63,17 +70,18 @@ let refreshing: Promise<boolean> | null = null;
 async function tryRefresh(): Promise<boolean> {
   refreshing ??= (async () => {
     const rt = refreshStore.get();
-    if (!rt) return false;
     try {
       const res = await fetch(`${BASE}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...tenantHeaders() },
-        body: JSON.stringify({ refresh_token: rt }),
+        credentials: "include",
+        body: JSON.stringify(rt ? { refresh_token: rt } : {}),
       });
       if (!res.ok) throw new Error();
       const body = await res.json();
       tokenStore.set(body.access_token);
       if (body.refresh_token) refreshStore.set(body.refresh_token);
+      else refreshStore.clear();
       return true;
     } catch {
       // Rotation failed → the session is genuinely dead; clear so the UI shows logged-out.
@@ -97,10 +105,10 @@ async function request<T>(path: string, opts: RequestInit = {}, retried = false)
   const token = tokenStore.get();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers, credentials: "include" });
   // Access token expired mid-session → rotate the refresh token once and replay the call.
   // /auth/* is excluded so a failing login/refresh can never recurse.
-  if (res.status === 401 && !retried && !path.startsWith("/auth/") && refreshStore.get()) {
+  if (res.status === 401 && !retried && !path.startsWith("/auth/")) {
     if (await tryRefresh()) return request<T>(path, opts, true);
   }
   if (res.status === 204) return undefined as T;
@@ -573,6 +581,12 @@ export interface MarketConfig {
   features: Record<string, boolean>;
   tenant_name: string;
   brand_name: string;
+  site_url: string;
+  support_email: string;
+  logo_url: string;
+  tagline_en: string;
+  tagline_bn: string;
+  social_url: string | null;
 }
 export interface MoodComponent {
   key: string;
@@ -724,10 +738,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(b),
     }),
-  logout: (refresh_token: string) =>
+  restoreSession: (refresh_token?: string | null) =>
+    request<{ access_token: string; refresh_token?: string | null }>("/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify(refresh_token ? { refresh_token } : {}),
+    }),
+  logout: (refresh_token?: string | null) =>
     request<{ status: string }>("/auth/logout", {
       method: "POST",
-      body: JSON.stringify({ refresh_token }),
+      body: JSON.stringify(refresh_token ? { refresh_token } : {}),
     }),
   forgotPassword: (email: string) =>
     request<{ status: string }>("/auth/forgot", {

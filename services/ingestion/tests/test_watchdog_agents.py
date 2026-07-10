@@ -52,7 +52,7 @@ async def test_agent_invariant_checks_fire_on_planted_violations() -> None:
 
     try:
         # Clean baseline: silent for this agent.
-        problems = await _agent_problems(now)
+        problems = await _agent_problems(now, market="TST", tenant_id="test")
         assert not any(handle in p for p in problems)
 
         # 1. Negative settled cash.
@@ -60,7 +60,7 @@ async def test_agent_invariant_checks_fire_on_planted_violations() -> None:
             agent = await session.get(AgentPortfolio, user_id)
             agent.cash_settled = -12.5
             await session.commit()
-        problems = await _agent_problems(now)
+        problems = await _agent_problems(now, market="TST", tenant_id="test")
         assert any(handle in p and "NEGATIVE settled cash" in p for p in problems)
         async with sm() as session:
             agent = await session.get(AgentPortfolio, user_id)
@@ -87,7 +87,7 @@ async def test_agent_invariant_checks_fire_on_planted_violations() -> None:
                 )
             )
             await session.commit()
-        problems = await _agent_problems(now)
+        problems = await _agent_problems(now, market="TST", tenant_id="test")
         assert any(handle in p and "past settlement" in p for p in problems)
         async with sm() as session:
             await session.execute(delete(AgentTrade).where(AgentTrade.user_id == user_id))
@@ -101,7 +101,7 @@ async def test_agent_invariant_checks_fire_on_planted_violations() -> None:
                 )
             )
             await session.commit()
-        problems = await _agent_problems(now)
+        problems = await _agent_problems(now, market="TST", tenant_id="test")
         assert any(handle in p and "books disagree" in p for p in problems)
         # ...and the mirror image: an open lot with no holding row.
         async with sm() as session:
@@ -121,7 +121,7 @@ async def test_agent_invariant_checks_fire_on_planted_violations() -> None:
                 )
             )
             await session.commit()
-        problems = await _agent_problems(now)
+        problems = await _agent_problems(now, market="TST", tenant_id="test")
         assert any(handle in p and "books disagree" in p for p in problems)
     finally:
         async with sm() as session:

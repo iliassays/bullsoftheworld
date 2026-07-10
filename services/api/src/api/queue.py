@@ -20,11 +20,17 @@ _pool: ArqRedis | None = None
 async def _get_pool() -> ArqRedis:
     global _pool
     if _pool is None:
-        _pool = await create_pool(RedisSettings.from_dsn(get_settings().redis_url))
+        settings = get_settings()
+        _pool = await create_pool(
+            RedisSettings.from_dsn(settings.redis_url),
+            default_queue_name=settings.ai_queue_name,
+        )
     return _pool
 
 
 async def enqueue_sentiment(post_id: int) -> None:
+    if get_settings().ai_provider == "disabled":
+        return
     try:
         pool = await _get_pool()
         await pool.enqueue_job("tag_sentiment", post_id)

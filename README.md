@@ -85,7 +85,8 @@ uv run python scripts/simulate_activity.py --clean  # remove all sim_ users + th
 
 ```bash
 uv run pytest                                        # python unit tests
-DB_TESTS=1 uv run pytest                             # + integration tests (needs Postgres up)
+ENV=test uv run python scripts/seed_test_reference_data.py
+ENV=test DB_TESTS=1 DISABLE_RATELIMIT=1 uv run pytest # + integration tests (Postgres + Redis)
 uv run ruff check . && uv run ruff format .          # lint + format
 ```
 
