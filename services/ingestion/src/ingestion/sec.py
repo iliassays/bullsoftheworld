@@ -228,7 +228,7 @@ async def _upsert(session, model, rows: list[dict], keys: tuple[str, ...]) -> in
     if not rows:
         return 0
     stmt = pg_insert(model).values(rows)
-    updates = {column: getattr(stmt.excluded, column) for column in rows[0] if column not in keys}
+    updates = {column: stmt.excluded[column] for column in rows[0] if column not in keys}
     await session.execute(stmt.on_conflict_do_update(index_elements=list(keys), set_=updates))
     return len(rows)
 

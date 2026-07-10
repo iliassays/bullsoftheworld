@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+from sqlalchemy.dialects import postgresql
+
+from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
-from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value
+from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
 
 
 def _fact(
@@ -67,3 +71,30 @@ def test_sic_mapping_produces_comparable_retail_sectors() -> None:
     assert _sector_from_sic("3571", "Electronic Computers") == "Technology"
     assert _sector_from_sic("6021", "National Commercial Banks") == "Financials"
     assert _sector_from_sic("2834", "Pharmaceutical Preparations") == "Health Care"
+
+
+@pytest.mark.asyncio
+async def test_upsert_uses_excluded_column_when_name_collides_with_collection_method() -> None:
+    class Session:
+        statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+
+    session = Session()
+    await _upsert(
+        session,
+        SecFiling,
+        [
+            {
+                "market": "US",
+                "code": "AAPL",
+                "accession_number": "0000320193-26-000001",
+                "items": "2.02",
+            }
+        ],
+        ("market", "code", "accession_number"),
+    )
+
+    sql = str(session.statement.compile(dialect=postgresql.dialect()))
+    assert "items = excluded.items" in sql
