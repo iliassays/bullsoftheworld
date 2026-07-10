@@ -8,6 +8,8 @@ from sqlalchemy.dialects import postgresql
 from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
 from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
+from ingestion.sec_13f import UPSERT_BATCH_ROWS
+from ingestion.sec_13f import _upsert as _upsert_13f
 
 
 def _fact(
@@ -98,3 +100,33 @@ async def test_upsert_uses_excluded_column_when_name_collides_with_collection_me
 
     sql = str(session.statement.compile(dialect=postgresql.dialect()))
     assert "items = excluded.items" in sql
+
+
+@pytest.mark.asyncio
+async def test_13f_upsert_batches_below_asyncpg_parameter_limit() -> None:
+    class Session:
+        def __init__(self) -> None:
+            self.statements = []
+
+        async def execute(self, statement):
+            self.statements.append(statement)
+
+    session = Session()
+    rows = [
+        {
+            "market": "US",
+            "code": f"T{index}",
+            "accession_number": f"0000000001-26-{index:06d}",
+            "items": None,
+        }
+        for index in range(UPSERT_BATCH_ROWS * 2 + 1)
+    ]
+
+    await _upsert_13f(
+        session,
+        SecFiling,
+        rows,
+        ("market", "code", "accession_number"),
+    )
+
+    assert len(session.statements) == 3

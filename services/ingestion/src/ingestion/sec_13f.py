@@ -43,6 +43,7 @@ MARKET = "US"
 SOURCE = "sec_13f"
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 RETENTION_QUARTERS = 8
+UPSERT_BATCH_ROWS = 1000
 
 
 def _headers() -> dict[str, str]:
@@ -132,9 +133,11 @@ async def _symbol_context() -> tuple[list[SymbolIdentity], dict[str, str]]:
 async def _upsert(session, model, rows: list[dict], keys: tuple[str, ...]) -> int:
     if not rows:
         return 0
-    stmt = pg_insert(model).values(rows)
-    updates = {column: stmt.excluded[column] for column in rows[0] if column not in keys}
-    await session.execute(stmt.on_conflict_do_update(index_elements=list(keys), set_=updates))
+    for start in range(0, len(rows), UPSERT_BATCH_ROWS):
+        batch = rows[start : start + UPSERT_BATCH_ROWS]
+        stmt = pg_insert(model).values(batch)
+        updates = {column: stmt.excluded[column] for column in batch[0] if column not in keys}
+        await session.execute(stmt.on_conflict_do_update(index_elements=list(keys), set_=updates))
     return len(rows)
 
 

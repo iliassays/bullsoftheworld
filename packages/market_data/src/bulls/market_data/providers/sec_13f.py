@@ -327,7 +327,7 @@ def parse_13f_archive(
                 continue
             try:
                 shares = int(float(row.get("SSHPRNAMT") or 0))
-                value_usd = float(row.get("VALUE") or 0) * 1000
+                value_usd = float(row.get("VALUE") or 0)
             except ValueError:
                 continue
             key = (code, submission.cik, submission.report_date)

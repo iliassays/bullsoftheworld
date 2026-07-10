@@ -10,6 +10,7 @@ from bulls.market_data.providers.sec_13f import (
     build_holding_changes,
     discover_dataset_urls,
     match_13f_security,
+    parse_13f_archive,
 )
 
 
@@ -164,3 +165,36 @@ def test_missing_current_manager_filing_is_not_called_an_exit() -> None:
 
     assert positions == []
     assert summaries == []
+
+
+def test_archive_value_is_already_reported_in_us_dollars(tmp_path) -> None:
+    import zipfile
+
+    archive_path = tmp_path / "13f.zip"
+    files = {
+        "COVERPAGE.tsv": (
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n"
+            "0000000001-26-000001\tExample Manager\n"
+        ),
+        "SUBMISSION.tsv": (
+            "ACCESSION_NUMBER\tCIK\tFILING_DATE\tPERIODOFREPORT\tSUBMISSIONTYPE\n"
+            "0000000001-26-000001\t1\t15-May-2026\t31-Mar-2026\t13F-HR\n"
+        ),
+        "INFOTABLE.tsv": (
+            "ACCESSION_NUMBER\tNAMEOFISSUER\tTITLEOFCLASS\tCUSIP\tVALUE\tSSHPRNAMT"
+            "\tSSHPRNAMTTYPE\tPUTCALL\n"
+            "0000000001-26-000001\tAPPLE INC\tCOM\t037833100\t290512251859"
+            "\t1144695425\tSH\t\n"
+        ),
+    }
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+
+    result = parse_13f_archive(
+        archive_path,
+        source_url="https://www.sec.gov/example.zip",
+        symbols=[SymbolIdentity(code="AAPL", name="Apple Inc. - Common Stock")],
+    )
+
+    assert result.positions[0].value_usd == 290_512_251_859
