@@ -173,6 +173,22 @@ def _archive_sequence(checkpoint_url: str, count: int) -> list[str]:
     return urls
 
 
+def _is_consecutive_report_pair(current: dt.date, prior: dt.date) -> bool:
+    current_quarter_start_month = ((current.month - 1) // 3) * 3 + 1
+    current_quarter_start = dt.date(
+        current.year,
+        current_quarter_start_month,
+        1,
+    )
+    next_quarter_index = current.year * 12 + current_quarter_start_month - 1 + 3
+    current_quarter_end = dt.date(
+        next_quarter_index // 12,
+        next_quarter_index % 12 + 1,
+        1,
+    ) - dt.timedelta(days=1)
+    return current == current_quarter_end and prior == current_quarter_start - dt.timedelta(days=1)
+
+
 async def _checkpoint_archive_urls(count: int) -> list[str]:
     sm = get_sessionmaker()
     async with sm() as session:
@@ -528,10 +544,10 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
                     newest = archive
                     continue
                 prior = archive
-                if current.report_date <= prior.report_date:
+                if not _is_consecutive_report_pair(current.report_date, prior.report_date):
                     raise RuntimeError(
-                        f"13F data sets are not descending: "
-                        f"{current.report_date} <= {prior.report_date}"
+                        "13F data sets are not consecutive quarter ends: "
+                        f"{current.report_date} then {prior.report_date}"
                     )
                 changes, summaries = build_holding_changes(current, prior)
                 period_stats.append(await _persist_period(current, changes, summaries))

@@ -12,6 +12,7 @@ from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
 from ingestion.sec_13f import (
     UPSERT_BATCH_ROWS,
     _archive_sequence,
+    _is_consecutive_report_pair,
     _is_refresh_current,
     _retry_delay,
     _retryable_http_error,
@@ -133,6 +134,13 @@ def test_forced_13f_recovery_derives_only_validated_official_quarter_windows() -
     ]
     assert _archive_sequence(checkpoint.replace("www.sec.gov", "example.com"), 3) == []
     assert _archive_sequence(checkpoint.replace("31may2026", "30may2026"), 3) == []
+
+
+def test_13f_comparisons_require_adjacent_quarter_ends() -> None:
+    assert _is_consecutive_report_pair(dt.date(2026, 3, 31), dt.date(2025, 12, 31))
+    assert _is_consecutive_report_pair(dt.date(2024, 3, 31), dt.date(2023, 12, 31))
+    assert not _is_consecutive_report_pair(dt.date(2026, 3, 31), dt.date(2025, 9, 30))
+    assert not _is_consecutive_report_pair(dt.date(2026, 3, 30), dt.date(2025, 12, 31))
 
 
 @pytest.mark.asyncio
