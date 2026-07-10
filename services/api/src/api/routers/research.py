@@ -868,11 +868,15 @@ async def _institutional_sources(session, market: str, code: str) -> list[Resear
             date=str(row.latest_filing_date),
             snippet=(
                 f"{row.managers_count} reporting managers held {row.total_shares:,} shares; "
-                f"quarter-over-quarter comparable-share change {row.net_change_pct:+.2f}%. "
+                f"the latest mapped filing was public on {row.latest_filing_date}; "
+                f"quarter-over-quarter aggregate reported-share change {row.net_change_pct:+.2f}%. "
                 f"New {row.new_positions}, increased {row.increased_positions}, "
                 f"reduced {row.reduced_positions}, exited {row.exited_positions}."
                 if row.net_change_pct is not None
-                else f"{row.managers_count} reporting managers held {row.total_shares:,} shares."
+                else (
+                    f"{row.managers_count} reporting managers held {row.total_shares:,} shares; "
+                    f"the latest mapped filing was public on {row.latest_filing_date}."
+                )
             ),
             reliability="official",
             url=row.source_url,

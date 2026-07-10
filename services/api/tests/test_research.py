@@ -229,7 +229,10 @@ def test_institutional_question_uses_13f_and_states_timing_limit() -> None:
         type="sec_13f",
         id="AAPL:2026-03-31",
         title="SEC 13F holdings as of 2026-03-31",
-        snippet="Comparable reported shares increased 8.2%.",
+        snippet=(
+            "The latest mapped filing was public on 2026-05-29; "
+            "aggregate reported shares increased 8.2%."
+        ),
     )
     ranked = _rank_sources(
         [filing, holding],
@@ -251,6 +254,7 @@ def test_institutional_question_uses_13f_and_states_timing_limit() -> None:
     )
     assert "actual trade date or price" in answer
     assert "reported holdings change" in answer
+    assert "public on 2026-05-29" in answer
 
 
 def test_13f_insight_does_not_require_dse_ownership_deltas() -> None:
