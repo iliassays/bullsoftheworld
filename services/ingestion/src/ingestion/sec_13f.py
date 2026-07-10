@@ -83,19 +83,19 @@ async def _download(client: httpx.AsyncClient, url: str, target: Path) -> int:
     return total
 
 
-async def _dataset_urls() -> list[str]:
+async def _dataset_urls(*, retries: int = HTTP_RETRIES) -> list[str]:
     async with httpx.AsyncClient(headers=_headers(), timeout=60, follow_redirects=True) as client:
-        for attempt in range(HTTP_RETRIES):
+        for attempt in range(retries):
             try:
                 page = await client.get(DATASET_PAGE)
                 page.raise_for_status()
                 break
             except httpx.HTTPError as error:
-                if attempt == HTTP_RETRIES - 1 or not _retryable_http_error(error):
+                if attempt == retries - 1 or not _retryable_http_error(error):
                     raise
                 delay = _retry_delay(error, attempt)
                 print(
-                    f"  ! SEC dataset index retry {attempt + 1}/{HTTP_RETRIES} "
+                    f"  ! SEC dataset index retry {attempt + 1}/{retries} "
                     f"in {delay:.0f}s ({type(error).__name__})",
                     flush=True,
                 )
@@ -479,7 +479,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
         raise ValueError(f"history_quarters must be between 1 and {RETENTION_QUARTERS}")
     symbols, known_cusips = await _symbol_context()
     try:
-        urls = await _dataset_urls()
+        urls = await _dataset_urls(retries=1 if force else HTTP_RETRIES)
     except httpx.HTTPError:
         if not force:
             raise
