@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, CheckConstraint, Date, String
+from sqlalchemy import Boolean, CheckConstraint, Date, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -24,7 +24,9 @@ class Symbol(Base):
 
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
-    name_en: Mapped[str] = mapped_column(String(160))
+    # Exchange issuer names can legitimately exceed 160 characters. Keep the full official name;
+    # compact presentation belongs in the UI, not in the identity layer.
+    name_en: Mapped[str] = mapped_column(Text)
     name_bn: Mapped[str | None] = mapped_column(String(160))
     sector: Mapped[str | None] = mapped_column(String(80))
     category: Mapped[str | None] = mapped_column(String(2))  # DSE: A/B/G/N/Z

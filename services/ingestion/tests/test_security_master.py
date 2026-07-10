@@ -32,6 +32,19 @@ ABR$D|Arbor Realty Trust Preferred Stock|N|ABRpD|N|100|N|ABR-D
     assert all(row["is_hidden"] is False for row in rows)
 
 
+def test_symbol_rows_preserve_long_official_names() -> None:
+    long_name = "Example Holdings " + "International " * 12 + "Common Stock"
+    records = parse_nasdaq_listed(
+        "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
+        f"LONG|{long_name}|Q|N|N|100|N|N\n"
+    )
+
+    [row] = _symbol_rows(records)
+
+    assert len(long_name) > 160
+    assert row["name_en"] == long_name
+
+
 def test_bulk_rows_are_chunked_before_upsert() -> None:
     rows = list(range(2501))
 
