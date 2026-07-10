@@ -45,9 +45,9 @@ export const SCREEN_HELP: Record<string, string> = {
   unusual_volume:
     "How active a stock is vs its normal pace — a 1-day spike (1D) or sustained over a week/month (5D/1M). Tagged by today's direction: heavy volume while rising = buying, while falling = selling. e.g. 4.6x = 4.6 times its usual volume.",
   institutional_13f_accumulation:
-    "Quarter-over-quarter growth in comparable long-share positions reported on SEC Form 13F. Reports can arrive up to 45 days after quarter-end and do not reveal actual trade dates or entry prices.",
+    "Quarter-over-quarter growth in aggregate reported long shares on SEC Form 13F. Reports can arrive up to 45 days after quarter-end and do not reveal actual trade dates or entry prices.",
   institutional_13f_distribution:
-    "Quarter-over-quarter reduction in comparable long-share positions reported on SEC Form 13F. A reduction can reflect flows, mandates, taxes or risk controls, not only a bearish view.",
+    "Quarter-over-quarter reduction in aggregate reported long shares on SEC Form 13F. A reduction can reflect flows, mandates, taxes or risk controls, not only a bearish view.",
   uptrend:
     "Trading above its 200-day average price — a common longer-term uptrend marker. The % shows how far above the average it is.",
   near_52w_high: "Within 5% of its highest price over the past 52 weeks (one year).",
@@ -107,6 +107,10 @@ const SCREEN_HELP_BN: Record<string, string> = {
     "CMF ০-এর নিচে মানে অর্থ বেরোচ্ছে — ২০ দিনে নিট বিক্রয়চাপ। যেমন -০.৩০ = জোরালো বহিঃপ্রবাহ।",
   unusual_volume:
     "স্বাভাবিকের তুলনায় কতটা সক্রিয় — ১ দিনের স্পাইক (1D) বা সপ্তাহ/মাসজুড়ে (5D/1M)। আজকের দিক অনুযায়ী ট্যাগ: বাড়ার সময় ভারী ভলিউম = ক্রয়, পড়ার সময় = বিক্রয়। যেমন ৪.৬x = স্বাভাবিকের ৪.৬ গুণ।",
+  institutional_13f_accumulation:
+    "SEC Form 13F-এ রিপোর্ট করা মোট লং শেয়ার আগের ত্রৈমাসিকের তুলনায় বেড়েছে। রিপোর্ট ত্রৈমাসিক শেষের ৪৫ দিন পরেও আসতে পারে এবং প্রকৃত কেনার তারিখ বা দাম দেখায় না।",
+  institutional_13f_distribution:
+    "SEC Form 13F-এ রিপোর্ট করা মোট লং শেয়ার আগের ত্রৈমাসিকের তুলনায় কমেছে। এই কমা ফান্ড প্রবাহ, ম্যান্ডেট, কর বা ঝুঁকি নিয়ন্ত্রণের কারণেও হতে পারে; এটি একা নেতিবাচক মতামত প্রমাণ করে না।",
   uptrend:
     "২০০-দিনের গড় দামের উপরে লেনদেন — দীর্ঘমেয়াদি ঊর্ধ্বমুখী প্রবণতার সাধারণ চিহ্ন। % দেখায় গড়ের কতটা উপরে।",
   near_52w_high: "গত ৫২ সপ্তাহের (এক বছর) সর্বোচ্চ দামের ৫% মধ্যে।",
@@ -1401,7 +1405,11 @@ export function Markets() {
 
       <div className="flex items-center justify-between px-1">
         <div className="text-[11px] text-muted">
-          {isFocus ? t("markets.focusBlurb") : activeLens ? t(activeLens.blurbKey) : t("markets.browseAll")}
+          {isFocus
+            ? t(config.market === "US" ? "markets.focusBlurb.us" : "markets.focusBlurb")
+            : activeLens
+              ? t(activeLens.blurbKey)
+              : t("markets.browseAll")}
         </div>
         <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} />
       </div>

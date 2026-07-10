@@ -222,7 +222,7 @@ export function Portfolio() {
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder={t("pf.codePh")}
+            placeholder={t(config.market === "US" ? "pf.codePh.us" : "pf.codePh")}
             className="bg-bg border border-border rounded-xl px-3 py-2 text-sm uppercase"
           />
           <div className="flex gap-2">

@@ -109,6 +109,7 @@ const STRINGS: Record<string, Entry> = {
   },
   "pf.addTitle": { en: "Add a holding", bn: "হোল্ডিং যোগ করুন" },
   "pf.codePh": { en: "Ticker e.g. GP", bn: "টিকার যেমন GP" },
+  "pf.codePh.us": { en: "Ticker e.g. AAPL", bn: "টিকার যেমন AAPL" },
   "pf.qtyPh": { en: "Quantity", bn: "পরিমাণ" },
   "pf.costPh": { en: "Avg buy price", bn: "গড় কেনা দাম" },
   "pf.save": { en: "Save", bn: "সংরক্ষণ" },
@@ -200,6 +201,10 @@ const STRINGS: Record<string, Entry> = {
   "search.placeholder": {
     en: "Search ticker… e.g. GP, Grameenphone",
     bn: "টিকার খুঁজুন… যেমন GP, গ্রামীণফোন",
+  },
+  "search.placeholder.us": {
+    en: "Search ticker… e.g. AAPL, Apple",
+    bn: "টিকার খুঁজুন… যেমন AAPL, অ্যাপল",
   },
   // Symbol page — tabs
   "tab.overview": { en: "Overview", bn: "সারসংক্ষেপ" },
@@ -484,6 +489,10 @@ const STRINGS: Record<string, Entry> = {
   "markets.focusBlurb": {
     en: "High-signal boards for today's DSE read.",
     bn: "আজকের DSE পড়ার জন্য গুরুত্বপূর্ণ বোর্ড।",
+  },
+  "markets.focusBlurb.us": {
+    en: "High-signal boards for the latest U.S. session.",
+    bn: "সর্বশেষ যুক্তরাষ্ট্রের সেশনের গুরুত্বপূর্ণ বোর্ড।",
   },
   "markets.footer": {
     en: "Computed from end-of-day prices · descriptive screens, not recommendations.",

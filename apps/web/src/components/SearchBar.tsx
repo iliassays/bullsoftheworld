@@ -3,10 +3,12 @@ import { useLang } from "../lib/i18n";
 import { useNavigate } from "../lib/nav";
 import type { SymbolOut } from "../lib/api";
 import { searchSymbols } from "../lib/symbols";
+import { useTenantConfig } from "../lib/tenant";
 import { CompanyLogo } from "./CompanyLogo";
 
 export function SearchBar() {
   const { t } = useLang();
+  const { config } = useTenantConfig();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolOut[]>([]);
   const [open, setOpen] = useState(false);
@@ -60,7 +62,7 @@ export function SearchBar() {
           if (e.key === "Enter" && results[0]) go(results[0].code);
           if (e.key === "Escape") setOpen(false);
         }}
-        placeholder={`🔍 ${t("search.placeholder")}`}
+        placeholder={`🔍 ${t(config.market === "US" ? "search.placeholder.us" : "search.placeholder")}`}
         className="w-full bg-card border border-border rounded-xl px-3 py-1.5 text-sm outline-none focus:border-accent"
       />
       {open && results.length > 0 && (
