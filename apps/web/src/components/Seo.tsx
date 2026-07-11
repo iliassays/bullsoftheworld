@@ -154,9 +154,13 @@ function SeoHead({ values }: { values: SeoValues | null }) {
   const v = values ?? {};
   const suffix = stripLang(loc.pathname) === "/" ? "" : stripLang(loc.pathname);
   const canonical = `${siteUrl}/${lang}${suffix}`;
-  const altBn = `${siteUrl}/bn${suffix}`;
-  const altEn = `${siteUrl}/en${suffix}`;
-  const altDefault = config.default_locale === "en" ? altEn : altBn;
+  const alternates = config.supported_locales.map((locale) => ({
+    locale,
+    href: `${siteUrl}/${locale}${suffix}`,
+  }));
+  const altDefault =
+    alternates.find((alternate) => alternate.locale === config.default_locale)?.href ?? canonical;
+  const alternatesKey = alternates.map((alternate) => alternate.locale).join(",");
   const t = pick(v.title, lang) ?? defaultTitle(config, lang);
   const d = pick(v.description, lang) ?? defaultDesc(config, lang);
   const img = v.image ?? `${siteUrl}/og.png`;
@@ -168,8 +172,17 @@ function SeoHead({ values }: { values: SeoValues | null }) {
     document.documentElement.lang = lang;
     upsertMeta("name", "description", d);
     upsertLink("canonical", null, canonical);
-    upsertLink("alternate", "bn", altBn);
-    upsertLink("alternate", "en", altEn);
+    document.head
+      .querySelectorAll<HTMLLinkElement>('link[rel="alternate"][hreflang]')
+      .forEach((element) => {
+        const locale = element.getAttribute("hreflang");
+        if (locale !== "x-default" && !config.supported_locales.includes(locale ?? "")) {
+          element.remove();
+        }
+      });
+    for (const alternate of alternates) {
+      upsertLink("alternate", alternate.locale, alternate.href);
+    }
     upsertLink("alternate", "x-default", altDefault);
     upsertMeta("property", "og:title", t);
     upsertMeta("property", "og:description", d);
@@ -189,7 +202,18 @@ function SeoHead({ values }: { values: SeoValues | null }) {
       s.textContent = JSON.stringify(block);
       document.head.appendChild(s);
     }
-  }, [t, d, canonical, altBn, altEn, altDefault, img, lang, v.noindex, jsonLdStr]);
+  }, [
+    t,
+    d,
+    canonical,
+    altDefault,
+    alternatesKey,
+    img,
+    lang,
+    v.noindex,
+    jsonLdStr,
+    config.supported_locales,
+  ]);
 
   return null;
 }

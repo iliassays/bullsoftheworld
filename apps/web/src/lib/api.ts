@@ -691,6 +691,7 @@ export interface MarketConfig {
   settlement_cycle: string;
   benchmark_label: string;
   default_locale: string;
+  supported_locales: string[];
   price_decimals: number;
   compact_money_units: Array<{
     min_value_mn: number;

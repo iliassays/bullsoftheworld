@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import { api, type MarketStatus } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { usePageViewTracking } from "../lib/analytics";
-import { type Lang, useLang } from "../lib/i18n";
+import { type Lang, SUPPORTED, useLang } from "../lib/i18n";
 import { Link, NavLink, useSwitchLang } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
 import { SearchBar } from "./SearchBar";
@@ -91,26 +91,32 @@ function AlertsBell() {
   );
 }
 
-function LangToggle() {
-  const { lang } = useLang();
+const LANGUAGE_OPTIONS: Record<Lang, { compact: string; name: string }> = {
+  bn: { compact: "🇧🇩 বাং", name: "বাংলা" },
+  en: { compact: "🇬🇧 EN", name: "English" },
+};
+
+function LanguageSelect() {
+  const { lang, t } = useLang();
+  const { config } = useTenantConfig();
   const switchLang = useSwitchLang();
-  const opts: { id: Lang; label: string }[] = [
-    { id: "bn", label: "🇧🇩 বাং" },
-    { id: "en", label: "🇬🇧 EN" },
-  ];
+  const locales = config.supported_locales.filter((locale): locale is Lang =>
+    SUPPORTED.includes(locale as Lang),
+  );
   return (
-    <div className="flex rounded-full border border-border overflow-hidden text-[10px] font-semibold">
-      {opts.map((o) => (
-        <button
-          key={o.id}
-          onClick={() => switchLang(o.id)}
-          aria-pressed={lang === o.id}
-          className={`px-2 py-1 ${lang === o.id ? "bg-accent text-black" : "text-muted"}`}
-        >
-          {o.label}
-        </button>
+    <select
+      aria-label={t("header.language")}
+      title={t("header.language")}
+      value={locales.includes(lang) ? lang : config.default_locale}
+      onChange={(event) => switchLang(event.target.value as Lang)}
+      className="h-7 max-w-[76px] rounded-full border border-border bg-card px-1.5 text-[10px] font-semibold text-text outline-none focus:border-accent"
+    >
+      {locales.map((locale) => (
+        <option key={locale} value={locale} title={LANGUAGE_OPTIONS[locale].name}>
+          {LANGUAGE_OPTIONS[locale].compact}
+        </option>
       ))}
-    </div>
+    </select>
   );
 }
 
@@ -159,7 +165,7 @@ export function Shell() {
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
             <MarketStatusPill />
             <AlertsBell />
-            <LangToggle />
+            <LanguageSelect />
           </div>
         </div>
         <SearchBar />

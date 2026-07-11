@@ -28,13 +28,18 @@ import { useTenantConfig } from "./lib/tenant";
 function LangLayout() {
   const { lang } = useParams();
   const { setLang } = useLang();
+  const { config } = useTenantConfig();
   const loc = useLocation();
-  const valid = !!lang && SUPPORTED.includes(lang as Lang);
+  const valid =
+    !!lang &&
+    SUPPORTED.includes(lang as Lang) &&
+    config.supported_locales.includes(lang);
   useEffect(() => {
     if (valid) setLang(lang as Lang);
   }, [valid, lang, setLang]);
   if (!valid) {
-    return <Navigate to={`/${currentLang()}${loc.pathname}${loc.search}`} replace />;
+    const rest = loc.pathname.replace(/^\/[^/]+(?=\/|$)/, "");
+    return <Navigate to={`/${config.default_locale}${rest}${loc.search}`} replace />;
   }
   return <Outlet />;
 }
@@ -49,8 +54,11 @@ function LocaleRedirect({ to }: { to: string }) {
 // Bare root and any other unprefixed path → prefixed equivalent (default/stored/URL language).
 function RootRedirect() {
   const loc = useLocation();
+  const { config } = useTenantConfig();
   const rest = loc.pathname === "/" ? "" : loc.pathname;
-  return <Navigate to={`/${currentLang()}${rest}${loc.search}`} replace />;
+  const stored = currentLang();
+  const lang = config.supported_locales.includes(stored) ? stored : config.default_locale;
+  return <Navigate to={`/${lang}${rest}${loc.search}`} replace />;
 }
 
 function CapabilityRoute({ feature, children }: { feature: string; children: ReactNode }) {

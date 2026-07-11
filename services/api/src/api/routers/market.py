@@ -86,6 +86,7 @@ class MarketConfigOut(BaseModel):
     settlement_cycle: str
     benchmark_label: str
     default_locale: str
+    supported_locales: list[str]
     price_decimals: int
     compact_money_units: list[dict[str, float | int | str]]
     market_cap_money_units: list[dict[str, float | int | str]]
@@ -120,7 +121,8 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         close_time=profile.close_time.isoformat(timespec="minutes"),
         settlement_cycle=profile.settlement_cycle,
         benchmark_label=profile.benchmark_label,
-        default_locale=profile.default_locale,
+        default_locale=tenant.locale,
+        supported_locales=tenant.supported_locales,
         price_decimals=profile.price_decimals,
         compact_money_units=[asdict(unit) for unit in profile.compact_money_units],
         market_cap_money_units=[asdict(unit) for unit in profile.market_cap_money_units],

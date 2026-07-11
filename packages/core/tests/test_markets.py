@@ -5,8 +5,11 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from bulls.core.markets import format_money_millions, format_price, get_market_profile
-from bulls.core.tenancy import TenantRegistry
+from bulls.core.tenancy import Tenant, TenantRegistry
 
 
 def test_dse_profile_preserves_current_product_defaults() -> None:
@@ -78,6 +81,8 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     assert registry.resolve("wallst.localhost").name == "bullsofwallst"
     assert registry.resolve("wallst.localhost").display_name == "Bulls of Wall Street"
     assert registry.resolve("wallst.localhost").market == "US"
+    assert registry.resolve("wallst.localhost").supported_locales == ["en"]
+    assert registry.resolve("bullsofdhaka.com").supported_locales == ["bn", "en"]
     assert registry.resolve("api.shared.local", tenant_host="bullsofwallst.com").name == (
         "bullsofwallst"
     )
@@ -91,3 +96,22 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
         "bullsofdhaka"
     )
     assert registry.resolve_known("unknown.example") is None
+
+
+def test_tenant_locale_must_be_enabled_and_known() -> None:
+    base = {
+        "name": "test",
+        "display_name": "Test",
+        "market": "US",
+        "timezone": "America/New_York",
+        "site_url": "https://example.com",
+        "support_email": "hello@example.com",
+        "email_from": "Test <no-reply@example.com>",
+        "logo_url": "https://example.com/logo.png",
+        "tagline_en": "Test",
+        "tagline_bn": "পরীক্ষা",
+    }
+    with pytest.raises(ValidationError, match="included in supported_locales"):
+        Tenant(**base, locale="bn", supported_locales=["en"])
+    with pytest.raises(ValidationError, match="unsupported portal locales"):
+        Tenant(**base, locale="en", supported_locales=["en", "de"])

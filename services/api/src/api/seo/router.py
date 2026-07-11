@@ -28,6 +28,8 @@ async def seo_render(full_path: str, tenant: CurrentTenant, session: DbSession) 
         full_path,
         site=f"https://{domain}",
         brand=tenant.display_name,
+        default_lang=tenant.locale,
+        supported_locales=tuple(tenant.supported_locales),
     )
     # Short cache: crawlers can re-fetch; content is EOD/15-min-delayed so it needn't be instant.
     return HTMLResponse(

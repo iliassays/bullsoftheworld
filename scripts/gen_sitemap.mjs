@@ -87,6 +87,12 @@ async function staticPaths() {
   const base = ["/", "/about"];
   try {
     const config = await apiJson("/market/config");
+    const configured = [...(config.supported_locales || [])];
+    if (configured.join(",") !== LANGS.join(",")) {
+      throw new Error(
+        `WEB_LANGS (${LANGS.join(",")}) does not match tenant supported_locales (${configured.join(",")})`,
+      );
+    }
     if (config.features?.curated_screens) {
       base.push(
         "/markets",

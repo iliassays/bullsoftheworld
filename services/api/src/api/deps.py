@@ -15,7 +15,7 @@ from bulls.core.db import get_session
 from bulls.core.markets import get_market_profile
 from bulls.core.models import Symbol, User
 from bulls.core.security import decode_access_token_claims
-from bulls.core.tenancy import Tenant
+from bulls.core.tenancy import PORTAL_LOCALES, Tenant
 
 
 def current_tenant(request: Request) -> Tenant:
@@ -33,16 +33,15 @@ def selected_admin_tenant(
     return selected
 
 
-# Languages the portal renders generated content in. The client picks one (persisted) and sends it
-# as `X-Locale`; we fall back to the tenant default when absent/unsupported.
-SUPPORTED_LOCALES = {"en", "bn"}
-
-
 def current_locale(
     tenant: Annotated[Tenant, Depends(current_tenant)],
     x_locale: Annotated[str | None, Header()] = None,
 ) -> str:
-    if x_locale and x_locale.lower() in SUPPORTED_LOCALES:
+    if (
+        x_locale
+        and x_locale.lower() in PORTAL_LOCALES
+        and x_locale.lower() in tenant.supported_locales
+    ):
         return x_locale.lower()
     return tenant.locale
 
@@ -89,11 +88,7 @@ async def current_user(
     subject = claims.get("sub") if claims else None
     user = await session.get(User, int(subject)) if subject and subject.isdigit() else None
     # cross-tenant guard: a token is only valid within its own tenant
-    if (
-        user is None
-        or user.tenant_id != tenant.name
-        or user.auth_version != claims.get("ver")
-    ):
+    if user is None or user.tenant_id != tenant.name or user.auth_version != claims.get("ver"):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
 
@@ -118,11 +113,7 @@ async def optional_user(
     claims = decode_access_token_claims(creds.credentials, tenant_id=tenant.name)
     subject = claims.get("sub") if claims else None
     user = await session.get(User, int(subject)) if subject and subject.isdigit() else None
-    if (
-        user is None
-        or user.tenant_id != tenant.name
-        or user.auth_version != claims.get("ver")
-    ):
+    if user is None or user.tenant_id != tenant.name or user.auth_version != claims.get("ver"):
         return None
     return user
 

@@ -20,6 +20,7 @@ const DSE_FALLBACK: MarketConfig = {
   settlement_cycle: "T+2",
   benchmark_label: "DSEX",
   default_locale: "bn",
+  supported_locales: ["bn", "en"],
   price_decimals: 1,
   compact_money_units: [
     { min_value_mn: 10, divisor_mn: 10, suffix: "cr", decimals: 1 },
@@ -74,6 +75,7 @@ const US_FALLBACK: MarketConfig = {
   settlement_cycle: "T+1",
   benchmark_label: "SPY (S&P 500 ETF)",
   default_locale: "en",
+  supported_locales: ["en"],
   price_decimals: 2,
   compact_money_units: [
     { min_value_mn: 1000, divisor_mn: 1000, suffix: "B", decimals: 1 },
@@ -110,6 +112,14 @@ function fallbackConfig(): MarketConfig {
   return DSE_FALLBACK;
 }
 
+function normalizeConfig(config: MarketConfig): MarketConfig {
+  if (config.supported_locales?.length) return config;
+  return {
+    ...config,
+    supported_locales: config.market === "DSE" ? ["bn", "en"] : [config.default_locale],
+  };
+}
+
 function siteOrigin(): string {
   if (typeof window === "undefined") return "https://bullsofdhaka.com";
   return window.location.origin;
@@ -139,8 +149,9 @@ export function TenantConfigProvider({ children }: { children: ReactNode }) {
       .marketConfig()
       .then((next) => {
         if (live) {
-          setActiveMarket(marketUiFromConfig(next));
-          setConfig(next);
+          const normalized = normalizeConfig(next);
+          setActiveMarket(marketUiFromConfig(normalized));
+          setConfig(normalized);
         }
       })
       .catch(() => {});

@@ -12,7 +12,9 @@ import tomllib
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+PORTAL_LOCALES = frozenset({"en", "bn"})
 
 
 class Theme(BaseModel):
@@ -27,6 +29,7 @@ class Tenant(BaseModel):
     display_name: str  # e.g. "Bulls of Dhaka"
     market: str  # MarketId, e.g. "DSE"
     locale: str  # e.g. "bn"
+    supported_locales: list[str] = Field(default_factory=lambda: ["en", "bn"])
     timezone: str = "Asia/Dhaka"  # IANA tz for the market's clock (sessions, daily rhythm)
     domains: list[str] = Field(default_factory=list)
     site_url: str
@@ -37,6 +40,22 @@ class Tenant(BaseModel):
     tagline_bn: str
     social_url: str | None = None
     theme: Theme = Field(default_factory=Theme)
+
+    @model_validator(mode="after")
+    def validate_locales(self) -> Tenant:
+        normalized = [locale.lower() for locale in self.supported_locales]
+        if not normalized:
+            raise ValueError("supported_locales must not be empty")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("supported_locales must not contain duplicates")
+        unknown = set(normalized) - PORTAL_LOCALES
+        if unknown:
+            raise ValueError(f"unsupported portal locales: {sorted(unknown)}")
+        self.locale = self.locale.lower()
+        self.supported_locales = normalized
+        if self.locale not in normalized:
+            raise ValueError("tenant locale must be included in supported_locales")
+        return self
 
 
 class TenantRegistry:
@@ -83,12 +102,15 @@ class TenantRegistry:
         identify the frontend tenant through `X-Tenant-Host`; browser-loaded assets fall back to
         Origin/Referer. Only configured tenant domains are accepted.
         """
-        return self.resolve_known(
-            host,
-            tenant_host=tenant_host,
-            origin=origin,
-            referer=referer,
-        ) or self._by_name[self._default]
+        return (
+            self.resolve_known(
+                host,
+                tenant_host=tenant_host,
+                origin=origin,
+                referer=referer,
+            )
+            or self._by_name[self._default]
+        )
 
     def resolve_known(
         self,

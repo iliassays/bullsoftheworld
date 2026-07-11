@@ -53,6 +53,7 @@ def _doc(
     site: str = SITE,
     brand: str = "Bulls of Dhaka",
     default_lang: str = "bn",
+    languages: tuple[str, ...] = LANGS,
     noindex: bool = False,
     og_image: str | None = None,
     json_ld: list[dict] | None = None,
@@ -62,7 +63,7 @@ def _doc(
     suffix = "" if path == "/" else path
     canonical = f"{site}/{lang}{suffix}"
     alts = "".join(
-        f'<link rel="alternate" hreflang="{lg}" href="{site}/{lg}{suffix}">' for lg in LANGS
+        f'<link rel="alternate" hreflang="{lg}" href="{site}/{lg}{suffix}">' for lg in languages
     )
     alts += f'<link rel="alternate" hreflang="x-default" href="{site}/{default_lang}{suffix}">'
     robots = '<meta name="robots" content="noindex,follow">' if noindex else ""
@@ -126,6 +127,8 @@ async def _render_stock(
     *,
     site: str = SITE,
     brand: str = "Bulls of Dhaka",
+    default_lang: str | None = None,
+    languages: tuple[str, ...] = LANGS,
 ) -> str | None:
     code = code.upper()
     profile = get_market_profile(market)
@@ -157,9 +160,7 @@ async def _render_stock(
             price_as_of = bar_as_of
             price_is_eod = True
     price = format_price(price_value, market) if price_value is not None else ""
-    price_note = (
-        _price_note(lang, price_as_of, market, is_eod=price_is_eod) if price_as_of else ""
-    )
+    price_note = _price_note(lang, price_as_of, market, is_eod=price_is_eod) if price_as_of else ""
     if lang == "bn":
         title = f"{name} ({code}) শেয়ার দাম {price} — {exchange} | {brand}"
         topics = ["দামের ইতিহাস"]
@@ -243,7 +244,8 @@ async def _render_stock(
         body=body,
         site=site,
         brand=brand,
-        default_lang=profile.default_locale,
+        default_lang=default_lang or profile.default_locale,
+        languages=languages,
         json_ld=[breadcrumb],
     )
 
@@ -255,6 +257,8 @@ async def _render_pattern_detail(
     market: str = "DSE",
     site: str = SITE,
     brand: str = "Bulls of Dhaka",
+    default_lang: str | None = None,
+    languages: tuple[str, ...] = LANGS,
 ) -> str | None:
     label = _PATTERN_TITLE.get(ptype)
     if not label:
@@ -277,7 +281,8 @@ async def _render_pattern_detail(
         body=body,
         site=site,
         brand=brand,
-        default_lang=profile.default_locale,
+        default_lang=default_lang or profile.default_locale,
+        languages=languages,
     )
 
 
@@ -288,6 +293,8 @@ def _static_page(
     market: str = "DSE",
     site: str = SITE,
     brand: str = "Bulls of Dhaka",
+    default_lang: str | None = None,
+    languages: tuple[str, ...] = LANGS,
 ) -> str:
     """Meta + a real heading/description for the non-stock indexable routes."""
     profile = get_market_profile(market)
@@ -398,7 +405,7 @@ def _static_page(
                 "url": site,
                 "potentialAction": {
                     "@type": "SearchAction",
-                    "target": f"{site}/{profile.default_locale}/s/{{search_term_string}}",
+                    "target": f"{site}/{default_lang or profile.default_locale}/s/{{search_term_string}}",
                     "query-input": "required name=search_term_string",
                 },
             },
@@ -411,7 +418,8 @@ def _static_page(
         body=f"<h1>{_e(title)}</h1><p>{_e(desc)}</p>",
         site=site,
         brand=brand,
-        default_lang=profile.default_locale,
+        default_lang=default_lang or profile.default_locale,
+        languages=languages,
         json_ld=json_ld,
     )
 
@@ -423,6 +431,8 @@ async def render_path(
     *,
     site: str = SITE,
     brand: str = "Bulls of Dhaka",
+    default_lang: str | None = None,
+    supported_locales: tuple[str, ...] | None = None,
 ) -> tuple[str, int]:
     """Render the HTML for an SPA path (already stripped of any /seo prefix). Returns (html, status).
 
@@ -430,9 +440,11 @@ async def render_path(
     only routes bots here, and robots.txt already disallows the private ones, so this is a safety net.
     """
     profile = get_market_profile(market)
+    default_lang = default_lang or profile.default_locale
+    languages = supported_locales or LANGS
     parts = [p for p in raw_path.strip("/").split("/") if p]
-    lang = parts[0] if parts and parts[0] in LANGS else profile.default_locale
-    rest = parts[1:] if parts and parts[0] in LANGS else parts
+    lang = parts[0] if parts and parts[0] in languages else default_lang
+    rest = parts[1:] if parts and parts[0] in languages else parts
 
     curated_route = rest[:1] in (["markets"], ["ideas"], ["learn"])
     if curated_route and not profile.features.curated_screens:
@@ -445,30 +457,99 @@ async def render_path(
             body=f"<h1>{_e(title)}</h1>",
             site=site,
             brand=brand,
-            default_lang=profile.default_locale,
+            default_lang=default_lang,
+            languages=languages,
             noindex=True,
         ), 404
 
     # /{lang}  (home)
     if not rest:
-        return _static_page(lang, "/", market=market, site=site, brand=brand), 200
+        return _static_page(
+            lang,
+            "/",
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        ), 200
     if rest == ["markets"]:
-        return _static_page(lang, "/markets", market=market, site=site, brand=brand), 200
+        return _static_page(
+            lang,
+            "/markets",
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        ), 200
     if rest == ["ideas"]:
-        return _static_page(lang, "/ideas", market=market, site=site, brand=brand), 200
+        return _static_page(
+            lang,
+            "/ideas",
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        ), 200
     if rest == ["about"]:
-        return _static_page(lang, "/about", market=market, site=site, brand=brand), 200
+        return _static_page(
+            lang,
+            "/about",
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        ), 200
     if rest == ["learn", "patterns"]:
-        return _static_page(lang, "/learn/patterns", market=market, site=site, brand=brand), 200
+        return _static_page(
+            lang,
+            "/learn/patterns",
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        ), 200
     if len(rest) == 3 and rest[0] == "learn" and rest[1] == "patterns":
-        page = await _render_pattern_detail(lang, rest[2], market=market, site=site, brand=brand)
+        page = await _render_pattern_detail(
+            lang,
+            rest[2],
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        )
         return (
             (page, 200)
             if page
-            else (_static_page(lang, "/learn/patterns", market=market, site=site, brand=brand), 200)
+            else (
+                _static_page(
+                    lang,
+                    "/learn/patterns",
+                    market=market,
+                    site=site,
+                    brand=brand,
+                    default_lang=default_lang,
+                    languages=languages,
+                ),
+                200,
+            )
         )
     if len(rest) == 2 and rest[0] == "s":
-        page = await _render_stock(session, market, lang, rest[1], site=site, brand=brand)
+        page = await _render_stock(
+            session,
+            market,
+            lang,
+            rest[1],
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        )
         if page:
             return page, 200
         # Unknown ticker → a minimal noindex 404-ish page.
@@ -481,7 +562,8 @@ async def render_path(
             body=f"<h1>{_e(title)}</h1>",
             site=site,
             brand=brand,
-            default_lang=profile.default_locale,
+            default_lang=default_lang,
+            languages=languages,
             noindex=True,
         ), 404
 
@@ -495,6 +577,7 @@ async def render_path(
         body=f"<h1>{_e(title)}</h1>",
         site=site,
         brand=brand,
-        default_lang=profile.default_locale,
+        default_lang=default_lang,
+        languages=languages,
         noindex=True,
     ), 200

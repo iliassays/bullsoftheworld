@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from api.deps import current_locale
 from api.routers.market import market_config
 from bulls.core.tenancy import Tenant
 
@@ -15,6 +16,7 @@ async def test_market_config_preserves_dse_defaults() -> None:
         display_name="Bulls of Dhaka",
         market="DSE",
         locale="bn",
+        supported_locales=["bn", "en"],
         timezone="Asia/Dhaka",
         domains=["localhost", "bullsofdhaka.com"],
         site_url="https://bullsofdhaka.com",
@@ -39,6 +41,7 @@ async def test_market_config_preserves_dse_defaults() -> None:
     assert config.compact_money_units[0]["suffix"] == "cr"
     assert config.market_cap_money_units[0]["suffix"] == " Cr"
     assert config.default_locale == "bn"
+    assert config.supported_locales == ["bn", "en"]
     assert config.features["dse_categories"] is True
     assert config.features["learning_quiz"] is True
     assert config.features["interpreted_analytics"] is True
@@ -56,6 +59,7 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
         display_name="Bulls of Wall Street",
         market="US",
         locale="en",
+        supported_locales=["en"],
         timezone="America/New_York",
         domains=["bullsofwallst.com", "www.bullsofwallst.com", "wallst.localhost"],
         site_url="https://bullsofwallst.com",
@@ -69,6 +73,10 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     config = await market_config(tenant)
 
     assert config.market == "US"
+    assert config.default_locale == "en"
+    assert config.supported_locales == ["en"]
+    assert current_locale(tenant, "bn") == "en"
+    assert current_locale(tenant, "en") == "en"
     assert config.tenant_name == "bullsofwallst"
     assert config.brand_name == "Bulls of Wall Street"
     assert config.site_url == "https://bullsofwallst.com"

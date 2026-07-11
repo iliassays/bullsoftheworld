@@ -24,14 +24,23 @@ async def test_us_seo_uses_english_default_and_enabled_research_surfaces() -> No
         "",
         site="https://bullsofwallst.com",
         brand="Bulls of Wall Street",
+        default_lang="en",
+        supported_locales=("en",),
     )
     assert status == 200
     assert 'hreflang="x-default" href="https://bullsofwallst.com/en"' in home
+    assert 'hreflang="bn"' not in home
     assert '"target": "https://bullsofwallst.com/en/s/{search_term_string}"' in home
     assert "fundamentals" in home
     assert "automated desks" not in home
 
-    markets, markets_status = await render_path(None, "US", "en/markets")
+    markets, markets_status = await render_path(
+        None,
+        "US",
+        "en/markets",
+        default_lang="en",
+        supported_locales=("en",),
+    )
     assert markets_status == 200
     assert "Market screens" in markets
 

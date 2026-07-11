@@ -3,6 +3,7 @@ name = "bullsofwallst"
 display_name = "Bulls of Wall Street"
 market = "US"
 locale = "en"
+supported_locales = ["en"]
 timezone = "America/New_York"
 domains = [
   "bullsofwallst.com",
