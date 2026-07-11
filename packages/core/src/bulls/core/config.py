@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     us_ingestion_queue_name: str = "arq:ingestion:us"
     sec_ingestion_queue_name: str = "arq:ingestion:sec"
     us_eod_min_coverage: float = Field(default=0.90, gt=0, le=1)
+    us_universe_promotion_enabled: bool = False
+    us_market_data_authorization_id: str = ""
     sec_contact_email: str = "hello@bullsofwallst.com"
 
     # LLM-only features are opt-in. Retrieval embeddings remain local and free when this is disabled.

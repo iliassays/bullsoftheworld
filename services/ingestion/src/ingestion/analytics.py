@@ -318,17 +318,24 @@ async def _persist_symbol_analytics(
     return 1, 1
 
 
-async def compute_all(market: str) -> dict[str, int]:
+async def compute_all(
+    market: str,
+    *,
+    codes: list[str] | None = None,
+    include_onboarding: bool = False,
+) -> dict[str, int]:
     """Compute + upsert analytics for every symbol with price history. Returns counts."""
     sm = get_sessionmaker()
     async with sm() as session:
-        codes = list(
+        statuses = ("ready", "onboarding") if include_onboarding else ("ready",)
+        code_rows = list(
             await session.scalars(
                 select(Symbol.code).where(
                     Symbol.market == market,
                     Symbol.is_active.is_(True),
                     Symbol.is_hidden.is_(False),
-                    Symbol.data_status == "ready",
+                    Symbol.data_status.in_(statuses),
+                    Symbol.code.in_(codes) if codes is not None else True,
                     exists().where(
                         DailyBar.market == market,
                         DailyBar.code == Symbol.code,
@@ -357,8 +364,8 @@ async def compute_all(market: str) -> dict[str, int]:
     computed = 0
     patterns_found = 0
     async with sm() as session:
-        for start in range(0, len(codes), _BATCH_SIZE):
-            batch = codes[start : start + _BATCH_SIZE]
+        for start in range(0, len(code_rows), _BATCH_SIZE):
+            batch = code_rows[start : start + _BATCH_SIZE]
             bars_by_code = await _load_bar_batch(session, market, batch)
             for code in batch:
                 done, patterns = await _persist_symbol_analytics(
@@ -436,7 +443,7 @@ async def compute_all(market: str) -> dict[str, int]:
                         )
             await session.commit()
 
-    return {"symbols": len(codes), "computed": computed, "patterns": patterns_found}
+    return {"symbols": len(code_rows), "computed": computed, "patterns": patterns_found}
 
 
 async def _run(market: str) -> None:

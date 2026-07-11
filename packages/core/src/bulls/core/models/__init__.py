@@ -16,6 +16,7 @@ from bulls.core.models.follow import Follow
 from bulls.core.models.knowledge import KnowledgeChunk
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
+from bulls.core.models.onboarding import UniverseOnboardingResult, UniverseOnboardingRun
 from bulls.core.models.page_view_event import PageViewEvent
 from bulls.core.models.portfolio import PortfolioHolding, PortfolioSnapshot
 from bulls.core.models.post import Cashtag, Post, PostReaction
@@ -84,6 +85,8 @@ __all__ = [
     "TickerBuzzDaily",
     "TickerPattern",
     "TrendingScore",
+    "UniverseOnboardingResult",
+    "UniverseOnboardingRun",
     "User",
     "WatchlistItem",
 ]

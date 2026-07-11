@@ -14,7 +14,7 @@ import asyncio
 import datetime as dt
 import sys
 
-from sqlalchemy import exists, update
+from sqlalchemy import exists, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
@@ -104,6 +104,19 @@ async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, 
         await _upsert_product_symbols(session, symbol_rows)
         if records:
             market = records[0].market
+            security_id = (
+                select(SecurityMaster.security_id)
+                .where(
+                    SecurityMaster.market == Symbol.market,
+                    SecurityMaster.symbol == Symbol.code,
+                )
+                .scalar_subquery()
+            )
+            await session.execute(
+                update(Symbol)
+                .where(Symbol.market == market, security_id.isnot(None))
+                .values(security_id=security_id)
+            )
             await session.execute(
                 update(SecurityMaster)
                 .where(SecurityMaster.market == market, SecurityMaster.last_seen_at < fetched_at)

@@ -336,13 +336,17 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
                 Symbol.market == MARKET,
                 Symbol.is_active.is_(True),
                 Symbol.is_hidden.is_(False),
-                Symbol.data_status == "ready",
                 SecurityMaster.cik.isnot(None),
             )
             .order_by(Symbol.code)
         )
         if codes:
-            stmt = stmt.where(Symbol.code.in_(codes))
+            stmt = stmt.where(
+                Symbol.code.in_(codes),
+                Symbol.data_status.in_(("onboarding", "ready")),
+            )
+        else:
+            stmt = stmt.where(Symbol.data_status == "ready")
         rows = (await session.execute(stmt)).all()
         cik_counts = dict(
             (
@@ -407,26 +411,27 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
     if selected and completed == 0:
         raise RuntimeError(f"SEC refresh failed for all {len(selected)} selected symbols")
 
-    sm = get_sessionmaker()
-    async with sm() as session:
-        state = {
-            "market": MARKET,
-            "source": SOURCE,
-            "as_of_date": fetched_at.date(),
-            "last_success_at": fetched_at,
-            "records": filings_total + facts_total,
-            "symbols_covered": completed,
-            "downloaded_bytes": 0,
-            "details": {
-                "symbols_requested": len(selected),
-                "symbols_failed": failed,
-                "filings": filings_total,
-                "facts": facts_total,
-                "retention": "selected facts 8y/24 periods; filing metadata 7y; no raw JSON",
-            },
-        }
-        await _upsert(session, RegulatoryDataState, [state], ("market", "source"))
-        await session.commit()
+    if codes is None:
+        sm = get_sessionmaker()
+        async with sm() as session:
+            state = {
+                "market": MARKET,
+                "source": SOURCE,
+                "as_of_date": fetched_at.date(),
+                "last_success_at": fetched_at,
+                "records": filings_total + facts_total,
+                "symbols_covered": completed,
+                "downloaded_bytes": 0,
+                "details": {
+                    "symbols_requested": len(selected),
+                    "symbols_failed": failed,
+                    "filings": filings_total,
+                    "facts": facts_total,
+                    "retention": "selected facts 8y/24 periods; filing metadata 7y; no raw JSON",
+                },
+            }
+            await _upsert(session, RegulatoryDataState, [state], ("market", "source"))
+            await session.commit()
     if completed:
         settings = get_settings()
         redis = await create_pool(

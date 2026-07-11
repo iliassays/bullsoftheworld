@@ -9,8 +9,9 @@ directly into retail UX.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -25,6 +26,13 @@ class SecurityMaster(Base):
         Index("ix_security_master_cik", "cik"),
     )
 
+    security_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        nullable=False,
+        unique=True,
+        index=True,
+        server_default=func.gen_random_uuid(),
+    )
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     raw_symbol: Mapped[str] = mapped_column(String(32))

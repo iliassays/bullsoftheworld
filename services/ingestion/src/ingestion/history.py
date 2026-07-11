@@ -18,21 +18,18 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
-import json
 import os
-import re
 import sys
 from collections.abc import Iterable
-from dataclasses import dataclass
-from pathlib import Path
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, Symbol
 from bulls.market_data import get_provider
 from bulls.market_data.calendar import to_market_tz
+from ingestion.cohorts import load_cohort
 
 BACKFILL_DAYS = 760  # a bit over 2y; the endpoint caps at ~474 rows anyway
 DAILY_LOOKBACK_DAYS = 10  # re-pull a short window daily to catch late corrections
@@ -45,42 +42,8 @@ MAX_READY_STALENESS_DAYS = 10
 
 BACKFILL_DAYS_BY_MARKET = {"DSE": BACKFILL_DAYS, "US": US_BACKFILL_DAYS}
 DAILY_LOOKBACK_DAYS_BY_MARKET = {"DSE": DAILY_LOOKBACK_DAYS, "US": US_DAILY_LOOKBACK_DAYS}
-_SYMBOL_RE = re.compile(r"^[A-Z0-9.-]{1,16}$")
 
-
-@dataclass(frozen=True)
-class CohortManifest:
-    name: str
-    market: str
-    backfill_years: float
-    symbols: tuple[str, ...]
-
-
-def _load_cohort(path: str | Path, expected_market: str) -> CohortManifest:
-    payload = json.loads(Path(path).read_text())
-    if not isinstance(payload, dict):
-        raise ValueError("cohort manifest must be a JSON object")
-    market = str(payload.get("market", "")).upper()
-    if market != expected_market.upper():
-        raise ValueError(f"cohort market {market!r} does not match {expected_market!r}")
-    raw_symbols = payload.get("symbols")
-    if not isinstance(raw_symbols, list) or not raw_symbols:
-        raise ValueError("cohort symbols must be a non-empty list")
-    symbols = tuple(str(code).strip().upper() for code in raw_symbols)
-    if len(set(symbols)) != len(symbols):
-        raise ValueError("cohort symbols must be unique")
-    invalid = [code for code in symbols if not _SYMBOL_RE.fullmatch(code)]
-    if invalid:
-        raise ValueError(f"invalid cohort symbols: {', '.join(invalid)}")
-    backfill_years = float(payload.get("backfill_years", 10))
-    if not 1 <= backfill_years <= 20:
-        raise ValueError("cohort backfill_years must be between 1 and 20")
-    return CohortManifest(
-        name=str(payload.get("name") or Path(path).stem),
-        market=market,
-        backfill_years=backfill_years,
-        symbols=symbols,
-    )
+_load_cohort = load_cohort
 
 
 async def _upsert_bars(session, bars) -> int:
@@ -113,14 +76,6 @@ async def _collect_symbol(provider, code: str, start: dt.date, end: dt.date) -> 
                             symbol.data_first_date = first
                         if symbol.data_last_date is None or last > symbol.data_last_date:
                             symbol.data_last_date = last
-                        if symbol.data_status != "ready":
-                            total_bars = await session.scalar(
-                                select(func.count())
-                                .select_from(DailyBar)
-                                .where(DailyBar.market == provider.market, DailyBar.code == code)
-                            )
-                            if _is_ready(int(total_bars or 0), last, end):
-                                symbol.data_status = "ready"
                 await session.commit()
             return n
         except Exception as e:

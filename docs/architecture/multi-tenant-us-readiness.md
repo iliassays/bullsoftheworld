@@ -29,9 +29,10 @@ flowchart LR
 ## Enforced invariants
 
 - Every public symbol must be active, not hidden, and `data_status = 'ready'`.
-- US security-master records start as `reference_only`; a selected cohort moves to `onboarding`,
-  then becomes `ready` only with at least 252 bars and a current endpoint. Daily collection
-  processes only ready symbols.
+- US security-master records start as `reference_only`; a selected cohort moves to `onboarding`.
+  No price-ingestion job may promote a symbol. Only an immutable, versioned cohort run can set
+  `ready`, and only after every instrument-aware identity, price, SEC, and analytics gate passes.
+  Daily collection processes only ready symbols.
 - Access and purpose tokens require issuer, audience, tenant, issued-at, and expiry claims. Access
   tokens carry `auth_version`; reset/verification links are bound to the current email, and reset
   tokens are one-time through `auth_version`. Refresh rotation locks its row before replacement.
@@ -48,24 +49,37 @@ flowchart LR
 
 ## US onboarding flow
 
-1. Refresh the authoritative Nasdaq Trader/SEC security master. This does not publish ticker pages.
-2. Select a stable cohort and run a 10-year backfill:
+1. Create or review a versioned cohort manifest. The canonical manifest hash, policy, requested
+   symbols, evidence, and decisions are retained in `universe_onboarding_runs` and
+   `universe_onboarding_results`.
+2. Stage the cohort. This refreshes Nasdaq Trader/SEC identity, performs the requested history
+   backfill, collects targeted EDGAR data, computes analytics, and evaluates all readiness gates:
 
    ```bash
-   uv run python -m ingestion.history US backfill \
-     --cohort tenants/bullsofwallst/cohorts/launch-v1.json
+   uv run python -m ingestion.universe_onboarding \
+     tenants/bullsofwallst/cohorts/liquid-expansion-v1.json
    ```
 
-3. Verify failed symbols, duplicate/share-class mappings, adjusted-close coverage, and history
-   depth. Promoted symbols become searchable only after the readiness threshold is met.
-4. Run analytics for the promoted cohort and perform UI/data reconciliation samples.
-5. Start `ingestion.us_worker.WorkerSettings`. Its EOD chain requires at least 90% same-session bar
+   A staged run never makes symbols public. If interrupted, resume the same auditable run with
+   `--resume <run-uuid>` and the exact same manifest.
+3. Review every failed gate, including stable identity, product eligibility, instrument type,
+   exchange, price depth/span/freshness/quality, required CIK/EDGAR evidence, and analytics.
+   Institutional 13F mapping is recorded as evidence but is non-blocking unless the manifest policy
+   explicitly makes it required.
+4. Promotion is a separate, fail-closed operation. Record the approved redistribution authority in
+   `US_MARKET_DATA_AUTHORIZATION_ID`, deliberately enable `US_UNIVERSE_PROMOTION_ENABLED`, then run
+   the cohort with `--promote`. The authorization identifier is copied into the audit record.
+   Never use these settings to represent an unreviewed provider or terms-of-service assumption.
+5. Perform API, UI, SEO, adjusted-price, split/dividend, and cross-source reconciliation samples.
+6. Start `ingestion.us_worker.WorkerSettings`. Its EOD chain requires at least 90% same-session bar
    coverage before publishing analytics.
-6. Advance to the next cohort. Keep the cohort size within provider rate limits and operational
+7. Advance to the next cohort. Keep the cohort size within provider rate limits and operational
    capacity.
 
-Yahoo is a replaceable, no-key bootstrap adapter, not the production US redistribution contract.
-The provider interface allows a licensed feed to replace it without API or UI changes.
+Yahoo is a replaceable, no-key bootstrap adapter for internal evaluation, not the production US
+redistribution contract. The provider interface allows a licensed feed to replace it without API
+or UI changes. The application refuses cohort promotion until an operator records the external
+authorization and explicitly opens the promotion gate.
 
 ## RAG design
 

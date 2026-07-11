@@ -41,6 +41,32 @@ def test_cohort_manifest_is_validated_and_normalized(tmp_path) -> None:
     assert cohort.name == "launch-v1"
     assert cohort.symbols == ("AAPL", "BRK.B")
     assert cohort.backfill_years == 10
+    assert len(cohort.manifest_sha256) == 64
+    assert cohort.policy.min_bars == 1250
 
     with pytest.raises(ValueError, match="does not match"):
         _load_cohort(path, "DSE")
+
+
+def test_cohort_manifest_hash_is_semantic_and_policy_is_strict(tmp_path) -> None:
+    payload = {
+        "schema_version": 1,
+        "name": "expansion",
+        "version": "2026.1",
+        "market": "US",
+        "symbols": ["AAPL"],
+        "policy": {"min_bars": 1000},
+    }
+    first = tmp_path / "first.json"
+    second = tmp_path / "second.json"
+    first.write_text(json.dumps(payload, indent=2))
+    second.write_text(json.dumps(payload, separators=(",", ":")))
+
+    assert _load_cohort(first, "US").manifest_sha256 == _load_cohort(
+        second, "US"
+    ).manifest_sha256
+
+    payload["policy"] = {"unknown_gate": True}
+    first.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="unknown_gate"):
+        _load_cohort(first, "US")
