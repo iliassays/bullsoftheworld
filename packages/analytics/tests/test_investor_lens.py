@@ -67,6 +67,10 @@ def test_us_lens_uses_us_currency_and_omits_dse_only_checks():
         nearest_support=201.25,
         nearest_resistance=220.5,
         above_sma_50=True,
+        institutional_reported_change_pct=2.4,
+        institutional_report_date="2026-03-31",
+        latest_cash_per_share=1.02,
+        latest_dividend_year=2025,
     )
 
     lenses = _by_key(result)
@@ -75,6 +79,15 @@ def test_us_lens_uses_us_currency_and_omits_dse_only_checks():
     levels = next(check for check in technical.checks if check.label == "Support / resistance")
     assert levels.actual == "$201.25 / $220.50"
     assert all(check.label != "Category" for check in risk.checks)
+    holding_check = next(
+        check for check in lenses["smart_money"].checks if check.label == "13F reported long shares"
+    )
+    assert holding_check.actual == "+2.4% · 2026-03-31"
+    assert holding_check.status == "watch"
+    payout = next(
+        check for check in lenses["dividend_income"].checks if check.label == "Latest payout"
+    )
+    assert payout.actual == "$1.02 per share · 2025"
     assert "$" in next(check for check in risk.checks if check.label == "Liquidity (ADTV)").actual
     assert "DSE" not in result.disclaimer
 

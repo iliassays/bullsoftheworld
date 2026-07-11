@@ -60,7 +60,16 @@ function checkAssessment(lens: InvestorLensItem, bn: boolean) {
   const fail = checks.filter((check) => check.status === "fail").length;
   const missing = checks.filter((check) => check.status === "na").length;
   const assessed = checks.length - missing;
-  const tone = assessed === 0 ? "thin_data" : fail > 0 ? "caution" : pass > 0 ? "supportive" : "mixed";
+  const missingDominates = missing > assessed || missing >= Math.ceil(checks.length / 2);
+  const passRatio = assessed ? pass / assessed : 0;
+  const tone =
+    assessed === 0 || missingDominates
+      ? "thin_data"
+      : fail > 0
+        ? "caution"
+        : pass >= 2 && passRatio >= 0.75
+          ? "supportive"
+          : "mixed";
   const label =
     assessed === 0
       ? bn

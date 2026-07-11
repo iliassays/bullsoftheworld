@@ -20,6 +20,7 @@ from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
     DividendRecord,
+    InstitutionalHoldingSummary,
     SecFiling,
     Symbol,
     TickerAnalytics,
@@ -133,7 +134,20 @@ async def get_investor_lens(
     div_paid_years = sum(1 for dv in divs if (dv.cash_pct or 0) > 0 or (dv.cash_per_share or 0) > 0)
     latest_cash_pct = divs[0].cash_pct if divs else None
     latest_cash_per_share = divs[0].cash_per_share if divs else None
+    latest_dividend_year = divs[0].year if divs else None
     latest_bonus_pct = divs[0].bonus_pct if divs else None
+
+    holding_summary = None
+    if get_market_profile(tenant.market).features.institutional_holdings:
+        holding_summary = await session.scalar(
+            select(InstitutionalHoldingSummary)
+            .where(
+                InstitutionalHoldingSummary.market == tenant.market,
+                InstitutionalHoldingSummary.code == code,
+            )
+            .order_by(InstitutionalHoldingSummary.report_date.desc())
+            .limit(1)
+        )
 
     # Multi-year EPS (oldest -> newest) for the Buffett 5-year earnings trend check.
     fins = list(
@@ -208,6 +222,11 @@ async def get_investor_lens(
         div_total_years=div_total_years,
         latest_cash_pct=latest_cash_pct,
         latest_cash_per_share=latest_cash_per_share,
+        latest_dividend_year=latest_dividend_year,
+        institutional_reported_change_pct=(
+            holding_summary.net_change_pct if holding_summary else None
+        ),
+        institutional_report_date=(str(holding_summary.report_date) if holding_summary else None),
         latest_bonus_pct=latest_bonus_pct,
         eps_history=eps_history,
         next_meeting_date=next_meeting_date,

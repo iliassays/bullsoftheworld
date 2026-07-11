@@ -679,6 +679,9 @@ def _smart_money(
     institute_pct: float | None,
     foreign_pct: float | None,
     cmf_20: float | None,
+    market: str = "DSE",
+    institutional_reported_change_pct: float | None = None,
+    institutional_report_date: str | None = None,
     recent_news_count: int = 0,
     recent_news_label: str | None = None,
     next_meeting_date: str | None = None,
@@ -688,7 +691,11 @@ def _smart_money(
         institute_delta=institute_delta, foreign_delta=foreign_delta, cmf_20=cmf_20
     )
     if bn:
-        summary = "প্রতিষ্ঠান/বিদেশি মালিকানা ও মানি-ফ্লো দেখে বড় অংশগ্রহণকারীদের আচরণ বোঝার চেষ্টা করে।"
+        summary = (
+            "Form 13F-এ প্রকাশিত বিলম্বিত লং হোল্ডিং ও দামের মানি-ফ্লো একসাথে দেখায়।"
+            if market == "US"
+            else "প্রতিষ্ঠান/বিদেশি মালিকানা ও মানি-ফ্লো দেখে বড় অংশগ্রহণকারীদের আচরণ বোঝার চেষ্টা করে।"
+        )
         points = [
             f"Institutions {_fmt_pct(institute_pct)} ({_fmt_pct(institute_delta, ' pp')})",
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
@@ -696,7 +703,11 @@ def _smart_money(
         ]
         watch_next = []
     else:
-        summary = "Checks whether institutional/foreign ownership and money flow support the story."
+        summary = (
+            "Combines delayed Form 13F reported long holdings with price-volume money flow."
+            if market == "US"
+            else "Checks whether institutional/foreign ownership and money flow support the story."
+        )
         points = [
             f"Institutions {_fmt_pct(institute_pct)} ({_fmt_pct(institute_delta, ' pp')})",
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
@@ -704,23 +715,43 @@ def _smart_money(
         ]
         watch_next = []
 
+    ownership_checks = (
+        [
+            LensCheck(
+                label="13F-এ রিপোর্ট করা লং শেয়ার" if bn else "13F reported long shares",
+                actual=(
+                    f"{institutional_reported_change_pct:+.1f}%"
+                    + (f" · {institutional_report_date}" if institutional_report_date else "")
+                )
+                if institutional_reported_change_pct is not None
+                else "—",
+                expected="",
+                # A disclosed increase or reduction is context, not inherently good or bad.
+                status="watch" if institutional_reported_change_pct is not None else "na",
+            )
+        ]
+        if market == "US"
+        else [
+            _chk(
+                "প্রতিষ্ঠান বদল" if bn else "Institutions change",
+                institute_delta,
+                "> 0 pp",
+                good=lambda x: x > 0,
+                weak=lambda x: x < 0,
+                fmt=lambda v: _fmt_pct(v, " pp"),
+            ),
+            _chk(
+                "বিদেশি বদল" if bn else "Foreign change",
+                foreign_delta,
+                "> 0 pp",
+                good=lambda x: x > 0,
+                weak=lambda x: x < 0,
+                fmt=lambda v: _fmt_pct(v, " pp"),
+            ),
+        ]
+    )
     checks = [
-        _chk(
-            "প্রতিষ্ঠান বদল" if bn else "Institutions change",
-            institute_delta,
-            "> 0 pp",
-            good=lambda x: x > 0,
-            weak=lambda x: x < 0,
-            fmt=lambda v: _fmt_pct(v, " pp"),
-        ),
-        _chk(
-            "বিদেশি বদল" if bn else "Foreign change",
-            foreign_delta,
-            "> 0 pp",
-            good=lambda x: x > 0,
-            weak=lambda x: x < 0,
-            fmt=lambda v: _fmt_pct(v, " pp"),
-        ),
+        *ownership_checks,
         _chk(
             "মানি ফ্লো (CMF)" if bn else "Money flow (CMF)",
             cmf_20,
@@ -730,22 +761,36 @@ def _smart_money(
             fmt=lambda v: _fmt_pct(v, ""),
         ),
         _news_check(bn, recent_news_count, recent_news_label),
-        LensCheck(
-            label="পরবর্তী বোর্ড সভা" if bn else "Next board meeting",
-            actual=(
-                f"{next_meeting_date} ({next_meeting_period})"
-                if next_meeting_period
-                else next_meeting_date
-            )
-            if next_meeting_date
-            else ("নির্ধারিত নেই" if bn else "none scheduled"),
-            expected="",
-            status="watch" if next_meeting_date else "na",
+        *(
+            [
+                LensCheck(
+                    label="পরবর্তী বোর্ড সভা" if bn else "Next board meeting",
+                    actual=(
+                        f"{next_meeting_date} ({next_meeting_period})"
+                        if next_meeting_period
+                        else next_meeting_date
+                    )
+                    if next_meeting_date
+                    else ("নির্ধারিত নেই" if bn else "none scheduled"),
+                    expected="",
+                    status="watch" if next_meeting_date else "na",
+                )
+            ]
+            if market == "DSE"
+            else []
         ),
     ]
     return InvestorLens(
         key="smart_money",
-        name="মালিকানা ও প্রবাহ" if bn else "Ownership & Flow",
+        name=(
+            "প্রাতিষ্ঠানিক ফাইলিং ও প্রবাহ"
+            if bn and market == "US"
+            else "Institutional Filings & Flow"
+            if market == "US"
+            else "মালিকানা ও প্রবাহ"
+            if bn
+            else "Ownership & Flow"
+        ),
         persona="Ownership-flow read",
         verdict=_verdict(s),
         score=s,
@@ -766,10 +811,12 @@ def _dividend(
     div_total_years: int = 0,
     latest_cash_pct: float | None = None,
     latest_cash_per_share: float | None = None,
+    latest_dividend_year: int | None = None,
     latest_bonus_pct: float | None = None,
 ) -> InvestorLens:
     s = dividend_score(dividend_yield=dividend_yield, roe=roe, eps_growth_yoy=eps_growth_yoy)
     no_div = (dividend_yield or 0) <= 0
+    payout_year = f" · {latest_dividend_year}" if latest_dividend_year is not None else ""
     if bn:
         summary = "নগদ লভ্যাংশের ইয়িল্ড এবং আয় দিয়ে তা টেকসই কি না — এই লেন্স তা দেখে।"
         points = [
@@ -792,7 +839,7 @@ def _dividend(
             dividend_yield,
             "≥ 4%",
             good=lambda x: x >= 4,
-            weak=lambda x: x <= 0,
+            weak=lambda x: x < 1,
             fmt=_fmt_pct,
         ),
         _chk(
@@ -844,12 +891,13 @@ def _dividend(
                     if latest_bonus_pct
                     else ""
                 )
+                + payout_year
             )
             if latest_cash_pct is not None
             else (
-                f"${latest_cash_per_share:.2f} প্রতি শেয়ার"
+                f"${latest_cash_per_share:.2f} প্রতি শেয়ার{payout_year}"
                 if bn
-                else f"${latest_cash_per_share:.2f} per share"
+                else f"${latest_cash_per_share:.2f} per share{payout_year}"
             )
             if latest_cash_per_share is not None
             else "—",
@@ -891,7 +939,11 @@ def _taleb_risk(
     order_guide = adtv_mn * 0.05 if adtv_mn is not None else None
 
     if bn:
-        summary = "ভুল হলে বের হওয়া কতটা কঠিন হতে পারে — লিকুইডিটি, ভোলাটিলিটি ও ক্যাটাগরি দিয়ে তা পড়ে।"
+        summary = (
+            "ভুল হলে বের হওয়া কতটা কঠিন হতে পারে — লিকুইডিটি ও ভোলাটিলিটি দিয়ে তা পড়ে।"
+            if market == "US"
+            else "ভুল হলে বের হওয়া কতটা কঠিন হতে পারে — লিকুইডিটি, ভোলাটিলিটি ও ক্যাটাগরি দিয়ে তা পড়ে।"
+        )
         points = [
             *([f"ক্যাটাগরি {category or '—'}"] if market == "DSE" else []),
             f"দৈনিক গড় লেনদেন {_fmt_money_mn(adtv_mn, market)} · আনুমানিক ৫% অর্ডার সীমা {_fmt_money_mn(order_guide, market)}",
@@ -899,7 +951,11 @@ def _taleb_risk(
         ]
         watch_next = ["বিড-আস্ক স্প্রেড", "অর্ডার সাইজ", "নিজের stop-loss"]
     else:
-        summary = "Focuses on fragility: exit risk, volatility, category risk, and whether orders can move price."
+        summary = (
+            "Focuses on fragility: exit risk, volatility, and whether orders can move price."
+            if market == "US"
+            else "Focuses on fragility: exit risk, volatility, category risk, and whether orders can move price."
+        )
         points = [
             *([f"Category {category or '—'}"] if market == "DSE" else []),
             f"ADTV {_fmt_money_mn(adtv_mn, market)} · rough 5% order guide {_fmt_money_mn(order_guide, market)}",
@@ -998,6 +1054,9 @@ def build_investor_lens(
     div_total_years: int = 0,
     latest_cash_pct: float | None = None,
     latest_cash_per_share: float | None = None,
+    latest_dividend_year: int | None = None,
+    institutional_reported_change_pct: float | None = None,
+    institutional_report_date: str | None = None,
     latest_bonus_pct: float | None = None,
     eps_history: list[float] | None = None,
     next_meeting_date: str | None = None,
@@ -1037,6 +1096,7 @@ def build_investor_lens(
             div_total_years=div_total_years,
             latest_cash_pct=latest_cash_pct,
             latest_cash_per_share=latest_cash_per_share,
+            latest_dividend_year=latest_dividend_year,
             latest_bonus_pct=latest_bonus_pct,
         ),
         _technical(
@@ -1059,6 +1119,9 @@ def build_investor_lens(
             institute_pct=institute_pct,
             foreign_pct=foreign_pct,
             cmf_20=cmf_20,
+            market=market,
+            institutional_reported_change_pct=institutional_reported_change_pct,
+            institutional_report_date=institutional_report_date,
             recent_news_count=recent_news_count,
             recent_news_label=recent_news_label,
             next_meeting_date=next_meeting_date,
