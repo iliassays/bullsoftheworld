@@ -17,6 +17,7 @@ from sqlalchemy import func, or_, select
 from bulls.analytics import adjust_bars, compute
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.db import get_sessionmaker
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     DailyBar,
     MarketSummary,
@@ -41,6 +42,7 @@ async def run_levels_agent(market: str, *, tenant_id: str) -> dict[str, int]:
     sm = get_sessionmaker()
     handle = agent_identity(tenant_id, BEAT)[0]
     published = 0
+    currency = get_market_profile(market).currency_symbol
 
     async with sm() as session:
         agent_id = (await ensure_agents(session, tenant_id))[BEAT]
@@ -91,7 +93,10 @@ async def run_levels_agent(market: str, *, tenant_id: str) -> dict[str, int]:
                     agent_handle=handle,
                     event_type=sig.event_type,
                     occurrence_key=sig.occurrence_key,
-                    body_i18n={"bn": render(sig, code, "bn"), "en": render(sig, code, "en")},
+                    body_i18n={
+                        "bn": render(sig, code, "bn", currency),
+                        "en": render(sig, code, "en", currency),
+                    },
                     as_of=today.as_of_date,
                 )
                 published += 1

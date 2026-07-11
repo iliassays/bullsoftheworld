@@ -61,27 +61,27 @@ def _g(p: dict, k: str) -> str:
 # event_type -> (EN, BN). Each = a fact + a descriptive "what it means", never advice.
 _TEMPLATES: dict[str, tuple[str, str]] = {
     "new_52w_high": (
-        "{code} closed at a new 52-week high (৳{close}). The highest level in a year — a milestone, "
+        "{code} closed at a new 52-week high ({currency}{close}). The highest level in a year — a milestone, "
         "not a recommendation.",
-        "{code} ৫২-সপ্তাহের নতুন সর্বোচ্চে ক্লোজ করেছে (৳{close})। এক বছরের সর্বোচ্চ — একটি মাইলফলক, "
+        "{code} ৫২-সপ্তাহের নতুন সর্বোচ্চে ক্লোজ করেছে ({currency}{close})। এক বছরের সর্বোচ্চ — একটি মাইলফলক, "
         "কোনো পরামর্শ নয়।",
     ),
     "new_52w_low": (
-        "{code} closed at a new 52-week low (৳{close}). The lowest level in a year — descriptive, "
+        "{code} closed at a new 52-week low ({currency}{close}). The lowest level in a year — descriptive, "
         "not a recommendation.",
-        "{code} ৫২-সপ্তাহের নতুন সর্বনিম্নে ক্লোজ করেছে (৳{close})। এক বছরের সর্বনিম্ন — তথ্যমূলক, "
+        "{code} ৫২-সপ্তাহের নতুন সর্বনিম্নে ক্লোজ করেছে ({currency}{close})। এক বছরের সর্বনিম্ন — তথ্যমূলক, "
         "কোনো পরামর্শ নয়।",
     ),
     "breakout": (
-        "{code} closed above the ৳{level} level it had been capped at — what technicians call a "
+        "{code} closed above the {currency}{level} level it had been capped at — what technicians call a "
         "breakout, on above-average volume. A concept to watch, not a call.",
-        "{code} ৳{level} লেভেলের উপরে ক্লোজ করেছে যেখানে আগে আটকে ছিল — টেকনিশিয়ানরা একে ব্রেকআউট বলে, "
+        "{code} {currency}{level} লেভেলের উপরে ক্লোজ করেছে যেখানে আগে আটকে ছিল — টেকনিশিয়ানরা একে ব্রেকআউট বলে, "
         "গড়ের বেশি ভলিউমে। দেখার মতো ধারণা, কোনো কল নয়।",
     ),
     "breakdown": (
-        "{code} closed below the ৳{level} support it had been holding. Technicians watch a broken "
+        "{code} closed below the {currency}{level} support it had been holding. Technicians watch a broken "
         "support for the next level down. Descriptive, not advice.",
-        "{code} ৳{level} সাপোর্টের নিচে ক্লোজ করেছে যা ধরে রেখেছিল। ভাঙা সাপোর্টের পর পরের নিচের লেভেল "
+        "{code} {currency}{level} সাপোর্টের নিচে ক্লোজ করেছে যা ধরে রেখেছিল। ভাঙা সাপোর্টের পর পরের নিচের লেভেল "
         "দেখা হয়। তথ্যমূলক, পরামর্শ নয়।",
     ),
     "ma200_cross_up": (
@@ -111,8 +111,12 @@ _TEMPLATES: dict[str, tuple[str, str]] = {
 }
 
 
-def render(sig: Signal, code: str, locale: str) -> str:
+def render(sig: Signal, code: str, locale: str, currency: str = "৳") -> str:
     en, bn = _TEMPLATES[sig.event_type]
     tmpl = bn if locale == "bn" else en
-    fields = {"code": code, **{k: _g(sig.payload, k) for k in ("close", "level", "rsi")}}
+    fields = {
+        "code": code,
+        "currency": currency,
+        **{k: _g(sig.payload, k) for k in ("close", "level", "rsi")},
+    }
     return tmpl.format(**fields)

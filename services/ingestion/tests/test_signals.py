@@ -62,6 +62,13 @@ def test_render_is_descriptive_bilingual_no_advice():
         assert "buy" not in txt.lower() and "sell" not in txt.lower()
 
 
+def test_render_uses_market_currency_without_leaking_taka() -> None:
+    sig = detect(_r(nearest_support=100), _r(last_close=95))[0]
+    us = render(sig, "AAPL", "en", "$")
+    assert "$100" in us
+    assert "৳" not in us
+
+
 def _snap(d: dt.date, **kw) -> ShareholdingSnapshot:
     return ShareholdingSnapshot(market="DSE", code="GP", as_of_date=d, **kw)
 
