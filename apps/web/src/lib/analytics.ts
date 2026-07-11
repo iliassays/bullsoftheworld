@@ -21,6 +21,13 @@ function ga(...args: unknown[]) {
   if (typeof window !== "undefined" && typeof window.gtag === "function") window.gtag(...args);
 }
 
+export function trackProductEvent(
+  name: string,
+  params: Record<string, string | number | boolean | null | undefined> = {},
+) {
+  ga("event", name, params);
+}
+
 // /{bn|en}/s/{CODE} → CODE (uppercased); null for any other route.
 function stockCodeFromPath(pathname: string): string | null {
   const m = pathname.match(/^\/(?:bn|en)\/s\/([^/]+)/);

@@ -1,15 +1,18 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceChip, evidenceExplain } from "../components/EvidenceChip";
 import { FreshnessTag } from "../components/FreshnessTag";
 import { Link } from "../lib/nav";
-import { Empty, Pct, Spinner, taka } from "../components/ui";
+import { Empty, Pct, Spinner } from "../components/ui";
 import { api, type ScannerResponse, type Screen, type ScreenItem } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { type Lang, useLang } from "../lib/i18n";
+import { formatCurrencyMillions, formatMoney } from "../lib/market";
+import { trackProductEvent } from "../lib/analytics";
+import { useTenantConfig } from "../lib/tenant";
 import { Watchlist } from "./Watchlist";
 
-type Tab = "today" | "value" | "watchlist";
+type ResearchTab = ScannerResponse["tabs"][number];
 type Picked = { board: Screen; item: ScreenItem };
 
 const BOARD_ICON: Record<string, string> = {
@@ -24,6 +27,13 @@ const BOARD_ICON: Record<string, string> = {
   lens_graham_value: "🧮",
   lens_smart_money: "🏦",
   lens_risk_control: "🛡️",
+  us_relative_strength: "📈",
+  us_unusual_volume: "📊",
+  us_recent_filings: "📄",
+  us_cashflow_quality: "💵",
+  us_financial_risk: "⚠️",
+  institutional_13f_accumulation: "🏛️",
+  institutional_13f_distribution: "🏛️",
 };
 
 const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; label: string }>> = {
@@ -172,6 +182,11 @@ function metricText(board: Screen, item: ScreenItem, lang: Lang): string {
   if (board.value_label === "x sector") return `${item.value.toFixed(2)}x`;
   if (board.value_label === "score") return `${item.value.toFixed(0)}/10`;
   if (board.value_label === "lenses") return `${item.value.toFixed(0)}/5`;
+  if (board.value_label === "FCF margin") return `${item.value.toFixed(1)}%`;
+  if (board.value_label === "days ago") return `${item.value.toFixed(0)}d`;
+  if (board.value_label === "vs market" || board.value_label === "% reported shares")
+    return `${item.value >= 0 ? "+" : ""}${item.value.toFixed(1)}%`;
+  if (board.value_label === "flags") return `${item.value.toFixed(0)} flags`;
   if (board.value_label.includes("%")) return `${item.value.toFixed(0)}%`;
   if (board.value_label === "activity") return lang === "bn" ? "সক্রিয়" : "Active";
   return item.value.toFixed(1);
@@ -282,6 +297,7 @@ function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: strin
 
 function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void }) {
   const { lang } = useLang();
+  const { config } = useTenantConfig();
   const { board, item } = picked;
   const text = boardText(board, lang);
   const checks = checksFor(board, item, lang);
@@ -290,15 +306,19 @@ function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void
 
   // One compact liquidity line: ADTV + the order-size guide (5% of ADTV, from the API).
   const liqParts: string[] = [];
-  if (item.adtv_mn != null) liqParts.push(`ADTV ৳${item.adtv_mn.toFixed(1)}mn`);
+  if (item.adtv_mn != null) liqParts.push(`ADTV ${formatCurrencyMillions(item.adtv_mn)}`);
   if (item.safe_order_mn != null)
     liqParts.push(
       lang === "bn"
-        ? `নিরাপদ অর্ডার ≤ ৳${item.safe_order_mn.toFixed(1)}mn`
-        : `safe order ≤ ৳${item.safe_order_mn.toFixed(1)}mn`,
+        ? `নিরাপদ অর্ডার ≤ ${formatCurrencyMillions(item.safe_order_mn)}`
+        : `safe order ≤ ${formatCurrencyMillions(item.safe_order_mn)}`,
     );
   if (item.turnover_mn != null)
-    liqParts.push(lang === "bn" ? `আজ ৳${item.turnover_mn.toFixed(1)}mn` : `today ৳${item.turnover_mn.toFixed(1)}mn`);
+    liqParts.push(
+      lang === "bn"
+        ? `আজ ${formatCurrencyMillions(item.turnover_mn)}`
+        : `${config.features.intraday_quotes ? "today" : "latest session"} ${formatCurrencyMillions(item.turnover_mn)}`,
+    );
 
   const Row = ({ label, children }: { label: string; children: ReactNode }) => (
     <div className="flex items-baseline justify-between gap-4 border-b border-dashed border-border/70 py-2.5 text-[12.5px] last:border-b-0">
@@ -321,7 +341,7 @@ function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void
               ${item.code} · {lang === "bn" ? "কেন মিলেছে" : "why it matched"}
             </div>
             <div className="text-[11px] text-muted tnum">
-              {item.last_close > 0 ? taka(item.last_close) : ""}
+              {item.last_close > 0 ? formatMoney(item.last_close) : ""}
               {item.change_1d != null && (
                 <>
                   {" "}
@@ -385,7 +405,7 @@ function ScannerRow({ board, item, onPick }: { board: Screen; item: ScreenItem; 
         <div className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-muted">{why}</div>
       </div>
       <div className="shrink-0 text-right tnum">
-        {item.last_close > 0 && <div className="text-[13px] font-semibold">{taka(item.last_close)}</div>}
+        {item.last_close > 0 && <div className="text-[13px] font-semibold">{formatMoney(item.last_close)}</div>}
         <div className="text-xs font-semibold">
           {item.change_1d != null ? <Pct value={item.change_1d} /> : <span className="text-muted">{metricText(board, item, lang)}</span>}
         </div>
@@ -475,7 +495,7 @@ function BoardCard({
   );
 }
 
-function ScannerGuide() {
+function ScannerGuide({ tabs }: { tabs: ResearchTab[] }) {
   const { lang } = useLang();
   const useSteps =
     lang === "bn"
@@ -485,7 +505,7 @@ function ScannerGuide() {
           "তারপর পুরো স্টক পেজে চার্ট, খবর, ফান্ডামেন্টাল, সাপোর্ট/রেজিস্ট্যান্স ও নিজের risk limit মিলিয়ে সিদ্ধান্ত নিন।",
         ]
       : [
-          "Start with the setup: today's activity, turnaround, value, dividend, or Investor Lens.",
+          `Choose a research queue: ${tabs.map((tab) => tab.title).join(", ")}.`,
           "A match is not a buy/sell signal. Tap the row and check why it appeared, risk, ADTV and order guide.",
           "Then open the stock page to review chart, news, fundamentals, levels and your own risk limit.",
         ];
@@ -497,12 +517,7 @@ function ScannerGuide() {
           "Value + Dividend: খাতের তুলনায় valuation, profitability, cash dividend, positive EPS এবং liquidity একসাথে দেখা হয়।",
           "Investor Lens: Multi-Lens Agreement আগে দেখায়, তারপর Quality, Value, Smart Money ও Risk-Controlled আলাদা board দেখায়।",
         ]
-      : [
-          "Turnaround: far below 52-week high, still profitable, reasonable P/E, liquid, and breaking the recent 5-day high.",
-          "Unusual Activity: volume/turnover is high versus the stock's own normal pace; thin/Z-category names are filtered out.",
-          "Value + Dividend: combines sector valuation, profitability, cash dividend, positive EPS and liquidity checks.",
-          "Investor Lens: starts with Multi-Lens Agreement, then shows separate Quality, Value, Smart Money and Risk-Controlled boards.",
-        ];
+      : tabs.map((tab) => `${tab.title}: ${tab.description}`);
   return (
     <section className="rounded-2xl border border-border bg-surface p-4">
       <div className="text-sm font-bold">
@@ -551,10 +566,12 @@ function Boards({
   tab,
   watched,
   onPick,
+  onMeta,
 }: {
-  tab: "today" | "value" | "lens";
+  tab: string;
   watched: boolean;
   onPick: (picked: Picked) => void;
+  onMeta: (data: ScannerResponse) => void;
 }) {
   const { t } = useLang();
   const [data, setData] = useState<ScannerResponse | null>(null);
@@ -563,12 +580,16 @@ function Boards({
     let live = true;
     api
       .scannerRadar(tab, watched, tab === "lens" ? 25 : undefined)
-      .then((d) => live && setData(d))
+      .then((d) => {
+        if (!live) return;
+        setData(d);
+        onMeta(d);
+      })
       .catch(() => live && setData(null));
     return () => {
       live = false;
     };
-  }, [tab, watched]);
+  }, [onMeta, tab, watched]);
 
   if (!data) return <Spinner />;
   if (data.boards.length === 0) {
@@ -593,14 +614,49 @@ function Boards({
 export function Scanner() {
   const { t, lang } = useLang();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("today");
+  const { config } = useTenantConfig();
+  const [tab, setTab] = useState("today");
+  const [researchTabs, setResearchTabs] = useState<ResearchTab[]>([
+    { key: "today", title: "Today", description: "Latest research conditions." },
+  ]);
+  const [strategyPack, setStrategyPack] = useState<string | null>(null);
   const [watched, setWatched] = useState(false);
   const [picked, setPicked] = useState<Picked | null>(null);
 
-  const seg = (id: Tab, label: string) => (
+  const onMeta = useCallback((data: ScannerResponse) => {
+    setResearchTabs(data.tabs);
+    setStrategyPack(data.strategy_pack);
+    setTab((current) =>
+      current === "watchlist" || data.tabs.some((candidate) => candidate.key === current)
+        ? current
+        : data.tab,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (strategyPack) trackProductEvent("view_ideas", { strategy_pack: strategyPack });
+  }, [strategyPack]);
+
+  const onPick = (next: Picked) => {
+    trackProductEvent("open_idea", {
+      strategy_pack: strategyPack ?? "loading",
+      board_key: next.board.key,
+      stock_code: next.item.code,
+    });
+    setPicked(next);
+  };
+
+  const tabTitle = (item: ResearchTab) => {
+    if (item.key === "today") return t("scanner.today");
+    if (item.key === "value") return t("scanner.value");
+    if (item.key === "lens") return t("scanner.lens");
+    return item.title;
+  };
+
+  const seg = (id: string, label: string) => (
     <button
       onClick={() => setTab(id)}
-      className={`flex-1 rounded-full py-1.5 text-sm font-semibold transition ${
+      className={`min-w-fit flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition ${
         tab === id ? "bg-accent text-bg" : "text-muted"
       }`}
     >
@@ -615,7 +671,7 @@ export function Scanner() {
         <p className="mt-0.5 text-xs leading-snug text-muted">
           {lang === "bn"
             ? "আজকের ডেটা থেকে shortlist — পরামর্শ নয়।"
-            : "Shortlists from today's data — not advice."}
+            : `Shortlists from ${config.features.intraday_quotes ? "today's" : "the latest session's"} data — not advice.`}
         </p>
       </div>
 
@@ -625,9 +681,8 @@ export function Scanner() {
         className="sticky z-10 -mx-3 px-3 py-1.5 bg-bg/95 backdrop-blur"
         style={{ top: "var(--app-header-h, 96px)" }}
       >
-        <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
-          {seg("today", t("scanner.today"))}
-          {seg("value", t("scanner.value"))}
+        <div className="flex gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1">
+          {researchTabs.map((item) => seg(item.key, tabTitle(item)))}
           {seg("watchlist", t("scanner.watchlist"))}
         </div>
       </div>
@@ -636,7 +691,7 @@ export function Scanner() {
         <div className="flex flex-col gap-3">
           {user ? (
             <>
-              <Boards tab="today" watched onPick={setPicked} />
+              <Boards tab={researchTabs[0]?.key ?? "today"} watched onPick={onPick} onMeta={onMeta} />
               <details className="rounded-2xl border border-border bg-surface p-3">
                 <summary className="cursor-pointer text-sm font-semibold text-accent">
                   {lang === "bn" ? "ওয়াচলিস্ট দেখুন" : "View watchlist"}
@@ -669,7 +724,7 @@ export function Scanner() {
               </button>
             </div>
           )}
-          <Boards tab={tab} watched={watched && !!user} onPick={setPicked} />
+          <Boards tab={tab} watched={watched && !!user} onPick={onPick} onMeta={onMeta} />
         </>
       )}
 
@@ -679,7 +734,7 @@ export function Scanner() {
           ⓘ {lang === "bn" ? "এই তালিকাগুলো কীভাবে কাজ করে" : "How these lists work"}
         </summary>
         <div className="mt-3">
-          <ScannerGuide />
+          <ScannerGuide tabs={researchTabs} />
         </div>
       </details>
 

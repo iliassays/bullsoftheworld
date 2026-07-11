@@ -1,5 +1,5 @@
 [Unit]
-Description=Run the Bulls of Wall Street SEC health watchdog every 30 minutes
+Description=Run the Bulls of Wall Street data health watchdog every 30 minutes
 
 [Timer]
 OnBootSec=5min

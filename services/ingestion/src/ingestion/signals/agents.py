@@ -11,27 +11,41 @@ from sqlalchemy import select
 from bulls.core.models import User
 from bulls.core.security import hash_password
 
-# beat key -> (handle, display name). Handles follow the StockTwits convention (@BullsOfDhaka<Topic>);
-# migration b3c4d5e6f7a8's successor renamed the seeded rows to match. Display names stay descriptive.
-AGENTS: dict[str, tuple[str, str]] = {
-    "levels": ("BullsOfDhakaLevels", "Price Levels"),
-    "volume": ("BullsOfDhakaVolume", "Unusual Volume"),
-    "foreign": ("BullsOfDhakaForeign", "Foreign Flow"),
-    "institution": ("BullsOfDhakaInstitution", "Institutional Flow"),
-    "sponsor": ("BullsOfDhakaSponsor", "Insider / Sponsor"),
-    "dividend": ("BullsOfDhakaDividend", "Dividend"),
-    "earnings": ("BullsOfDhakaEarnings", "Earnings"),
-    "rating": ("BullsOfDhakaRating", "Credit Rating"),
-    "market": ("BullsOfDhakaMarket", "Market Update"),
+_AGENT_DEFS: dict[str, tuple[str, str]] = {
+    "levels": ("Levels", "Price Levels"),
+    "volume": ("Volume", "Unusual Volume"),
+    "foreign": ("Foreign", "Foreign Flow"),
+    "institution": ("Institution", "Institutional Flow"),
+    "sponsor": ("Sponsor", "Insider / Sponsor"),
+    "dividend": ("Dividend", "Dividend"),
+    "earnings": ("Earnings", "Earnings"),
+    "rating": ("Rating", "Credit Rating"),
+    "market": ("Market", "Market Update"),
     # Factor beats — descriptive notes from the institutional-grade analytics
-    "momentum": ("BullsOfDhakaMomentum", "Momentum"),
-    "strength": ("BullsOfDhakaStrength", "Relative Strength"),
-    "quality": ("BullsOfDhakaQuality", "Quality & Value"),
-    "smartmoney": ("BullsOfDhakaSmartMoney", "Smart Money"),
-    "accumulation": ("BullsOfDhakaAccumulation", "Accumulation"),
-    "circuit": ("BullsOfDhakaCircuit", "Circuit Limit"),
-    "breakout": ("BullsOfDhakaBreakout", "52-Week Breakout"),
+    "momentum": ("Momentum", "Momentum"),
+    "strength": ("Strength", "Relative Strength"),
+    "quality": ("Quality", "Quality & Value"),
+    "smartmoney": ("SmartMoney", "Smart Money"),
+    "accumulation": ("Accumulation", "Accumulation"),
+    "circuit": ("Circuit", "Circuit Limit"),
+    "breakout": ("Breakout", "52-Week Breakout"),
 }
+
+_TENANT_AGENT_BRANDS = {
+    "bullsofdhaka": ("BullsOfDhaka", "bn"),
+    "bullsofwallst": ("BullsOfWallSt", "en"),
+}
+
+
+def agent_identity(tenant_id: str, beat: str) -> tuple[str, str]:
+    prefix, _ = _TENANT_AGENT_BRANDS[tenant_id]
+    suffix, name = _AGENT_DEFS[beat]
+    return f"{prefix}{suffix}", name
+
+
+# DSE compatibility for existing imports and migrations. Runtime code resolves through
+# agent_identity(), so a shared worker can never author Wall Street notes with a Dhaka handle.
+AGENTS = {beat: agent_identity("bullsofdhaka", beat) for beat in _AGENT_DEFS}
 
 # Agents never log in; an unusable hash keeps the account password-locked.
 _LOCKED = hash_password("agent-no-login-" + "x" * 16)
@@ -39,25 +53,27 @@ _LOCKED = hash_password("agent-no-login-" + "x" * 16)
 
 async def ensure_agents(session, tenant_id: str) -> dict[str, int]:
     """Create any missing agent accounts; return {beat: user_id}."""
+    identities = {beat: agent_identity(tenant_id, beat) for beat in _AGENT_DEFS}
     existing = {
         u.handle: u
         for u in await session.scalars(
             select(User).where(
                 User.tenant_id == tenant_id,
-                User.handle.in_([h for h, _ in AGENTS.values()]),
+                User.handle.in_([handle for handle, _ in identities.values()]),
             )
         )
     }
     ids: dict[str, int] = {}
-    for beat, (handle, name) in AGENTS.items():
+    for beat, (handle, name) in identities.items():
         user = existing.get(handle)
         if user is None:
+            _, locale = _TENANT_AGENT_BRANDS[tenant_id]
             user = User(
                 tenant_id=tenant_id,
                 handle=handle,
                 name=name,
                 password_hash=_LOCKED,
-                locale="bn",
+                locale=locale,
                 is_official=True,
             )
             session.add(user)

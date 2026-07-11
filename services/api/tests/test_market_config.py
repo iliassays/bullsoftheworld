@@ -42,6 +42,7 @@ async def test_market_config_preserves_dse_defaults() -> None:
     assert config.market_cap_money_units[0]["suffix"] == " Cr"
     assert config.default_locale == "bn"
     assert config.supported_locales == ["bn", "en"]
+    assert config.price_alert_evaluation == "delayed_quote"
     assert config.features["dse_categories"] is True
     assert config.features["learning_quiz"] is True
     assert config.features["interpreted_analytics"] is True
@@ -96,8 +97,10 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     assert config.features["curated_screens"] is True
     assert config.features["company_fundamentals"] is True
     assert config.features["learning_quiz"] is True
-    assert config.features["strategy_scanner"] is False
+    assert config.features["strategy_scanner"] is True
     assert config.features["interpreted_analytics"] is True
-    assert config.features["price_alerts"] is False
+    assert config.features["price_alerts"] is True
+    assert config.features["automated_desks"] is True
+    assert config.price_alert_evaluation == "session_close"
     assert config.features["intraday_quotes"] is False
     assert config.social_url is None

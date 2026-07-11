@@ -1,10 +1,11 @@
-"""Out-of-band health monitor for Bulls of Wall Street official SEC evidence."""
+"""Out-of-band health monitor for Bulls of Wall Street EOD and SEC evidence."""
 
 from __future__ import annotations
 
 import asyncio
 import datetime as dt
 import logging
+import math
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -15,13 +16,15 @@ from sqlalchemy import func, select
 
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import RegulatoryDataState, Symbol
+from bulls.core.models import DailyBar, RegulatoryDataState, Symbol, TickerAnalytics
+from ingestion.us_worker import most_recent_due_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s sec-watchdog %(levelname)s %(message)s")
 log = logging.getLogger("sec-watchdog")
 
 MARKET = "US"
 WORKER_UNIT = "bullsofwallst-sec-worker"
+EOD_WORKER_UNIT = "bullsofwallst-worker"
 COOLDOWN_SECONDS = 6 * 60 * 60
 COOLDOWN_KEY = "watchdog:bullsofwallst:sec:alerted"
 SEC_MAX_AGE = dt.timedelta(hours=36)
@@ -51,8 +54,10 @@ def _restart_unit(unit: str) -> str:
             text=True,
             timeout=30,
         )
-        return f"restart of {unit} issued" if result.returncode == 0 else (
-            f"restart of {unit} failed (rc={result.returncode})"
+        return (
+            f"restart of {unit} issued"
+            if result.returncode == 0
+            else (f"restart of {unit} failed (rc={result.returncode})")
         )
     except Exception as error:
         return f"restart of {unit} errored: {type(error).__name__}"
@@ -75,9 +80,7 @@ def _state_problems(
         if age > SEC_MAX_AGE:
             problems.append(f"SEC EDGAR refresh is {age.total_seconds() / 3600:.1f} hours old")
         if sec.symbols_covered / ready_symbols < 0.9:
-            problems.append(
-                f"SEC EDGAR covers {sec.symbols_covered}/{ready_symbols} ready symbols"
-            )
+            problems.append(f"SEC EDGAR covers {sec.symbols_covered}/{ready_symbols} ready symbols")
         details = sec.details or {}
         requested = int(details.get("symbols_requested") or 0)
         failed = int(details.get("symbols_failed") or 0)
@@ -94,13 +97,35 @@ def _state_problems(
         details = holdings.details or {}
         history = int(details.get("history_quarters_loaded") or 1)
         if history < TARGET_13F_QUARTERS:
-            problems.append(
-                f"SEC 13F history has {history}/{TARGET_13F_QUARTERS} quarters"
-            )
+            problems.append(f"SEC 13F history has {history}/{TARGET_13F_QUARTERS} quarters")
         if holdings.symbols_covered / ready_symbols < 0.8:
             problems.append(
                 f"SEC 13F maps {holdings.symbols_covered}/{ready_symbols} ready symbols"
             )
+    return problems
+
+
+def _eod_state_problems(
+    due_session: dt.date,
+    ready_symbols: int,
+    latest_bar_date: dt.date | None,
+    covered_symbols: int,
+    analytics_date: dt.date | None,
+    min_coverage: float,
+) -> list[str]:
+    if ready_symbols <= 0:
+        return ["no retail-ready US symbols are configured"]
+    required = math.ceil(ready_symbols * min_coverage)
+    problems = []
+    if latest_bar_date is None or latest_bar_date < due_session:
+        problems.append(f"US EOD bars latest {latest_bar_date}; expected {due_session}")
+    elif covered_symbols < required:
+        problems.append(
+            f"US EOD bars cover {covered_symbols}/{ready_symbols} symbols for {due_session}; "
+            f"required {required}"
+        )
+    if analytics_date is None or analytics_date < due_session:
+        problems.append(f"US analytics latest {analytics_date}; expected {due_session}")
     return problems
 
 
@@ -119,7 +144,9 @@ async def _database_problems(now: dt.datetime) -> list[str]:
     async with sm() as session:
         ready_symbols = int(
             await session.scalar(
-                select(func.count()).select_from(Symbol).where(
+                select(func.count())
+                .select_from(Symbol)
+                .where(
                     Symbol.market == MARKET,
                     Symbol.is_active.is_(True),
                     Symbol.is_hidden.is_(False),
@@ -133,7 +160,41 @@ async def _database_problems(now: dt.datetime) -> list[str]:
                 select(RegulatoryDataState).where(RegulatoryDataState.market == MARKET)
             )
         )
-    return _state_problems(now, ready_symbols, {row.source: row for row in rows})
+        due_session = most_recent_due_session(now)
+        latest_bar_date = await session.scalar(
+            select(func.max(DailyBar.date)).where(DailyBar.market == MARKET)
+        )
+        covered_symbols = int(
+            await session.scalar(
+                select(func.count(func.distinct(DailyBar.code))).where(
+                    DailyBar.market == MARKET,
+                    DailyBar.date == due_session,
+                    DailyBar.code.in_(
+                        select(Symbol.code).where(
+                            Symbol.market == MARKET,
+                            Symbol.is_active.is_(True),
+                            Symbol.is_hidden.is_(False),
+                            Symbol.data_status == "ready",
+                        )
+                    ),
+                )
+            )
+            or 0
+        )
+        analytics_date = await session.scalar(
+            select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == MARKET)
+        )
+    return [
+        *_state_problems(now, ready_symbols, {row.source: row for row in rows}),
+        *_eod_state_problems(
+            due_session,
+            ready_symbols,
+            latest_bar_date,
+            covered_symbols,
+            analytics_date,
+            get_settings().us_eod_min_coverage,
+        ),
+    ]
 
 
 async def _send_alert(problems: list[str], actions: list[str]) -> None:
@@ -149,7 +210,7 @@ async def _send_alert(problems: list[str], actions: list[str]) -> None:
         log.error("ALERT (email not configured): %s", "; ".join(problems))
         return
     lines = [
-        f"Bulls of Wall Street SEC health check failed at {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M UTC}:",
+        f"Bulls of Wall Street data health check failed at {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M UTC}:",
         "",
         *(f"- {problem}" for problem in problems),
     ]
@@ -162,7 +223,7 @@ async def _send_alert(problems: list[str], actions: list[str]) -> None:
             json={
                 "from": settings.email_from,
                 "to": recipients,
-                "subject": "Bulls of Wall Street - SEC health alert",
+                "subject": "Bulls of Wall Street - data health alert",
                 "text": "\n".join(lines),
             },
         )
@@ -178,6 +239,9 @@ async def main() -> int:
     if not _unit_active(WORKER_UNIT):
         problems.append(f"{WORKER_UNIT} is not active")
         actions.append(_restart_unit(WORKER_UNIT))
+    if not _unit_active(EOD_WORKER_UNIT):
+        problems.append(f"{EOD_WORKER_UNIT} is not active")
+        actions.append(_restart_unit(EOD_WORKER_UNIT))
     if not await _api_ready(settings.wallst_api_public_url):
         problems.append(f"API readiness failed ({settings.wallst_api_public_url}/ready)")
     try:
@@ -190,7 +254,7 @@ async def main() -> int:
     try:
         if not problems:
             await redis.delete(COOLDOWN_KEY)
-            log.info("ok - SEC worker, API, history, freshness, and coverage are healthy")
+            log.info("ok - EOD, SEC, API, history, freshness, and coverage are healthy")
             return 0
         should_email = bool(
             await redis.set(

@@ -63,6 +63,7 @@ class MarketProfile:
     settlement_cycle: str = "T+2"
     benchmark_label: str = "Market"
     default_locale: str = "en"
+    price_alert_evaluation: str = "session_close"
     price_decimals: int = 2
     compact_money_units: tuple[MoneyUnit, ...] = field(default_factory=tuple)
     market_cap_money_units: tuple[MoneyUnit, ...] = field(default_factory=tuple)
@@ -139,6 +140,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         settlement_cycle="T+2",
         benchmark_label="DSEX",
         default_locale="bn",
+        price_alert_evaluation="delayed_quote",
         price_decimals=1,
         compact_money_units=(
             MoneyUnit(min_value_mn=10, divisor_mn=10, suffix="cr", decimals=1),
@@ -187,6 +189,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         # as the index level; relative-return comparisons remain valid when both use SPY.
         benchmark_label="SPY (S&P 500 ETF)",
         default_locale="en",
+        price_alert_evaluation="session_close",
         price_decimals=2,
         compact_money_units=(
             MoneyUnit(min_value_mn=1000, divisor_mn=1000, suffix="B", decimals=1),
@@ -198,10 +201,13 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         ),
         features=MarketFeatures(
             curated_screens=True,
+            strategy_scanner=True,
             official_disclosures=True,
             company_fundamentals=True,
+            automated_desks=True,
             learning_quiz=True,
             interpreted_analytics=True,
+            price_alerts=True,
             sec_filings=True,
             institutional_holdings=True,
         ),

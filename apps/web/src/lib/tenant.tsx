@@ -21,6 +21,7 @@ const DSE_FALLBACK: MarketConfig = {
   benchmark_label: "DSEX",
   default_locale: "bn",
   supported_locales: ["bn", "en"],
+  price_alert_evaluation: "delayed_quote",
   price_decimals: 1,
   compact_money_units: [
     { min_value_mn: 10, divisor_mn: 10, suffix: "cr", decimals: 1 },
@@ -76,6 +77,7 @@ const US_FALLBACK: MarketConfig = {
   benchmark_label: "SPY (S&P 500 ETF)",
   default_locale: "en",
   supported_locales: ["en"],
+  price_alert_evaluation: "session_close",
   price_decimals: 2,
   compact_money_units: [
     { min_value_mn: 1000, divisor_mn: 1000, suffix: "B", decimals: 1 },
@@ -113,10 +115,16 @@ function fallbackConfig(): MarketConfig {
 }
 
 function normalizeConfig(config: MarketConfig): MarketConfig {
-  if (config.supported_locales?.length) return config;
+  const priceAlertEvaluation =
+    config.price_alert_evaluation ??
+    (config.features.intraday_quotes ? "delayed_quote" : "session_close");
+  if (config.supported_locales?.length) {
+    return { ...config, price_alert_evaluation: priceAlertEvaluation };
+  }
   return {
     ...config,
     supported_locales: config.market === "DSE" ? ["bn", "en"] : [config.default_locale],
+    price_alert_evaluation: priceAlertEvaluation,
   };
 }
 

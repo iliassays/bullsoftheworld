@@ -4,6 +4,7 @@ import { useNavigate } from "../lib/nav";
 import type { SymbolOut } from "../lib/api";
 import { searchSymbols } from "../lib/symbols";
 import { useTenantConfig } from "../lib/tenant";
+import { trackProductEvent } from "../lib/analytics";
 import { CompanyLogo } from "./CompanyLogo";
 
 export function SearchBar() {
@@ -41,7 +42,13 @@ export function SearchBar() {
     };
   }, [open, raw]);
 
-  const go = (code: string) => {
+  const go = (code: string, rank = 1) => {
+    trackProductEvent("select_search_result", {
+      stock_code: code,
+      market: config.market,
+      result_rank: rank,
+      query_length: raw.length,
+    });
     setQ("");
     setOpen(false);
     navigate(`/s/${code}`);
@@ -59,7 +66,7 @@ export function SearchBar() {
           setOpen(true);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && results[0]) go(results[0].code);
+          if (e.key === "Enter" && results[0]) go(results[0].code, 1);
           if (e.key === "Escape") setOpen(false);
         }}
         placeholder={`🔍 ${t(config.market === "US" ? "search.placeholder.us" : "search.placeholder")}`}
@@ -67,10 +74,10 @@ export function SearchBar() {
       />
       {open && results.length > 0 && (
         <div className="absolute left-0 right-0 mt-1 bg-surface border border-border rounded-xl overflow-hidden z-50 shadow-lg">
-          {results.map((s) => (
+          {results.map((s, index) => (
             <button
               key={s.code}
-              onMouseDown={() => go(s.code)}
+              onMouseDown={() => go(s.code, index + 1)}
               className="w-full text-left px-3 py-2 hover:bg-card flex items-center gap-2"
             >
               <CompanyLogo code={s.code} size={22} />

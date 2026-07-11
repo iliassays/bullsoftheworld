@@ -308,6 +308,14 @@ export interface TodaysWatch {
   items: WatchItem[];
   breadth: Breadth | null;
   session: MarketSession;
+  research?: Array<{
+    board_key: string;
+    board_title: string;
+    code: string;
+    change_1d: number | null;
+    reason: string;
+  }>;
+  personal?: Array<{ kind: string; code: string | null; title: string }>;
 }
 export interface MomHorizons {
   m3: number | null;
@@ -365,6 +373,8 @@ export interface ScannerResponse {
   as_of: string | null;
   quote_as_of: string | null;
   tab: string;
+  strategy_pack: string;
+  tabs: Array<{ key: string; title: string; description: string }>;
   market_regime?: "above_200dma" | "below_200dma" | null;
   boards: Screen[];
 }
@@ -692,6 +702,7 @@ export interface MarketConfig {
   benchmark_label: string;
   default_locale: string;
   supported_locales: string[];
+  price_alert_evaluation: "delayed_quote" | "session_close";
   price_decimals: number;
   compact_money_units: Array<{
     min_value_mn: number;
@@ -912,7 +923,7 @@ export const api = {
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketConfig: () => request<MarketConfig>("/market/config"),
   marketStatus: () => request<MarketStatus>("/market/status"),
-  scannerRadar: (tab: "today" | "value" | "lens", watched: boolean, limit?: number) =>
+  scannerRadar: (tab: string, watched: boolean, limit?: number) =>
     request<ScannerResponse>(
       `/scanner/radar?tab=${tab}${watched ? "&watched=true" : ""}${limit ? `&limit=${limit}` : ""}`,
     ),

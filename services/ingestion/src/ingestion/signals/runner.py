@@ -28,7 +28,7 @@ from bulls.core.models import (
 from bulls.market_data.calendar import to_market_tz
 from ingestion.signals import factors, ownership, volume
 from ingestion.signals import market as market_wrap
-from ingestion.signals.agents import AGENTS, ensure_agents
+from ingestion.signals.agents import agent_identity, ensure_agents
 from ingestion.signals.levels import BEAT, detect, render
 from ingestion.signals.publish import already_fired, publish_note
 
@@ -39,7 +39,7 @@ _OWN_COOLDOWN_DAYS = 20  # ownership discloses monthly — don't refire within a
 
 async def run_levels_agent(market: str, *, tenant_id: str) -> dict[str, int]:
     sm = get_sessionmaker()
-    handle = AGENTS[BEAT][0]
+    handle = agent_identity(tenant_id, BEAT)[0]
     published = 0
 
     async with sm() as session:
@@ -143,7 +143,7 @@ async def run_ownership_agents(market: str, *, tenant_id: str) -> dict[str, int]
                     cooldown_days=_OWN_COOLDOWN_DAYS,
                 ):
                     continue
-                handle = AGENTS[sig.beat][0]
+                handle = agent_identity(tenant_id, sig.beat)[0]
                 await publish_note(
                     session,
                     tenant_id=tenant_id,
@@ -174,7 +174,7 @@ async def run_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
     published = 0
     async with sm() as session:
         agent_id = (await ensure_agents(session, tenant_id))[volume.BEAT]
-        handle = AGENTS[volume.BEAT][0]
+        handle = agent_identity(tenant_id, volume.BEAT)[0]
         rows = (
             await session.execute(
                 select(
@@ -235,6 +235,80 @@ async def run_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
                     "en": volume.render(sig, code, "en"),
                 },
                 as_of=today,
+            )
+            published += 1
+        await session.commit()
+    return {"published": published}
+
+
+async def run_eod_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
+    """Evaluate full-session volume after an EOD snapshot has been published.
+
+    This is deliberately separate from the intraday pace calculation. EOD-only markets compare
+    the completed session with the full 20-session average and never imply live monitoring.
+    """
+    sm = get_sessionmaker()
+    published = 0
+    async with sm() as session:
+        latest_as_of = await session.scalar(
+            select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
+        )
+        if latest_as_of is None:
+            return {"published": 0}
+        day = to_market_tz(latest_as_of, market=market).date()
+        day_key = str(day)
+        agent_id = (await ensure_agents(session, tenant_id))[volume.BEAT]
+        handle = agent_identity(tenant_id, volume.BEAT)[0]
+        rows = (
+            await session.execute(
+                select(
+                    QuoteSnapshot.code,
+                    QuoteSnapshot.volume,
+                    TickerAnalytics.avg_volume_20,
+                    QuoteSnapshot.change_pct,
+                )
+                .join(
+                    TickerAnalytics,
+                    (QuoteSnapshot.market == TickerAnalytics.market)
+                    & (QuoteSnapshot.code == TickerAnalytics.code),
+                )
+                .join(
+                    Symbol,
+                    (QuoteSnapshot.market == Symbol.market) & (QuoteSnapshot.code == Symbol.code),
+                )
+                .where(
+                    QuoteSnapshot.market == market,
+                    QuoteSnapshot.as_of == latest_as_of,
+                    Symbol.is_active.is_(True),
+                    Symbol.is_hidden.is_(False),
+                    Symbol.data_status == "ready",
+                )
+            )
+        ).all()
+        for code, session_volume, average_volume, change_pct in rows:
+            sig = volume.detect(session_volume, average_volume, 1.0, day_key, change_pct)
+            if sig is None or await already_fired(
+                session,
+                market,
+                code,
+                sig.event_type,
+                sig.occurrence_key,
+                tenant_id=tenant_id,
+                today=day,
+                cooldown_days=1,
+            ):
+                continue
+            await publish_note(
+                session,
+                tenant_id=tenant_id,
+                market=market,
+                code=code,
+                agent_id=agent_id,
+                agent_handle=handle,
+                event_type=sig.event_type,
+                occurrence_key=sig.occurrence_key,
+                body_i18n={"en": volume.render(sig, code, "en")},
+                as_of=day,
             )
             published += 1
         await session.commit()
@@ -317,7 +391,7 @@ async def run_factor_agents(market: str, *, tenant_id: str) -> dict[str, int]:
                     market=market,
                     code=ta.code,
                     agent_id=ids[sig.beat],
-                    agent_handle=AGENTS[sig.beat][0],
+                    agent_handle=agent_identity(tenant_id, sig.beat)[0],
                     event_type=sig.event_type,
                     occurrence_key=sig.occurrence_key,
                     body_i18n={
@@ -368,7 +442,7 @@ async def run_market_update(market: str, *, tenant_id: str) -> dict[str, int]:
             market=market,
             code=market_wrap.MARKET_CODE,
             agent_id=agent_id,
-            agent_handle=AGENTS[market_wrap.BEAT][0],
+            agent_handle=agent_identity(tenant_id, market_wrap.BEAT)[0],
             event_type="market_wrap",
             occurrence_key=key,
             body_i18n={

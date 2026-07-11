@@ -1,28 +1,37 @@
-"""Scanner — the "hunt with the data" surface that replaces the passive Watchlist tab.
+"""Tenant-aware Ideas scanner built from registered market strategy packs.
 
-Two retail-facing tabs, assembled from boards:
-- **Today** — Quality Reversal (the research flagship) and Active Today (validated EOD trending).
-- **Value** — Value + Quality and Dividend.
-
-The Scanner is intentionally narrower than the Market page: it keeps setup boards visible even when
-empty, adds verification context, and avoids generic dashboard lists as primary boards. `?watched=true`
-scopes every board to the caller's watchlist. Descriptive, liquidity-gated, freshness-stamped — never
-advice.
+DSE keeps its locally researched reversal/value conditions. US uses an independent EOD pack built
+from SPY-relative returns, full-session volume, SEC filings and facts, and Form 13F. Shared routing
+and response models never imply that one market's thresholds or evidence apply to another.
 """
 
 from __future__ import annotations
+
+import datetime as dt
+from collections import defaultdict
+from dataclasses import dataclass
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from api.deps import CurrentTenant, DbSession, OptionalUser, enforce_market_feature
-from api.routers.screener import ScreenItem, ScreenOut, _enrich
+from api.routers.company import FinancialHealth, _financial_health
+from api.routers.screener import (
+    ScreenItem,
+    ScreenOut,
+    _beating_market,
+    _enrich,
+    _institutional_13f,
+    _unusual_volume,
+)
 from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
 from bulls.core.models import (
     DailyBar,
     MarketSummary,
     QuoteSnapshot,
+    SecFiling,
+    SecFinancialFact,
     Symbol,
     TickerAnalytics,
     TrendingScore,
@@ -59,6 +68,13 @@ _EVIDENCE: dict[str, str] = {
     "lens_graham_value": "framework",
     "lens_smart_money": "framework",
     "lens_risk_control": "framework",
+    "us_relative_strength": "utility",
+    "us_unusual_volume": "utility",
+    "us_recent_filings": "utility",
+    "us_cashflow_quality": "framework",
+    "us_financial_risk": "utility",
+    "institutional_13f_accumulation": "utility",
+    "institutional_13f_distribution": "utility",
 }
 
 # The reversal-family edge is regime-dependent: proven on a *recovering* market, likely a
@@ -133,14 +149,108 @@ def _extension_note(row: TickerAnalytics) -> str | None:
     return None
 
 
+class ScannerTabOut(BaseModel):
+    key: str
+    title: str
+    description: str
+
+
 class ScannerResponse(BaseModel):
     as_of: str | None
     quote_as_of: str | None = None
     tab: str
+    strategy_pack: str
+    tabs: list[ScannerTabOut]
     # DSEX vs its 200-day average ("above_200dma" | "below_200dma"); None when history is too
     # short to say. The frontend shows a louder caution on reversal boards when below.
     market_regime: str | None = None
     boards: list[ScreenOut]
+
+
+@dataclass(frozen=True)
+class ScannerTabSpec:
+    key: str
+    title: str
+    description: str
+    boards: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ScannerPack:
+    key: str
+    tabs: tuple[ScannerTabSpec, ...]
+    home_boards: tuple[str, ...]
+
+    def tab(self, key: str) -> ScannerTabSpec:
+        return next((tab for tab in self.tabs if tab.key == key), self.tabs[0])
+
+
+_SCANNER_PACKS: dict[str, ScannerPack] = {
+    "DSE": ScannerPack(
+        key="dse-research-v1",
+        tabs=(
+            ScannerTabSpec(
+                "today",
+                "Today",
+                "Activity and research-validated DSE reversal conditions.",
+                ("quality_reversal", "oversold_quality", "active_today"),
+            ),
+            ScannerTabSpec(
+                "value",
+                "Value",
+                "Valuation and dividend shortlists with profitability checks.",
+                ("value_quality", "dividend_quality"),
+            ),
+        ),
+        home_boards=("quality_reversal", "active_today", "value_quality"),
+    ),
+    "US": ScannerPack(
+        key="us-eod-research-v1",
+        tabs=(
+            ScannerTabSpec(
+                "today",
+                "Today",
+                "Session-close activity, SPY-relative strength, and recent SEC evidence.",
+                ("us_relative_strength", "us_unusual_volume", "us_recent_filings"),
+            ),
+            ScannerTabSpec(
+                "financials",
+                "Financials",
+                "SEC-reported cash-flow quality and balance-sheet risks.",
+                ("us_cashflow_quality", "us_financial_risk"),
+            ),
+            ScannerTabSpec(
+                "funds",
+                "Funds",
+                "Quarter-end institutional changes reported through Form 13F.",
+                ("institutional_13f_accumulation", "institutional_13f_distribution"),
+            ),
+        ),
+        home_boards=(
+            "us_relative_strength",
+            "us_recent_filings",
+            "institutional_13f_accumulation",
+            "us_financial_risk",
+        ),
+    ),
+}
+
+# Backwards-compatible DSE view used by focused metadata tests and internal documentation.
+_TABS: dict[str, list[str]] = {tab.key: list(tab.boards) for tab in _SCANNER_PACKS["DSE"].tabs}
+_TABS["lens"] = [
+    "lens_agreement",
+    "lens_buffett_quality",
+    "lens_graham_value",
+    "lens_smart_money",
+    "lens_risk_control",
+]
+
+
+def scanner_pack_for(market: str) -> ScannerPack:
+    try:
+        return _SCANNER_PACKS[market.upper()]
+    except KeyError:
+        raise ValueError(f"No scanner strategy pack for market {market!r}") from None
 
 
 async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | None:
@@ -811,20 +921,290 @@ async def _lens_risk_control(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-_TABS: dict[str, list[str]] = {
-    "today": ["quality_reversal", "oversold_quality", "active_today"],
-    "value": ["value_quality", "dividend_quality"],
-    "lens": [
-        "lens_agreement",
-        "lens_buffett_quality",
-        "lens_graham_value",
-        "lens_smart_money",
-        "lens_risk_control",
-    ],
-}
+async def _us_relative_strength(session, market: str, limit: int) -> ScreenOut:
+    board = await _beating_market(session, market, limit=limit)
+    board.key = "us_relative_strength"
+    board.title = "Leading SPY"
+    board.description = (
+        "Stocks outperforming SPY over roughly one month. Relative strength is descriptive, "
+        "not a forecast or an entry signal."
+    )
+    board.evidence = _EVIDENCE[board.key]
+    for item in board.items:
+        item.scanner_label = "SPY-relative strength"
+        item.why = f"Outperformed SPY by {item.value:+.1f} percentage points over about one month."
+        item.risk_note = (
+            "A strong relative trend can reverse or already be crowded. Check valuation, the "
+            "latest filing, and whether volume confirms the move."
+        )
+        item.check_next = ["Latest SEC filing", "Volume quality", "Valuation", "Key levels"]
+    return board
 
 
-def _apply_scanner_context(boards: list[ScreenOut]) -> None:
+async def _us_unusual_volume(session, market: str, limit: int) -> ScreenOut:
+    board = await _unusual_volume(session, market, limit=limit)
+    board.key = "us_unusual_volume"
+    board.title = "Unusual Session Volume"
+    board.description = (
+        "Latest session volume versus each stock's own normal. High activity can reflect buying "
+        "or selling and is not directional by itself."
+    )
+    board.evidence = _EVIDENCE[board.key]
+    for item in board.items:
+        item.scanner_label = "Session-close volume"
+        item.why = f"Latest session volume was {item.value:.1f}x its normal level."
+        item.risk_note = "Unusual volume can be distribution, index rebalancing, or one-off news."
+        item.check_next = ["Price direction", "SEC filing/news", "Sustained volume", "Liquidity"]
+    return board
+
+
+async def _us_recent_filings(session, market: str, limit: int) -> ScreenOut:
+    cutoff = dt.date.today() - dt.timedelta(days=45)
+    rows = (
+        await session.execute(
+            select(SecFiling, TickerAnalytics.last_close)
+            .join(
+                TickerAnalytics,
+                (TickerAnalytics.market == SecFiling.market)
+                & (TickerAnalytics.code == SecFiling.code),
+            )
+            .where(
+                SecFiling.market == market,
+                SecFiling.code.in_(_clean_codes(market)),
+                SecFiling.filing_date >= cutoff,
+                SecFiling.form.in_(("8-K", "10-Q", "10-K", "6-K", "20-F", "DEF 14A")),
+            )
+            .order_by(SecFiling.filing_date.desc(), SecFiling.accepted_at.desc())
+            .limit(500)
+        )
+    ).all()
+    items: list[ScreenItem] = []
+    seen: set[str] = set()
+    today = dt.date.today()
+    for filing, last_close in rows:
+        if filing.code in seen:
+            continue
+        seen.add(filing.code)
+        age = max(0, (today - filing.filing_date).days)
+        description = filing.description or filing.category.replace("_", " ").title()
+        items.append(
+            ScreenItem(
+                code=filing.code,
+                last_close=last_close,
+                value=float(age),
+                note=f"{filing.form} · {filing.filing_date} · {description[:80]}",
+                why=(
+                    f"Filed {filing.form} with the SEC on {filing.filing_date}. {description[:120]}"
+                ),
+                scanner_label="Official SEC filing",
+                risk_note=(
+                    "A filing is official evidence, but its market impact depends on the disclosed "
+                    "facts. Read the filing before interpreting the price move."
+                ),
+                check_next=["Filing details", "Financial change", "Price reaction", "Volume"],
+            )
+        )
+        if len(items) >= limit:
+            break
+    return ScreenOut(
+        key="us_recent_filings",
+        title="Recent Material Filings",
+        description="Newest official SEC filings across the published research universe.",
+        value_label="days ago",
+        group="value",
+        evidence=_EVIDENCE["us_recent_filings"],
+        items=items,
+    )
+
+
+async def _us_financial_health(session, market: str) -> dict[str, FinancialHealth]:
+    cache_key = f"scanner:financial-health:{market}"
+    cached = session.sync_session.info.get(cache_key)
+    if cached is not None:
+        return cached
+    rows = list(
+        await session.scalars(
+            select(SecFinancialFact).where(
+                SecFinancialFact.market == market,
+                SecFinancialFact.code.in_(_clean_codes(market)),
+                SecFinancialFact.metric.in_(
+                    (
+                        "revenue",
+                        "net_income",
+                        "operating_cash_flow",
+                        "capital_expenditure",
+                        "current_assets",
+                        "current_liabilities",
+                        "debt_current",
+                        "debt_noncurrent",
+                        "debt_total",
+                        "equity",
+                    )
+                ),
+            )
+        )
+    )
+    grouped: dict[str, list[SecFinancialFact]] = defaultdict(list)
+    for row in rows:
+        grouped[row.code].append(row)
+    health = {code: _financial_health(facts) for code, facts in grouped.items()}
+    session.sync_session.info[cache_key] = health
+    return health
+
+
+def _cashflow_quality_margin(health: FinancialHealth) -> float | None:
+    if (
+        not health.revenue_ttm_mn
+        or health.free_cash_flow_ttm_mn is None
+        or health.free_cash_flow_ttm_mn <= 0
+        or health.profit_margin_pct is None
+        or health.profit_margin_pct <= 0
+    ):
+        return None
+    return health.free_cash_flow_ttm_mn / health.revenue_ttm_mn * 100
+
+
+def _financial_risk_flags(health: FinancialHealth, sector: str | None) -> list[str]:
+    if sector in {"Financials", "Real Estate"}:
+        return []
+    flags: list[str] = []
+    if health.current_ratio is not None and health.current_ratio < 1:
+        flags.append(f"current ratio {health.current_ratio:.2f}")
+    if health.debt_to_equity is not None and health.debt_to_equity > 1.5:
+        flags.append(f"debt/equity {health.debt_to_equity:.2f}x")
+    if health.free_cash_flow_ttm_mn is not None and health.free_cash_flow_ttm_mn < 0:
+        flags.append(f"negative FCF ${abs(health.free_cash_flow_ttm_mn):,.0f}mn")
+    return flags
+
+
+async def _us_cashflow_quality(session, market: str, limit: int) -> ScreenOut:
+    health = await _us_financial_health(session, market)
+    prices = {
+        row.code: row.last_close
+        for row in await session.scalars(
+            select(TickerAnalytics).where(
+                TickerAnalytics.market == market,
+                TickerAnalytics.code.in_(health),
+            )
+        )
+    }
+    ranked: list[tuple[float, ScreenItem]] = []
+    for code, raw in health.items():
+        free_cash_flow = raw.free_cash_flow_ttm_mn
+        margin = raw.profit_margin_pct
+        fcf_margin = _cashflow_quality_margin(raw)
+        if fcf_margin is None or free_cash_flow is None or margin is None:
+            continue
+        ranked.append(
+            (
+                fcf_margin,
+                ScreenItem(
+                    code=code,
+                    last_close=prices.get(code, 0.0),
+                    value=round(fcf_margin, 2),
+                    note=f"FCF ${free_cash_flow:,.0f}mn · profit margin {margin:.1f}%",
+                    why=(
+                        f"SEC-reported trailing free cash flow is positive with an estimated "
+                        f"{fcf_margin:.1f}% cash-flow margin and {margin:.1f}% profit margin."
+                    ),
+                    scanner_label="Positive free cash flow",
+                    risk_note=(
+                        "Cash flow can be cyclical or affected by working capital. Compare several "
+                        "periods and read the latest filing."
+                    ),
+                    check_next=["Multi-year cash flow", "Capital expenditure", "Debt", "Valuation"],
+                ),
+            )
+        )
+    ranked.sort(key=lambda row: (-row[0], row[1].code))
+    return ScreenOut(
+        key="us_cashflow_quality",
+        title="Cash-Flow Quality",
+        description=(
+            "Positive SEC-reported trailing free cash flow and profit margin, ranked by cash-flow "
+            "margin. A quality framework, not a valuation call."
+        ),
+        value_label="FCF margin",
+        group="value",
+        evidence=_EVIDENCE["us_cashflow_quality"],
+        items=[item for _, item in ranked[:limit]],
+    )
+
+
+async def _us_financial_risk(session, market: str, limit: int) -> ScreenOut:
+    health = await _us_financial_health(session, market)
+    context = {
+        row.code: row
+        for row in await session.scalars(
+            select(Symbol).where(Symbol.market == market, Symbol.code.in_(health))
+        )
+    }
+    prices = {
+        row.code: row.last_close
+        for row in await session.scalars(
+            select(TickerAnalytics).where(
+                TickerAnalytics.market == market,
+                TickerAnalytics.code.in_(health),
+            )
+        )
+    }
+    ranked: list[tuple[int, float, ScreenItem]] = []
+    for code, raw in health.items():
+        sector = (context.get(code).sector if context.get(code) else "") or ""
+        flags = _financial_risk_flags(raw, sector)
+        if not flags:
+            continue
+        severity = max(
+            raw.debt_to_equity or 0.0, 1 / raw.current_ratio if raw.current_ratio else 0.0
+        )
+        ranked.append(
+            (
+                len(flags),
+                severity,
+                ScreenItem(
+                    code=code,
+                    last_close=prices.get(code, 0.0),
+                    value=float(len(flags)),
+                    note=" · ".join(flags),
+                    why="SEC-reported financial checks flagged: " + "; ".join(flags) + ".",
+                    scanner_label="Financial risk check",
+                    risk_note=(
+                        "These are screening flags, not a solvency conclusion. Industry structure, "
+                        "seasonality, and filing context matter."
+                    ),
+                    check_next=[
+                        "Latest 10-Q/10-K",
+                        "Debt maturity",
+                        "Cash-flow trend",
+                        "Industry context",
+                    ],
+                ),
+            )
+        )
+    ranked.sort(key=lambda row: (-row[0], -row[1], row[2].code))
+    return ScreenOut(
+        key="us_financial_risk",
+        title="Financial Risk Checks",
+        description=(
+            "Non-financial companies with one or more SEC-based liquidity, leverage, or cash-flow "
+            "flags. A review queue, not a distress prediction."
+        ),
+        value_label="flags",
+        group="value",
+        evidence=_EVIDENCE["us_financial_risk"],
+        items=[item for _, _, item in ranked[:limit]],
+    )
+
+
+async def _us_13f_accumulation(session, market: str, limit: int) -> ScreenOut:
+    return await _institutional_13f(session, market, accumulation=True, limit=limit)
+
+
+async def _us_13f_distribution(session, market: str, limit: int) -> ScreenOut:
+    return await _institutional_13f(session, market, accumulation=False, limit=limit)
+
+
+def _apply_dse_scanner_context(boards: list[ScreenOut]) -> None:
     for board in boards:
         board.evidence = _EVIDENCE.get(board.key)
         if board.key == "oversold_quality":
@@ -1036,6 +1416,115 @@ def _apply_scanner_context(boards: list[ScreenOut]) -> None:
                 ]
 
 
+def _apply_us_scanner_context(boards: list[ScreenOut]) -> None:
+    for board in boards:
+        board.evidence = _EVIDENCE.get(board.key, board.evidence)
+        if board.key == "institutional_13f_accumulation":
+            board.title = "Reported Institutional Accumulation"
+            board.description = (
+                "Largest quarter-over-quarter increases in aggregate Form 13F reported shares. "
+                "The positions are delayed disclosures, not current trades."
+            )
+        elif board.key == "institutional_13f_distribution":
+            board.title = "Reported Institutional Distribution"
+            board.description = (
+                "Largest quarter-over-quarter reductions in aggregate Form 13F reported shares. "
+                "A reduction does not reveal the actual sale date or motive."
+            )
+        else:
+            continue
+        for item in board.items:
+            direction = "increased" if item.value > 0 else "reduced"
+            item.scanner_label = "Quarter-end 13F change"
+            item.why = (
+                f"Aggregate reported institutional shares {direction} {abs(item.value):.1f}% "
+                f"quarter over quarter. {item.note or ''}"
+            ).strip()
+            item.risk_note = (
+                "Form 13F can arrive up to 45 days after quarter-end and excludes short positions, "
+                "trade dates, execution prices, and manager intent."
+            )
+            item.check_next = [
+                "Filing date",
+                "Manager breadth",
+                "Price since disclosure",
+                "Latest filing",
+            ]
+
+
+_BOARD_BUILDERS = {
+    "quality_reversal": _quality_reversal,
+    "oversold_quality": _oversold_quality,
+    "active_today": _trending_board,
+    "value_quality": _value_quality,
+    "dividend_quality": _dividend_quality,
+    "lens_agreement": _lens_agreement,
+    "lens_buffett_quality": _lens_buffett_quality,
+    "lens_graham_value": _lens_graham_value,
+    "lens_smart_money": _lens_smart_money,
+    "lens_risk_control": _lens_risk_control,
+    "us_relative_strength": _us_relative_strength,
+    "us_unusual_volume": _us_unusual_volume,
+    "us_recent_filings": _us_recent_filings,
+    "us_cashflow_quality": _us_cashflow_quality,
+    "us_financial_risk": _us_financial_risk,
+    "institutional_13f_accumulation": _us_13f_accumulation,
+    "institutional_13f_distribution": _us_13f_distribution,
+}
+
+_CONTEXT_APPLIERS = {
+    "dse-research-v1": _apply_dse_scanner_context,
+    "us-eod-research-v1": _apply_us_scanner_context,
+}
+
+
+async def _build_scanner_boards(
+    session, market: str, tab: ScannerTabSpec, limit: int
+) -> list[ScreenOut]:
+    boards = [await _BOARD_BUILDERS[key](session, market, limit) for key in tab.boards]
+    await _enrich(session, market, boards)
+    pack = scanner_pack_for(market)
+    _CONTEXT_APPLIERS[pack.key](boards)
+    return boards
+
+
+class ScannerHighlight(BaseModel):
+    board_key: str
+    board_title: str
+    code: str
+    change_1d: float | None = None
+    reason: str
+
+
+async def daily_scanner_highlights(
+    session, market: str, *, limit: int = 4
+) -> list[ScannerHighlight]:
+    """Top non-empty rows from the market pack's explicit home research priorities."""
+    pack = scanner_pack_for(market)
+    boards = [
+        await _BOARD_BUILDERS[key](session, market, max(1, limit)) for key in pack.home_boards
+    ]
+    await _enrich(session, market, boards)
+    _CONTEXT_APPLIERS[pack.key](boards)
+    highlights: list[ScannerHighlight] = []
+    for board in boards:
+        if not board.items:
+            continue
+        item = board.items[0]
+        highlights.append(
+            ScannerHighlight(
+                board_key=board.key,
+                board_title=board.title,
+                code=item.code,
+                change_1d=item.change_1d,
+                reason=item.why or board.description,
+            )
+        )
+        if len(highlights) >= limit:
+            break
+    return highlights
+
+
 @router.get("/scanner/radar")
 async def radar(
     tenant: CurrentTenant,
@@ -1047,35 +1536,9 @@ async def radar(
 ) -> ScannerResponse:
     enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
-    keys = _TABS.get(tab, _TABS["today"])
-
-    boards: list[ScreenOut] = []
-    for key in keys:
-        if key == "quality_reversal":
-            b = await _quality_reversal(session, market, limit)
-        elif key == "oversold_quality":
-            b = await _oversold_quality(session, market, limit)
-        elif key == "active_today":
-            b = await _trending_board(session, market, limit)
-        elif key == "value_quality":
-            b = await _value_quality(session, market, limit)
-        elif key == "dividend_quality":
-            b = await _dividend_quality(session, market, limit)
-        elif key == "lens_agreement":
-            b = await _lens_agreement(session, market, limit)
-        elif key == "lens_buffett_quality":
-            b = await _lens_buffett_quality(session, market, limit)
-        elif key == "lens_graham_value":
-            b = await _lens_graham_value(session, market, limit)
-        elif key == "lens_smart_money":
-            b = await _lens_smart_money(session, market, limit)
-        elif key == "lens_risk_control":
-            b = await _lens_risk_control(session, market, limit)
-        else:
-            continue
-        boards.append(b)
-
-    await _enrich(session, market, boards)
+    pack = scanner_pack_for(market)
+    selected_tab = pack.tab(tab)
+    boards = await _build_scanner_boards(session, market, selected_tab, limit)
 
     if watched and viewer is not None:
         watched_codes = set(
@@ -1088,7 +1551,6 @@ async def radar(
         for b in boards:
             b.items = [i for i in b.items if i.code in watched_codes]
 
-    _apply_scanner_context(boards)
     if watched:
         boards = [b for b in boards if b.items]
 
@@ -1106,7 +1568,12 @@ async def radar(
     return ScannerResponse(
         as_of=str(as_of) if as_of else None,
         quote_as_of=quote_ts.isoformat() if quote_ts else None,
-        tab=tab,
+        tab=selected_tab.key,
+        strategy_pack=pack.key,
+        tabs=[
+            ScannerTabOut(key=item.key, title=item.title, description=item.description)
+            for item in pack.tabs
+        ],
         market_regime=regime,
         boards=boards,
     )

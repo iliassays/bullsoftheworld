@@ -13,6 +13,7 @@ import {
   type SymbolDetail,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { trackProductEvent } from "../lib/analytics";
 import { useLang } from "../lib/i18n";
 import { useTenantConfig } from "../lib/tenant";
 import { formatCurrencyMillions } from "../lib/market";
@@ -186,6 +187,10 @@ export function SymbolPage() {
   const toggleWatch = async () => {
     if (watched) await api.watchRemove(sym);
     else await api.watchAdd(sym);
+    trackProductEvent(watched ? "remove_watchlist" : "add_watchlist", {
+      stock_code: sym,
+      market: config.market,
+    });
     setWatched(!watched);
     setBuzz((b) =>
       b ? { ...b, watchers: b.watchers + (watched ? -1 : 1) } : b,

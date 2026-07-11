@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from ingestion.alerts import (
     NOTE_ALERT_TITLES,
+    institutional_alert_text,
     note_alert_kind,
     note_alert_title,
+    sec_filing_alert_text,
     should_trigger,
 )
+from ingestion.signals.agents import agent_identity
 from ingestion.signals.levels import _TEMPLATES as LEVELS_TEMPLATES
 from ingestion.signals.ownership import _TEMPLATES as OWNERSHIP_TEMPLATES
 
@@ -78,3 +81,21 @@ def test_should_trigger_above_and_below() -> None:
     assert should_trigger("below", 50.0, 49.0)
     assert should_trigger("below", 50.0, 50.0)
     assert not should_trigger("below", 50.0, 51.0)
+
+
+def test_official_evidence_alerts_state_the_disclosure_limits() -> None:
+    filing_title, filing_body = sec_filing_alert_text(
+        "AAPL", "10-Q", "2026-07-10", "Quarterly report"
+    )
+    assert filing_title == {"en": "$AAPL filed 10-Q with the SEC"}
+    assert "official filing" in filing_body["en"]
+
+    holding_title, holding_body = institutional_alert_text("AAPL", "2026-03-31", -12.5, 143)
+    assert holding_title == {"en": "$AAPL institutional holdings update"}
+    assert "reduced 12.5%" in holding_body["en"]
+    assert "does not reveal trade dates" in holding_body["en"]
+
+
+def test_agent_identity_is_tenant_branded() -> None:
+    assert agent_identity("bullsofdhaka", "levels")[0] == "BullsOfDhakaLevels"
+    assert agent_identity("bullsofwallst", "levels")[0] == "BullsOfWallStLevels"

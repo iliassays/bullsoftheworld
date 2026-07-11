@@ -41,9 +41,12 @@ from bulls.market_data.providers.sec_edgar import (
     parse_submissions,
     years_ago,
 )
+from ingestion.alerts import fan_out_evidence_alert, sec_filing_alert_text
 
 MARKET = "US"
 SOURCE = "sec_edgar"
+TENANT_ID = "bullsofwallst"
+_ALERT_FORMS = frozenset({"8-K", "10-Q", "10-K", "6-K", "20-F", "DEF 14A"})
 
 
 def _sector_from_sic(sic: str | None, fallback: str | None) -> str | None:
@@ -323,6 +326,45 @@ async def _persist_company(
     return filing_count, fact_count
 
 
+async def _existing_filing_ids(code: str) -> set[str]:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        return set(
+            await session.scalars(
+                select(SecFiling.accession_number).where(
+                    SecFiling.market == MARKET, SecFiling.code == code
+                )
+            )
+        )
+
+
+async def _publish_filing_alerts(code: str, filings: list) -> int:
+    sm = get_sessionmaker()
+    delivered = 0
+    async with sm() as session:
+        for filing in filings:
+            if filing.form not in _ALERT_FORMS:
+                continue
+            title, body = sec_filing_alert_text(
+                code,
+                filing.form,
+                filing.filing_date,
+                filing.description,
+            )
+            delivered += await fan_out_evidence_alert(
+                session,
+                tenant_id=TENANT_ID,
+                market=MARKET,
+                code=code,
+                source_key=f"sec:{code}:{filing.accession_number}",
+                kind="filing",
+                title_i18n=title,
+                body_i18n=body,
+            )
+        await session.commit()
+    return delivered
+
+
 async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, int, str, bool]]:
     sm = get_sessionmaker()
     async with sm() as session:
@@ -383,8 +425,10 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
     failed = 0
     indexed_codes: list[str] = []
     filing_sources: set[tuple[str, str]] = set()
+    alerts_delivered = 0
     for index, (code, cik, instrument_type, per_share_compatible) in enumerate(selected, start=1):
         try:
+            existing_filings = await _existing_filing_ids(code) if codes is None else set()
             submissions, company_facts = await client.fetch_company(cik)
             issuer, filings = parse_submissions(code, submissions, fetched_at=fetched_at)
             facts = parse_company_facts(code, cik, company_facts, today=fetched_at.date())
@@ -402,6 +446,11 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
             completed += 1
             indexed_codes.append(code)
             filing_sources.update((code, row.accession_number) for row in filings)
+            if codes is None:
+                alerts_delivered += await _publish_filing_alerts(
+                    code,
+                    [row for row in filings if row.accession_number not in existing_filings],
+                )
         except Exception as error:
             failed += 1
             print(f"  ! {code}: SEC refresh failed ({error})")
@@ -462,6 +511,7 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
         "failed": failed,
         "filings": filings_total,
         "facts": facts_total,
+        "alerts_delivered": alerts_delivered,
     }
 
 

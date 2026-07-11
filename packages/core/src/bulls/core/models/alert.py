@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Float, ForeignKey, Index, String, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, Float, ForeignKey, Index, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -28,12 +28,23 @@ class AlertEvent(Base):
     title_i18n: Mapped[dict] = mapped_column(JSON)
     body_i18n: Mapped[dict | None] = mapped_column(JSON, default=None)
     ref_post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), default=None)
+    source_key: Mapped[str | None] = mapped_column(String(160), default=None)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    __table_args__ = (Index("ix_alert_events_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_alert_events_user_created", "user_id", "created_at"),
+        Index(
+            "uq_alert_events_user_source",
+            "tenant_id",
+            "user_id",
+            "source_key",
+            unique=True,
+            postgresql_where=text("source_key IS NOT NULL"),
+        ),
+    )
 
 
 class PriceAlert(Base):

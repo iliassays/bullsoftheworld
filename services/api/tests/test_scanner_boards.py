@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from api.routers.scanner import _EVIDENCE, _REGIME_SENSITIVE, _TABS, regime_from
+from api.routers.company import FinancialHealth
+from api.routers.scanner import (
+    _EVIDENCE,
+    _REGIME_SENSITIVE,
+    _TABS,
+    _cashflow_quality_margin,
+    _financial_risk_flags,
+    regime_from,
+    scanner_pack_for,
+)
 
 
 def test_every_tab_board_carries_an_evidence_label() -> None:
@@ -40,3 +49,58 @@ def test_regime_from() -> None:
 def test_oversold_board_is_on_today_tab_after_the_flagship() -> None:
     today = _TABS["today"]
     assert today.index("quality_reversal") < today.index("oversold_quality")
+
+
+def test_us_pack_is_eod_and_does_not_reuse_dse_reversal_claims() -> None:
+    pack = scanner_pack_for("US")
+    assert pack.key == "us-eod-research-v1"
+    keys = {key for tab in pack.tabs for key in tab.boards}
+    assert {
+        "us_relative_strength",
+        "us_unusual_volume",
+        "us_recent_filings",
+        "us_cashflow_quality",
+        "us_financial_risk",
+        "institutional_13f_accumulation",
+        "institutional_13f_distribution",
+    } == keys
+    assert keys.isdisjoint({"quality_reversal", "oversold_quality", "active_today"})
+    assert pack.home_boards == (
+        "us_relative_strength",
+        "us_recent_filings",
+        "institutional_13f_accumulation",
+        "us_financial_risk",
+    )
+
+
+def test_cashflow_quality_requires_positive_cash_and_profit_margins() -> None:
+    strong = FinancialHealth(
+        revenue_ttm_mn=1_000,
+        free_cash_flow_ttm_mn=120,
+        profit_margin_pct=15,
+    )
+    assert _cashflow_quality_margin(strong) == 12
+    assert (
+        _cashflow_quality_margin(
+            FinancialHealth(
+                revenue_ttm_mn=1_000,
+                free_cash_flow_ttm_mn=-20,
+                profit_margin_pct=15,
+            )
+        )
+        is None
+    )
+
+
+def test_financial_risk_flags_are_explicit_and_exclude_financial_sectors() -> None:
+    health = FinancialHealth(
+        current_ratio=0.8,
+        debt_to_equity=2.1,
+        free_cash_flow_ttm_mn=-50,
+    )
+    assert _financial_risk_flags(health, "Industrials") == [
+        "current ratio 0.80",
+        "debt/equity 2.10x",
+        "negative FCF $50mn",
+    ]
+    assert _financial_risk_flags(health, "Financials") == []

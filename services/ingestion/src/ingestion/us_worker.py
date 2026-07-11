@@ -23,18 +23,20 @@ from sqlalchemy import func, select
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
 from bulls.core.markets import US_VERIFIED_CALENDAR_YEARS
-from bulls.core.models import DailyBar, Symbol
+from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.market_data.calendar import (
     is_trading_day,
     market_close_on,
     market_timezone,
     to_market_tz,
 )
+from ingestion.alerts import check_price_alerts
 from ingestion.analytics import compute_all
 from ingestion.buzz import snapshot_all
 from ingestion.history import US_DAILY_LOOKBACK_DAYS, collect
 from ingestion.portfolio_snapshot import run as snapshot_portfolios
 from ingestion.security_master import collect as refresh_security_master
+from ingestion.signals.runner import run_eod_volume_agent, run_levels_agent
 from ingestion.us_eod_snapshot import collect as publish_us_eod
 
 log = logging.getLogger(__name__)
@@ -103,6 +105,23 @@ async def _coverage(session_date: dt.date) -> tuple[int, int]:
     return ready, covered
 
 
+async def _evaluate_eod_price_alerts() -> int:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        prices = dict(
+            (
+                await session.execute(
+                    select(QuoteSnapshot.code, QuoteSnapshot.ltp).where(
+                        QuoteSnapshot.market == MARKET
+                    )
+                )
+            ).all()
+        )
+        fired = await check_price_alerts(session, MARKET, prices)
+        await session.commit()
+    return fired
+
+
 async def run_us_eod_chain(ctx) -> str:
     session_date = most_recent_due_session(dt.datetime.now(dt.UTC))
     if session_date.year not in US_VERIFIED_CALENDAR_YEARS:
@@ -130,6 +149,9 @@ async def run_us_eod_chain(ctx) -> str:
 
     eod_snapshot = await publish_us_eod()
     analytics = await compute_all(MARKET)
+    levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
+    volume = await run_eod_volume_agent(MARKET, tenant_id=TENANT_ID)
+    price_alerts = await _evaluate_eod_price_alerts()
     portfolios = await snapshot_portfolios(MARKET)
     buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
     if redis is not None:
@@ -145,7 +167,8 @@ async def run_us_eod_chain(ctx) -> str:
     return (
         f"session={session_date} coverage={covered}/{ready} bars={bars['bars_upserted']} "
         f"eod_snapshot={eod_snapshot} analytics={analytics['computed']} "
-        f"portfolios={portfolios} buzz={buzz}"
+        f"levels={levels['published']} volume={volume['published']} "
+        f"price_alerts={price_alerts} portfolios={portfolios} buzz={buzz}"
     )
 
 

@@ -32,6 +32,7 @@ def test_dse_profile_preserves_current_product_defaults() -> None:
     assert dse.features.shareholding_breakdown
     assert dse.features.interpreted_analytics
     assert dse.features.price_alerts
+    assert dse.price_alert_evaluation == "delayed_quote"
     assert format_price(123.4, "DSE") == "৳123.4"
     assert format_money_millions(5, "DSE") == "৳50L"
     assert format_money_millions(12.5, "DSE") == "৳1.2cr"
@@ -59,9 +60,11 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert us.features.curated_screens
     assert us.features.company_fundamentals
     assert us.features.learning_quiz
-    assert not us.features.strategy_scanner
+    assert us.features.strategy_scanner
     assert us.features.interpreted_analytics
-    assert not us.features.price_alerts
+    assert us.features.price_alerts
+    assert us.features.automated_desks
+    assert us.price_alert_evaluation == "session_close"
     assert format_price(123.4, "US") == "$123.40"
     assert format_money_millions(500, "US") == "$500.0M"
     assert format_money_millions(1250, "US") == "$1.2B"

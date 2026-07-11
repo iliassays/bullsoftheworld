@@ -1,5 +1,5 @@
 [Unit]
-Description=Bulls of Wall Street SEC health watchdog
+Description=Bulls of Wall Street EOD and SEC health watchdog
 After=network-online.target
 Wants=network-online.target
 

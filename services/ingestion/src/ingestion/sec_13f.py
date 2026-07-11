@@ -41,9 +41,11 @@ from bulls.market_data.providers.sec_13f import (
     discover_dataset_urls,
     parse_13f_archive,
 )
+from ingestion.alerts import fan_out_evidence_alert, institutional_alert_text
 
 MARKET = "US"
 SOURCE = "sec_13f"
+TENANT_ID = "bullsofwallst"
 MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 RETENTION_QUARTERS = 8
 UPSERT_BATCH_ROWS = 1000
@@ -105,8 +107,7 @@ async def _dataset_urls(*, retries: int = HTTP_RETRIES) -> list[str]:
 
 def _retryable_http_error(error: httpx.HTTPError) -> bool:
     return isinstance(error, httpx.TransportError) or (
-        isinstance(error, httpx.HTTPStatusError)
-        and error.response.status_code in RETRYABLE_STATUS
+        isinstance(error, httpx.HTTPStatusError) and error.response.status_code in RETRYABLE_STATUS
     )
 
 
@@ -395,14 +396,14 @@ async def _persist_state(
     sm = get_sessionmaker()
     async with sm() as session:
         positions = await session.scalar(
-            select(func.count()).select_from(InstitutionalPosition).where(
-                InstitutionalPosition.market == MARKET
-            )
+            select(func.count())
+            .select_from(InstitutionalPosition)
+            .where(InstitutionalPosition.market == MARKET)
         )
         summaries = await session.scalar(
-            select(func.count()).select_from(InstitutionalHoldingSummary).where(
-                InstitutionalHoldingSummary.market == MARKET
-            )
+            select(func.count())
+            .select_from(InstitutionalHoldingSummary)
+            .where(InstitutionalHoldingSummary.market == MARKET)
         )
         periods = await session.scalar(
             select(func.count(distinct(InstitutionalHoldingSummary.report_date))).where(
@@ -445,9 +446,7 @@ async def _persist_state(
     }
 
 
-def _is_refresh_current(
-    details: dict | None, candidate_url: str, requested_quarters: int
-) -> bool:
+def _is_refresh_current(details: dict | None, candidate_url: str, requested_quarters: int) -> bool:
     details = details or {}
     return bool(
         details.get("current_archive_url") == candidate_url
@@ -460,8 +459,7 @@ async def _already_current(candidate_url: str, requested_quarters: int) -> bool:
     async with sm() as session:
         state = await session.get(RegulatoryDataState, (MARKET, SOURCE))
         current = bool(
-            state
-            and _is_refresh_current(state.details, candidate_url, requested_quarters)
+            state and _is_refresh_current(state.details, candidate_url, requested_quarters)
         )
         if current and state is not None:
             checked_at = dt.datetime.now(dt.UTC)
@@ -565,8 +563,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
 
         if completed < history_quarters or newest is None or baseline is None:
             raise RuntimeError(
-                f"SEC page provided {completed} comparable quarters; "
-                f"{history_quarters} requested"
+                f"SEC page provided {completed} comparable quarters; {history_quarters} requested"
             )
 
         stats = await _persist_state(
@@ -577,6 +574,29 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
             new_matches=new_matches,
             unmatched_cusips=unmatched_cusips,
         )
+        alerts_delivered = 0
+        sm = get_sessionmaker()
+        async with sm() as session:
+            for summary in summaries_to_index:
+                if summary.report_date != newest.report_date:
+                    continue
+                title, body = institutional_alert_text(
+                    summary.code,
+                    summary.report_date,
+                    summary.net_change_pct,
+                    summary.managers_count,
+                )
+                alerts_delivered += await fan_out_evidence_alert(
+                    session,
+                    tenant_id=TENANT_ID,
+                    market=MARKET,
+                    code=summary.code,
+                    source_key=f"sec13f:{summary.code}:{summary.report_date}",
+                    kind="ownership",
+                    title_i18n=title,
+                    body_i18n=body,
+                )
+            await session.commit()
         settings = get_settings()
         redis = await create_pool(
             RedisSettings.from_dsn(settings.redis_url),
@@ -601,6 +621,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
         "current_report": int(newest.report_date.strftime("%Y%m%d")),
         "baseline_report": int(baseline.report_date.strftime("%Y%m%d")),
         "downloaded_bytes": downloaded_bytes,
+        "alerts_delivered": alerts_delivered,
     }
 
 

@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import Announcement, SignalEvent
-from ingestion.signals.agents import AGENTS, ensure_agents
+from ingestion.signals.agents import agent_identity, ensure_agents
 from ingestion.signals.publish import publish_note
 
 # announcement category -> agent beat
@@ -135,7 +135,7 @@ async def run_news_agents(market: str, *, tenant_id: str) -> dict[str, int]:
                 market=market,
                 code=a.code,
                 agent_id=ids[beat],
-                agent_handle=AGENTS[beat][0],
+                agent_handle=agent_identity(tenant_id, beat)[0],
                 event_type=event_type,
                 occurrence_key=a.key,
                 body_i18n={

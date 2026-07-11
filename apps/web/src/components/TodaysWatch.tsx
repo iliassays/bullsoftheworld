@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "../lib/nav";
 import { api, type Breadth, type MarketSession, type TodaysWatch as TodaysWatchT } from "../lib/api";
+import { trackProductEvent } from "../lib/analytics";
 import { useLang } from "../lib/i18n";
 import { useTenantConfig } from "../lib/tenant";
 
@@ -45,7 +46,7 @@ function BreadthBar({ b }: { b: Breadth }) {
 
 // AI daily brief — session-aware heading + market breadth + clickable movers/chatter chips.
 export function TodaysWatch() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [data, setData] = useState<TodaysWatchT | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -83,6 +84,66 @@ export function TodaysWatch() {
       {data.breadth && data.breadth.total > 0 && <BreadthBar b={data.breadth} />}
       {data.summary && (
         <p className="text-[15px] leading-relaxed mt-3 text-text/90">{data.summary}</p>
+      )}
+      {!!data.personal?.length && (
+        <div className="mt-3 border-t border-border/60 pt-2.5">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+            {lang === "bn" ? "আপনার তালিকায় পরিবর্তন" : "Your watchlist changed"}
+          </div>
+          <div className="mt-1 flex flex-col">
+            {data.personal.map((item, index) => (
+              <Link
+                key={`${item.kind}:${item.code ?? "market"}:${index}`}
+                to={item.code ? `/s/${item.code}` : "/alerts"}
+                onClick={() =>
+                  trackProductEvent("open_home_alert", {
+                    alert_kind: item.kind,
+                    stock_code: item.code,
+                  })
+                }
+                className="flex items-center gap-2 border-t border-border/40 py-2 text-xs first:border-t-0"
+              >
+                <span aria-hidden>{item.kind === "filing" ? "📄" : item.kind === "ownership" ? "🏛️" : "🔔"}</span>
+                <span className="min-w-0 flex-1 line-clamp-2">{item.title}</span>
+                <span className="text-accent">→</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+      {!!data.research?.length && (
+        <div className="mt-3 border-t border-border/60 pt-2.5">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+              {lang === "bn" ? "এরপর গবেষণা করুন" : "Research next"}
+            </div>
+            <Link to="/ideas" className="text-[10px] font-semibold text-accent">
+              {lang === "bn" ? "সব আইডিয়া" : "All ideas"} →
+            </Link>
+          </div>
+          <div className="mt-1 flex flex-col">
+            {data.research.slice(0, 3).map((item) => (
+              <Link
+                key={`${item.board_key}:${item.code}`}
+                to={`/s/${item.code}`}
+                onClick={() =>
+                  trackProductEvent("open_home_research", {
+                    board_key: item.board_key,
+                    stock_code: item.code,
+                  })
+                }
+                className="flex items-center gap-2.5 border-t border-border/40 py-2 first:border-t-0"
+              >
+                <span className="text-xs font-extrabold">${item.code}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[10px] font-semibold text-accent">{item.board_title}</span>
+                  <span className="block truncate text-[11px] text-muted">{item.reason}</span>
+                </span>
+                <span className="text-accent">→</span>
+              </Link>
+            ))}
+          </div>
+        </div>
       )}
       {data.items.length > 0 && (
         <div className="flex gap-1.5 flex-wrap mt-3">

@@ -3,6 +3,7 @@ import { useSeo } from "../components/Seo";
 import { Link } from "../lib/nav";
 import { api, type AlertItem } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { trackProductEvent } from "../lib/analytics";
 import { useLang } from "../lib/i18n";
 import { marketUiFromConfig } from "../lib/market";
 import { useTenantConfig } from "../lib/tenant";
@@ -15,6 +16,7 @@ const KIND_ICON: Record<string, string> = {
   signal: "📈",
   ownership: "🏛️",
   earnings: "🗓️",
+  filing: "📄",
 };
 
 export function Alerts() {
@@ -64,6 +66,12 @@ export function Alerts() {
         <Link
           key={a.id}
           to={a.code ? `/s/${a.code}` : "/"}
+          onClick={() =>
+            trackProductEvent("open_alert", {
+              alert_kind: a.kind,
+              stock_code: a.code,
+            })
+          }
           className={`block bg-surface border rounded-2xl p-3.5 transition hover:border-accent ${
             a.read ? "border-border" : "border-accent/50 bg-accent/5"
           }`}

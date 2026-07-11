@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type ResearchBrief } from "../lib/api";
+import { trackProductEvent } from "../lib/analytics";
 import { useLang } from "../lib/i18n";
 import { useTenantConfig } from "../lib/tenant";
 import { Spinner } from "./ui";
@@ -103,6 +104,11 @@ export function ResearchCard({ code }: { code: string }) {
   }, [code]);
 
   const load = (q = question) => {
+    trackProductEvent("ask_stock_research", {
+      stock_code: code,
+      question: q,
+      market: config.market,
+    });
     setQuestion(q);
     setLoading(true);
     setFailed(false);

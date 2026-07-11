@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, type PriceAlert as PriceAlertT } from "../lib/api";
 import { useLang } from "../lib/i18n";
-import { taka } from "./ui";
+import { trackProductEvent } from "../lib/analytics";
+import { formatMoney } from "../lib/market";
+import { useTenantConfig } from "../lib/tenant";
 
 // Per-stock price alerts: a small sheet. Create "above/below ৳X" lines; the intraday poll
 // triggers them into the Alerts inbox. Descriptive by design — a level you chose.
@@ -17,7 +19,8 @@ export function PriceAlertSheet({
   // until the next full page reload after adding/removing an alert here.
   onChange?: () => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const [existing, setExisting] = useState<PriceAlertT[]>([]);
   const [level, setLevel] = useState("");
   const [direction, setDirection] = useState<"above" | "below">("above");
@@ -34,6 +37,11 @@ export function PriceAlertSheet({
     const v = Number(level);
     if (!Number.isFinite(v) || v <= 0) return;
     await api.priceAlertCreate({ code, level: v, direction }).catch(() => {});
+    trackProductEvent("create_price_alert", {
+      stock_code: code,
+      direction,
+      evaluation: config.price_alert_evaluation,
+    });
     setLevel("");
     load();
     onChange?.();
@@ -46,13 +54,26 @@ export function PriceAlertSheet({
           ✕
         </button>
       </div>
+      <p className="text-[11px] leading-snug text-muted">
+        {config.price_alert_evaluation === "session_close"
+          ? "Checked after each completed market session, not intraday."
+          : lang === "bn"
+            ? "সর্বশেষ বিলম্বিত দামের বিপরীতে যাচাই করা হয়।"
+            : "Checked against the latest delayed quote."}
+      </p>
       {existing.map((a) => (
         <div key={a.id} className="flex items-center gap-2 text-sm tnum">
           <span>{a.direction === "above" ? "▲" : "▼"}</span>
-          <span>{taka(a.level)}</span>
+          <span>{formatMoney(a.level)}</span>
           {a.triggered_at && <span className="text-[10px] text-muted">{t("pa.triggered")}</span>}
           <button
-            onClick={() => api.priceAlertDelete(a.id).then(load).then(() => onChange?.())}
+            onClick={() =>
+              api
+                .priceAlertDelete(a.id)
+                .then(() => trackProductEvent("remove_price_alert", { stock_code: code }))
+                .then(load)
+                .then(() => onChange?.())
+            }
             className="ml-auto text-muted text-xs hover:text-down"
           >
             {t("pa.remove")}
@@ -75,7 +96,7 @@ export function PriceAlertSheet({
         <input
           value={level}
           onChange={(e) => setLevel(e.target.value)}
-          placeholder="৳"
+          placeholder={config.currency_symbol}
           inputMode="decimal"
           className="bg-bg border border-border rounded-xl px-3 py-2 text-sm flex-1 tnum min-w-0"
         />

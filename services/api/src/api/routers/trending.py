@@ -12,15 +12,17 @@ from zoneinfo import ZoneInfo
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 
-from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
+from api.deps import CurrentLocale, CurrentTenant, DbSession, OptionalUser, enforce_market_feature
 from api.i18n import language_for
-from api.routers.screener import build_screen, sectors
+from api.routers.scanner import ScannerHighlight, daily_scanner_highlights
+from api.routers.screener import sectors
 from bulls.ai.tasks.watch import Breadth, WatchItem, todays_watch
 from bulls.core.config import get_settings
-from bulls.core.models import Cashtag, MarketSummary, Post, QuoteSnapshot
+from bulls.core.markets import format_money_millions
+from bulls.core.models import AlertEvent, Cashtag, MarketSummary, Post, QuoteSnapshot
 from bulls.market_data.calendar import Session, session_phase
 
 router = APIRouter(tags=["trending"])
@@ -35,11 +37,19 @@ class WatchContent(BaseModel):
     summary: str
     items: list[WatchItem]
     breadth: Breadth | None = None
+    research: list[ScannerHighlight] = Field(default_factory=list)
+
+
+class WatchAlert(BaseModel):
+    kind: str
+    code: str | None
+    title: str
 
 
 class WatchResponse(WatchContent):
     # session is time-of-day (tenant timezone), attached fresh on every request, not cached
     session: Session
+    personal: list[WatchAlert] = Field(default_factory=list)
 
 
 async def _breadth(session, market: str) -> Breadth:
@@ -99,18 +109,13 @@ async def trending(
     days: int = Query(2, ge=1, le=30),
     limit: int = Query(10, ge=1, le=50),
 ) -> list[WatchItem]:
-    return await _trending(
-        session, tenant.market, tenant_id=tenant.name, days=days, limit=limit
-    )
+    return await _trending(session, tenant.market, tenant_id=tenant.name, days=days, limit=limit)
 
 
 async def _watch_items(session, market: str, *, tenant_id: str) -> list[WatchItem]:
     """Merge trending chatter with the biggest price movers."""
     items = {
-        it.code: it
-        for it in await _trending(
-            session, market, tenant_id=tenant_id, days=2, limit=6
-        )
+        it.code: it for it in await _trending(session, market, tenant_id=tenant_id, days=2, limit=6)
     }
     movers = await session.scalars(
         select(QuoteSnapshot)
@@ -126,7 +131,11 @@ async def _watch_items(session, market: str, *, tenant_id: str) -> list[WatchIte
     return list(items.values())[:8]
 
 
-async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
+async def _watch_extras(
+    tenant: CurrentTenant,
+    session: DbSession,
+    highlights: list[ScannerHighlight],
+) -> list[str]:
     """Extra grounded facts for the watch note — turnover vs average, sector leaders, factor
     standouts. Best-effort: any part that fails is simply omitted (never breaks the note)."""
     market = tenant.market
@@ -146,7 +155,8 @@ async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
             avg = sum(vals) / len(vals)
             if avg:
                 lines.append(
-                    f"Turnover: Tk {vals[0] / 10:.0f} cr, {vals[0] / avg:.1f}x the 20-day average."
+                    f"Turnover: {format_money_millions(vals[0], market)}, "
+                    f"{vals[0] / avg:.1f}x the 20-day average."
                 )
     except Exception:
         log.warning("watch extras: turnover failed", exc_info=True)
@@ -163,41 +173,60 @@ async def _watch_extras(tenant: CurrentTenant, session: DbSession) -> list[str]:
     except Exception:
         log.warning("watch extras: sectors failed", exc_info=True)
 
-    # Factor standouts — the smart-money story beyond raw % moves.
-    specs = [
-        (
-            "institutional_buying",
-            lambda it: (
-                f"{it.code}: institutions raised their ownership stake by {it.value:g} percentage "
-                f"points (an ownership change at the last disclosure — NOT a price move)"
-            ),
-        ),
-        ("quiet_accumulation", lambda it: f"Quiet accumulation (money in, price flat): {it.code}"),
-        ("momentum_12_1", lambda it: f"Strongest 12-month trend: {it.code} ({it.value:+.0f}%)"),
-    ]
-    facts: list[str] = []
-    for key, fmt in specs:
-        try:
-            scr = await build_screen(session, market, key, 1, tenant_id=tenant.name)
-            if scr and scr.items:
-                facts.append(fmt(scr.items[0]))
-        except Exception:
-            log.warning("watch extras: %s failed", key, exc_info=True)
-    if facts:
-        lines.append("Standouts:")
-        lines.extend(f"- {f}" for f in facts)
+    if highlights:
+        lines.append("Research queues:")
+        lines.extend(f"- {item.board_title}: {item.code}. {item.reason}" for item in highlights)
     return lines
+
+
+def _pick_alert_text(values: dict | None, locale: str) -> str:
+    if not values:
+        return ""
+    return values.get(locale) or values.get("en") or next(iter(values.values()), "")
+
+
+async def _personal_watch_alerts(
+    session: DbSession,
+    tenant: CurrentTenant,
+    viewer,
+    locale: str,
+) -> list[WatchAlert]:
+    if viewer is None:
+        return []
+    rows = (
+        await session.scalars(
+            select(AlertEvent)
+            .where(
+                AlertEvent.tenant_id == tenant.name,
+                AlertEvent.market == tenant.market,
+                AlertEvent.user_id == viewer.id,
+            )
+            .order_by(AlertEvent.created_at.desc(), AlertEvent.id.desc())
+            .limit(3)
+        )
+    ).all()
+    return [
+        WatchAlert(
+            kind=row.kind,
+            code=row.code,
+            title=_pick_alert_text(row.title_i18n, locale),
+        )
+        for row in rows
+    ]
 
 
 @router.get("/todays-watch")
 async def todays_watch_endpoint(
-    tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
+    tenant: CurrentTenant,
+    session: DbSession,
+    locale: CurrentLocale,
+    viewer: OptionalUser,
 ) -> WatchResponse:
     enforce_market_feature(tenant, "curated_screens")
     now = dt.datetime.now(dt.UTC)
     phase = session_phase(now, ZoneInfo(tenant.timezone), market=tenant.market)
     local_date = now.astimezone(ZoneInfo(tenant.timezone)).date()
-    cache_key = f"watch:v4:{tenant.name}:{tenant.market}:{locale}:{local_date}"
+    cache_key = f"watch:v5:{tenant.name}:{tenant.market}:{locale}:{local_date}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)
@@ -206,12 +235,19 @@ async def todays_watch_endpoint(
         else:
             items = await _watch_items(session, tenant.market, tenant_id=tenant.name)
             breadth = await _breadth(session, tenant.market)
-            extras = await _watch_extras(tenant, session)
+            research = await daily_scanner_highlights(session, tenant.market)
+            extras = await _watch_extras(tenant, session, research)
             summary = await todays_watch(
                 items, breadth=breadth, extras=extras, language=language_for(locale)
             )
-            content = WatchContent(summary=summary, items=items, breadth=breadth)
+            content = WatchContent(
+                summary=summary,
+                items=items,
+                breadth=breadth,
+                research=research,
+            )
             await redis.set(cache_key, content.model_dump_json(), ex=WATCH_TTL)
-        return WatchResponse(**content.model_dump(), session=phase)
+        personal = await _personal_watch_alerts(session, tenant, viewer, locale)
+        return WatchResponse(**content.model_dump(), session=phase, personal=personal)
     finally:
         await redis.aclose()

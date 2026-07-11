@@ -13,6 +13,7 @@ inbox stays drift-safe and no-advice by construction.
 from __future__ import annotations
 
 from sqlalchemy import func, select, union
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.markets import get_market_profile
 from bulls.core.models import AlertEvent, PortfolioHolding, PriceAlert, User, WatchlistItem
@@ -135,9 +136,7 @@ def should_trigger(direction: str, level: float, ltp: float) -> bool:
     return ltp >= level if direction == "above" else ltp <= level
 
 
-async def _interested_user_ids(
-    session, tenant_id: str, market: str, code: str
-) -> list[int]:
+async def _interested_user_ids(session, tenant_id: str, market: str, code: str) -> list[int]:
     """Watchers plus holders — the audience for a stock's data events."""
     watchers = (
         select(WatchlistItem.user_id)
@@ -188,6 +187,81 @@ async def fan_out_note_alert(
             )
         )
     return len(user_ids)
+
+
+async def fan_out_evidence_alert(
+    session,
+    *,
+    tenant_id: str,
+    market: str,
+    code: str,
+    source_key: str,
+    kind: str,
+    title_i18n: dict[str, str],
+    body_i18n: dict[str, str] | None,
+) -> int:
+    """Deliver one idempotent alert per watcher/holder for external official evidence."""
+    user_ids = await _interested_user_ids(session, tenant_id, market, code)
+    if not user_ids:
+        return 0
+    rows = [
+        {
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "market": market,
+            "code": code,
+            "kind": kind,
+            "title_i18n": title_i18n,
+            "body_i18n": body_i18n,
+            "source_key": source_key,
+        }
+        for user_id in user_ids
+    ]
+    stmt = pg_insert(AlertEvent).values(rows)
+    result = await session.execute(
+        stmt.on_conflict_do_nothing(
+            index_elements=["tenant_id", "user_id", "source_key"],
+            index_where=AlertEvent.source_key.isnot(None),
+        )
+    )
+    return max(0, int(result.rowcount or 0))
+
+
+def sec_filing_alert_text(
+    code: str, form: str, filing_date: object, description: str | None
+) -> tuple[dict[str, str], dict[str, str]]:
+    detail = (description or "Official filing published").strip()
+    return (
+        {"en": f"${code} filed {form} with the SEC"},
+        {
+            "en": (
+                f"Published {filing_date}. {detail[:180]} Review the official filing before "
+                "interpreting any price move."
+            )
+        },
+    )
+
+
+def institutional_alert_text(
+    code: str,
+    report_date: object,
+    net_change_pct: float | None,
+    managers_count: int,
+) -> tuple[dict[str, str], dict[str, str]]:
+    direction = "increased" if (net_change_pct or 0) >= 0 else "reduced"
+    change = (
+        f"{abs(net_change_pct):.1f}%" if net_change_pct is not None else "an unavailable amount"
+    )
+    return (
+        {"en": f"${code} institutional holdings update"},
+        {
+            "en": (
+                f"Aggregate Form 13F reported shares {direction} {change} for the quarter ended "
+                f"{report_date}, across {managers_count} reporting managers. 13F is delayed and "
+                "does not reveal trade dates, prices, shorts, or intent."
+            )
+        },
+    )
 
 
 def _price_cross_texts(

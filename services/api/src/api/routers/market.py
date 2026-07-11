@@ -87,6 +87,7 @@ class MarketConfigOut(BaseModel):
     benchmark_label: str
     default_locale: str
     supported_locales: list[str]
+    price_alert_evaluation: str
     price_decimals: int
     compact_money_units: list[dict[str, float | int | str]]
     market_cap_money_units: list[dict[str, float | int | str]]
@@ -123,6 +124,7 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         benchmark_label=profile.benchmark_label,
         default_locale=tenant.locale,
         supported_locales=tenant.supported_locales,
+        price_alert_evaluation=profile.price_alert_evaluation,
         price_decimals=profile.price_decimals,
         compact_money_units=[asdict(unit) for unit in profile.compact_money_units],
         market_cap_money_units=[asdict(unit) for unit in profile.market_cap_money_units],
