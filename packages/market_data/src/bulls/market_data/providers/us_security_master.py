@@ -105,6 +105,7 @@ def classify_instrument(
         for token in (
             "american depositary",
             "american depository",
+            "new york registry share",
             " adr",
             " ads",
         )

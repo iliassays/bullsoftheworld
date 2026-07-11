@@ -16,6 +16,7 @@ from bulls.market_data.providers.us_security_master import (
 NASDAQ_LISTED = """Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
 AAPL|Apple Inc. - Common Stock|Q|N|N|40|N|N
 GOOG|Alphabet Inc. - Class C Capital Stock|Q|N|N|100|N|N
+ASML|ASML Holding N.V. - New York Registry Shares|Q|N|N|100|N|N
 AAPU|Direxion Daily AAPL Bull 2X ETF|G|N|N|100|Y|N
 AACIW|Armada Acquisition Corp. III - Warrant|G|N|N|100|N|N
 BADF|Deficient Issuer - Common Stock|S|N|D|100|N|N
@@ -49,6 +50,9 @@ def test_parse_nasdaq_listed_classifies_and_filters_product_universe() -> None:
 
     assert records["GOOG"].instrument_type == "common_stock"
     assert records["GOOG"].is_product_eligible
+
+    assert records["ASML"].instrument_type == "adr"
+    assert records["ASML"].is_product_eligible
 
     assert records["AACIW"].instrument_type == "warrant"
     assert not records["AACIW"].is_product_eligible
