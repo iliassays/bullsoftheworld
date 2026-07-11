@@ -11,8 +11,8 @@ const EVIDENCE_TEXT: Record<string, Record<Lang, string>> = {
 
 const EVIDENCE_EXPLAIN: Record<string, Record<Lang, string>> = {
   backtested: {
-    en: "We tested this pattern against 2 years of real DSE price history and it showed a genuine edge there. Past results never guarantee the future.",
-    bn: "এই প্যাটার্নটি আমরা DSE-র ২ বছরের আসল দামের ইতিহাসে পরীক্ষা করেছি — সেখানে সত্যিকারের এজ দেখা গেছে। অতীতের ফল কখনোই ভবিষ্যতের নিশ্চয়তা নয়।",
+    en: "This showed a historical result in two years of DSE data covering one observed market regime. It has not been independently validated or proven in live trading.",
+    bn: "DSE-র দুই বছরের একটি পর্যবেক্ষিত বাজার-পর্বে এটি ঐতিহাসিক ফল দেখিয়েছে। স্বাধীনভাবে যাচাই বা লাইভ ট্রেডিংয়ে প্রমাণ করা হয়নি।",
   },
   framework: {
     en: "A classic, widely-used method (e.g. Buffett/Graham-style value investing, or textbook chart-pattern reading). Sensible thinking — but we have not separately proven it on DSE data.",

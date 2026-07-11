@@ -31,7 +31,7 @@ export const SCREEN_HELP: Record<string, string> = {
   top_losers:
     "Biggest price moves down over the chosen period. e.g. -7.2% means the price is 7.2% lower than where it started.",
   near_support:
-    "Price sitting just above a support level — a floor buyers have defended before. 'Near' = within 3% above it. e.g. $GP 2% above ৳280 support.",
+    "Price sitting just above a support level — a floor buyers have defended before. 'Near' = within 3% above it.",
   near_resistance:
     "Price approaching a resistance level — a ceiling sellers have defended before. 'Near' = within 3% below it.",
   oversold:
@@ -53,7 +53,7 @@ export const SCREEN_HELP: Record<string, string> = {
   near_52w_high: "Within 5% of its highest price over the past 52 weeks (one year).",
   near_52w_low: "Within 5% of its lowest price over the past 52 weeks (one year).",
   dividend_yield:
-    "Last year's cash dividend as a % of today's price. e.g. ৳1 cash on a ৳20 price = 5%. Bonus (stock) dividends aren't counted, and price-collapse 'traps' above 15% are hidden.",
+    "A recent cash dividend as a percentage of today's price. Stock dividends are excluded, stale payouts are not treated as current yield, and extreme price-collapse yields are filtered.",
   value_vs_sector:
     "P/E compared with the sector's median. Below 1.0× = cheaper than typical peers. e.g. 0.7× means a 30% lower P/E than the sector median.",
   eps_growth: "Earnings per share vs the prior year. e.g. +20% YoY = earnings grew 20%.",
@@ -72,13 +72,13 @@ export const SCREEN_HELP: Record<string, string> = {
   sponsor_selling:
     "Sponsors/directors — the company's own insiders — reduced their stake since the prior disclosure. pp = percentage points of the company they let go. Insiders selling their own company is a disclosed fact worth reading into (why? to whom?), and a streak across disclosures matters more than one print. Not a sell signal by itself.",
   most_active:
-    "Most heavily traded by money value today (price × volume), shown in crore (1 Cr = ৳10 million). The classic 'top turnover' board — where the day's action is, including the cheap, busy names.",
+    "Most heavily traded by money value today (price × volume). This shows where the day's activity is, not whether that activity is informed buying or selling.",
   beating_market:
-    "Stocks rising more than the whole market (the DSEX index) over the past month. 'Relative strength' — going up while, or faster than, the market is the institutional tell for genuine strength. The value is how many % it beat the index by.",
+    "Stocks rising faster than the configured market benchmark over the past month. Relative strength is historical context, not proof that the move will continue.",
   momentum_12_1:
     "12-month price trend, skipping the most recent month (which tends to reverse), then divided by volatility so a steady climb ranks above a wild one. e.g. +80% over the year. The quant 'momentum' factor — descriptive history, not a forecast.",
   quality_roe:
-    "Return on equity = profit ÷ shareholder capital (EPS ÷ NAV per share). Higher = more profit per taka of book value. e.g. 25% ≈ ৳25 earned a year per ৳100 of net worth. A quality marker, not a buy signal.",
+    "Return on equity = profit ÷ shareholder capital. Higher means more profit per unit of book equity, but leverage and one-off gains must also be checked.",
   low_volatility:
     "Annualised size of daily price swings over the past year. Lower = steadier. e.g. 15% is calm, 60% is wild. Steadier doesn't mean higher returns — just a smoother ride.",
 };
@@ -94,7 +94,7 @@ const SCREEN_HELP_BN: Record<string, string> = {
   top_gainers: "নির্বাচিত সময়ে দাম সবচেয়ে বেশি বেড়েছে। যেমন +৭.২% মানে দাম শুরুর চেয়ে ৭.২% বেশি।",
   top_losers: "নির্বাচিত সময়ে দাম সবচেয়ে বেশি কমেছে। যেমন -৭.২% মানে দাম শুরুর চেয়ে ৭.২% কম।",
   near_support:
-    "দাম একটি সাপোর্ট লেভেলের ঠিক উপরে — যে তলা ক্রেতারা আগে রক্ষা করেছে। 'কাছে' = এর ৩% উপরে। যেমন $GP ৳২৮০ সাপোর্টের ২% উপরে।",
+    "দাম একটি সাপোর্ট লেভেলের ঠিক উপরে — যে তলা ক্রেতারা আগে রক্ষা করেছে। 'কাছে' = এর ৩% উপরে।",
   near_resistance:
     "দাম একটি রেজিস্ট্যান্স লেভেলের কাছে — যে ছাদ বিক্রেতারা আগে রক্ষা করেছে। 'কাছে' = এর ৩% নিচে।",
   oversold:
@@ -116,7 +116,7 @@ const SCREEN_HELP_BN: Record<string, string> = {
   near_52w_high: "গত ৫২ সপ্তাহের (এক বছর) সর্বোচ্চ দামের ৫% মধ্যে।",
   near_52w_low: "গত ৫২ সপ্তাহের (এক বছর) সর্বনিম্ন দামের ৫% মধ্যে।",
   dividend_yield:
-    "আজকের দামের শতাংশ হিসেবে গত বছরের নগদ লভ্যাংশ। যেমন ৳২০ দামে ৳১ নগদ = ৫%। বোনাস (শেয়ার) লভ্যাংশ গণনা হয় না, এবং দাম-ধসের ১৫%+ 'ট্র্যাপ' লুকানো থাকে।",
+    "সাম্প্রতিক নগদ লভ্যাংশ আজকের দামের কত শতাংশ। স্টক লভ্যাংশ বাদ থাকে, পুরোনো পেআউটকে বর্তমান ইয়িল্ড ধরা হয় না এবং অস্বাভাবিক দাম-পতনের ইয়িল্ড ফিল্টার করা হয়।",
   value_vs_sector:
     "খাতের মধ্যমার সাথে P/E তুলনা। ১.০×-এর নিচে = সাধারণ সমকক্ষদের চেয়ে সস্তা। যেমন ০.৭× মানে খাতের মধ্যমার চেয়ে ৩০% কম P/E।",
   eps_growth: "আগের বছরের তুলনায় শেয়ারপ্রতি আয়। যেমন +২০% YoY = আয় ২০% বেড়েছে।",
@@ -135,19 +135,19 @@ const SCREEN_HELP_BN: Record<string, string> = {
   sponsor_selling:
     "স্পনসর/পরিচালক — কোম্পানির নিজস্ব অভ্যন্তরীণরা — শেষ প্রকাশের পর নিজেদের অংশ কমিয়েছেন। pp = কোম্পানির কত শতাংশ পয়েন্ট ছেড়েছেন। অভ্যন্তরীণদের নিজের কোম্পানি বিক্রি একটি প্রকাশিত তথ্য যা পড়ে দেখা উচিত (কেন? কার কাছে?), আর এক প্রিন্টের চেয়ে ধারাবাহিক স্ট্রিক বেশি গুরুত্বপূর্ণ। এটি নিজে বিক্রির সংকেত নয়।",
   most_active:
-    "আজ অর্থমূল্যে সবচেয়ে বেশি লেনদেন (দাম × ভলিউম), কোটি টাকায়। ক্লাসিক 'টপ টার্নওভার' বোর্ড — দিনের কাজ যেখানে, সস্তা-ব্যস্ত নামসহ।",
+    "আজ অর্থমূল্যে সবচেয়ে বেশি লেনদেন (দাম × ভলিউম)। এটি দিনের কার্যকলাপ দেখায়; তথ্যভিত্তিক কেনা না বিক্রি তা প্রমাণ করে না।",
   beating_market:
-    "গত এক মাসে পুরো বাজারের (DSEX সূচক) চেয়ে বেশি বেড়েছে। 'আপেক্ষিক শক্তি' — বাজার যখন পড়ছে বা ধীরে উঠছে তখন উপরে ওঠা প্রকৃত শক্তির প্রাতিষ্ঠানিক ইঙ্গিত। মান = সূচককে কত % ছাড়িয়েছে।",
+    "গত এক মাসে নির্ধারিত বাজার সূচকের চেয়ে বেশি বেড়েছে। আপেক্ষিক শক্তি ঐতিহাসিক প্রেক্ষাপট, ভবিষ্যতে মুভ চলার প্রমাণ নয়।",
   momentum_12_1:
     "১২-মাসের দামের প্রবণতা, সাম্প্রতিক মাস বাদ দিয়ে (যা উল্টে যায়), তারপর অস্থিরতা দিয়ে ভাগ করা — যাতে স্থির উত্থান বুনো উত্থানের উপরে থাকে। যেমন বছরে +৮০%। কোয়ান্ট 'মোমেন্টাম' ফ্যাক্টর — তথ্যমূলক ইতিহাস, পূর্বাভাস নয়।",
   quality_roe:
-    "রিটার্ন অন ইকুইটি = মুনাফা ÷ শেয়ারহোল্ডার মূলধন (EPS ÷ শেয়ারপ্রতি NAV)। বেশি = বইমূল্যের প্রতি টাকায় বেশি মুনাফা। যেমন ২৫% ≈ ৳১০০ নিট সম্পদে বছরে ৳২৫ আয়। মানের চিহ্ন, কেনার সংকেত নয়।",
+    "রিটার্ন অন ইকুইটি = মুনাফা ÷ শেয়ারহোল্ডার মূলধন। বেশি মানে প্রতি একক ইকুইটিতে বেশি মুনাফা, তবে ঋণ ও এককালীন লাভও যাচাই করতে হবে।",
   low_volatility:
     "গত এক বছরে দৈনিক দামের ওঠানামার বার্ষিক আকার। কম = বেশি স্থির। যেমন ১৫% শান্ত, ৬০% বুনো। স্থির মানে বেশি রিটার্ন নয় — শুধু মসৃণ যাত্রা।",
 };
 for (const type of PATTERN_ORDER) {
   SCREEN_HELP_BN[`chart_pattern_${type}`] =
-    "নিশ্চিত সুইং হাই/লো থেকে তৈরি। এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস — DSE-তে দাম পূর্বাভাসে প্রমাণিত নয় (আমাদের নিজস্ব গবেষণায় সম্পর্কিত মোমেন্টাম ফ্যাক্টর বরং ক্ষতি করেছে)। বর্ণনামূলক জ্যামিতি, কখনো সংকেত নয়। বোর্ডের শিরোনামে ট্যাপ করুন এই প্যাটার্নের মানে ও 'সাধারণত কী হয়' কী বলে আর কী বলে না তা জানতে।";
+    "নিশ্চিত সুইং হাই/লো থেকে তৈরি। এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস, এই বাজারে স্বাধীনভাবে যাচাই করা পূর্বাভাস নয়। বর্ণনামূলক জ্যামিতি, কখনো সংকেত নয়।";
 }
 
 // Localized tooltip text for a screen (falls back to English, then to the screen's own description).
@@ -434,7 +434,7 @@ function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
       case "eps_growth":
         return `EPS বছরওয়ারি ${metric}`;
       case "beating_market":
-        return `DSEX-কে ${metric} ছাড়িয়েছে`;
+        return `বাজার সূচককে ${metric} ছাড়িয়েছে`;
       case "momentum_12_1":
         return `ঝুঁকি-সমন্বিত মোমেন্টাম ${metric}`;
       case "low_volatility":
@@ -481,7 +481,7 @@ function rowReasonStem(screen: Screen, item: ScreenItem, lang: Lang): string {
     case "value_vs_sector":
       return `P/E is ${metric} of the sector median`;
     case "beating_market":
-      return `Beat DSEX by ${metric}`;
+      return `Beat the benchmark by ${metric}`;
     case "unusual_volume":
       return `${metric} normal volume`;
     default:
@@ -517,7 +517,7 @@ function metricDetailLabel(screen: Screen, lang: Lang): string {
       case "eps_growth":
         return "EPS বৃদ্ধি";
       case "beating_market":
-        return "DSEX-এর তুলনায়";
+        return "বাজার সূচকের তুলনায়";
       case "momentum_12_1":
         return "মোমেন্টাম";
       case "low_volatility":
@@ -566,7 +566,7 @@ function metricDetailLabel(screen: Screen, lang: Lang): string {
     case "eps_growth":
       return "EPS growth";
     case "beating_market":
-      return "Vs DSEX";
+      return "Vs benchmark";
     case "momentum_12_1":
       return "Momentum";
     case "low_volatility":
@@ -661,9 +661,9 @@ function detailContext(screen: Screen, item: ScreenItem, lang: Lang) {
         );
       case "beating_market":
         return ctx(
-          "DSEX-এর চেয়ে বেশি ওঠা আপেক্ষিক শক্তির ইঙ্গিত। শক্তি টেকসই কিনা বুঝতে ট্রেন্ড, ভলিউম ও খবর একসাথে দেখুন।",
+          "বাজার সূচকের চেয়ে বেশি ওঠা আপেক্ষিক শক্তির ইঙ্গিত। শক্তি টেকসই কিনা বুঝতে ট্রেন্ড, ভলিউম ও খবর একসাথে দেখুন।",
           ["ট্রেন্ড", "ভলিউম", "সাপোর্ট/রেজিস্ট্যান্স", "খবর"],
-          [`DSEX থেকে ${metric} বেশি`, priceMoveText(item, lang)],
+          [`বাজার সূচক থেকে ${metric} বেশি`, priceMoveText(item, lang)],
         );
       case "unusual_volume":
       case "most_active":

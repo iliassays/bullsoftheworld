@@ -285,7 +285,7 @@ _SCREENS: list[ScreenSpec] = [
     ScreenSpec(
         "quality_roe",
         "High return on equity",
-        "Most profit per taka of shareholder capital (ROE)",
+        "Most profit per unit of shareholder capital (ROE)",
         "ROE",
         and_(T.roe.isnot(None), T.roe > 0, T.roe <= 60),
         T.roe.desc(),
@@ -435,6 +435,10 @@ class MarketPulseOut(BaseModel):
     decliners: int
     unchanged: int
     total: int
+    published_symbols: int
+    eligible_symbols: int
+    coverage_ratio: float
+    coverage_complete: bool
     top_sector: str | None = None
     top_sector_change: float | None = None
     weak_sector: str | None = None
@@ -1325,8 +1329,8 @@ _PATTERN_TITLE = {
 }
 _PATTERN_STATUS_TITLE = {
     "forming": "forming",
-    "confirmed_breakout_up": "broke out up",
-    "confirmed_breakout_down": "broke out down",
+    "confirmed_breakout_up": "moved above the pattern boundary",
+    "confirmed_breakout_down": "moved below the pattern boundary",
 }
 _CHART_PATTERN_PREFIX = "chart_pattern_"  # e.g. "chart_pattern_ascending_triangle"
 
@@ -1601,6 +1605,35 @@ async def _breadth(session, market: str) -> tuple[int, int, int, int]:
     return int(adv or 0), int(dec or 0), int(flat or 0), int(total or 0)
 
 
+def _coverage_from_counts(published: int, eligible: int) -> tuple[int, int, float, bool]:
+    """Normalize coverage counts and apply the explicit near-complete threshold."""
+    published_n = max(0, int(published))
+    eligible_n = max(0, int(eligible))
+    ratio = min(1.0, published_n / eligible_n) if eligible_n else 0.0
+    return published_n, eligible_n, round(ratio, 4), eligible_n > 0 and ratio >= 0.95
+
+
+async def _universe_coverage(session, market: str) -> tuple[int, int, float, bool]:
+    """Published research coverage versus the active product-eligible symbol universe.
+
+    Breadth over a launch cohort is useful, but it is not exchange-wide breadth. Keeping the
+    denominator in the API prevents any tenant UI from silently overstating its scope.
+    """
+    published, eligible = (
+        await session.execute(
+            select(
+                func.count().filter(Symbol.data_status == "ready"),
+                func.count(),
+            ).where(
+                Symbol.market == market,
+                Symbol.is_active.is_(True),
+                Symbol.is_hidden.is_(False),
+            )
+        )
+    ).one()
+    return _coverage_from_counts(published or 0, eligible or 0)
+
+
 async def _sector_rows(session, market: str) -> list[SectorRow]:
     avg_chg = func.avg(QuoteSnapshot.change_pct)
     adv = func.count().filter(QuoteSnapshot.change_pct > 0)
@@ -1677,6 +1710,9 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
         else None
     )
     adv, dec, flat, total = await _breadth(session, market)
+    published, eligible, coverage_ratio, coverage_complete = await _universe_coverage(
+        session, market
+    )
     sectors = await _sector_rows(session, market)
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
@@ -1711,6 +1747,10 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
         decliners=dec,
         unchanged=flat,
         total=total,
+        published_symbols=published,
+        eligible_symbols=eligible,
+        coverage_ratio=coverage_ratio,
+        coverage_complete=coverage_complete,
         top_sector=top.sector if top else None,
         top_sector_change=top.avg_change if top else None,
         weak_sector=weak.sector if weak else None,

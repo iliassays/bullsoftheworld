@@ -51,6 +51,7 @@ class OwnershipPoint(BaseModel):
 
     as_of: str
     sponsor: float | None = None
+    govt: float | None = None
     institute: float | None = None
     foreign: float | None = None
     public: float | None = None
@@ -58,6 +59,7 @@ class OwnershipPoint(BaseModel):
 
 class Ownership(BaseModel):
     sponsor_pct: float | None = None
+    govt_pct: float | None = None
     institute_pct: float | None = None
     foreign_pct: float | None = None
     public_pct: float | None = None
@@ -260,6 +262,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
         OwnershipPoint(
             as_of=str(s.as_of_date),
             sponsor=s.sponsor_director,
+            govt=s.govt,
             institute=s.institute,
             foreign=s.foreign_pct,
             public=s.public,
@@ -315,6 +318,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
         ),
         ownership=Ownership(
             sponsor_pct=ta.sponsor_pct if ta else None,
+            govt_pct=snaps[-1].govt if snaps else None,
             institute_pct=ta.institute_pct if ta else None,
             foreign_pct=ta.foreign_pct if ta else None,
             public_pct=ta.public_pct if ta else None,

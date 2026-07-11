@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "../lib/nav";
 import { api, type Breadth, type MarketSession, type TodaysWatch as TodaysWatchT } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { useTenantConfig } from "../lib/tenant";
 
 // Heading comes from the server-computed market session (tenant timezone) — not hardcoded here.
 const SESSION: Record<MarketSession, { key: string; icon: string }> = {
@@ -12,7 +13,8 @@ const SESSION: Record<MarketSession, { key: string; icon: string }> = {
 };
 
 function BreadthBar({ b }: { b: Breadth }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const traded = b.advancers + b.decliners + b.unchanged || 1;
   const up = (b.advancers / traded) * 100;
   const flat = (b.unchanged / traded) * 100;
@@ -28,6 +30,15 @@ function BreadthBar({ b }: { b: Breadth }) {
         <div className="bg-muted/40" style={{ width: `${flat}%` }} />
         <div className="bg-down flex-1" />
       </div>
+      <p className="mt-1 text-[10px] text-muted">
+        {config.market === "US"
+          ? lang === "bn"
+            ? `প্রকাশিত ${b.total}টি মার্কিন শেয়ারের ট্র্যাক করা ব্রেডথ; পুরো মার্কিন বাজার নয়।`
+            : `Tracked breadth across ${b.total} published U.S. stocks, not the whole U.S. market.`
+          : lang === "bn"
+            ? `${b.total}টি DSE তালিকাভুক্ত শেয়ারের ব্রেডথ।`
+            : `Breadth across ${b.total} DSE listings.`}
+      </p>
     </div>
   );
 }

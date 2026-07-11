@@ -33,7 +33,7 @@ function Cell({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 export function MarketPulse() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { config } = useTenantConfig();
   const [pulse, setPulse] = useState<MarketPulseData | null>(null);
 
@@ -52,6 +52,13 @@ export function MarketPulse() {
     pulse.weak_sector && pulse.weak_sector_change != null
       ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)}`
       : undefined;
+  const coverageText = pulse.coverage_complete
+    ? lang === "bn"
+      ? `${pulse.published_symbols.toLocaleString()}টি ${config.exchange_code} সিকিউরিটি`
+      : `${pulse.published_symbols.toLocaleString()} ${config.exchange_code} securities`
+    : lang === "bn"
+      ? `${pulse.eligible_symbols.toLocaleString()}টি সক্রিয় সিকিউরিটির মধ্যে ${pulse.published_symbols.toLocaleString()}টি প্রকাশিত`
+      : `${pulse.published_symbols.toLocaleString()} published of ${pulse.eligible_symbols.toLocaleString()} active securities`;
 
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
@@ -64,6 +71,7 @@ export function MarketPulse() {
           <span
             className={`border rounded-full px-2.5 py-1 text-[11px] font-semibold ${riskClass[pulse.risk_mode]}`}
           >
+            {!pulse.coverage_complete && `${t("marketPulse.tracked")} · `}
             {t(`risk.${pulse.risk_mode}`)}
           </span>
           {/* DSEX is EOD-anchored (one row/day) even though breadth/sectors below track the
@@ -103,7 +111,9 @@ export function MarketPulse() {
           }
         />
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wide text-muted">{t("marketPulse.breadth")}</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted">
+            {pulse.coverage_complete ? t("marketPulse.breadth") : t("marketPulse.trackedBreadth")}
+          </div>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-sm font-bold text-up tnum">{pulse.advancers}▲</span>
             <span className="text-sm font-bold text-down tnum">{pulse.decliners}▼</span>
@@ -127,6 +137,9 @@ export function MarketPulse() {
       <p className="mt-3 text-[10px] text-muted">
         {t("marketPulse.footer")}{" "}
         {benchmarkChange != null && <Pct value={benchmarkChange} />}
+      </p>
+      <p className={`mt-1 text-[10px] ${pulse.coverage_complete ? "text-muted" : "text-accent"}`}>
+        {coverageText}. {pulse.coverage_complete ? t("marketPulse.coverageFull") : t("marketPulse.coveragePartial")}
       </p>
     </div>
   );

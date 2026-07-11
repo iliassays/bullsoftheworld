@@ -38,12 +38,13 @@ async def get_scorecard(
         raise HTTPException(status_code=404, detail=f"No analytics for {code!r} yet")
 
     adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 and ta.last_close else None
+    profile = get_market_profile(tenant.market)
     quote = (
         await load_freshest_quotes(
             session,
             tenant.market,
             [code],
-            get_market_profile(tenant.market).tz,
+            profile.tz,
         )
     ).get(code)
 
@@ -65,11 +66,11 @@ async def get_scorecard(
     red_flags = build_red_flags(
         code=code,
         locale=locale,
-        category=sym.category,
+        category=sym.category if profile.features.dse_categories else None,
         adtv_mn=adtv_mn,
         roe=ta.roe,
         dividend_yield=ta.dividend_yield,
         free_float_cap_mn=ta.free_float_cap_mn,
-        today_change_pct=quote.change_pct if quote else None,
+        today_change_pct=quote.change_pct if quote and profile.features.circuit_breakers else None,
     )
     return ScorecardResponse(scorecard=scorecard, red_flags=red_flags)

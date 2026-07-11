@@ -9,7 +9,7 @@ import {
 import { Link } from "../lib/nav";
 import { api, type Bar, type PatternMatch } from "../lib/api";
 import { useLang } from "../lib/i18n";
-import { patternLabel, patternStatusLabel } from "../lib/patterns";
+import { patternLabel } from "../lib/patterns";
 
 const C = {
   up: "#2fbf71",
@@ -70,15 +70,16 @@ function lineData(bars: Bar[], series: (number | null)[]) {
 // noticing patterns like this get shown elsewhere without saying whether they've been proven).
 function PatternBadge({ pattern }: { pattern: PatternMatch }) {
   const { lang } = useLang();
-  const tone = pattern.status === "confirmed_breakout_down" ? "text-down" : pattern.status === "confirmed_breakout_up" ? "text-up" : "text-accent";
   return (
     <Link
       to={`/learn/patterns/${pattern.pattern_type}`}
       className="flex items-center gap-1.5 mb-2 text-[11px] font-semibold bg-card border border-border rounded-full px-2.5 py-1 w-fit"
     >
       <span aria-hidden>📐</span>
-      {patternLabel(pattern.pattern_type, lang)}
-      <span className={`font-normal ${tone}`}>· {patternStatusLabel(pattern.status, lang)}</span>
+      {lang === "bn" ? "সম্ভাব্য" : "Possible"} {patternLabel(pattern.pattern_type, lang)}
+      <span className="font-normal text-muted">
+        · {lang === "bn" ? "যাচাই না-করা কাঠামো" : "unvalidated framework"}
+      </span>
     </Link>
   );
 }

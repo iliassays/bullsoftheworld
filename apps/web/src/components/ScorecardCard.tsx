@@ -2,15 +2,8 @@ import { useEffect, useState } from "react";
 import { api, type ScorecardResponse } from "../lib/api";
 import { useLang } from "../lib/i18n";
 
-// Stock Scorecard + Red Flags. One endpoint, two cards. Dimensions-only (no composite verdict);
-// each score shows the metric behind it. Red flags are descriptive cautions, never "don't buy".
-
-function barColor(score: number): string {
-  return score >= 7 ? "bg-up" : score >= 4 ? "bg-accent" : "bg-down";
-}
-function scoreColor(score: number): string {
-  return score >= 7 ? "text-up" : score >= 4 ? "text-accent" : "text-down";
-}
+// Factor snapshot + observed cautions. Raw readings are more defensible than pseudo-precise scores
+// when a dimension may be represented by only one metric (for example, quality from ROE alone).
 
 export function ScorecardCard({ code }: { code: string }) {
   const { lang } = useLang();
@@ -44,63 +37,44 @@ export function ScorecardCard({ code }: { code: string }) {
       <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-baseline justify-between">
           <div className="font-semibold text-sm">
-            🎯 {bn ? "স্কোরকার্ড" : "Scorecard"}
+            🎯 {bn ? "ফ্যাক্টর স্ন্যাপশট" : "Factor snapshot"}
           </div>
           <div className="text-[10px] text-muted">
             {bn ? "তথ্য" : "as of"} {scorecard.as_of_date}
           </div>
         </div>
 
-        <div className="mt-3 flex flex-col gap-2.5">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
           {scorecard.dimensions.map((d) => (
-            <div key={d.key} className="flex items-center gap-3">
-              <div className="w-24 shrink-0 text-[13px] font-semibold">{d.label}</div>
-              <div className="flex-1 h-2 rounded-full bg-card overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${barColor(d.score)}`}
-                  style={{ width: `${d.score * 10}%` }}
-                />
+            <div key={d.key} className="rounded-lg border border-border bg-card/50 p-2.5">
+              <div className="text-[11px] font-semibold text-muted">{d.label}</div>
+              <div className="mt-0.5 text-[13px] font-semibold tnum">
+                {d.detail}
               </div>
-              <div className={`w-9 shrink-0 text-right font-bold text-[13px] ${scoreColor(d.score)}`}>
-                {d.score}
-                <span className="text-muted text-[10px] font-semibold">/10</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* The metric behind each score, inline — transparency, not a black box. */}
-        <div className="mt-2.5 flex flex-col gap-1">
-          {scorecard.dimensions.map((d) => (
-            <div key={d.key} className="text-[11px] text-muted">
-              <span className="text-text">{d.label}:</span> {d.detail}
             </div>
           ))}
         </div>
 
         <p className="mt-3 border-t border-border pt-2 text-[10.5px] leading-snug text-muted">
-          {scorecard.disclaimer}
+          {bn
+            ? "প্রতিটি ঘর একটি সীমিত ফ্যাক্টর রিডিং; এটি পূর্ণাঙ্গ কোম্পানি মূল্যায়ন বা কেনা-বেচার সংকেত নয়।"
+            : "Each tile is a limited factor reading, not a complete company assessment or trading signal."}
         </p>
       </div>
 
       <div className="bg-surface border border-border rounded-2xl p-4">
         <div className="flex items-center justify-between">
           <div className="font-semibold text-sm">
-            🚩 {bn ? "রেড ফ্ল্যাগ" : "Red Flags"}
+            🚩 {bn ? "পর্যবেক্ষিত সতর্কতা" : "Observed cautions"}
           </div>
-          {red_flags.clean && (
-            <span className="text-[11px] font-bold text-up bg-up/10 border border-up/30 rounded-full px-2.5 py-1">
-              ✓ {bn ? "পরিষ্কার" : "Clean"}
-            </span>
-          )}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
           {red_flags.clean ? (
             <p className="text-[12px] text-muted">
               {bn
-                ? "এই শেয়ারে কোনো রেড ফ্ল্যাগ নেই।"
-                : "No red flags on this stock."}
+                ? "এই সীমিত স্বয়ংক্রিয় পরীক্ষায় কোনো সতর্কতা ধরা পড়েনি। এটি সম্পূর্ণ ঝুঁকি পর্যালোচনা নয়।"
+                : "No cautions were detected by these limited automated checks. This is not a complete risk review."}
             </p>
           ) : (
             red_flags.flags.map((f) => (

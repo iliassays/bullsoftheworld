@@ -36,7 +36,6 @@ import { PlainReadCard } from "../components/PlainReadCard";
 import { PriceAlertSheet } from "../components/PriceAlertSheet";
 import { ResearchCard } from "../components/ResearchCard";
 import { ScorecardCard } from "../components/ScorecardCard";
-import { PulseGauges } from "../components/PulseGauges";
 import { PostCard } from "../components/PostCard";
 import { RangeBar } from "../components/RangeBar";
 import { Sparkline } from "../components/Sparkline";
@@ -395,15 +394,12 @@ export function SymbolPage() {
 
       {tab === "overview" && (
         <>
-          {/* Redesign 2026-07: five cards, one voice. Chart → the single narrative → scores +
-              flags → structure → checklist. Digest/Explainer/Pulse/Technicals moved or dropped —
-              see docs/redesign/2026-07-drops.md. */}
+          {/* Overview is the fast research path: chart, grounded read, evidence, levels, checklist. */}
           <CandleChart code={sym} />
           {config.features.interpreted_analytics && (
             <>
               <PlainReadCard code={sym} />
               <ResearchCard code={sym} />
-              <ScorecardCard code={sym} />
               <KeyLevels code={sym} />
             </>
           )}
@@ -413,9 +409,8 @@ export function SymbolPage() {
 
       {tab === "lens" && (
         <>
+          <ScorecardCard code={sym} />
           <InvestorLensCard code={sym} />
-          {/* The deeper gauge/indicator detail lives behind the Lens tab now, not on Overview. */}
-          <PulseGauges code={sym} />
           <Technicals code={sym} />
         </>
       )}

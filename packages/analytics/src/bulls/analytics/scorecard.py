@@ -249,8 +249,6 @@ def build_red_flags(
         add("thin", "Thinly traded", "কম লেনদেন")
     if roe is not None and roe <= 0:
         add("lossmaking", "Loss-making", "লোকসানে")
-    if dividend_yield is None or dividend_yield <= 0:
-        add("no_dividend", "No dividend", "লভ্যাংশ নেই")
     if free_float_cap_mn is not None and free_float_cap_mn < 100:
         add("tiny_float", "Tiny free float", "খুব কম ফ্রি ফ্লোট")
     if today_change_pct is not None and abs(today_change_pct) >= 9.7:

@@ -48,7 +48,7 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert us.close_time == dt.time(16, 0)
     assert us.trading_isoweekdays == frozenset({1, 2, 3, 4, 5})
     assert us.settlement_cycle == "T+1"
-    assert us.benchmark_label == "S&P 500"
+    assert us.benchmark_label == "SPY (S&P 500 ETF)"
     assert not us.features.dse_categories
     assert not us.features.shareholding_breakdown
     assert us.features.sec_filings

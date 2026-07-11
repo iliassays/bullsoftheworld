@@ -9,7 +9,7 @@ import { useAuth } from "../lib/auth";
 import { type Lang, useLang } from "../lib/i18n";
 import { Watchlist } from "./Watchlist";
 
-type Tab = "today" | "value" | "lens" | "watchlist";
+type Tab = "today" | "value" | "watchlist";
 type Picked = { board: Screen; item: ScreenItem };
 
 const BOARD_ICON: Record<string, string> = {
@@ -628,7 +628,6 @@ export function Scanner() {
         <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
           {seg("today", t("scanner.today"))}
           {seg("value", t("scanner.value"))}
-          {seg("lens", t("scanner.lens"))}
           {seg("watchlist", t("scanner.watchlist"))}
         </div>
       </div>

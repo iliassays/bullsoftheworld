@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type InvestorLensResponse } from "../lib/api";
+import { api, type InvestorLensItem, type InvestorLensResponse } from "../lib/api";
 import { useLang } from "../lib/i18n";
 
 const ICONS: Record<string, string> = {
@@ -19,47 +19,6 @@ const SHORT: Record<string, { en: string; bn: string }> = {
   technical_trader: { en: "Trend", bn: "ট্রেন্ড" },
   smart_money: { en: "Smart $", bn: "স্মার্ট মানি" },
   taleb_risk: { en: "Risk", bn: "ঝুঁকি" },
-};
-
-// One plain-English (and Bangla) takeaway per lens × verdict — the retail-friendly lead line,
-// so a beginner gets the point before the raw ratios.
-const PLAIN: Record<string, Record<string, { en: string; bn: string }>> = {
-  graham_value: {
-    supportive: { en: "Looks cheap versus its peers.", bn: "খাতের তুলনায় সস্তা দেখাচ্ছে।" },
-    mixed: { en: "Priced around fair value.", bn: "মোটামুটি ন্যায্য দামে আছে।" },
-    caution: { en: "Looks expensive or earnings-weak.", bn: "দামি বা আয় দুর্বল দেখাচ্ছে।" },
-    thin_data: { en: "Not enough valuation data.", bn: "ভ্যালুয়েশন ডেটা যথেষ্ট নয়।" },
-  },
-  buffett_quality: {
-    supportive: { en: "Strong, profitable business.", bn: "শক্ত, লাভজনক ব্যবসা।" },
-    mixed: { en: "Average business quality.", bn: "মাঝারি ব্যবসার মান।" },
-    caution: { en: "Weak profitability.", bn: "লাভজনকতা দুর্বল।" },
-    thin_data: { en: "Not enough fundamentals.", bn: "ফান্ডামেন্টাল ডেটা কম।" },
-  },
-  dividend_income: {
-    supportive: { en: "Attractive, earnings-covered dividend.", bn: "আকর্ষণীয়, আয়-সমর্থিত লভ্যাংশ।" },
-    mixed: { en: "Modest dividend.", bn: "মাঝারি লভ্যাংশ।" },
-    caution: { en: "Little or uncovered dividend.", bn: "কম বা অনিশ্চিত লভ্যাংশ।" },
-    thin_data: { en: "Dividend data unavailable.", bn: "লভ্যাংশ ডেটা নেই।" },
-  },
-  technical_trader: {
-    supportive: { en: "Chart trend looks healthy.", bn: "চার্ট ট্রেন্ড ভালো দেখাচ্ছে।" },
-    mixed: { en: "Mixed chart signals.", bn: "চার্ট সিগন্যাল মিশ্র।" },
-    caution: { en: "Weak or overheated chart.", bn: "চার্ট দুর্বল বা অতিরিক্ত গরম।" },
-    thin_data: { en: "Not enough price history.", bn: "দামের ইতিহাস যথেষ্ট নয়।" },
-  },
-  smart_money: {
-    supportive: { en: "Big players added (last disclosure).", bn: "বড় বিনিয়োগকারীরা বাড়িয়েছে (সর্বশেষ ডিসক্লোজার)।" },
-    mixed: { en: "Ownership roughly flat.", bn: "মালিকানা প্রায় অপরিবর্তিত।" },
-    caution: { en: "Big players trimmed.", bn: "বড় বিনিয়োগকারীরা কমিয়েছে।" },
-    thin_data: { en: "No ownership data.", bn: "মালিকানার ডেটা নেই।" },
-  },
-  taleb_risk: {
-    supportive: { en: "Liquid — easier to exit.", bn: "লিকুইড — বের হওয়া সহজ।" },
-    mixed: { en: "Moderate exit risk.", bn: "মাঝারি এক্সিট ঝুঁকি।" },
-    caution: { en: "Illiquid/fragile — hard to exit.", bn: "পাতলা/ভঙ্গুর — বের হওয়া কঠিন।" },
-    thin_data: { en: "Not enough liquidity data.", bn: "লিকুইডিটি ডেটা কম।" },
-  },
 };
 
 function verdictStyle(v: string): string {
@@ -83,11 +42,6 @@ function verdictLabel(v: string, bn: boolean): string {
   return bn ? "মিশ্র" : "Mixed";
 }
 
-function plainRead(key: string, verdict: string, bn: boolean): string {
-  const p = PLAIN[key]?.[verdict];
-  return p ? (bn ? p.bn : p.en) : "";
-}
-
 function shortName(key: string, fallback: string, bn: boolean): string {
   const s = SHORT[key];
   return s ? (bn ? s.bn : s.en) : fallback;
@@ -98,6 +52,24 @@ function checkDot(status: string): string {
   if (status === "fail") return "bg-down";
   if (status === "na") return "bg-muted";
   return "bg-accent"; // watch
+}
+
+function checkAssessment(lens: InvestorLensItem, bn: boolean) {
+  const checks = lens.checks ?? [];
+  const pass = checks.filter((check) => check.status === "pass").length;
+  const fail = checks.filter((check) => check.status === "fail").length;
+  const missing = checks.filter((check) => check.status === "na").length;
+  const assessed = checks.length - missing;
+  const tone = assessed === 0 ? "thin_data" : fail > 0 ? "caution" : pass > 0 ? "supportive" : "mixed";
+  const label =
+    assessed === 0
+      ? bn
+        ? "পরীক্ষার তথ্য নেই"
+        : "No assessed checks"
+      : bn
+        ? `${assessed}টির মধ্যে ${pass}টি পরীক্ষায় উত্তীর্ণ${missing ? ` · ${missing}টি তথ্য নেই` : ""}`
+        : `${pass}/${assessed} assessed checks pass${missing ? ` · ${missing} unavailable` : ""}`;
+  return { tone, label };
 }
 
 export function InvestorLensCard({ code }: { code: string }) {
@@ -125,7 +97,7 @@ export function InvestorLensCard({ code }: { code: string }) {
 
   return (
     <section className="bg-surface border border-border rounded-2xl p-4">
-      <div className="font-semibold text-sm">🧠 Investor Lens</div>
+      <div className="font-semibold text-sm">🧠 {bn ? "বিনিয়োগ বিশ্লেষণ" : "Investor Lens"}</div>
       <p className="text-[12px] text-muted mt-0.5 leading-snug">
         {bn
           ? "একই তথ্য বিভিন্ন বিনিয়োগ-স্টাইল কীভাবে পড়ে। পরামর্শ নয়।"
@@ -134,22 +106,26 @@ export function InvestorLensCard({ code }: { code: string }) {
 
       {/* at-a-glance: every lens as a colored chip, readable in one glance */}
       <div className="mt-3 flex flex-wrap gap-1.5">
-        {data.lenses.map((l) => (
-          <span
-            key={l.key}
-            className={`flex items-center gap-1.5 text-[11px] font-semibold rounded-full border px-2 py-1 ${verdictStyle(
-              l.verdict,
-            )}`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${verdictDot(l.verdict)}`} />
-            {shortName(l.key, l.name, bn)}
-            {l.score != null ? ` ${l.score}` : ""}
-          </span>
-        ))}
+        {data.lenses.map((l) => {
+          const assessment = checkAssessment(l, bn);
+          return (
+            <span
+              key={l.key}
+              className={`flex items-center gap-1.5 text-[11px] font-semibold rounded-full border px-2 py-1 ${verdictStyle(
+                assessment.tone,
+              )}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${verdictDot(assessment.tone)}`} />
+              {shortName(l.key, l.name, bn)}
+            </span>
+          );
+        })}
       </div>
 
       <div className="mt-4 grid gap-3">
-        {data.lenses.map((l) => (
+        {data.lenses.map((l) => {
+          const assessment = checkAssessment(l, bn);
+          return (
           <article key={l.key} className="rounded-xl border border-border bg-card/50 p-3">
             <div className="flex items-start gap-2">
               <span className="text-lg leading-none">{ICONS[l.key] ?? "•"}</span>
@@ -158,16 +134,15 @@ export function InvestorLensCard({ code }: { code: string }) {
                   <h3 className="text-sm font-bold">{l.name}</h3>
                   <span
                     className={`text-[10px] font-bold rounded-full border px-2 py-0.5 ${verdictStyle(
-                      l.verdict,
+                      assessment.tone,
                     )}`}
                   >
-                    {verdictLabel(l.verdict, bn)}
-                    {l.score != null ? ` · ${l.score}/10` : ""}
+                    {verdictLabel(assessment.tone, bn)}
                   </span>
                 </div>
                 {/* plain-English takeaway leads; the persona/ratios are secondary detail */}
                 <p className="text-[13px] font-semibold mt-1 leading-snug">
-                  {plainRead(l.key, l.verdict, bn) || l.summary}
+                  {assessment.label}
                 </p>
               </div>
             </div>
@@ -218,7 +193,8 @@ export function InvestorLensCard({ code }: { code: string }) {
             )}
 
           </article>
-        ))}
+          );
+        })}
       </div>
 
       <p className="mt-3 border-t border-border pt-2 text-[11px] leading-snug text-muted">

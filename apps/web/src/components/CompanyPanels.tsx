@@ -42,12 +42,12 @@ const fhelp = (key: string, lang: Lang) =>
   (lang === "bn" ? F_HELP_BN[key] : undefined) ?? F_HELP[key];
 
 const NEWS_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// "2026-07-07" → "7 Jul"; returns the raw string if it isn't an ISO date.
+// "2026-07-07" → "7 Jul 2026"; the year matters when old filings remain research-relevant.
 const shortDate = (iso?: string): string => {
   if (!iso) return "";
-  const [, m, d] = iso.split("-");
+  const [y, m, d] = iso.split("-");
   if (!d) return iso;
-  return `${Number(d)} ${NEWS_MONTHS[Number(m) - 1] ?? "?"}`;
+  return `${Number(d)} ${NEWS_MONTHS[Number(m) - 1] ?? "?"} ${y}`;
 };
 // "−৳1.87" / "৳1.50" — explicit minus sign + 2 decimals for per-share figures (distinct from the
 // crore-formatting `taka` below used elsewhere in this file).
@@ -443,6 +443,7 @@ function ImportantCard({ n, ltp }: { n: NewsItem; ltp?: number | null }) {
 
 export function NewsPanel({ items, ltp }: { items: NewsItem[]; ltp?: number | null }) {
   const { t, lang } = useLang();
+  const { config } = useTenantConfig();
   const bn = lang === "bn";
   const [showRoutine, setShowRoutine] = useState(false);
   if (!items.length) return <Empty>{t("news.empty")}</Empty>;
@@ -507,7 +508,13 @@ export function NewsPanel({ items, ltp }: { items: NewsItem[]; ltp?: number | nu
         </div>
       )}
 
-      <p className="text-[10px] text-muted">{t("news.footer")}</p>
+      <p className="text-[10px] text-muted">
+        {config.features.sec_filings
+          ? bn
+            ? "SEC EDGAR ফাইলিং। তথ্যমূলক, পরামর্শ নয়।"
+            : "SEC EDGAR filings. Descriptive, not advice."
+          : t("news.footer")}
+      </p>
     </div>
   );
 }
@@ -601,9 +608,13 @@ export function FundamentalsPanel({
       <Row label={t("f.pb")} value={ratio(f.pb_ratio)} help={fhelp("pb", lang)} />
       <Row label={t("f.divYield")} value={pct(f.dividend_yield)} help={fhelp("yield", lang)} />
       <Row
-        label={t("f.epsAnnual")}
+        label={config.market === "US" ? (bn ? "EPS (গত ১২ মাস)" : "EPS (TTM)") : t("f.epsAnnual")}
         value={taka(f.eps)}
-        hint={lastFY(prior?.eps)}
+        hint={
+          config.market === "US" && earnings[0]?.eps != null
+            ? `(FY ${earnings[0].fiscal_year}: ${formatMoney(earnings[0].eps)})`
+            : lastFY(prior?.eps)
+        }
         help={fhelp("eps", lang)}
       />
       <Row label={t("f.epsGrowthYoY")} value={yoy} hint={yoyHint} help={fhelp("eps_growth", lang)} />
@@ -715,42 +726,63 @@ export function FinancialHealthPanel({ company }: { company: Company }) {
 }
 
 // Plain-language read of who's been buying/selling, from the month-over-month deltas.
-function smartMoneyRead(o: Company["ownership"]): string {
+function smartMoneyRead(o: Company["ownership"], bn: boolean): string {
   const moves: string[] = [];
-  if (o.institute_delta != null && o.institute_delta >= 0.1) moves.push("institutions added");
-  else if (o.institute_delta != null && o.institute_delta <= -0.1) moves.push("institutions trimmed");
-  if (o.foreign_delta != null && o.foreign_delta >= 0.1) moves.push("foreign investors added");
-  else if (o.foreign_delta != null && o.foreign_delta <= -0.1) moves.push("foreign investors trimmed");
-  if (!moves.length) return "Big-money holdings barely changed since the prior disclosure.";
-  const s = moves.join(", and ") + " since the prior disclosure.";
+  if (o.institute_delta != null && o.institute_delta >= 0.1) moves.push(bn ? "প্রতিষ্ঠান বাড়িয়েছে" : "institutions added");
+  else if (o.institute_delta != null && o.institute_delta <= -0.1) moves.push(bn ? "প্রতিষ্ঠান কমিয়েছে" : "institutions trimmed");
+  if (o.foreign_delta != null && o.foreign_delta >= 0.1) moves.push(bn ? "বিদেশি বিনিয়োগকারী বাড়িয়েছে" : "foreign investors added");
+  else if (o.foreign_delta != null && o.foreign_delta <= -0.1) moves.push(bn ? "বিদেশি বিনিয়োগকারী কমিয়েছে" : "foreign investors trimmed");
+  if (!moves.length)
+    return bn
+      ? "আগের প্রকাশের পর বড় বিনিয়োগকারীদের মালিকানা প্রায় অপরিবর্তিত।"
+      : "Big-money holdings barely changed since the prior disclosure.";
+  const s = moves.join(bn ? ", এবং " : ", and ") + (bn ? " আগের প্রকাশের পর।" : " since the prior disclosure.");
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 const OWN_GREEN = "#2fbf71";
 
 // Who each holder group actually is — the labels are meaningless to a first-time investor.
-const OWN_WHO: Record<string, string> = {
-  sponsor:
-    "The company's founders, directors and their families — the insiders. A large stake means their own money sits next to yours; a steady fall is worth reading into.",
-  institute:
-    "Banks, mutual funds, insurers and other professional investors. They research before they buy, so changes here are watched closely.",
-  foreign:
-    "Overseas funds investing in the DSE — often the most selective money in the market.",
-  public: "Everyone else — ordinary retail investors like most people using this app.",
+const OWN_WHO: Record<string, Record<Lang, string>> = {
+  sponsor: {
+    en: "The company's founders, directors and their families. A sustained decline deserves investigation.",
+    bn: "কোম্পানির উদ্যোক্তা, পরিচালক ও তাঁদের পরিবার। ধারাবাহিকভাবে অংশ কমলে কারণ যাচাই করা দরকার।",
+  },
+  govt: {
+    en: "Shares reported as held by the Government of Bangladesh.",
+    bn: "বাংলাদেশ সরকারের মালিকানায় প্রকাশিত শেয়ার।",
+  },
+  institute: {
+    en: "Banks, funds, insurers and other professional investors. A disclosure shows ownership, not the trade date or price.",
+    bn: "ব্যাংক, ফান্ড, বিমা ও অন্যান্য পেশাদার বিনিয়োগকারী। প্রকাশটি মালিকানা দেখায়, কেনাবেচার তারিখ বা দাম নয়।",
+  },
+  foreign: {
+    en: "Overseas investors reported in the DSE ownership disclosure.",
+    bn: "DSE মালিকানা প্রকাশে দেখানো বিদেশি বিনিয়োগকারী।",
+  },
+  public: {
+    en: "Other shareholders, including retail investors.",
+    bn: "খুচরা বিনিয়োগকারীসহ অন্যান্য শেয়ারহোল্ডার।",
+  },
 };
 
 export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
+  const { lang } = useLang();
+  const bn = lang === "bn";
   const cats = [
-    { key: "sponsor", label: "Sponsor / Director", color: "var(--color-accent)", v: o.sponsor_pct },
-    { key: "institute", label: "Institutional", color: "#0ea5e9", v: o.institute_pct },
-    { key: "foreign", label: "Foreign", color: OWN_GREEN, v: o.foreign_pct },
-    { key: "public", label: "Public", color: "var(--color-muted)", v: o.public_pct },
+    { key: "sponsor", label: bn ? "উদ্যোক্তা / পরিচালক" : "Sponsor / Director", color: "var(--color-accent)", v: o.sponsor_pct },
+    { key: "govt", label: bn ? "সরকার" : "Government", color: "#8b5cf6", v: o.govt_pct },
+    { key: "institute", label: bn ? "প্রতিষ্ঠান" : "Institutional", color: "#0ea5e9", v: o.institute_pct },
+    { key: "foreign", label: bn ? "বিদেশি" : "Foreign", color: OWN_GREEN, v: o.foreign_pct },
+    { key: "public", label: bn ? "সাধারণ বিনিয়োগকারী" : "Public", color: "var(--color-muted)", v: o.public_pct },
   ] as const;
-  if (!cats.some((c) => c.v != null)) return <Empty>No ownership disclosure yet.</Empty>;
+  if (!cats.some((c) => c.v != null))
+    return <Empty>{bn ? "এখনো মালিকানা প্রকাশ পাওয়া যায়নি।" : "No ownership disclosure yet."}</Empty>;
 
   const hist = o.history ?? [];
   const first = hist[0];
-  const freeFloat = (o.institute_pct ?? 0) + (o.foreign_pct ?? 0) + (o.public_pct ?? 0);
+  const reportedNonSponsor =
+    (o.govt_pct ?? 0) + (o.institute_pct ?? 0) + (o.foreign_pct ?? 0) + (o.public_pct ?? 0);
   const stale =
     o.as_of != null && (Date.now() - new Date(o.as_of).getTime()) / 86_400_000 > 270;
 
@@ -797,12 +829,13 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
     );
 
   return (
-    <Card title="Ownership">
+    <Card title={bn ? "মালিকানা" : "Ownership"}>
       {/* Highlight: stale flag, or the positive smart-money story, or a neutral read. */}
       {stale ? (
         <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug text-muted">
-          ⏳ Latest disclosure {o.as_of ? discMonth(o.as_of) : dash} — DSE hasn't filed a newer one
-          for this stock, so the figures below may be out of date.
+          {bn
+            ? `সর্বশেষ প্রকাশ ${o.as_of ? discMonth(o.as_of) : dash}; নতুন তথ্য না আসায় নিচের সংখ্যা পুরোনো হতে পারে।`
+            : `Latest disclosure ${o.as_of ? discMonth(o.as_of) : dash}; without a newer filing, these figures may be stale.`}
         </div>
       ) : sponsorStreak ? (
         <div
@@ -810,13 +843,14 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
           style={{ backgroundColor: "rgba(240,86,74,0.08)", border: "1px solid rgba(240,86,74,0.35)" }}
         >
           <div className="text-[13px] leading-snug font-semibold text-down">
-            ⚠️ Sponsor stake falling {sponsorRun} disclosures straight
+            {bn
+              ? `উদ্যোক্তার অংশ টানা ${sponsorRun}টি প্রকাশে কমেছে`
+              : `Sponsor stake fell across ${sponsorRun} consecutive disclosures`}
           </div>
           <div className="text-[12px] text-muted mt-0.5">
             {(sponsorSeries[sponsorSeries.length - 1 - sponsorRun]).toFixed(1)}% →{" "}
             <b className="text-fg">{sponsorSeries[sponsorSeries.length - 1].toFixed(1)}%</b>{" "}
-            (−{sponsorDrop.toFixed(1)}pp) — insiders reducing their own stake. Source: DSE
-            shareholding disclosures. Descriptive, not advice.
+            (−{sponsorDrop.toFixed(1)}pp) — {bn ? "উৎস: DSE মালিকানা প্রকাশ। তথ্যমূলক, পরামর্শ নয়।" : "insiders reduced their reported stake. Source: DSE ownership disclosures. Descriptive, not advice."}
           </div>
         </div>
       ) : smartGrew && smartThen != null && first ? (
@@ -825,24 +859,28 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
           style={{ backgroundColor: "rgba(22,199,132,0.10)", border: "1px solid rgba(22,199,132,0.35)" }}
         >
           <div className="text-[13px] leading-snug font-semibold text-up">
-            🏦 Big investors hold more than before
+            {bn ? "বড় বিনিয়োগকারীদের প্রকাশিত অংশ আগের চেয়ে বেশি" : "Reported big-investor ownership is higher than before"}
           </div>
           <div className="text-[12px] text-muted mt-0.5">
-            Institutions + foreign investors hold <b className="text-fg">{smartNow.toFixed(1)}%</b>,
-            up from {smartThen.toFixed(1)}% in {discMonth(first.as_of)}
+            {bn ? "প্রতিষ্ঠান ও বিদেশি বিনিয়োগকারীদের অংশ " : "Institutions and foreign investors report "}<b className="text-fg">{smartNow.toFixed(1)}%</b>,
+            {bn ? ` ${discMonth(first.as_of)}-এর ${smartThen.toFixed(1)}% থেকে বেশি` : ` up from ${smartThen.toFixed(1)}% in ${discMonth(first.as_of)}`}
             {smartStep != null && smartStep <= -0.1
-              ? ` — though the latest disclosure shows a small dip (−${Math.abs(smartStep).toFixed(2)}pp).`
+              ? bn
+                ? `; তবে সর্বশেষ প্রকাশে সামান্য কমেছে (−${Math.abs(smartStep).toFixed(2)}pp)।`
+                : `, though the latest disclosure shows a small dip (−${Math.abs(smartStep).toFixed(2)}pp).`
               : "."}
           </div>
         </div>
       ) : (
         <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug">
-          🏦 {smartMoneyRead(o)}
+          {smartMoneyRead(o, bn)}
         </div>
       )}
 
       {/* Composition over time — one stacked bar per disclosure, oldest → newest. */}
-      <div className="text-[10px] uppercase tracking-wide text-muted/70 mb-1.5">Ownership over time</div>
+      <div className="text-[10px] uppercase tracking-wide text-muted/70 mb-1.5">
+        {bn ? "সময়ের সাথে মালিকানা" : "Ownership over time"}
+      </div>
       <div className="flex flex-col gap-1.5 mb-3">
         {hist.map((p) => (
           <div key={p.as_of} className="flex items-center gap-2">
@@ -862,7 +900,7 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
           <span className="flex items-center gap-2 flex-1 min-w-0">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
             <span className="text-xs text-muted truncate">{c.label}</span>
-            <InfoTip text={OWN_WHO[c.key]} />
+            <InfoTip text={OWN_WHO[c.key][lang]} />
           </span>
           {chip(stepDelta(c.key))}
           <span className="text-sm font-semibold tnum w-16 text-right">{pct(c.v)}</span>
@@ -870,10 +908,17 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
       ))}
 
       <p className="text-[10px] text-muted mt-2">
-        Free float ~{freeFloat.toFixed(0)}%.{" "}
-        {hist.length > 1 ? `${hist.length} disclosures, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}. ` : ""}
-        ▲▼ = change vs the prior disclosure, in percentage points (0.65pp = the group&apos;s
-        share of the company moved by 0.65). Descriptive, not advice.
+        {bn
+          ? `প্রকাশিত অ-উদ্যোক্তা মালিকানা প্রায় ${reportedNonSponsor.toFixed(0)}%। এটি উপরে দেখানো এক্সচেঞ্জ-সমন্বিত ফ্রি ফ্লোট নয়। `
+          : `Reported non-sponsor ownership is about ${reportedNonSponsor.toFixed(0)}%. This is not the exchange-adjusted free float shown above. `}
+        {hist.length > 1
+          ? bn
+            ? `${hist.length}টি প্রকাশ, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}। `
+            : `${hist.length} disclosures, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}. `
+          : ""}
+        {bn
+          ? "▲▼ = আগের প্রকাশ থেকে শতাংশ-পয়েন্ট পরিবর্তন। তথ্যমূলক, পরামর্শ নয়।"
+          : "▲▼ = percentage-point change from the prior disclosure. Descriptive, not advice."}
       </p>
     </Card>
   );

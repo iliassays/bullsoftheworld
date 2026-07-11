@@ -1,4 +1,4 @@
-from bulls.analytics import build_investor_lens
+from bulls.analytics import build_investor_lens, dividend_score
 
 
 def _by_key(result):
@@ -52,4 +52,32 @@ def test_investor_lens_handles_thin_missing_inputs():
     assert lenses["graham_value"].verdict == "thin_data"
     assert lenses["smart_money"].verdict == "thin_data"
     assert lenses["taleb_risk"].score is not None
-    assert result.disclaimer.startswith("Investor Lens")
+    assert "অনুপস্থিত পরীক্ষা" in result.disclaimer
+
+
+def test_us_lens_uses_us_currency_and_omits_dse_only_checks():
+    result = build_investor_lens(
+        code="AAPL",
+        as_of_date="2026-07-10",
+        market="US",
+        locale="en",
+        adtv_mn=5000,
+        volatility=22,
+        today_change_pct=1.2,
+        nearest_support=201.25,
+        nearest_resistance=220.5,
+        above_sma_50=True,
+    )
+
+    lenses = _by_key(result)
+    technical = lenses["technical_trader"]
+    risk = lenses["taleb_risk"]
+    levels = next(check for check in technical.checks if check.label == "Support / resistance")
+    assert levels.actual == "$201.25 / $220.50"
+    assert all(check.label != "Category" for check in risk.checks)
+    assert "$" in next(check for check in risk.checks if check.label == "Liquidity (ADTV)").actual
+    assert "DSE" not in result.disclaimer
+
+
+def test_token_dividend_yield_cannot_look_like_strong_income():
+    assert dividend_score(dividend_yield=0.3, roe=30, eps_growth_yoy=20) <= 4

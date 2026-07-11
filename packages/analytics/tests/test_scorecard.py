@@ -56,7 +56,7 @@ def test_red_flags_fire():
         today_change_pct=9.9,
     )
     keys = {f.key for f in rf.flags}
-    assert keys == {"z_category", "thin", "lossmaking", "no_dividend", "tiny_float", "circuit"}
+    assert keys == {"z_category", "thin", "lossmaking", "tiny_float", "circuit"}
     assert rf.clean is False
 
 

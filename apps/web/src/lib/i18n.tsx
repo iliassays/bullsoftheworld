@@ -356,6 +356,16 @@ const STRINGS: Record<string, Entry> = {
   "marketPulse.turnover": { en: "Turnover", bn: "টার্নওভার" },
   "marketPulse.vs20d": { en: "vs 20D avg", bn: "২০D গড়ের তুলনায়" },
   "marketPulse.breadth": { en: "Breadth", bn: "ব্রেডথ" },
+  "marketPulse.trackedBreadth": { en: "Tracked breadth", bn: "ট্র্যাক করা শেয়ারের ব্রেডথ" },
+  "marketPulse.tracked": { en: "Tracked", bn: "ট্র্যাক করা" },
+  "marketPulse.coverageFull": {
+    en: "Breadth represents nearly the full active product universe.",
+    bn: "ব্রেডথটি প্রায় পুরো সক্রিয় প্রোডাক্ট ইউনিভার্সকে প্রতিনিধিত্ব করে।",
+  },
+  "marketPulse.coveragePartial": {
+    en: "This is cohort context, not a whole-market breadth reading.",
+    bn: "এটি নির্বাচিত কোহর্টের প্রেক্ষাপট, পুরো বাজারের ব্রেডথ নয়।",
+  },
   "marketPulse.sectors": { en: "Sectors", bn: "খাত" },
   "marketPulse.weak": { en: "Weak", bn: "দুর্বল" },
   "marketPulse.footer": {

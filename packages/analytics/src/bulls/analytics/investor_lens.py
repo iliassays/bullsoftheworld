@@ -1,8 +1,8 @@
-"""Investor Lens — deterministic persona-style reads over DSE facts.
+"""Investor Lens — deterministic style-based reads over market facts.
 
 This borrows the useful part of the ai-hedge-fund idea: different investment styles read the same
 stock differently. It deliberately does not emit buy/sell calls, target prices, or a single final
-rating. Each lens is a grounded interpretation of the persisted DSE analytics row.
+rating. Each lens is a grounded interpretation of the persisted analytics row.
 """
 
 from __future__ import annotations
@@ -43,14 +43,8 @@ class InvestorLensResponse(BaseModel):
 
 
 _DISCLAIMER = {
-    "en": (
-        "Investor Lens shows how different investing styles read the same DSE facts. It is not a "
-        "recommendation, price target, or trading signal."
-    ),
-    "bn": (
-        "Investor Lens একই DSE তথ্যকে ভিন্ন বিনিয়োগ-স্টাইল কীভাবে পড়ে তা দেখায়। এটি সুপারিশ, "
-        "দাম লক্ষ্যমাত্রা বা ট্রেডিং সিগন্যাল নয়।"
-    ),
+    "en": "These checks organize available facts; missing checks are not evidence of safety. This is not a recommendation, price target, or trading signal.",
+    "bn": "এই পরীক্ষাগুলো শুধু পাওয়া তথ্য সাজায়; অনুপস্থিত পরীক্ষা নিরাপত্তার প্রমাণ নয়। এটি সুপারিশ, দাম লক্ষ্যমাত্রা বা ট্রেডিং সংকেত নয়।",
 }
 
 
@@ -211,9 +205,18 @@ def dividend_score(
         return None
     if dividend_yield <= 0:
         return 2  # pays no cash dividend — weak on the income lens (known, not thin data)
-    score = 5.0
-    score += (
-        3 if dividend_yield >= 6 else 2 if dividend_yield >= 4 else 1 if dividend_yield >= 2 else 0
+    # Yield is the core of an income lens. A token yield must not reach a high score merely because
+    # profitability is healthy; those facts speak to quality, not meaningful current income.
+    score = (
+        2.0
+        if dividend_yield < 1
+        else 3.0
+        if dividend_yield < 2
+        else 5.0
+        if dividend_yield < 4
+        else 7.0
+        if dividend_yield < 6
+        else 8.0
     )
     if roe is not None:
         score += 1 if roe >= 10 else -2 if roe <= 0 else 0
@@ -238,16 +241,20 @@ def _fmt_x(v: float | None) -> str:
     return "—" if v is None else f"{v:.1f}x"
 
 
-def _fmt_tk_mn(v: float | None) -> str:
+def _fmt_money_mn(v: float | None, market: str) -> str:
     if v is None:
         return "—"
+    if market == "US":
+        return f"${v / 1000:.1f}B" if v >= 1000 else f"${v:.1f}M"
     if v >= 10:
         return f"৳{v / 10:.1f}cr"
     return f"৳{v:.1f}mn"
 
 
-def _fmt_tk(v: float | None) -> str:
-    return "—" if v is None else f"৳{v:.1f}"
+def _fmt_price(v: float | None, market: str) -> str:
+    if v is None:
+        return "—"
+    return f"${v:,.2f}" if market == "US" else f"৳{v:,.1f}"
 
 
 def _chk(label, val, want, *, good, weak, fmt=_fmt_x) -> LensCheck:
@@ -383,7 +390,7 @@ def _graham(
     ]
     return InvestorLens(
         key="graham_value",
-        name="Graham Value",
+        name="মূল্যায়ন ও ব্যালান্স শিট" if bn else "Value & Balance Sheet",
         persona="Margin-of-safety value read",
         verdict=_verdict(s),
         score=s,
@@ -511,7 +518,7 @@ def _buffett(
     ]
     return InvestorLens(
         key="buffett_quality",
-        name="Buffett/Munger Quality",
+        name="ব্যবসার মান" if bn else "Business Quality",
         persona="Quality business read",
         verdict=_verdict(s),
         score=s,
@@ -534,6 +541,7 @@ def _technical(
     nearest_support: float | None = None,
     nearest_resistance: float | None = None,
     last_close: float | None = None,
+    market: str = "DSE",
 ) -> InvestorLens:
     if above_sma_50 is None and above_sma_200 is None and mom_12_1 is None and rsi_14 is None:
         s = None
@@ -643,7 +651,7 @@ def _technical(
         ),
         LensCheck(
             label="সাপোর্ট / রেজিস্ট্যান্স" if bn else "Support / resistance",
-            actual=f"{_fmt_tk(nearest_support)} / {_fmt_tk(nearest_resistance)}"
+            actual=f"{_fmt_price(nearest_support, market)} / {_fmt_price(nearest_resistance, market)}"
             if (nearest_support is not None or nearest_resistance is not None)
             else "—",
             expected="",
@@ -652,7 +660,7 @@ def _technical(
     ]
     return InvestorLens(
         key="technical_trader",
-        name="Technical Trader",
+        name="দাম ও ট্রেন্ড" if bn else "Price & Trend",
         persona="Price-action read",
         verdict=_verdict(s),
         score=s,
@@ -737,7 +745,7 @@ def _smart_money(
     ]
     return InvestorLens(
         key="smart_money",
-        name="Smart Money",
+        name="মালিকানা ও প্রবাহ" if bn else "Ownership & Flow",
         persona="Ownership-flow read",
         verdict=_verdict(s),
         score=s,
@@ -757,6 +765,7 @@ def _dividend(
     div_paid_years: int = 0,
     div_total_years: int = 0,
     latest_cash_pct: float | None = None,
+    latest_cash_per_share: float | None = None,
     latest_bonus_pct: float | None = None,
 ) -> InvestorLens:
     s = dividend_score(dividend_yield=dividend_yield, roe=roe, eps_growth_yoy=eps_growth_yoy)
@@ -837,6 +846,12 @@ def _dividend(
                 )
             )
             if latest_cash_pct is not None
+            else (
+                f"${latest_cash_per_share:.2f} প্রতি শেয়ার"
+                if bn
+                else f"${latest_cash_per_share:.2f} per share"
+            )
+            if latest_cash_per_share is not None
             else "—",
             expected="",
             status="na",
@@ -844,7 +859,7 @@ def _dividend(
     ]
     return InvestorLens(
         key="dividend_income",
-        name="Dividend Investor",
+        name="লভ্যাংশ আয়" if bn else "Dividend Income",
         persona="Cash-income read",
         verdict=_verdict(s),
         score=s,
@@ -863,7 +878,9 @@ def _taleb_risk(
     free_float_cap_mn: float | None,
     volatility: float | None,
     today_change_pct: float | None,
+    market: str = "DSE",
 ) -> InvestorLens:
+    category = category if market == "DSE" else None
     s = risk_score(
         category=category,
         adtv_mn=adtv_mn,
@@ -876,34 +893,39 @@ def _taleb_risk(
     if bn:
         summary = "ভুল হলে বের হওয়া কতটা কঠিন হতে পারে — লিকুইডিটি, ভোলাটিলিটি ও ক্যাটাগরি দিয়ে তা পড়ে।"
         points = [
-            f"Category {category or '—'}",
-            f"ADTV {_fmt_tk_mn(adtv_mn)} · rough 5% order guide {_fmt_tk_mn(order_guide)}",
+            *([f"ক্যাটাগরি {category or '—'}"] if market == "DSE" else []),
+            f"দৈনিক গড় লেনদেন {_fmt_money_mn(adtv_mn, market)} · আনুমানিক ৫% অর্ডার সীমা {_fmt_money_mn(order_guide, market)}",
             f"Volatility {_fmt_pct(volatility)} · today {_fmt_pct(today_change_pct)}",
         ]
         watch_next = ["বিড-আস্ক স্প্রেড", "অর্ডার সাইজ", "নিজের stop-loss"]
     else:
         summary = "Focuses on fragility: exit risk, volatility, category risk, and whether orders can move price."
         points = [
-            f"Category {category or '—'}",
-            f"ADTV {_fmt_tk_mn(adtv_mn)} · rough 5% order guide {_fmt_tk_mn(order_guide)}",
+            *([f"Category {category or '—'}"] if market == "DSE" else []),
+            f"ADTV {_fmt_money_mn(adtv_mn, market)} · rough 5% order guide {_fmt_money_mn(order_guide, market)}",
             f"Volatility {_fmt_pct(volatility)} · today {_fmt_pct(today_change_pct)}",
         ]
         watch_next = ["Bid-ask spread", "Order size", "Your stop-loss"]
 
-    checks = [
-        LensCheck(
-            label="ক্যাটাগরি" if bn else "Category",
-            actual=category or "—",
-            expected="A / B",
-            status="fail" if category == "Z" else "pass" if category else "na",
-        ),
+    checks = (
+        [
+            LensCheck(
+                label="ক্যাটাগরি" if bn else "Category",
+                actual=category or "—",
+                expected="A / B",
+                status="fail" if category == "Z" else "pass" if category else "na",
+            ),
+        ]
+        if market == "DSE"
+        else []
+    ) + [
         _chk(
             "লিকুইডিটি (ADTV)" if bn else "Liquidity (ADTV)",
             adtv_mn,
-            "≥ ৳5mn/day",
+            f"≥ {_fmt_money_mn(5, market)}/day",
             good=lambda x: x >= 10,
             weak=lambda x: x < 5,
-            fmt=_fmt_tk_mn,
+            fmt=lambda v: _fmt_money_mn(v, market),
         ),
         _chk(
             "ভোলাটিলিটি" if bn else "Volatility",
@@ -916,7 +938,9 @@ def _taleb_risk(
         _chk(
             "আজকের মুভ" if bn else "Today's move",
             today_change_pct,
-            "সার্কিটে নয়" if bn else "not at circuit",
+            ("সার্কিট সীমায় নয়" if bn else "not at circuit")
+            if market == "DSE"
+            else ("অস্বাভাবিক দৈনিক মুভ নয়" if bn else "not an extreme daily move"),
             good=lambda x: abs(x) < 7,
             weak=lambda x: abs(x) >= 9.5,
             fmt=_fmt_pct,
@@ -924,7 +948,7 @@ def _taleb_risk(
     ]
     return InvestorLens(
         key="taleb_risk",
-        name="Taleb Risk",
+        name="লিকুইডিটি ও ভঙ্গুরতা" if bn else "Liquidity & Fragility",
         persona="Downside and exit-risk read",
         verdict=_verdict(s),
         score=s,
@@ -940,6 +964,7 @@ def build_investor_lens(
     code: str,
     as_of_date: str,
     locale: str = "en",
+    market: str = "DSE",
     category: str | None = None,
     pe_ratio: float | None = None,
     pb_ratio: float | None = None,
@@ -972,12 +997,14 @@ def build_investor_lens(
     div_paid_years: int = 0,
     div_total_years: int = 0,
     latest_cash_pct: float | None = None,
+    latest_cash_per_share: float | None = None,
     latest_bonus_pct: float | None = None,
     eps_history: list[float] | None = None,
     next_meeting_date: str | None = None,
     next_meeting_period: str | None = None,
 ) -> InvestorLensResponse:
-    """Build the six best-fit DSE lenses for a symbol."""
+    """Build six market-aware research lenses for a symbol."""
+    market = market.upper()
     bn = locale == "bn"
     lenses = [
         _graham(
@@ -1009,6 +1036,7 @@ def build_investor_lens(
             div_paid_years=div_paid_years,
             div_total_years=div_total_years,
             latest_cash_pct=latest_cash_pct,
+            latest_cash_per_share=latest_cash_per_share,
             latest_bonus_pct=latest_bonus_pct,
         ),
         _technical(
@@ -1022,6 +1050,7 @@ def build_investor_lens(
             nearest_support=nearest_support,
             nearest_resistance=nearest_resistance,
             last_close=last_close,
+            market=market,
         ),
         _smart_money(
             bn=bn,
@@ -1042,6 +1071,7 @@ def build_investor_lens(
             free_float_cap_mn=free_float_cap_mn,
             volatility=volatility,
             today_change_pct=today_change_pct,
+            market=market,
         ),
     ]
     return InvestorLensResponse(

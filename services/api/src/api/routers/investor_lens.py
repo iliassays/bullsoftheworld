@@ -1,6 +1,6 @@
 """Investor Lens for one symbol.
 
-Different investment styles read the same DSE facts differently. This endpoint returns deterministic,
+Different investment styles read the same market facts differently. This endpoint returns deterministic,
 grounded persona-style reads without buy/sell calls or targets.
 """
 
@@ -20,6 +20,7 @@ from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
     DividendRecord,
+    SecFiling,
     Symbol,
     TickerAnalytics,
 )
@@ -99,6 +100,25 @@ async def get_investor_lens(
                 arrow = " ▼"
         recent_news_label = f"{top.category}{arrow}"
 
+    # US official evidence lives in normalized EDGAR filings, not the DSE announcement table.
+    # Fold it into the same 90-day check without pretending every filing is directional news.
+    if get_market_profile(tenant.market).features.sec_filings:
+        filings = list(
+            await session.scalars(
+                select(SecFiling)
+                .where(
+                    SecFiling.market == tenant.market,
+                    SecFiling.code == code,
+                    SecFiling.filing_date >= since,
+                )
+                .order_by(SecFiling.filing_date.desc())
+            )
+        )
+        if filings:
+            latest_filing = filings[0]
+            news.extend(filings)
+            recent_news_label = f"{latest_filing.form} · {latest_filing.category.replace('_', ' ')}"
+
     # Dividend track record (last few years) — so the Dividend lens shows consistency + latest
     # cash/bonus split instead of "check payout history / bonus vs cash".
     divs = list(
@@ -110,8 +130,9 @@ async def get_investor_lens(
         )
     )
     div_total_years = len(divs)
-    div_paid_years = sum(1 for dv in divs if (dv.cash_pct or 0) > 0)
+    div_paid_years = sum(1 for dv in divs if (dv.cash_pct or 0) > 0 or (dv.cash_per_share or 0) > 0)
     latest_cash_pct = divs[0].cash_pct if divs else None
+    latest_cash_per_share = divs[0].cash_per_share if divs else None
     latest_bonus_pct = divs[0].bonus_pct if divs else None
 
     # Multi-year EPS (oldest -> newest) for the Buffett 5-year earnings trend check.
@@ -153,6 +174,7 @@ async def get_investor_lens(
         code=code,
         as_of_date=str(ta.as_of_date),
         locale=locale,
+        market=tenant.market,
         category=sym.category,
         pe_ratio=ta.pe_ratio,
         pb_ratio=ta.pb_ratio,
@@ -185,6 +207,7 @@ async def get_investor_lens(
         div_paid_years=div_paid_years,
         div_total_years=div_total_years,
         latest_cash_pct=latest_cash_pct,
+        latest_cash_per_share=latest_cash_per_share,
         latest_bonus_pct=latest_bonus_pct,
         eps_history=eps_history,
         next_meeting_date=next_meeting_date,

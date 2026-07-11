@@ -25,8 +25,8 @@ export const PATTERN_ORDER: PatternType[] = [
 
 export const PATTERN_STATUS_LABEL: Record<PatternStatus, { en: string; bn: string }> = {
   forming: { en: "forming", bn: "গঠিত হচ্ছে" },
-  confirmed_breakout_up: { en: "broke out up", bn: "উপরে ব্রেকআউট" },
-  confirmed_breakout_down: { en: "broke out down", bn: "নিচে ব্রেকআউট" },
+  confirmed_breakout_up: { en: "moved above the boundary", bn: "সীমার উপরে গেছে" },
+  confirmed_breakout_down: { en: "moved below the boundary", bn: "সীমার নিচে গেছে" },
   invalidated: { en: "invalidated", bn: "ভেঙে গেছে" },
 };
 

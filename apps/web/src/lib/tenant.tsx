@@ -72,7 +72,7 @@ const US_FALLBACK: MarketConfig = {
   open_time: "09:30",
   close_time: "16:00",
   settlement_cycle: "T+1",
-  benchmark_label: "S&P 500",
+  benchmark_label: "SPY (S&P 500 ETF)",
   default_locale: "en",
   price_decimals: 2,
   compact_money_units: [

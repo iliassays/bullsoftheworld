@@ -18,9 +18,9 @@ const signedPct = (value: number | null) =>
   value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
 const changeLabel = (value: InstitutionalPosition["change_type"], bn: boolean) => {
-  if (!bn) return value;
+  if (!bn) return value === "new" ? "First reported" : value;
   return {
-    new: "নতুন",
+    new: "প্রথম রিপোর্ট",
     increased: "বাড়িয়েছে",
     reduced: "কমিয়েছে",
     unchanged: "অপরিবর্তিত",
@@ -96,7 +96,7 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
 
   const views: Array<{ id: View; en: string; bn: string }> = [
     { id: "largest", en: "Largest", bn: "সবচেয়ে বড়" },
-    { id: "new", en: "New", bn: "নতুন" },
+    { id: "new", en: "First reported", bn: "প্রথম রিপোর্ট" },
     { id: "added", en: "Added", bn: "বাড়িয়েছে" },
     { id: "trimmed", en: "Trimmed", bn: "কমিয়েছে" },
     { id: "exited", en: "Exited", bn: "বেরিয়েছে" },
@@ -200,9 +200,14 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
 
       <div className="mt-3 text-[11px] text-muted">
         {bn
-          ? `নতুন ${latest.new_positions} · বাড়িয়েছে ${latest.increased_positions} · কমিয়েছে ${latest.reduced_positions} · বেরিয়েছে ${latest.exited_positions}`
-          : `New ${latest.new_positions} · added ${latest.increased_positions} · trimmed ${latest.reduced_positions} · exited ${latest.exited_positions}`}
+          ? `প্রথম রিপোর্ট ${latest.new_positions} · বাড়িয়েছে ${latest.increased_positions} · কমিয়েছে ${latest.reduced_positions} · বেরিয়েছে ${latest.exited_positions}`
+          : `First reported ${latest.new_positions} · added ${latest.increased_positions} · trimmed ${latest.reduced_positions} · exited ${latest.exited_positions}`}
       </div>
+      <p className="mt-1 text-[10px] leading-snug text-muted">
+        {bn
+          ? "‘প্রথম রিপোর্ট’ মানে তুলনাযোগ্য লোড করা ইতিহাসে প্রথম দেখা; এটি নতুন কেনাকাটার প্রমাণ নয়।"
+          : "First reported means first seen in the loaded comparable history; it does not prove a new purchase."}
+      </p>
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {views.map((item) => (

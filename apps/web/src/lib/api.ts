@@ -396,6 +396,10 @@ export interface MarketPulse {
   decliners: number;
   unchanged: number;
   total: number;
+  published_symbols: number;
+  eligible_symbols: number;
+  coverage_ratio: number;
+  coverage_complete: boolean;
   top_sector: string | null;
   top_sector_change: number | null;
   weak_sector: string | null;
@@ -435,6 +439,7 @@ export interface Company {
   };
   ownership: {
     sponsor_pct: number | null;
+    govt_pct: number | null;
     institute_pct: number | null;
     foreign_pct: number | null;
     public_pct: number | null;
@@ -444,6 +449,7 @@ export interface Company {
     history: {
       as_of: string;
       sponsor: number | null;
+      govt: number | null;
       institute: number | null;
       foreign: number | null;
       public: number | null;

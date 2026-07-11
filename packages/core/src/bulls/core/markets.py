@@ -183,7 +183,9 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         holidays=US_HOLIDAYS_2026,
         early_closes=US_EARLY_CLOSES_2026,
         settlement_cycle="T+1",
-        benchmark_label="S&P 500",
+        # The free EOD adapter stores SPY, not the cash S&P 500 index. Never present an ETF price
+        # as the index level; relative-return comparisons remain valid when both use SPY.
+        benchmark_label="SPY (S&P 500 ETF)",
         default_locale="en",
         price_decimals=2,
         compact_money_units=(

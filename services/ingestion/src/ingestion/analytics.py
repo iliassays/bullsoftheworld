@@ -109,7 +109,7 @@ def _valuation_row(
 
 
 async def _load_latest_cash_dividend(
-    session, market: str
+    session, market: str, *, as_of_year: int | None = None
 ) -> dict[str, tuple[float | None, float | None]]:
     """Most recent declared year's cash dividend (% of face value), per code.
 
@@ -118,6 +118,7 @@ async def _load_latest_cash_dividend(
     than shown a years-old yield. This is the authoritative, correctly-typed source — unlike the
     'Latest Dividend Status' label, which can report a bonus figure as if it were cash.
     """
+    as_of_year = as_of_year or dt.date.today().year
     rows = list(
         await session.scalars(
             select(DividendRecord)
@@ -131,9 +132,18 @@ async def _load_latest_cash_dividend(
         if r.code in seen:  # first row per code is its latest year
             continue
         seen.add(r.code)
+        # A historical payment is useful history, but must not become a current yield. Allow the
+        # current/prior reporting year because many issuers declare after their fiscal year closes.
+        if not _is_current_dividend_year(r.year, as_of_year):
+            continue
         if (r.cash_pct and r.cash_pct > 0) or (r.cash_per_share and r.cash_per_share > 0):
             out[r.code] = (r.cash_pct, r.cash_per_share)
     return out
+
+
+def _is_current_dividend_year(dividend_year: int, as_of_year: int) -> bool:
+    """Current yield may use only the current or immediately preceding reporting year."""
+    return as_of_year - 1 <= dividend_year <= as_of_year
 
 
 async def _load_ownership(session, market: str) -> dict[str, dict[str, float | None]]:
