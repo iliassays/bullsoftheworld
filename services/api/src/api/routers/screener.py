@@ -922,19 +922,19 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem, market: str = "DSE") -> 
             item.catalyst
             or screen.key.startswith(_CHART_PATTERN_PREFIX)  # plain descriptive geometry per
             # type — unlike sponsor_selling, none of these assert a real disclosed negative fact
-            # (they're explicitly "framework, not a signal"), so a liquidity-based Clean read
+            # (they're explicitly "framework, not a signal"), so a liquidity-based supported read
             # applies the same way regardless of whether the shape leans bullish or bearish.
             or screen.key
             in {
-                # institutional_selling/sponsor_selling are deliberately NOT here — a green "Clean
-                # read" chip is the wrong tone on a distribution/insider-selling board regardless
+                # institutional_selling/sponsor_selling are deliberately NOT here — a green
+                # support chip is the wrong tone on a distribution/insider-selling board regardless
                 # of how liquid the stock is.
                 "institutional_buying",
                 "foreign_buying",
                 "quality_roe",
                 "value_vs_sector",  # same shape as quality_roe: a plain value ranking, no
                 # catalyst concept — omitting it meant "Cheap vs sector" could never show
-                # "Clean read" even for a deep-liquidity Cat-A stock (confirmed live: BSC,
+                # a supported read even for a deep-liquidity Cat-A stock (confirmed live: BSC,
                 # BSRMSTEEL, MALEKSPIN all had >20mn ADTV and zero risk flags, 2026-07-05).
                 "dividend_yield",
                 "beating_market",
@@ -942,8 +942,8 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem, market: str = "DSE") -> 
             }
         )
     ):
-        return "Clean read"
-    return "Mixed read"
+        return "Screen checks met"
+    return "Mixed evidence"
 
 
 def _why_text(screen: ScreenOut, item: ScreenItem, market: str) -> str:
@@ -1507,10 +1507,8 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
-    # v4: value_vs_sector added to the Clean-read whitelist in _setup_quality (bump on shape
-    # changes — the key folds in data freshness, but only a version bump invalidates on code
-    # changes; confirmed live 2026-07-05 that skipping this left stale "Mixed read" cached).
-    key = f"screens:v9:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
+    # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
+    key = f"screens:v10:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)

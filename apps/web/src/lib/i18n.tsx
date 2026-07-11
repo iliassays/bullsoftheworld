@@ -598,6 +598,11 @@ const STRINGS: Record<string, Entry> = {
     en: "Classic chart shapes currently forming — textbook technical analysis, not proven on DSE.",
     bn: "এখন গঠিত হচ্ছে এমন ক্লাসিক চার্ট আকার — প্রথাগত টেকনিক্যাল অ্যানালাইসিস, DSE-তে প্রমাণিত নয়।",
   },
+  // Evidence labels deliberately avoid implying that a passing screen is a safety verdict.
+  "setup.supported": { en: "Screen checks met", bn: "স্ক্রিনের শর্ত পূরণ" },
+  "setup.evidenceMixed": { en: "Mixed evidence", bn: "মিশ্র প্রমাণ" },
+  "setup.higherRisk": { en: "Higher-risk setup", bn: "উচ্চ-ঝুঁকির সেটআপ" },
+  "mh.vsBenchmark": { en: "vs benchmark", bn: "বাজার সূচকের তুলনায়" },
   // Group labels
   "group.movers": { en: "Movers", bn: "মুভার" },
   "group.community": { en: "Community", bn: "কমিউনিটি" },

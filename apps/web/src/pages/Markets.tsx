@@ -186,16 +186,16 @@ function takaMn(mn: number | null | undefined): string {
 
 function setupTone(setup: string | null | undefined): Chip["tone"] {
   if (!setup) return "neutral";
-  if (setup.includes("Clean")) return "up";
+  if (setup.includes("checks met")) return "up";
   if (setup.includes("High-risk")) return "down";
   return "neutral";
 }
 
 function setupLabel(setup: string | null | undefined, t: Tr): string | null {
   if (!setup) return null;
-  if (setup.includes("Clean")) return t("setup.clean");
-  if (setup.includes("High-risk")) return t("setup.risky");
-  return t("setup.mixed");
+  if (setup.includes("checks met")) return t("setup.supported");
+  if (setup.includes("High-risk")) return t("setup.higherRisk");
+  return t("setup.evidenceMixed");
 }
 
 function liquidityLabel(liquidity: string | null | undefined, t: Tr): string | null {
@@ -275,7 +275,7 @@ export function metricHeader(label: string, t: Tr): string {
   if (label === "turnover") return t("mh.turnover");
   if (label === "pp") return t("mh.bigMoney");
   if (label === "momentum") return t("mh.trend");
-  if (label === "vs market") return t("mh.vsDsex");
+  if (label === "vs market") return t("mh.vsBenchmark");
   if (label === "ROE") return t("mh.roe") === "mh.roe" ? "ROE" : t("mh.roe");
   if (label === "volatility") return t("mh.volatility");
   if (label === "score") return t("mh.strength");
@@ -1248,9 +1248,9 @@ function ScreenCard({ s }: { s: Screen }) {
 function LiquidityGuideSheet({ onClose }: { onClose: () => void }) {
   const { t } = useLang();
   const setupRows: { label: string; body: string; tone: Chip["tone"] }[] = [
-    { label: t("setup.clean"), body: t("liqGuide.setupCleanBody"), tone: "up" },
-    { label: t("setup.mixed"), body: t("liqGuide.setupMixedBody"), tone: "neutral" },
-    { label: t("setup.risky"), body: t("liqGuide.setupRiskyBody"), tone: "down" },
+    { label: t("setup.supported"), body: t("liqGuide.setupCleanBody"), tone: "up" },
+    { label: t("setup.evidenceMixed"), body: t("liqGuide.setupMixedBody"), tone: "neutral" },
+    { label: t("setup.higherRisk"), body: t("liqGuide.setupRiskyBody"), tone: "down" },
   ];
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55" onClick={onClose}>

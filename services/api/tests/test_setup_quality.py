@@ -26,7 +26,7 @@ def test_deep_liquidity_value_vs_sector_is_clean_not_mixed():
     no pump note, on the 'Cheap vs sector' screen — must be able to read Clean."""
     screen = _screen("value_vs_sector")
     item = _item(category="A", adtv_mn=54.2, note=None)
-    assert _setup_quality(screen, item) == "Clean read"
+    assert _setup_quality(screen, item) == "Screen checks met"
 
 
 def test_thin_liquidity_value_vs_sector_stays_mixed():
@@ -34,7 +34,7 @@ def test_thin_liquidity_value_vs_sector_stays_mixed():
     # genuine "needs a second look" middle ground, distinct from both other tiers.
     screen = _screen("value_vs_sector")
     item = _item(category="A", adtv_mn=10.0, note=None)
-    assert _setup_quality(screen, item) == "Mixed read"
+    assert _setup_quality(screen, item) == "Mixed evidence"
 
 
 def test_z_category_is_always_high_risk_even_with_deep_liquidity():
@@ -48,7 +48,7 @@ def test_sponsor_selling_never_reads_clean_even_with_deep_liquidity():
     would send the wrong signal on a cautionary insider-selling board."""
     screen = _screen("sponsor_selling")
     item = _item(category="A", adtv_mn=100.0, note=None)
-    assert _setup_quality(screen, item) != "Clean read"
+    assert _setup_quality(screen, item) != "Screen checks met"
 
 
 def test_institutional_selling_never_reads_clean_even_with_deep_liquidity():
@@ -57,10 +57,10 @@ def test_institutional_selling_never_reads_clean_even_with_deep_liquidity():
     2026-07-05 after a user asked why only sponsors got a 'selling' board."""
     screen = _screen("institutional_selling")
     item = _item(category="A", adtv_mn=100.0, note=None)
-    assert _setup_quality(screen, item) != "Clean read"
+    assert _setup_quality(screen, item) != "Screen checks met"
 
 
 def test_screen_without_catalyst_or_whitelist_membership_is_mixed():
     screen = _screen("some_screen_not_in_the_whitelist")
     item = _item(category="A", adtv_mn=100.0, note=None)
-    assert _setup_quality(screen, item) == "Mixed read"
+    assert _setup_quality(screen, item) == "Mixed evidence"
