@@ -39,7 +39,7 @@ class SecFiling(Base):
     )
 
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
-    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), primary_key=True, index=True)
     accession_number: Mapped[str] = mapped_column(String(25), primary_key=True)
     cik: Mapped[int] = mapped_column(BigInteger, index=True)
     form: Mapped[str] = mapped_column(String(16), index=True)
@@ -103,7 +103,7 @@ class SecurityIdentifier(Base):
 
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     identifier_type: Mapped[str] = mapped_column(String(16), primary_key=True)
-    identifier: Mapped[str] = mapped_column(String(32), primary_key=True)
+    identifier: Mapped[str] = mapped_column(String(32), primary_key=True, index=True)
     code: Mapped[str] = mapped_column(String(16), index=True)
     source: Mapped[str] = mapped_column(String(32))
     match_method: Mapped[str] = mapped_column(String(32))
