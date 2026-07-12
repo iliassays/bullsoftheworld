@@ -48,14 +48,30 @@ async def test_institutional_selling_has_its_own_key_title_and_surfaces_a_real_d
         session.add_all(
             [
                 ShareholdingSnapshot(
-                    market="DSE", code=code, as_of_date=dt.date(2026, 4, 30), institute=20.0
+                    market="DSE",
+                    code=code,
+                    as_of_date=dt.date(2026, 4, 30),
+                    sponsor_director=50.0,
+                    govt=0.0,
+                    institute=20.0,
+                    foreign_pct=0.0,
+                    public=30.0,
                 ),
                 ShareholdingSnapshot(
-                    market="DSE", code=code, as_of_date=dt.date(2026, 7, 1), institute=15.0
+                    market="DSE",
+                    code=code,
+                    as_of_date=dt.date(2026, 7, 1),
+                    sponsor_director=50.0,
+                    govt=0.0,
+                    institute=15.0,
+                    foreign_pct=0.0,
+                    public=35.0,
                 ),
             ]
         )
-        await session.commit()
+        # Flush so the same session can query the fixture, but never commit synthetic securities
+        # into the developer/application database. Session close rolls the transaction back.
+        await session.flush()
 
         # limit=1000: PER_SCREEN's real default (8) made this flake once the dev DB accumulated
         # 17+ real stocks with an equal-or-bigger institute drop, pushing this synthetic row out

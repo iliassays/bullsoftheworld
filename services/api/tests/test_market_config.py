@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from api.deps import current_locale
 from api.routers.market import market_config
+from bulls.core.scheduling import analysis_schedule
 from bulls.core.tenancy import Tenant
 
 
@@ -25,6 +28,7 @@ async def test_market_config_preserves_dse_defaults() -> None:
         logo_url="https://bullsofdhaka.com/logo-mark-v2.png",
         tagline_en="Facts, not rumours",
         tagline_bn="তথ্যে চলুন, গুজবে নয়",
+        research_beta=False,
         social_url="https://facebook.example/bullsofdhaka",
     )
 
@@ -48,6 +52,7 @@ async def test_market_config_preserves_dse_defaults() -> None:
     assert config.features["interpreted_analytics"] is True
     assert config.features["price_alerts"] is True
     assert config.features["intraday_quotes"] is True
+    assert config.research_beta is False
     assert config.features["sec_filings"] is False
     assert config.features["strategy_scanner"] is True
     assert config.social_url == "https://facebook.example/bullsofdhaka"
@@ -69,6 +74,7 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
         logo_url="https://bullsofwallst.com/logo-mark-v2.png",
         tagline_en="US market intelligence, not noise",
         tagline_bn="যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়",
+        research_beta=True,
     )
 
     config = await market_config(tenant)
@@ -103,4 +109,27 @@ async def test_market_config_can_describe_us_tenant_without_dse_features() -> No
     assert config.features["automated_desks"] is True
     assert config.price_alert_evaluation == "session_close"
     assert config.features["intraday_quotes"] is False
+    assert config.research_beta is True
     assert config.social_url is None
+
+
+def test_dse_analysis_schedule_distinguishes_processing_window_from_late_data() -> None:
+    before_publication = dt.datetime(2026, 7, 12, 11, 0, tzinfo=dt.UTC)  # 17:00 Dhaka
+    expected, next_run = analysis_schedule(before_publication, "DSE")
+
+    assert expected == dt.date(2026, 7, 9)
+    assert next_run == dt.datetime(2026, 7, 12, 13, 15, tzinfo=dt.UTC)
+
+    after_publication = dt.datetime(2026, 7, 12, 14, 0, tzinfo=dt.UTC)
+    expected, next_run = analysis_schedule(after_publication, "DSE")
+
+    assert expected == dt.date(2026, 7, 12)
+    assert next_run == dt.datetime(2026, 7, 13, 13, 15, tzinfo=dt.UTC)
+
+
+def test_us_analysis_schedule_tracks_utc_cron_across_market_timezone() -> None:
+    before_publication = dt.datetime(2026, 7, 10, 0, 0, tzinfo=dt.UTC)
+    expected, next_run = analysis_schedule(before_publication, "US")
+
+    assert expected == dt.date(2026, 7, 8)
+    assert next_run == dt.datetime(2026, 7, 10, 1, 30, tzinfo=dt.UTC)

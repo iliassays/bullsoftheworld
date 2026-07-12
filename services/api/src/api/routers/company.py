@@ -1,13 +1,14 @@
 """Company data for the symbol page — fundamentals, ownership, earnings history.
 
 One read powering three tabs. Descriptive facts only; any field we can't compute is null (the UI
-shows "—") — we never guess. Valuation + ownership come from the persisted analytics snapshot, the
-rest from the weekly company scrape.
+shows "—") — we never guess. Valuation comes from the analytics snapshot; ownership is reconciled
+from validated disclosures so current values, deltas, and history always share one source.
 """
 
 from __future__ import annotations
 
 import itertools
+import math
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -28,6 +29,7 @@ router = APIRouter(tags=["company"])
 
 
 class Fundamentals(BaseModel):
+    valuation_as_of: str | None = None
     market_cap_mn: float | None = None
     pe_ratio: float | None = None
     pb_ratio: float | None = None
@@ -63,10 +65,14 @@ class Ownership(BaseModel):
     institute_pct: float | None = None
     foreign_pct: float | None = None
     public_pct: float | None = None
+    sponsor_delta: float | None = None
+    govt_delta: float | None = None
     institute_delta: float | None = None
     foreign_delta: float | None = None
+    public_delta: float | None = None
+    composition_total: float | None = None
     as_of: str | None = None
-    history: list[OwnershipPoint] = []  # all disclosures, oldest→newest, for the trend view
+    history: list[OwnershipPoint] = Field(default_factory=list)
 
 
 class EarningsRow(BaseModel):
@@ -241,6 +247,77 @@ def _quarter_rows(rows: list[SecFinancialFact]) -> list[QuarterlyFinancialRow]:
     return out
 
 
+def _valid_shareholding_snapshot(snapshot: ShareholdingSnapshot) -> bool:
+    """Reject incomplete or impossible disclosures before they reach the response."""
+
+    required = (
+        snapshot.sponsor_director,
+        snapshot.institute,
+        snapshot.foreign_pct,
+        snapshot.public,
+    )
+    if any(value is None or not math.isfinite(value) for value in required):
+        return False
+    values = (*required, snapshot.govt if snapshot.govt is not None else 0.0)
+    if any(value < 0 or value > 100 for value in values):
+        return False
+    return 99 <= sum(values) <= 101
+
+
+def _ownership_from_snapshots(snapshots: list[ShareholdingSnapshot]) -> Ownership:
+    """Build one internally consistent ownership view from validated disclosures only."""
+
+    valid = sorted(
+        (snapshot for snapshot in snapshots if _valid_shareholding_snapshot(snapshot)),
+        key=lambda snapshot: snapshot.as_of_date,
+    )
+    if not valid:
+        return Ownership()
+
+    latest = valid[-1]
+    previous = valid[-2] if len(valid) > 1 else None
+
+    def value(snapshot: ShareholdingSnapshot, field: str) -> float:
+        raw = getattr(snapshot, field)
+        return float(raw if raw is not None else 0.0)
+
+    def delta(field: str) -> float | None:
+        if previous is None:
+            return None
+        return round(value(latest, field) - value(previous, field), 4)
+
+    history = [
+        OwnershipPoint(
+            as_of=str(snapshot.as_of_date),
+            sponsor=value(snapshot, "sponsor_director"),
+            govt=value(snapshot, "govt"),
+            institute=value(snapshot, "institute"),
+            foreign=value(snapshot, "foreign_pct"),
+            public=value(snapshot, "public"),
+        )
+        for snapshot in valid
+    ]
+    composition_total = sum(
+        value(latest, field)
+        for field in ("sponsor_director", "govt", "institute", "foreign_pct", "public")
+    )
+    return Ownership(
+        sponsor_pct=value(latest, "sponsor_director"),
+        govt_pct=value(latest, "govt"),
+        institute_pct=value(latest, "institute"),
+        foreign_pct=value(latest, "foreign_pct"),
+        public_pct=value(latest, "public"),
+        sponsor_delta=delta("sponsor_director"),
+        govt_delta=delta("govt"),
+        institute_delta=delta("institute"),
+        foreign_delta=delta("foreign_pct"),
+        public_delta=delta("public"),
+        composition_total=round(composition_total, 4),
+        as_of=str(latest.as_of_date),
+        history=history,
+    )
+
+
 @router.get("/symbols/{code}/company")
 async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> CompanyResponse:
     enforce_market_feature(tenant, "company_fundamentals")
@@ -258,18 +335,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
             .order_by(ShareholdingSnapshot.as_of_date.asc())  # oldest→newest, for the trend
         )
     )
-    sh_history = [
-        OwnershipPoint(
-            as_of=str(s.as_of_date),
-            sponsor=s.sponsor_director,
-            govt=s.govt,
-            institute=s.institute,
-            foreign=s.foreign_pct,
-            public=s.public,
-        )
-        for s in snaps
-    ]
-    last_sh = snaps[-1].as_of_date if snaps else None
+    ownership = _ownership_from_snapshots(snaps)
     earnings = list(
         await session.scalars(
             select(AnnualFinancial)
@@ -299,6 +365,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
     return CompanyResponse(
         code=code,
         fundamentals=Fundamentals(
+            valuation_as_of=str(ta.as_of_date) if ta else None,
             market_cap_mn=ta.market_cap_mn if ta else None,
             pe_ratio=ta.pe_ratio if ta else None,
             pb_ratio=ta.pb_ratio if ta else None,
@@ -316,17 +383,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
             week52_low=ta.week52_low if ta else None,
             avg_volume_20=ta.avg_volume_20 if ta else None,
         ),
-        ownership=Ownership(
-            sponsor_pct=ta.sponsor_pct if ta else None,
-            govt_pct=snaps[-1].govt if snaps else None,
-            institute_pct=ta.institute_pct if ta else None,
-            foreign_pct=ta.foreign_pct if ta else None,
-            public_pct=ta.public_pct if ta else None,
-            institute_delta=ta.institute_delta if ta else None,
-            foreign_delta=ta.foreign_delta if ta else None,
-            as_of=str(last_sh) if last_sh else None,
-            history=sh_history,
-        ),
+        ownership=ownership,
         earnings=[
             EarningsRow(
                 fiscal_year=e.fiscal_year,

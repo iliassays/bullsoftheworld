@@ -49,6 +49,7 @@ async def get_plain_read(
         code=code,
         as_of_date=str(ta.as_of_date),
         locale=locale,
+        market=tenant.market,
         market_cap_mn=ta.market_cap_mn,
         adtv_mn=adtv_mn,
         above_sma_200=ta.above_sma_200,

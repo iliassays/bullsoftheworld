@@ -118,3 +118,50 @@ def test_etf_does_not_inherit_common_stock_sec_requirements() -> None:
     assert evidence.passed
     assert not evidence.gates["cik"]["required"]
     assert not evidence.gates["sec_facts"]["required"]
+
+
+def test_size_liquidity_and_price_policy_is_rechecked_at_promotion_gate() -> None:
+    security_id = uuid.uuid4()
+    policy = _policy().model_copy(
+        update={
+            "min_market_cap_mn": 300.0,
+            "max_market_cap_mn": 10_000.0,
+            "min_adtv_mn": 2.0,
+            "min_price": 3.0,
+        }
+    )
+    evidence = _evaluate_symbol(
+        code="TEST",
+        symbol=_symbol(security_id),
+        security=_security(security_id),
+        bars=(300, dt.date(2025, 1, 1), dt.date(2026, 7, 9), 300, 300, 0),
+        sec_filings=10,
+        sec_facts=20,
+        has_analytics=True,
+        has_13f=False,
+        policy=policy,
+        as_of_date=dt.date(2026, 7, 11),
+        analytics_snapshot=(2.50, 100_000.0, 250.0),
+    )
+
+    assert not evidence.passed
+    assert set(evidence.failure_reasons) == {
+        "market_cap_floor",
+        "liquidity",
+        "price_floor",
+    }
+
+    passing = _evaluate_symbol(
+        code="TEST",
+        symbol=_symbol(security_id),
+        security=_security(security_id),
+        bars=(300, dt.date(2025, 1, 1), dt.date(2026, 7, 9), 300, 300, 0),
+        sec_filings=10,
+        sec_facts=20,
+        has_analytics=True,
+        has_13f=False,
+        policy=policy,
+        as_of_date=dt.date(2026, 7, 11),
+        analytics_snapshot=(25.0, 500_000.0, 2_500.0),
+    )
+    assert passing.passed

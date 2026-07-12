@@ -19,6 +19,7 @@ apps/web/dist/
 # Data / local
 *.db
 data/
+var/
 *.log
 
 # OS / editors

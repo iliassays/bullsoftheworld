@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature
+from bulls.core.institutional_watch import WATCHED_MANAGER_CIKS, WATCHED_MANAGERS
 from bulls.core.models import (
     DailyBar,
     InstitutionalHoldingSummary,
@@ -109,6 +110,8 @@ class ManagerHistoryOut(BaseModel):
     manager_cik: int
     manager_name: str
     latest_value_usd: float
+    manager_style: str | None = None
+    interpretation: str | None = None
     points: list[ManagerHistoryPointOut]
 
 
@@ -232,10 +235,12 @@ def _bar_close(bar: DailyBar) -> float:
 
 def _period_return(bars: list[DailyBar], public_date: dt.date, sessions: int) -> float | None:
     after = [bar for bar in bars if bar.date >= public_date]
-    if len(after) < sessions:
+    # A 30-session return has 30 close-to-close intervals, so it needs the public-date anchor plus
+    # 30 later observations. Index ``sessions - 1`` would silently measure only 29 intervals.
+    if len(after) <= sessions:
         return None
     start = _bar_close(after[0])
-    end = _bar_close(after[sessions - 1])
+    end = _bar_close(after[sessions])
     return (end / start - 1) * 100 if start > 0 else None
 
 
@@ -337,7 +342,10 @@ async def _manager_histories(
         key=lambda row: abs(row.share_change or 0),
         reverse=True,
     )[:4]
-    selected_ciks = list(dict.fromkeys(row.manager_cik for row in [*ranked, *movers]))
+    watched = [row for row in latest_positions if row.manager_cik in WATCHED_MANAGER_CIKS]
+    selected_ciks = list(
+        dict.fromkeys(row.manager_cik for row in [*watched, *ranked, *movers])
+    )
     if not selected_ciks:
         return []
     history = list(
@@ -363,6 +371,10 @@ async def _manager_histories(
             manager_cik=cik,
             manager_name=latest_by_cik[cik].manager_name,
             latest_value_usd=latest_by_cik[cik].value_usd,
+            manager_style=(WATCHED_MANAGERS[cik].style if cik in WATCHED_MANAGERS else None),
+            interpretation=(
+                WATCHED_MANAGERS[cik].interpretation if cik in WATCHED_MANAGERS else None
+            ),
             points=[
                 ManagerHistoryPointOut(
                     report_date=str(row.report_date),
@@ -555,6 +567,7 @@ async def institutional_holdings(
             "Short positions are not reported; options and unresolved CUSIPs are excluded here.",
             "Aggregate changes can also reflect changes in the population of reporting managers.",
             "A manager may rebalance for flows, mandates, taxes, or risk rather than a directional view.",
+            "Quantitative market-maker exposure can represent inventory or hedging, not conviction.",
             "Manager timelines include only material retained rows and never merge managers by name.",
         ],
     )

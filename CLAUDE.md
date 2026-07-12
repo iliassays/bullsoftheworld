@@ -33,6 +33,10 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
 9. **Research UX contract.** `Ask this stock` must show the analyst read in the portal: valuation,
    technical, liquidity/flow, ownership, disclosure, and crowd lenses when data exists. Keep it
    descriptive and evidence-backed; never collapse it into unsupported buy/sell language.
+10. **Go-to-market contract.** Optimize for weekly activated researchers, not feature count,
+    account count or impressions. Retail activation is three watched stocks plus a later research
+    action. Institutional enquiries are a separate consented, tenant-scoped funnel. Never market
+    returns.
 
 ## Stack
 
@@ -43,7 +47,7 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
 | DB | **Postgres + pgvector** (relational + JSON + vector + full-text in one) |
 | ORM / migrations | **SQLAlchemy 2.0 async + Alembic** |
 | Cache / queue / WS | **Redis** + **arq** |
-| AI | **Claude API** (`anthropic`) — read the `/claude-api` skill before touching model code |
+| AI | Deterministic analytics + free local embeddings (`fastembed`); optional provider-neutral generation, never required for core research |
 | Web client | **React + Vite PWA**, Tailwind + shadcn/ui, lightweight-charts (Bangla: Hind Siliguri) |
 | Quality | **ruff** + **pytest** |
 

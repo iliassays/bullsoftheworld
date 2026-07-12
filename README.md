@@ -59,13 +59,13 @@ uv run arq ingestion.worker.WorkerSettings   # deploy in UTC; schedules are UTC 
 
 It replaces the old laptop launchd job. Every job re-checks the DSE trading calendar before acting.
 
-### AI features (sentiment tagging, digests) — optional
+### AI features (research retrieval and summaries) — optional
 
-AI jobs run in a separate worker so they never block a web request. Local + free uses Ollama;
-set `AI_PROVIDER=claude` (+ `ANTHROPIC_API_KEY`) in `.env` to use Claude instead.
+AI jobs run in a separate worker so they never block a web request. Core analytics and retrieval do
+not require a paid model or an Ollama daemon; free local embeddings use `fastembed`. Optional text
+generation is provider-neutral and must degrade cleanly when no model is configured.
 
 ```bash
-brew services start ollama && ollama pull qwen2.5   # local model (Bangla-capable); skip if using Claude
 uv run arq ai_worker.worker.WorkerSettings          # tags post sentiment, etc.
 ```
 

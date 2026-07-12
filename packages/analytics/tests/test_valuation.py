@@ -45,11 +45,11 @@ def test_nonpositive_close_returns_empty():
     assert v.market_cap_mn is None and v.pe_ratio is None
 
 
-def test_yield_trap_is_omitted():
+def test_high_trailing_yield_is_preserved_for_explicit_risk_review():
     # UNIONBANK-like: 5% cash on face 10 = 0.5 taka, but price collapsed to 1.5 -> 33% trailing yield.
-    # That's a price-collapse trap, not income — omit rather than mislead.
+    # The calculation remains visible; curated screens and red flags provide the caution.
     v = compute_valuation(1.5, cash_dividend_pct=5.0, face_value=10.0)
-    assert v.dividend_yield is None
+    assert v.dividend_yield == round(0.5 / 1.5 * 100, 2)
 
 
 def test_high_but_sane_yield_kept():

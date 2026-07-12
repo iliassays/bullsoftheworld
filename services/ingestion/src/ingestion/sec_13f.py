@@ -1,8 +1,8 @@
 """Bounded Form 13F institutional-holdings ingestion from official SEC quarterly archives.
 
-Two temporary ZIPs are streamed and deleted after parsing. Only confidently mapped launch-universe
-positions are considered; PostgreSQL retains all-manager summaries and at most 150 manager rows per
-symbol/report period.
+Two temporary ZIPs are streamed and deleted after parsing. Only confidently mapped eligible
+security-master positions are considered; PostgreSQL retains all-manager summaries and at most 150
+manager rows per symbol/report period, prioritizing explicitly watched managers.
 
     uv run python -m ingestion.sec_13f
 """
@@ -25,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
+from bulls.core.institutional_watch import WATCHED_MANAGER_CIKS
 from bulls.core.models import (
     InstitutionalHoldingSummary,
     InstitutionalManager,
@@ -32,7 +33,6 @@ from bulls.core.models import (
     RegulatoryDataState,
     SecurityIdentifier,
     SecurityMaster,
-    Symbol,
 )
 from bulls.market_data.providers.sec_13f import (
     DATASET_PAGE,
@@ -52,6 +52,7 @@ UPSERT_BATCH_ROWS = 1000
 HTTP_RETRIES = 8
 RETRY_BASE_SECONDS = 5.0
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+MAPPING_SCOPE = "eligible_security_master_v2"
 _ARCHIVE_NAME = re.compile(
     r"^(?P<prefix>.*/)(?P<start_day>\d{2})(?P<start_month>[a-z]{3})(?P<start_year>\d{4})-"
     r"(?P<end_day>\d{2})(?P<end_month>[a-z]{3})(?P<end_year>\d{4})_form13f\.zip$"
@@ -224,18 +225,14 @@ async def _symbol_context() -> tuple[list[SymbolIdentity], dict[str, str]]:
     async with sm() as session:
         names = (
             await session.execute(
-                select(Symbol.code, SecurityMaster.security_name)
-                .join(
-                    SecurityMaster,
-                    (SecurityMaster.market == Symbol.market)
-                    & (SecurityMaster.symbol == Symbol.code),
-                )
+                select(SecurityMaster.symbol, SecurityMaster.security_name)
                 .where(
-                    Symbol.market == MARKET,
-                    Symbol.is_active.is_(True),
-                    Symbol.is_hidden.is_(False),
-                    Symbol.data_status == "ready",
+                    SecurityMaster.market == MARKET,
+                    SecurityMaster.is_active.is_(True),
+                    SecurityMaster.is_product_eligible.is_(True),
+                    SecurityMaster.instrument_type.in_(("common_stock", "adr", "etf")),
                 )
+                .order_by(SecurityMaster.symbol)
             )
         ).all()
         identifiers = (
@@ -433,6 +430,8 @@ async def _persist_state(
                 "new_cusip_matches": new_matches,
                 "unmatched_cusips": unmatched_cusips,
                 "retention": f"{RETENTION_QUARTERS} quarters; max 150 managers/symbol/quarter",
+                "mapping_scope": MAPPING_SCOPE,
+                "watched_manager_ciks": sorted(WATCHED_MANAGER_CIKS),
                 "raw_archives_retained": False,
                 "current_archive_url": newest.source_url,
             },
@@ -451,6 +450,7 @@ def _is_refresh_current(details: dict | None, candidate_url: str, requested_quar
     return bool(
         details.get("current_archive_url") == candidate_url
         and int(details.get("history_quarters_loaded") or 1) >= requested_quarters
+        and details.get("mapping_scope") == MAPPING_SCOPE
     )
 
 
@@ -547,7 +547,11 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
                         "13F data sets are not consecutive quarter ends: "
                         f"{current.report_date} then {prior.report_date}"
                     )
-                changes, summaries = build_holding_changes(current, prior)
+                changes, summaries = build_holding_changes(
+                    current,
+                    prior,
+                    watched_manager_ciks=WATCHED_MANAGER_CIKS,
+                )
                 period_stats.append(await _persist_period(current, changes, summaries))
                 summaries_to_index.extend(summaries)
                 completed += 1

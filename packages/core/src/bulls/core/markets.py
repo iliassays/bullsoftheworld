@@ -57,6 +57,7 @@ class MarketProfile:
     place_label_bn: str
     open_time: dt.time
     close_time: dt.time
+    analytics_ready_utc: dt.time
     trading_isoweekdays: frozenset[int]
     holidays: frozenset[dt.date] = field(default_factory=frozenset)
     early_closes: dict[dt.date, dt.time] = field(default_factory=dict)
@@ -135,6 +136,8 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         place_label_bn="ঢাকা",
         open_time=dt.time(10, 0),
         close_time=dt.time(14, 30),
+        # EOD analytics cron: 13:15 UTC, after bars and the market summary land.
+        analytics_ready_utc=dt.time(13, 15),
         trading_isoweekdays=frozenset({7, 1, 2, 3, 4}),
         holidays=DSE_HOLIDAYS_2026,
         settlement_cycle="T+2",
@@ -181,6 +184,8 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         place_label_bn="নিউ ইয়র্ক",
         open_time=dt.time(9, 30),
         close_time=dt.time(16, 0),
+        # First US EOD publication attempt is 01:30 UTC after the session close.
+        analytics_ready_utc=dt.time(1, 30),
         trading_isoweekdays=frozenset({1, 2, 3, 4, 5}),
         holidays=US_HOLIDAYS_2026,
         early_closes=US_EARLY_CLOSES_2026,

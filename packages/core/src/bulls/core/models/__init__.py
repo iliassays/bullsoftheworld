@@ -13,10 +13,16 @@ from bulls.core.models.company import (
 )
 from bulls.core.models.company_logo import CompanyLogo
 from bulls.core.models.follow import Follow
+from bulls.core.models.growth import BetaFeedback, InstitutionalLead, ProductEvent
 from bulls.core.models.knowledge import KnowledgeChunk
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
-from bulls.core.models.onboarding import UniverseOnboardingResult, UniverseOnboardingRun
+from bulls.core.models.onboarding import (
+    OnDemandResearchJob,
+    OnDemandResearchRequest,
+    UniverseOnboardingResult,
+    UniverseOnboardingRun,
+)
 from bulls.core.models.page_view_event import PageViewEvent
 from bulls.core.models.portfolio import PortfolioHolding, PortfolioSnapshot
 from bulls.core.models.post import Cashtag, Post, PostReaction
@@ -49,6 +55,7 @@ __all__ = [
     "AlertEvent",
     "Announcement",
     "AnnualFinancial",
+    "BetaFeedback",
     "BlockTrade",
     "Cashtag",
     "CompanyLogo",
@@ -57,17 +64,21 @@ __all__ = [
     "DividendRecord",
     "Follow",
     "InstitutionalHoldingSummary",
+    "InstitutionalLead",
     "InstitutionalManager",
     "InstitutionalPosition",
     "KnowledgeChunk",
     "MarketSummary",
     "ModerationEvent",
+    "OnDemandResearchJob",
+    "OnDemandResearchRequest",
     "PageViewEvent",
     "PortfolioHolding",
     "PortfolioSnapshot",
     "Post",
     "PostReaction",
     "PriceAlert",
+    "ProductEvent",
     "QuizAnswer",
     "QuizQuestion",
     "QuoteSnapshot",

@@ -24,6 +24,9 @@ def test_high_quality_uptrend():
     assert by["trend"].score >= 8
     assert by["value"].score <= 4  # pricier than sector → low value score (= expensive, not "bad")
     assert by["income"].score == 8
+    assert by["quality"].assessment == "Strong"
+    assert "ROE 15%+" in by["quality"].benchmark
+    assert by["value"].assessment == "Pricier"
     # No composite/overall field exists — dimensions only.
     assert not hasattr(sc, "overall")
 
@@ -58,6 +61,13 @@ def test_red_flags_fire():
     keys = {f.key for f in rf.flags}
     assert keys == {"z_category", "thin", "lossmaking", "tiny_float", "circuit"}
     assert rf.clean is False
+    circuit = next(flag for flag in rf.flags if flag.key == "circuit")
+    assert circuit.label == "Latest close near price limit"
+
+
+def test_unusually_high_yield_is_visible_as_a_caution() -> None:
+    rf = build_red_flags(code="YIELD", dividend_yield=18.0)
+    assert {flag.key for flag in rf.flags} == {"high_yield"}
 
 
 def test_red_flags_clean():
@@ -74,3 +84,20 @@ def test_red_flags_bilingual():
     assert "Z-ক্যাটাগরি" in labels
     assert "লোকসানে" in labels
     assert "কিনবেন না" in rf.note
+
+
+def test_scorecard_explains_bangla_score_and_benchmark():
+    sc = build_scorecard(
+        code="EBL",
+        as_of_date="2026-07-09",
+        locale="bn",
+        roe=17,
+        pe_vs_sector=1.0,
+        dividend_yield=10.2,
+    )
+    by = {dimension.key: dimension for dimension in sc.dimensions}
+
+    assert by["quality"].assessment == "শক্তিশালী"
+    assert "ROE ১৫%+" in by["quality"].benchmark
+    assert by["value"].assessment == "খাতের সমান"
+    assert by["income"].assessment == "শক্তিশালী ইয়িল্ড"

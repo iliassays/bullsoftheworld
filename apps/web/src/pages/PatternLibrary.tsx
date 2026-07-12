@@ -10,8 +10,8 @@ import { useTenantConfig } from "../lib/tenant";
 
 // Index of every chart pattern this site detects — "what is it, and who's showing it right now."
 // One board per shape (chart_pattern_<type>), not a single combined list — a user asked for this
-// split so each pattern reads as its own thing. Framework evidence throughout: classic technical
-// analysis, not proven on DSE (see each pattern's lesson for the full reasoning).
+// split so each pattern reads as its own thing. Most are framework evidence; the flat-base
+// watchlist has a separate experimental study with no stable standalone edge.
 export function PatternLibrary() {
   const { t, lang } = useLang();
   const { config } = useTenantConfig();
@@ -37,7 +37,8 @@ export function PatternLibrary() {
   const byKey = new Map((data?.screens ?? []).map((s) => [s.key, s]));
   const counts: Record<string, number> = {};
   for (const type of PATTERN_ORDER) {
-    counts[type] = byKey.get(`chart_pattern_${type}`)?.items.length ?? 0;
+    const screen = byKey.get(`chart_pattern_${type}`);
+    counts[type] = screen?.total_count ?? screen?.items.length ?? 0;
   }
 
   return (
@@ -53,6 +54,7 @@ export function PatternLibrary() {
         <p className="text-[12px] text-muted mt-1 leading-relaxed">{t("patterns.intro")}</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           <EvidenceNote evidence="framework" />
+          <EvidenceNote evidence="experimental" />
         </div>
       </div>
 

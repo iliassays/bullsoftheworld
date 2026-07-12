@@ -480,7 +480,10 @@ def _parse_shareholdings(tree: HTMLParser, code: str) -> list[Shareholding]:
             # dividend percentage (which can legitimately hit 3000%+ for a stock like RECKITTBEN),
             # there's no such thing as a genuine 0% or 340% total. A miss here is always a parse
             # error (confirmed live: CNATEX/APOLOISPAT both stored 0/0/0/0/0). Drop, don't guess.
-            if not (90.0 <= sp + gv + ins + fo + pub <= 110.0):
+            values = (sp, gv, ins, fo, pub)
+            if any(value < 0 or value > 100 for value in values):
+                continue
+            if not (99.0 <= sum(values) <= 101.0):
                 continue
             seen.add(date)
             out.append(

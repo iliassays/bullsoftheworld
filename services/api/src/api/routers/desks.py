@@ -8,6 +8,9 @@ users can visit it, read what it does, and (Phase 3) follow it. Its posts come f
 
 from __future__ import annotations
 
+import datetime as dt
+from dataclasses import dataclass
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
@@ -21,7 +24,9 @@ from api.deps import (
     OptionalUser,
     enforce_market_feature,
 )
+from bulls.core.markets import get_market_profile
 from bulls.core.models import Follow, Post, User
+from bulls.core.scheduling import analysis_schedule
 
 router = APIRouter(tags=["desks"])
 
@@ -98,6 +103,269 @@ _FALLBACK_BIO = (
 )
 
 
+@dataclass(frozen=True)
+class DeskPolicy:
+    cadence: tuple[str, str]
+    methodology: tuple[str, str]
+    post_rule: tuple[str, str]
+    source_note: tuple[str, str]
+    schedule: str
+
+
+_POLICIES = {
+    "volume": DeskPolicy(
+        (
+            "Checked around 11:45, 12:45 and 13:45 BDT during each DSE session.",
+            "প্রতি DSE সেশনে প্রায় ১১:৪৫, ১২:৪৫ ও ১৩:৪৫ BDT-তে পরীক্ষা করা হয়।",
+        ),
+        (
+            "Compares volume so far with the volume normally expected by that point, using the prior 20 sessions. Requires at least 2.5x expected pace and a 50,000-share average-volume floor.",
+            "আগের ২০ সেশনের ভিত্তিতে দিনের ওই সময় পর্যন্ত প্রত্যাশিত ভলিউমের সঙ্গে বর্তমান ভলিউম তুলনা করে। অন্তত ২.৫ গুণ গতি এবং ৫০,০০০ শেয়ারের গড়-ভলিউম দরকার।",
+        ),
+        (
+            "A scheduled check does not guarantee a post. It posts once per stock per session only when the threshold is crossed on a fresh quote.",
+            "নির্ধারিত পরীক্ষা মানেই পোস্ট নয়। নতুন কোটে সীমা পার হলেই প্রতি শেয়ারে প্রতি সেশনে একবার পোস্ট হয়।",
+        ),
+        (
+            "Intraday, 15-minute-delayed DSE quotes. Price direction describes the same delayed snapshot; it is not verified order flow.",
+            "DSE-এর ১৫ মিনিট বিলম্বিত ইন্ট্রাডে কোট। দামের দিক একই বিলম্বিত স্ন্যাপশট বর্ণনা করে; এটি যাচাই করা অর্ডার-ফ্লো নয়।",
+        ),
+        "volume",
+    ),
+    "ownership": DeskPolicy(
+        (
+            "DSE ownership is generally disclosed monthly; we refresh the universe and evaluate changes every Friday around 20:10 BDT.",
+            "DSE মালিকানা সাধারণত মাসে একবার প্রকাশিত হয়; আমরা প্রতি শুক্রবার প্রায় ২০:১০ BDT-তে পুরো বাজার রিফ্রেশ ও পরীক্ষা করি।",
+        ),
+        (
+            "Compares the two latest valid DSE ownership disclosures. Institutional changes require 2.0 percentage points; foreign and sponsor/director changes require 1.0 point.",
+            "সর্বশেষ দুটি বৈধ DSE মালিকানা প্রকাশ তুলনা করে। প্রতিষ্ঠানের পরিবর্তন অন্তত ২.০ শতাংশ-পয়েন্ট; বিদেশি ও উদ্যোক্তা/পরিচালকের পরিবর্তন অন্তত ১.০ পয়েন্ট হতে হয়।",
+        ),
+        (
+            "It posts only a new material disclosure change. No post means no new qualifying change was found, not that the scheduled check failed.",
+            "শুধু নতুন ও উল্লেখযোগ্য প্রকাশিত পরিবর্তনে পোস্ট হয়। পোস্ট না হওয়া মানে যোগ্য নতুন পরিবর্তন পাওয়া যায়নি; পরীক্ষা ব্যর্থ হয়েছে এমন নয়।",
+        ),
+        (
+            "Month-end reported holdings, not live fund flow. The disclosure does not reveal trade date, execution price, transfer, reclassification or motive.",
+            "মাসশেষের প্রকাশিত মালিকানা, লাইভ ফান্ড-ফ্লো নয়। এতে লেনদেনের তারিখ, দাম, হস্তান্তর, শ্রেণি পরিবর্তন বা উদ্দেশ্য জানা যায় না।",
+        ),
+        "ownership",
+    ),
+    "disclosure": DeskPolicy(
+        (
+            "DSE announcements are checked before the session and after the close on trading days.",
+            "ট্রেডিং দিনে সেশন শুরুর আগে এবং বাজার বন্ধের পরে DSE ঘোষণা পরীক্ষা করা হয়।",
+        ),
+        (
+            "Classifies new official announcements into earnings, dividend and rating events, then publishes the relevant factual fields.",
+            "নতুন অফিসিয়াল ঘোষণাকে আয়, লভ্যাংশ ও রেটিং ইভেন্টে শ্রেণিবদ্ধ করে প্রাসঙ্গিক তথ্য প্রকাশ করে।",
+        ),
+        (
+            "It posts only when a new qualifying official announcement is found.",
+            "শুধু নতুন ও যোগ্য অফিসিয়াল ঘোষণা পাওয়া গেলে পোস্ট হয়।",
+        ),
+        ("Official DSE announcements.", "অফিসিয়াল DSE ঘোষণা।"),
+        "disclosure",
+    ),
+    "levels": DeskPolicy(
+        (
+            "Evaluated once after each completed DSE session, around 19:25 BDT.",
+            "প্রতি সম্পূর্ণ DSE সেশনের পরে প্রায় ১৯:২৫ BDT-তে পরীক্ষা করা হয়।",
+        ),
+        (
+            "Recalculates confirmed daily-bar events such as moving-average crosses, breakouts and 52-week extremes.",
+            "দৈনিক বারের ভিত্তিতে মুভিং-এভারেজ ক্রস, ব্রেকআউট ও ৫২-সপ্তাহের চরম অবস্থার মতো নিশ্চিত ইভেন্ট আবার হিসাব করে।",
+        ),
+        (
+            "It posts only a newly confirmed event and suppresses repetitive events during the cooldown window.",
+            "শুধু নতুন নিশ্চিত ইভেন্টে পোস্ট হয় এবং কুলডাউন সময়ে পুনরাবৃত্তি বন্ধ থাকে।",
+        ),
+        ("Completed-session daily bars.", "সম্পূর্ণ সেশনের দৈনিক বার।"),
+        "levels",
+    ),
+    "factor": DeskPolicy(
+        (
+            "Evaluated after analytics refresh on every DSE trading day, around 19:40 BDT.",
+            "প্রতি DSE ট্রেডিং দিনে অ্যানালিটিক্স রিফ্রেশের পরে প্রায় ১৯:৪০ BDT-তে পরীক্ষা করা হয়।",
+        ),
+        (
+            "Applies a published deterministic threshold to end-of-day price, volume, valuation, profitability or disclosed ownership factors.",
+            "দিনশেষের দাম, ভলিউম, মূল্যায়ন, লাভজনকতা বা প্রকাশিত মালিকানায় নির্ধারিত নিয়মভিত্তিক সীমা প্রয়োগ করে।",
+        ),
+        (
+            "It posts only when a factor first qualifies; most factor events are suppressed for about 20 days to avoid repetitive noise.",
+            "ফ্যাক্টর প্রথমবার যোগ্য হলে পোস্ট হয়; পুনরাবৃত্তি কমাতে বেশিরভাগ ফ্যাক্টর প্রায় ২০ দিন বন্ধ রাখা হয়।",
+        ),
+        (
+            "Completed-session analytics and official disclosures where applicable.",
+            "সম্পূর্ণ সেশনের অ্যানালিটিক্স এবং প্রযোজ্য ক্ষেত্রে অফিসিয়াল প্রকাশ।",
+        ),
+        "factor",
+    ),
+    "market": DeskPolicy(
+        (
+            "Published once after each completed DSE session, around 19:50 BDT.",
+            "প্রতি সম্পূর্ণ DSE সেশনের পরে প্রায় ১৯:৫০ BDT-তে প্রকাশ করা হয়।",
+        ),
+        (
+            "Summarises the official close, index move, breadth and turnover after the EOD pipeline completes.",
+            "দিনশেষের পাইপলাইন শেষ হলে অফিসিয়াল ক্লোজ, সূচকের পরিবর্তন, ব্রেডথ ও টার্নওভার সারসংক্ষেপ করে।",
+        ),
+        ("One market wrap per completed session.", "প্রতি সম্পূর্ণ সেশনে একটি মার্কেট সারসংক্ষেপ।"),
+        ("DSE end-of-day market summary.", "DSE দিনশেষের বাজার সারসংক্ষেপ।"),
+        "market",
+    ),
+}
+
+_US_POLICY_OVERRIDES = {
+    "volume": DeskPolicy(
+        (
+            "Evaluated after each completed U.S. session when EOD data is published.",
+            "প্রতি সম্পূর্ণ মার্কিন সেশনের EOD ডেটা প্রকাশের পরে পরীক্ষা করা হয়।",
+        ),
+        (
+            "Compares the completed session's volume with the prior 20-session average.",
+            "সম্পূর্ণ সেশনের ভলিউম আগের ২০ সেশনের গড়ের সঙ্গে তুলনা করে।",
+        ),
+        (
+            "It posts only when a new completed-session event crosses the threshold.",
+            "সম্পূর্ণ সেশনের নতুন ইভেন্ট সীমা পার হলেই পোস্ট হয়।",
+        ),
+        ("End-of-day market data, not an intraday feed.", "দিনশেষের বাজার ডেটা, ইন্ট্রাডে ফিড নয়।"),
+        "volume",
+    ),
+    "ownership": DeskPolicy(
+        (
+            "SEC institutional data is refreshed weekly; Form 13F holdings are generally quarterly and can arrive up to 45 days after quarter-end.",
+            "SEC প্রাতিষ্ঠানিক ডেটা সাপ্তাহিক রিফ্রেশ হয়; Form 13F সাধারণত ত্রৈমাসিক এবং ত্রৈমাসিক শেষের ৪৫ দিন পর পর্যন্ত আসতে পারে।",
+        ),
+        (
+            "Compares aggregate reported 13F shares between the two latest reporting quarters.",
+            "সর্বশেষ দুই রিপোর্টিং ত্রৈমাসিকের মোট প্রকাশিত 13F শেয়ার তুলনা করে।",
+        ),
+        (
+            "A refresh does not guarantee a post; only a new qualifying filing change is published.",
+            "রিফ্রেশ মানেই পোস্ট নয়; শুধু নতুন যোগ্য ফাইলিং পরিবর্তন প্রকাশিত হয়।",
+        ),
+        (
+            "Delayed reported long holdings; no short positions, trade dates, execution prices or manager intent.",
+            "বিলম্বিত প্রকাশিত লং হোল্ডিং; শর্ট পজিশন, লেনদেনের তারিখ, দাম বা ম্যানেজারের উদ্দেশ্য নেই।",
+        ),
+        "ownership",
+    ),
+    "disclosure": DeskPolicy(
+        ("SEC company filings are checked daily.", "SEC কোম্পানি ফাইলিং প্রতিদিন পরীক্ষা করা হয়।"),
+        (
+            "Classifies new EDGAR filings and publishes qualifying official evidence.",
+            "নতুন EDGAR ফাইলিং শ্রেণিবদ্ধ করে যোগ্য অফিসিয়াল প্রমাণ প্রকাশ করে।",
+        ),
+        (
+            "It posts only when a new qualifying filing is found.",
+            "শুধু নতুন যোগ্য ফাইলিং পাওয়া গেলে পোস্ট হয়।",
+        ),
+        ("Official SEC EDGAR filings.", "অফিসিয়াল SEC EDGAR ফাইলিং।"),
+        "disclosure",
+    ),
+}
+
+_BEAT_BY_SUFFIX = {
+    "Volume": "volume",
+    "Institution": "ownership",
+    "Foreign": "ownership",
+    "Sponsor": "ownership",
+    "Dividend": "disclosure",
+    "Earnings": "disclosure",
+    "Rating": "disclosure",
+    "Levels": "levels",
+    "Market": "market",
+    "Momentum": "factor",
+    "Strength": "factor",
+    "Quality": "factor",
+    "SmartMoney": "factor",
+    "Accumulation": "factor",
+    "Circuit": "factor",
+    "Breakout": "factor",
+}
+
+
+def _policy_for(handle: str, market: str = "DSE") -> DeskPolicy:
+    kind = next((kind for suffix, kind in _BEAT_BY_SUFFIX.items() if handle.endswith(suffix)), None)
+    if market == "US" and kind in _US_POLICY_OVERRIDES:
+        return _US_POLICY_OVERRIDES[kind]
+    if market == "US" and kind in {"levels", "factor", "market"}:
+        base = _POLICIES[kind]
+        return DeskPolicy(
+            (
+                "Evaluated after each completed U.S. session when EOD analytics are published.",
+                "প্রতি সম্পূর্ণ মার্কিন সেশনের EOD অ্যানালিটিক্স প্রকাশের পরে পরীক্ষা করা হয়।",
+            ),
+            base.methodology,
+            base.post_rule,
+            (
+                "Completed-session U.S. market data and official filings where applicable.",
+                "সম্পূর্ণ মার্কিন সেশনের বাজার ডেটা এবং প্রযোজ্য অফিসিয়াল ফাইলিং।",
+            ),
+            base.schedule,
+        )
+    return _POLICIES.get(kind or "", _POLICIES["factor"])
+
+
+def _next_local_check(
+    now: dt.datetime,
+    market: str,
+    times: tuple[dt.time, ...],
+    *,
+    trading_days: bool = True,
+    weekdays: frozenset[int] | None = None,
+) -> dt.datetime:
+    profile = get_market_profile(market)
+    local_now = now.astimezone(profile.tz)
+    for offset in range(15):
+        date = local_now.date() + dt.timedelta(days=offset)
+        valid = (
+            date.isoweekday() in profile.trading_isoweekdays and date not in profile.holidays
+            if trading_days
+            else weekdays is None or date.isoweekday() in weekdays
+        )
+        if not valid:
+            continue
+        for time in times:
+            candidate = dt.datetime.combine(date, time, tzinfo=profile.tz)
+            if candidate > local_now:
+                return candidate
+    raise RuntimeError(f"Could not resolve next desk check for {market}")
+
+
+def _next_evaluation(now: dt.datetime, market: str, policy: DeskPolicy) -> dt.datetime:
+    if market != "DSE":
+        if policy.schedule == "ownership":
+            for offset in range(8):
+                date = now.date() + dt.timedelta(days=offset)
+                candidate = dt.datetime.combine(date, dt.time(10, 0), tzinfo=dt.UTC)
+                if candidate.isoweekday() == 7 and candidate > now:
+                    return candidate.astimezone(get_market_profile(market).tz)
+        if policy.schedule == "disclosure":
+            candidate = dt.datetime.combine(now.date(), dt.time(6, 15), tzinfo=dt.UTC)
+            if candidate <= now:
+                candidate += dt.timedelta(days=1)
+            return candidate.astimezone(get_market_profile(market).tz)
+        return analysis_schedule(now, market)[1].astimezone(get_market_profile(market).tz)
+    if policy.schedule == "volume":
+        return _next_local_check(now, market, (dt.time(11, 45), dt.time(12, 45), dt.time(13, 45)))
+    if policy.schedule == "ownership":
+        return _next_local_check(
+            now, market, (dt.time(20, 10),), trading_days=False, weekdays=frozenset({5})
+        )
+    if policy.schedule == "disclosure":
+        return _next_local_check(now, market, (dt.time(9, 35), dt.time(19, 35)))
+    check_time = {
+        "levels": dt.time(19, 25),
+        "factor": dt.time(19, 40),
+        "market": dt.time(19, 50),
+    }[policy.schedule]
+    return _next_local_check(now, market, (check_time,))
+
+
 class DeskOut(BaseModel):
     handle: str
     name: str
@@ -107,6 +375,12 @@ class DeskOut(BaseModel):
     followers: int
     following: bool  # does the signed-in viewer follow this desk?
     verified: bool = True
+    cadence: str
+    next_evaluation_at: str
+    methodology: str
+    post_rule: str
+    source_note: str
+    last_post_at: str | None = None
 
 
 async def _resolve_desk(session, tenant, handle: str) -> User:
@@ -128,13 +402,16 @@ async def desk(
     viewer: OptionalUser,
 ) -> DeskOut:
     u = await _resolve_desk(session, tenant, handle)
-    posts = await session.scalar(
-        select(func.count(Post.id)).where(
-            Post.author_id == u.id,
-            Post.parent_id.is_(None),
-            Post.moderation_status == "published",
+    post_stats = (
+        await session.execute(
+            select(func.count(Post.id), func.max(Post.created_at)).where(
+                Post.author_id == u.id,
+                Post.parent_id.is_(None),
+                Post.moderation_status == "published",
+            )
         )
-    )
+    ).one()
+    posts, last_post_at = post_stats
     followers = await session.scalar(
         select(func.count()).select_from(Follow).where(Follow.followee_id == u.id)
     )
@@ -148,6 +425,9 @@ async def desk(
             )
         ) is not None
     bio_en, bio_bn = _DESK_BIOS.get(u.handle, _FALLBACK_BIO)
+    policy = _policy_for(u.handle, tenant.market)
+    language_index = 1 if locale == "bn" else 0
+    next_evaluation = _next_evaluation(dt.datetime.now(dt.UTC), tenant.market, policy)
     return DeskOut(
         handle=handle,
         name=u.name,
@@ -156,6 +436,12 @@ async def desk(
         posts=int(posts or 0),
         followers=int(followers or 0),
         following=following,
+        cadence=policy.cadence[language_index],
+        next_evaluation_at=next_evaluation.isoformat(),
+        methodology=policy.methodology[language_index],
+        post_rule=policy.post_rule[language_index],
+        source_note=policy.source_note[language_index],
+        last_post_at=last_post_at.isoformat() if last_post_at else None,
     )
 
 

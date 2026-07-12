@@ -77,6 +77,8 @@ def test_8k_item_classification_is_specific() -> None:
     assert filing_category("8-K", "8.01") == "current_report"
     assert filing_category("6-K", description="Quarterly earnings results") == "earnings"
     assert filing_category("6-K", description="Change of registered office") == "foreign_report"
+    assert filing_category("4") == "insider_ownership"
+    assert filing_category("SC 13D/A") == "beneficial_ownership"
 
 
 def test_company_facts_selects_compact_latest_amended_periods() -> None:

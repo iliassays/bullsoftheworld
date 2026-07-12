@@ -33,6 +33,12 @@ ALLOWED_FORMS = frozenset(
         "6-K",
         "6-K/A",
         "DEF 14A",
+        "3",
+        "3/A",
+        "4",
+        "4/A",
+        "5",
+        "5/A",
         "S-1",
         "S-1/A",
         "SC 13D",
@@ -337,6 +343,8 @@ def filing_category(form: str, items: str | None = None, description: str | None
         return "current_report"
     if base == "DEF 14A":
         return "proxy"
+    if base in {"3", "4", "5"}:
+        return "insider_ownership"
     if base.startswith("SC 13"):
         return "beneficial_ownership"
     if base == "S-1":

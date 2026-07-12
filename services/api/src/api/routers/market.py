@@ -46,6 +46,7 @@ from bulls.core.models import (
     TickerAnalytics,
     TrendingScore,
 )
+from bulls.core.scheduling import analysis_schedule
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 from bulls.market_data.calendar import is_trading_day, market_close_on, session_phase, to_market_tz
 
@@ -66,6 +67,10 @@ class MarketStatusOut(BaseModel):
 
     phase: str  # open | pre_open | post_close | weekend (weekend covers public holidays too)
     as_of: str | None
+    market_time: str
+    expected_analysis_date: str
+    next_analysis_at: str
+    quote_is_stale: bool
 
 
 class MarketConfigOut(BaseModel):
@@ -99,6 +104,7 @@ class MarketConfigOut(BaseModel):
     logo_url: str
     tagline_en: str
     tagline_bn: str
+    research_beta: bool
     social_url: str | None
 
 
@@ -136,17 +142,33 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         logo_url=tenant.logo_url,
         tagline_en=tenant.tagline_en,
         tagline_bn=tenant.tagline_bn,
+        research_beta=tenant.research_beta,
         social_url=tenant.social_url,
     )
 
 
 @router.get("/market/status")
 async def market_status(tenant: CurrentTenant, session: DbSession) -> MarketStatusOut:
-    phase = session_phase(dt.datetime.now(dt.UTC), ZoneInfo(tenant.timezone), market=tenant.market)
+    now = dt.datetime.now(dt.UTC)
+    phase = session_phase(now, ZoneInfo(tenant.timezone), market=tenant.market)
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == tenant.market)
     )
-    return MarketStatusOut(phase=str(phase), as_of=quote_ts.isoformat() if quote_ts else None)
+    expected, next_analysis = analysis_schedule(now, tenant.market)
+    quote_is_stale = str(phase) == "open" and (
+        quote_ts is None
+        or to_market_tz(quote_ts, market=tenant.market).date()
+        != to_market_tz(now, market=tenant.market).date()
+        or (now - quote_ts).total_seconds() > 35 * 60
+    )
+    return MarketStatusOut(
+        phase=str(phase),
+        as_of=quote_ts.isoformat() if quote_ts else None,
+        market_time=to_market_tz(now, market=tenant.market).isoformat(),
+        expected_analysis_date=str(expected),
+        next_analysis_at=next_analysis.astimezone(get_market_profile(tenant.market).tz).isoformat(),
+        quote_is_stale=quote_is_stale,
+    )
 
 
 def _liquidity_label(adtv_mn: float | None, category: str | None) -> str | None:
@@ -556,13 +578,18 @@ async def list_symbols(
     q: str | None = Query(None, min_length=1, max_length=64),
 ) -> list[SymbolOut]:
     raw_query = q.strip() if q else ""
+    statuses = (
+        ("ready", "reference_only", "onboarding", "degraded")
+        if tenant.market == "US" and raw_query
+        else ("ready",)
+    )
     stmt = (
         select(Symbol)
         .where(
             Symbol.market == tenant.market,
             Symbol.is_active.is_(True),
             Symbol.is_hidden.is_(False),
-            Symbol.data_status == "ready",
+            Symbol.data_status.in_(statuses),
         )
         .offset(offset)
         .limit(limit)

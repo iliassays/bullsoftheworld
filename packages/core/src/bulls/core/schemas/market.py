@@ -17,6 +17,7 @@ class SymbolOut(BaseModel):
     sector: str | None = None
     category: str | None = None
     is_active: bool
+    data_status: str
 
 
 class QuoteOut(BaseModel):

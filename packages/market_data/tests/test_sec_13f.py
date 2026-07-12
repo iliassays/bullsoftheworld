@@ -244,6 +244,53 @@ def test_aggregate_change_is_not_inflated_by_manager_cik_migration() -> None:
     assert summaries[0].net_change_pct == 0
 
 
+def test_watched_manager_survives_bounded_position_retention() -> None:
+    prior_date = dt.date(2025, 12, 31)
+    current_date = dt.date(2026, 3, 31)
+    regular_managers = list(range(1, 161))
+    watched_manager = 999
+    managers = [*regular_managers, watched_manager]
+    prior = ArchiveResult(
+        source_url="https://www.sec.gov/prior.zip",
+        report_date=prior_date,
+        positions=tuple(
+            _position("TEST", manager, 100, 10_000 - manager, prior_date)
+            for manager in managers
+        ),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, prior_date) for manager in managers},
+    )
+    current = ArchiveResult(
+        source_url="https://www.sec.gov/current.zip",
+        report_date=current_date,
+        positions=tuple(
+            _position(
+                "TEST",
+                manager,
+                100,
+                1 if manager == watched_manager else 10_000 - manager,
+                current_date,
+            )
+            for manager in managers
+        ),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, current_date) for manager in managers},
+    )
+
+    without_watch, _ = build_holding_changes(current, prior)
+    with_watch, _ = build_holding_changes(
+        current,
+        prior,
+        watched_manager_ciks=frozenset({watched_manager}),
+    )
+
+    assert watched_manager not in {row.manager_cik for row in without_watch}
+    assert watched_manager in {row.manager_cik for row in with_watch}
+    assert len(with_watch) <= 150
+
+
 def test_archive_value_is_already_reported_in_us_dollars(tmp_path) -> None:
     import zipfile
 

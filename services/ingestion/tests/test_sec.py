@@ -10,6 +10,7 @@ from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
 from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
 from ingestion.sec_13f import (
+    MAPPING_SCOPE,
     UPSERT_BATCH_ROWS,
     _archive_sequence,
     _is_consecutive_report_pair,
@@ -86,17 +87,21 @@ def test_sic_mapping_produces_comparable_retail_sectors() -> None:
 
 def test_13f_refresh_state_requires_requested_history_depth() -> None:
     url = "https://www.sec.gov/files/current.zip"
-    details = {"current_archive_url": url, "history_quarters_loaded": 4}
+    details = {
+        "current_archive_url": url,
+        "history_quarters_loaded": 4,
+        "mapping_scope": MAPPING_SCOPE,
+    }
 
     assert _is_refresh_current(details, url, 4)
     assert not _is_refresh_current(details, url, 8)
     assert not _is_refresh_current(details, "https://www.sec.gov/files/new.zip", 1)
 
 
-def test_legacy_13f_refresh_state_represents_one_loaded_quarter() -> None:
+def test_legacy_13f_refresh_state_is_rebuilt_for_full_reference_scope() -> None:
     url = "https://www.sec.gov/files/current.zip"
 
-    assert _is_refresh_current({"current_archive_url": url}, url, 1)
+    assert not _is_refresh_current({"current_archive_url": url}, url, 1)
     assert not _is_refresh_current({"current_archive_url": url}, url, 2)
 
 

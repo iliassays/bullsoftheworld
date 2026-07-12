@@ -40,6 +40,18 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bullsofwallst-sec-worker bullsofwallst-sec-watchdog.timer
 ```
 
+Install the isolated on-demand preparation worker independently of the licensed EOD publication
+worker:
+
+```bash
+sudo cp infra/systemd/bullsofwallst-research-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bullsofwallst-research-worker
+```
+
+It has no cron schedule, processes one explicit authenticated request at a time, and never promotes
+a prepared symbol. Public visibility still requires the normal risk-review and market-data gates.
+
 The SEC watchdog has its own six-hour alert cooldown and checks worker/API liveness, daily EDGAR
 freshness, weekly 13F freshness, 8-quarter history depth, refresh failures, and ready-universe
 coverage. Set `WALLST_ALERT_EMAIL` to route these separately; otherwise it uses `ALERT_EMAIL` and

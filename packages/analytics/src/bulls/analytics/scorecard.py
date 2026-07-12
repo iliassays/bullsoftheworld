@@ -23,6 +23,8 @@ class Dimension(BaseModel):
     label: str  # localized
     score: int  # 0..10
     detail: str  # localized metrics behind the score
+    assessment: str  # localized plain-language interpretation of this dimension's score
+    benchmark: str  # localized definition of what a stronger reading means
 
 
 class Scorecard(BaseModel):
@@ -51,6 +53,78 @@ _DIM_LABELS = {
     "income": ("Income", "আয়"),
     "momentum": ("Momentum", "গতি"),
 }
+
+_BENCHMARKS = {
+    "trend": (
+        "Stronger: above both 50- and 200-day averages with positive 12-month momentum.",
+        "শক্তিশালী: ৫০ ও ২০০ দিনের গড়ের উপরে এবং ১২ মাসের মোমেন্টাম পজিটিভ।",
+    ),
+    "quality": (
+        "ROE 15%+ is strong in this model; confirm that earnings are repeatable and debt is controlled.",
+        "এই মডেলে ROE ১৫%+ শক্তিশালী; আয় নিয়মিত কি না এবং ঋণ নিয়ন্ত্রিত কি না যাচাই করুন।",
+    ),
+    "value": (
+        "Below 0.9x the sector P/E is cheaper; 0.9-1.1x is in line; above 1.1x is pricier.",
+        "খাতের P/E-এর ০.৯x-এর নিচে সস্তা; ০.৯-১.১x সমান; ১.১x-এর উপরে দামি।",
+    ),
+    "income": (
+        "A 5%+ trailing cash yield is strong here; verify EPS cover and dividend consistency.",
+        "এখানে গত নগদ লভ্যাংশের ইয়িল্ড ৫%+ শক্তিশালী; EPS কভার ও ধারাবাহিকতা যাচাই করুন।",
+    ),
+    "momentum": (
+        "6-month return above 10% is supportive and above 30% is strong; RSI is context, not the score.",
+        "৬ মাসের রিটার্ন ১০%+ সহায়ক এবং ৩০%+ শক্তিশালী; RSI শুধু প্রেক্ষাপট, স্কোর নয়।",
+    ),
+}
+
+
+def _assessment(key: str, score: int, bn: bool) -> str:
+    labels = {
+        "trend": (
+            ("Strong", "শক্তিশালী"),
+            ("Positive", "ইতিবাচক"),
+            ("Mixed", "মিশ্র"),
+            ("Weak", "দুর্বল"),
+        ),
+        "quality": (
+            ("Strong", "শক্তিশালী"),
+            ("Healthy", "ভালো"),
+            ("Average", "মাঝারি"),
+            ("Weak", "দুর্বল"),
+        ),
+        "value": (
+            ("Attractive", "আকর্ষণীয়"),
+            ("Cheaper", "তুলনামূলক সস্তা"),
+            ("In line", "খাতের সমান"),
+            ("Pricier", "তুলনামূলক দামি"),
+        ),
+        "income": (
+            ("Strong yield", "শক্তিশালী ইয়িল্ড"),
+            ("Useful yield", "ভালো ইয়িল্ড"),
+            ("Moderate", "মাঝারি"),
+            ("Low", "কম"),
+        ),
+        "momentum": (
+            ("Strong", "শক্তিশালী"),
+            ("Positive", "ইতিবাচক"),
+            ("Flat", "সমতল"),
+            ("Weak", "দুর্বল"),
+        ),
+    }[key]
+    bucket = 0 if score >= 8 else 1 if score >= 6 else 2 if score >= 4 else 3
+    return labels[bucket][1 if bn else 0]
+
+
+def _dimension(key: str, score: int, detail: str, bn: bool) -> Dimension:
+    return Dimension(
+        key=key,
+        label=_label(key, bn),
+        score=score,
+        detail=detail,
+        assessment=_assessment(key, score, bn),
+        benchmark=_BENCHMARKS[key][1 if bn else 0],
+    )
+
 
 _SCORECARD_DISCLAIMER = {
     "en": (
@@ -111,7 +185,7 @@ def _trend(above_200: bool | None, above_50: bool | None, mom_12_1: float | None
         )
         if mom_12_1 is not None:
             d += f" · 12m {mom_12_1:+.0f}%"
-    return Dimension(key="trend", label=_label("trend", bn), score=_clamp10(base), detail=d)
+    return _dimension("trend", _clamp10(base), d, bn)
 
 
 def _quality(roe: float | None, bn: bool):
@@ -131,7 +205,7 @@ def _quality(roe: float | None, bn: bool):
         else 10
     )
     d = f"ROE {roe:.0f}%"
-    return Dimension(key="quality", label=_label("quality", bn), score=score, detail=d)
+    return _dimension("quality", score, d, bn)
 
 
 def _value(pe_vs_sector: float | None, pe_ratio: float | None, bn: bool):
@@ -156,7 +230,7 @@ def _value(pe_vs_sector: float | None, pe_ratio: float | None, bn: bool):
         d = f"{pe_vs_sector:.1f}x sector"
         if pe_ratio is not None and pe_ratio > 0:
             d += f" · P/E {pe_ratio:.0f}"
-    return Dimension(key="value", label=_label("value", bn), score=score, detail=d)
+    return _dimension("value", score, d, bn)
 
 
 def _income(dividend_yield: float | None, bn: bool):
@@ -167,7 +241,7 @@ def _income(dividend_yield: float | None, bn: bool):
         10 if dividend_yield >= 8 else 8 if dividend_yield >= 5 else 6 if dividend_yield >= 3 else 4
     )
     d = f"ইল্ড {dividend_yield:.1f}%" if bn else f"Yield {dividend_yield:.1f}%"
-    return Dimension(key="income", label=_label("income", bn), score=score, detail=d)
+    return _dimension("income", score, d, bn)
 
 
 def _momentum(rsi_14: float | None, mom_6_1: float | None, mom_3_1: float | None, bn: bool):
@@ -187,9 +261,7 @@ def _momentum(rsi_14: float | None, mom_6_1: float | None, mom_3_1: float | None
             if bn
             else (f"6m {mom:+.0f}%" if mom_6_1 is not None else f"3m {mom:+.0f}%")
         )
-    return Dimension(
-        key="momentum", label=_label("momentum", bn), score=score, detail=" · ".join(bits)
-    )
+    return _dimension("momentum", score, " · ".join(bits), bn)
 
 
 def build_scorecard(
@@ -251,8 +323,14 @@ def build_red_flags(
         add("lossmaking", "Loss-making", "লোকসানে")
     if free_float_cap_mn is not None and free_float_cap_mn < 100:
         add("tiny_float", "Tiny free float", "খুব কম ফ্রি ফ্লোট")
+    if dividend_yield is not None and dividend_yield > 15:
+        add(
+            "high_yield",
+            "Unusually high trailing yield",
+            "অস্বাভাবিক বেশি ট্রেইলিং ইল্ড",
+        )
     if today_change_pct is not None and abs(today_change_pct) >= 9.7:
-        add("circuit", "Circuit-locked today", "আজ সার্কিটে আটকে")
+        add("circuit", "Latest close near price limit", "সর্বশেষ ক্লোজ মূল্যসীমার কাছে")
 
     return RedFlags(
         code=code,

@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { About } from "./pages/About";
+import { Beta } from "./pages/Beta";
 import { Shell } from "./components/Shell";
 import { Alerts } from "./pages/Alerts";
 import { ForgotPassword, ResetPassword, VerifyEmail } from "./pages/AuthFlows";
@@ -8,6 +9,8 @@ import { Cockpit } from "./pages/Cockpit";
 import { DeskProfile } from "./pages/DeskProfile";
 import { Feed } from "./pages/Feed";
 import { Markets } from "./pages/Markets";
+import { Institutions } from "./pages/Institutions";
+import { Privacy, Terms } from "./pages/Policies";
 import { PatternDetail } from "./pages/PatternDetail";
 import { PatternLibrary } from "./pages/PatternLibrary";
 import { Portfolio } from "./pages/Portfolio";
@@ -17,6 +20,7 @@ import { ScreenExplore } from "./pages/ScreenExplore";
 import { SymbolPage } from "./pages/Symbol";
 import { UserProfile } from "./pages/UserProfile";
 import { Watchlist } from "./pages/Watchlist";
+import { Trust } from "./pages/Trust";
 import { Welcome } from "./pages/Welcome";
 import { type Lang, SUPPORTED, currentLang, useLang } from "./lib/i18n";
 import { useTenantConfig } from "./lib/tenant";
@@ -67,6 +71,12 @@ function CapabilityRoute({ feature, children }: { feature: string; children: Rea
   return config.features[feature] ? <>{children}</> : <Navigate to={`/${lang ?? currentLang()}`} replace />;
 }
 
+function ResearchBetaRoute({ children }: { children: ReactNode }) {
+  const { config } = useTenantConfig();
+  const { lang } = useParams();
+  return config.research_beta ? <>{children}</> : <Navigate to={`/${lang ?? currentLang()}`} replace />;
+}
+
 export function App() {
   return (
     <Routes>
@@ -92,6 +102,11 @@ export function App() {
           <Route path="me" element={<Profile />} />
           <Route path="welcome" element={<CapabilityRoute feature="curated_screens"><Welcome /></CapabilityRoute>} />
           <Route path="about" element={<About />} />
+          <Route path="beta" element={<ResearchBetaRoute><Beta /></ResearchBetaRoute>} />
+          <Route path="institutions" element={<Institutions />} />
+          <Route path="trust" element={<Trust />} />
+          <Route path="privacy" element={<Privacy />} />
+          <Route path="terms" element={<Terms />} />
           <Route path="forgot" element={<ForgotPassword />} />
           <Route path="reset" element={<ResetPassword />} />
           <Route path="verify" element={<VerifyEmail />} />

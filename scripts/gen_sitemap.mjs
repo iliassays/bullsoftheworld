@@ -26,6 +26,7 @@ const STRICT = process.env.WEB_SITEMAP_STRICT === "1";
 const RESOLVE_IP = process.env.WEB_SITEMAP_RESOLVE_IP;
 const API_PAGE_LIMIT = 100;
 const PATTERN_TYPES = [
+  "high_volume_flat_base",
   "ascending_triangle",
   "descending_triangle",
   "channel_up",
@@ -84,7 +85,7 @@ function handleFetchFailure(scope, error) {
 }
 
 async function staticPaths() {
-  const base = ["/", "/about"];
+  const base = ["/", "/about", "/institutions", "/trust", "/privacy", "/terms"];
   try {
     const config = await apiJson("/market/config");
     const configured = [...(config.supported_locales || [])];

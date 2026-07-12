@@ -33,12 +33,14 @@ from api.routers import (
     desks,
     digest,
     explainer,
+    growth,
     health,
     investor_lens,
     levels,
     market,
     moderation,
     news,
+    on_demand_research,
     plain_read,
     portfolio,
     posts,
@@ -180,10 +182,12 @@ app.include_router(company.router)
 app.include_router(desks.router)
 app.include_router(digest.router)
 app.include_router(explainer.router)
+app.include_router(growth.router)
 app.include_router(levels.router)
 app.include_router(market.router)
 app.include_router(moderation.router)
 app.include_router(news.router)
+app.include_router(on_demand_research.router)
 app.include_router(plain_read.router)
 app.include_router(posts.router)
 app.include_router(pulse.router)

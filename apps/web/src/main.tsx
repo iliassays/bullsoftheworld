@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import { App } from "./App";
 import { SeoProvider } from "./components/Seo";
+import { ConsentProvider } from "./components/ConsentManager";
 import { AuthProvider } from "./lib/auth";
 import { LanguageProvider } from "./lib/i18n";
 import { TenantConfigProvider } from "./lib/tenant";
@@ -15,7 +16,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <TenantConfigProvider>
           <SeoProvider>
             <AuthProvider>
-              <App />
+              <ConsentProvider>
+                <App />
+              </ConsentProvider>
             </AuthProvider>
           </SeoProvider>
         </TenantConfigProvider>

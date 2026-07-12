@@ -49,10 +49,14 @@ flowchart LR
 
 ## US onboarding flow
 
-1. Create or review a versioned cohort manifest. The canonical manifest hash, policy, requested
+1. For a broad company expansion, generate deterministic private cohorts using
+   `ingestion.universe_discovery`; see
+   [`us-small-mid-cap-onboarding.md`](./us-small-mid-cap-onboarding.md). Review the full exclusion
+   report and selection snapshot before staging anything.
+2. Create or review a versioned cohort manifest. The canonical manifest hash, policy, requested
    symbols, evidence, and decisions are retained in `universe_onboarding_runs` and
    `universe_onboarding_results`.
-2. Stage the cohort. This refreshes Nasdaq Trader/SEC identity, performs the requested history
+3. Stage the cohort. This refreshes Nasdaq Trader/SEC identity, performs the requested history
    backfill, collects targeted EDGAR data, computes analytics, and evaluates all readiness gates:
 
    ```bash
@@ -62,18 +66,18 @@ flowchart LR
 
    A staged run never makes symbols public. If interrupted, resume the same auditable run with
    `--resume <run-uuid>` and the exact same manifest.
-3. Review every failed gate, including stable identity, product eligibility, instrument type,
+4. Review every failed gate, including stable identity, product eligibility, instrument type,
    exchange, price depth/span/freshness/quality, required CIK/EDGAR evidence, and analytics.
    Institutional 13F mapping is recorded as evidence but is non-blocking unless the manifest policy
    explicitly makes it required.
-4. Promotion is a separate, fail-closed operation. Record the approved redistribution authority in
+5. Promotion is a separate, fail-closed operation. Record the approved redistribution authority in
    `US_MARKET_DATA_AUTHORIZATION_ID`, deliberately enable `US_UNIVERSE_PROMOTION_ENABLED`, then run
    the cohort with `--promote`. The authorization identifier is copied into the audit record.
    Never use these settings to represent an unreviewed provider or terms-of-service assumption.
-5. Perform API, UI, SEO, adjusted-price, split/dividend, and cross-source reconciliation samples.
-6. Start `ingestion.us_worker.WorkerSettings`. Its EOD chain requires at least 90% same-session bar
+6. Perform API, UI, SEO, adjusted-price, split/dividend, and cross-source reconciliation samples.
+7. Start `ingestion.us_worker.WorkerSettings`. Its EOD chain requires at least 90% same-session bar
    coverage before publishing analytics.
-7. Advance to the next cohort. Keep the cohort size within provider rate limits and operational
+8. Advance to the next cohort. Keep the cohort size within provider rate limits and operational
    capacity.
 
 Yahoo is a replaceable, no-key bootstrap adapter for internal evaluation, not the production US

@@ -61,3 +61,24 @@ def test_lossmaking_is_stated_plainly():
     r = build_plain_read(code="X", as_of_date="2026-06-27", roe=-12.0)
     quality = next(p for p in r.points if p.tag == "quality")
     assert "lossmaking" in quality.text.lower()
+
+
+def test_cmf_is_described_as_a_proxy_not_observed_fund_flow():
+    r = build_plain_read(code="X", as_of_date="2026-07-10", cmf_20=0.2)
+    flow = next(point for point in r.points if point.tag == "flow")
+    assert "proxy" in flow.text.lower()
+    assert "money flowing" not in flow.text.lower()
+    assert "buyers in control" not in flow.text.lower()
+
+
+def test_us_size_bucket_uses_us_market_cap_thresholds():
+    r = build_plain_read(
+        code="MID",
+        as_of_date="2026-07-10",
+        market="US",
+        market_cap_mn=6_000,
+        adtv_mn=12,
+    )
+    size = next(point for point in r.points if point.tag == "size")
+    assert "mid-sized" in size.text
+    assert "spread and order size" in size.text

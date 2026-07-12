@@ -15,6 +15,7 @@ from bulls.core.config import get_settings
 
 log = logging.getLogger(__name__)
 _pool: ArqRedis | None = None
+_us_pool: ArqRedis | None = None
 
 
 async def _get_pool() -> ArqRedis:
@@ -56,8 +57,27 @@ async def enqueue_post_embedding(post_id: int) -> None:
         log.warning("post embedding enqueue failed for post %s: %s", post_id, e)
 
 
+async def enqueue_us_research_preparation(job_id: str, code: str, attempt: int) -> None:
+    """Durably enqueue an explicitly requested US research preparation job."""
+    global _us_pool
+    if _us_pool is None:
+        settings = get_settings()
+        _us_pool = await create_pool(
+            RedisSettings.from_dsn(settings.redis_url),
+            default_queue_name=settings.us_research_queue_name,
+        )
+    queued = await _us_pool.enqueue_job(
+        "prepare_on_demand_research",
+        job_id,
+        _job_id=f"research:US:{code}:{attempt}",
+    )
+    if queued is None:
+        log.info("US research preparation already queued for %s", code)
+
+
 async def close_pool() -> None:
-    global _pool
-    pool, _pool = _pool, None
-    if pool is not None:
-        await pool.aclose()
+    global _pool, _us_pool
+    pools, _pool, _us_pool = (_pool, _us_pool), None, None
+    for pool in pools:
+        if pool is not None:
+            await pool.aclose()

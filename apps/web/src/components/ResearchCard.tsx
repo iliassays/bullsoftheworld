@@ -106,7 +106,9 @@ export function ResearchCard({ code }: { code: string }) {
   const load = (q = question) => {
     trackProductEvent("ask_stock_research", {
       stock_code: code,
-      question: q,
+      question_kind: questions.some((item) => item.en === q || item.bn === q)
+        ? "preset"
+        : "custom",
       market: config.market,
     });
     setQuestion(q);

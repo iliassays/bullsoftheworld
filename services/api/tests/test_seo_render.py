@@ -44,6 +44,19 @@ async def test_us_seo_uses_english_default_and_enabled_research_surfaces() -> No
     assert markets_status == 200
     assert "Market screens" in markets
 
+    institutions, institutions_status = await render_path(
+        None,
+        "US",
+        "en/institutions",
+        site="https://bullsofwallst.com",
+        brand="Bulls of Wall Street",
+        default_lang="en",
+        supported_locales=("en",),
+    )
+    assert institutions_status == 200
+    assert "Institutional market research solutions" in institutions
+    assert "noindex" not in institutions
+
 
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres")
 @pytest.mark.asyncio

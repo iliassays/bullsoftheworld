@@ -248,8 +248,14 @@ async def _data_quality_problems(market: str = MARKET) -> list[str]:
                 text(
                     "select code, as_of_date from shareholding_snapshots "
                     "where market = :market and "
+                    "(sponsor_director is null or institute is null or "
+                    "foreign_pct is null or public is null or "
+                    "sponsor_director not between 0 and 100 or "
+                    "coalesce(govt,0) not between 0 and 100 or "
+                    "institute not between 0 and 100 or foreign_pct not between 0 and 100 or "
+                    "public not between 0 and 100 or "
                     "sponsor_director + coalesce(govt,0) + institute + foreign_pct + public "
-                    "not between 90 and 110 "
+                    "not between 99 and 101) "
                     "order by as_of_date desc limit 5"
                 ),
                 {"market": market},

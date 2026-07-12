@@ -182,6 +182,21 @@ def test_parse_shareholdings_rejects_degenerate_sum():
     assert info is None or info.shareholdings == []
 
 
+@pytest.mark.parametrize(
+    "invalid_row",
+    [
+        "Sponsor/Director:39.98Govt:0.00Institute:21.24Foreign:0.00Public:33.78",
+        "Sponsor/Director:101.00Govt:0.00Institute:0.00Foreign:0.00Public:0.00",
+    ],
+)
+def test_parse_shareholdings_rejects_invalid_compositions(invalid_row: str):
+    original = "Sponsor/Director:39.98Govt:0.00Institute:21.24Foreign:0.00Public:38.78"
+    info = parse_company(COMPANY.replace(original, invalid_row), "PRAGATIINS")
+
+    assert info is not None
+    assert {snapshot.as_of_date for snapshot in info.shareholdings} == {dt.date(2025, 12, 31)}
+
+
 def test_parse_company_unknown_code_returns_none():
     assert parse_company("<html><body>no data</body></html>", "NOPE") is None
 

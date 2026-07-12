@@ -84,7 +84,7 @@ function QuickStrip({
           : t("tag.inlineSector");
   const volTag =
     volume != null && f.avg_volume_20
-      ? `${(volume / f.avg_volume_20).toFixed(1)}× ${t("normal")}`
+      ? `${(volume / f.avg_volume_20).toFixed(1)}× ${t("stat.volVsFullSession")}`
       : undefined;
   const freeFloat =
     f.free_float_cap_mn != null && f.market_cap_mn
@@ -113,11 +113,11 @@ export function SymbolPage() {
   const { user } = useAuth();
   const { t, lang } = useLang();
   const { config } = useTenantConfig();
-  const [detail, setDetail] = useState<SymbolDetail | null>(null);
+  const [detail, setDetail] = useState<SymbolDetail | null | undefined>(undefined);
   const [topPost, setTopPost] = useState<Post | null>(null);
   const [buzz, setBuzz] = useState<Buzz | null>(null);
-  const [company, setCompany] = useState<Company | null>(null);
-  const [institutional, setInstitutional] = useState<InstitutionalActivity | null>(null);
+  const [company, setCompany] = useState<Company | null | undefined>(undefined);
+  const [institutional, setInstitutional] = useState<InstitutionalActivity | null | undefined>(undefined);
   const [news, setNews] = useState<NewsItem[] | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [watched, setWatched] = useState(false);
@@ -128,61 +128,77 @@ export function SymbolPage() {
   );
 
   useEffect(() => {
-    setDetail(null);
+    let active = true;
+    setDetail(undefined);
     setTopPost(null);
     setBuzz(null);
-    setCompany(null);
-    setInstitutional(null);
+    setCompany(undefined);
+    setInstitutional(undefined);
     setNews(null);
     setBars([]);
     api
       .symbol(sym)
-      .then(setDetail)
-      .catch(() => setDetail(null));
+      .then((value) => active && setDetail(value))
+      .catch(() => active && setDetail(null));
     api
       .bars(sym, 90)
-      .then(setBars)
-      .catch(() => setBars([]));
+      .then((value) => active && setBars(value))
+      .catch(() => active && setBars([]));
     if (config.features.official_disclosures) {
       api
         .news(sym)
-        .then(setNews)
-        .catch(() => setNews([]));
+        .then((value) => active && setNews(value))
+        .catch(() => active && setNews([]));
     } else {
       setNews([]);
     }
     api
       .topPost(sym)
-      .then(setTopPost)
-      .catch(() => setTopPost(null));
+      .then((value) => active && setTopPost(value))
+      .catch(() => active && setTopPost(null));
     api
       .buzz(sym)
-      .then(setBuzz)
-      .catch(() => setBuzz(null));
+      .then((value) => active && setBuzz(value))
+      .catch(() => active && setBuzz(null));
     if (config.features.company_fundamentals) {
       api
         .company(sym)
-        .then(setCompany)
-        .catch(() => setCompany(null));
+        .then((value) => active && setCompany(value))
+        .catch(() => active && setCompany(null));
     }
     if (config.features.institutional_holdings) {
       api
         .institutionalHoldings(sym)
-        .then(setInstitutional)
-        .catch(() => setInstitutional(null));
+        .then((value) => active && setInstitutional(value))
+        .catch(() => active && setInstitutional(null));
     }
     api.recordView(sym).catch(() => {}); // internal analytics; fire-and-forget
-    if (user)
-      api
-        .watchlist()
-        .then((w) => setWatched(w.some((i) => i.symbol.code === sym)));
+    return () => {
+      active = false;
+    };
   }, [
     sym,
-    user,
     config.features.company_fundamentals,
     config.features.institutional_holdings,
     config.features.official_disclosures,
   ]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      setWatched(false);
+      return () => {
+        active = false;
+      };
+    }
+    api
+      .watchlist()
+      .then((items) => active && setWatched(items.some((item) => item.symbol.code === sym)))
+      .catch(() => active && setWatched(false));
+    return () => {
+      active = false;
+    };
+  }, [sym, user]);
 
   const toggleWatch = async () => {
     if (watched) await api.watchRemove(sym);
@@ -264,7 +280,15 @@ export function SymbolPage() {
     ]),
   });
 
-  if (detail === null) return <Spinner />;
+  if (detail === undefined) return <Spinner />;
+  if (detail === null)
+    return (
+      <Empty>
+        {lang === "bn"
+          ? `$${sym}-এর তথ্য এখন পাওয়া যাচ্ছে না। টিকারটি যাচাই করে আবার চেষ্টা করুন।`
+          : `Research for $${sym} is unavailable. Check the ticker and try again.`}
+      </Empty>
+    );
   const q = detail.quote;
 
   return (
@@ -458,7 +482,9 @@ export function SymbolPage() {
       {tab === "news" &&
         (news === null ? <Spinner /> : <NewsPanel items={news} ltp={q?.ltp} />)}
       {tab === "financials" &&
-        (company ? (
+        (company === undefined ? (
+          <Spinner />
+        ) : company ? (
           <>
             <FundamentalsPanel f={company.fundamentals} earnings={company.earnings} />
             <FinancialHealthPanel company={company} />
@@ -469,15 +495,23 @@ export function SymbolPage() {
             />
           </>
         ) : (
-          <Spinner />
+          <Empty>{lang === "bn" ? "আর্থিক তথ্য এখন পাওয়া যাচ্ছে না।" : "Financial data is unavailable."}</Empty>
         ))}
       {tab === "ownership" &&
         (config.features.institutional_holdings ? (
-          institutional ? <InstitutionalHoldingsPanel data={institutional} /> : <Spinner />
+          institutional === undefined ? (
+            <Spinner />
+          ) : institutional ? (
+            <InstitutionalHoldingsPanel data={institutional} />
+          ) : (
+            <Empty>{lang === "bn" ? "প্রাতিষ্ঠানিক হোল্ডিং এখন পাওয়া যাচ্ছে না।" : "Institutional holdings are unavailable."}</Empty>
+          )
         ) : company ? (
           <OwnershipPanel o={company.ownership} />
-        ) : (
+        ) : company === undefined ? (
           <Spinner />
+        ) : (
+          <Empty>{lang === "bn" ? "মালিকানার তথ্য এখন পাওয়া যাচ্ছে না।" : "Ownership data is unavailable."}</Empty>
         ))}
     </div>
   );

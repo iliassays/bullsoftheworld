@@ -13,6 +13,7 @@ import { PostCard } from "../components/PostCard";
 import { QuizCard } from "../components/QuizCard";
 import { useSeo, siteJsonLd } from "../components/Seo";
 import { TodaysWatch } from "../components/TodaysWatch";
+import { LaunchIntro } from "../components/LaunchIntro";
 import { Spinner } from "../components/ui";
 
 // Redesign 2026-07: the Bulls tab lives here now, as a feed filter. Each chip maps straight onto
@@ -89,6 +90,7 @@ export function Feed() {
 
   return (
     <div className="flex flex-col gap-3">
+      <LaunchIntro />
       {/* Today — one glance: mood, what stands out, today's earnings, a quiz question.
           (Ticker strip dropped and the personalized "Your Watchlist" card removed 2026-07-04 —
           it duplicated /watchlist with a subtly unscoped 'latest note' lookup; the ☆ Watchlist

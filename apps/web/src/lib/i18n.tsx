@@ -52,6 +52,12 @@ const STRINGS: Record<string, Entry> = {
   "nav.bulls": { en: "Bulls", bn: "বুলস" },
   "nav.watch": { en: "Watch", bn: "ওয়াচ" },
   "nav.about": { en: "About", bn: "সম্পর্কে" },
+  "nav.methodology": { en: "Data & methodology", bn: "তথ্য ও পদ্ধতি" },
+  "nav.privacy": { en: "Privacy", bn: "গোপনীয়তা" },
+  "nav.terms": { en: "Terms", bn: "শর্তাবলি" },
+  "nav.institutions": { en: "Institutions", bn: "প্রতিষ্ঠান" },
+  "nav.beta": { en: "Research beta", bn: "রিসার্চ বেটা" },
+  "nav.cookieSettings": { en: "Analytics settings", bn: "অ্যানালিটিক্স সেটিংস" },
   "nav.scanner": { en: "Scanner", bn: "স্ক্যানার" },
   "scanner.today": { en: "Today", bn: "আজ" },
   "scanner.value": { en: "Value", bn: "ভ্যালু" },
@@ -67,6 +73,10 @@ const STRINGS: Record<string, Entry> = {
   "scanner.emptyWatched": {
     en: "None of your watched stocks match these scans right now.",
     bn: "আপনার ওয়াচলিস্টের কোনো শেয়ার এই মুহূর্তে মিলছে না।",
+  },
+  "scanner.unavailable": {
+    en: "Research lists are unavailable. Try again shortly.",
+    bn: "গবেষণার তালিকা এখন পাওয়া যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।",
   },
   "nav.me": { en: "Me", bn: "আমি" },
   "home.earningsToday": { en: "Earnings today", bn: "আজকের আয়" },
@@ -224,6 +234,10 @@ const STRINGS: Record<string, Entry> = {
   "stat.pe": { en: "P/E", bn: "পি/ই" },
   "stat.eps": { en: "EPS", bn: "ইপিএস" },
   "stat.freeFloat": { en: "Free float", bn: "ফ্রি ফ্লোট" },
+  "stat.volVsFullSession": {
+    en: "20-session full-day avg",
+    bn: "২০-সেশনের পূর্ণ দিনের গড়",
+  },
   "tag.cheaperSector": { en: "cheaper than sector", bn: "খাতের চেয়ে সস্তা" },
   "tag.pricierSector": { en: "pricier than sector", bn: "খাতের চেয়ে দামি" },
   "tag.inlineSector": { en: "in line", bn: "খাতের সমান" },
@@ -345,10 +359,6 @@ const STRINGS: Record<string, Entry> = {
     bn: "সিদ্ধান্তের আগে সবসময় কারণ (খবর) যাচাই করুন — আর মনে রাখুন প্রতিটি সংকেত কী বলে না।",
   },
   "mktIntro.dismiss": { en: "Got it", bn: "বুঝেছি" },
-  "mkt.rankNote": {
-    en: "Rankings as of the last close · prices 15-min delayed",
-    bn: "র‍্যাঙ্কিং সর্বশেষ ক্লোজ অনুযায়ী · দাম ১৫ মিনিট বিলম্বিত",
-  },
   "marketPulse.title": { en: "Market pulse", bn: "মার্কেট পালস" },
   "marketPulse.subtitle": {
     en: "Regime first: index, breadth, turnover and sector leadership.",
@@ -497,6 +507,10 @@ const STRINGS: Record<string, Entry> = {
     en: "Every board, grouped for power users.",
     bn: "পাওয়ার ইউজারের জন্য সব বোর্ড, গ্রুপ অনুযায়ী।",
   },
+  "markets.unavailable": {
+    en: "Market research is unavailable. Try again shortly.",
+    bn: "মার্কেট গবেষণা এখন পাওয়া যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।",
+  },
   "markets.focusBlurb": {
     en: "High-signal boards for today's DSE read.",
     bn: "আজকের DSE পড়ার জন্য গুরুত্বপূর্ণ বোর্ড।",
@@ -548,8 +562,8 @@ const STRINGS: Record<string, Entry> = {
   backToPatterns: { en: "← Chart patterns", bn: "← চার্ট প্যাটার্ন" },
   "patterns.title": { en: "Chart Patterns", bn: "চার্ট প্যাটার্ন" },
   "patterns.intro": {
-    en: "Classic technical shapes built from confirmed swing highs/lows. Tap a pattern to see what it means, what textbook technical analysis says usually happens next, and which DSE stocks are showing it right now.",
-    bn: "নিশ্চিত সুইং হাই/লো থেকে তৈরি ক্লাসিক টেকনিক্যাল আকার। কোনো প্যাটার্নে ট্যাপ করে দেখুন এর মানে কী, প্রথাগত টেকনিক্যাল অ্যানালাইসিস অনুযায়ী সাধারণত এরপর কী হয়, আর এখন কোন DSE শেয়ার এটি দেখাচ্ছে।",
+    en: "Technical price structures and strict price-volume setups. Tap a pattern to see its exact rules, evidence limits, and which DSE stocks show it now.",
+    bn: "টেকনিক্যাল দামের কাঠামো ও কঠোর দাম-ভলিউম সেটআপ। কোনো প্যাটার্নে ট্যাপ করে এর সুনির্দিষ্ট নিয়ম, প্রমাণের সীমা এবং এখন কোন DSE শেয়ার এটি দেখাচ্ছে তা দেখুন।",
   },
   "patterns.showingCount": {
     en: "{n} DSE stocks showing this now",
@@ -610,7 +624,7 @@ const STRINGS: Record<string, Entry> = {
   "group.value": { en: "Value & income", bn: "ভ্যালু ও আয়" },
   "group.technical": { en: "Technical", bn: "টেকনিক্যাল" },
   // Metric column headers
-  "mh.moneyFlow": { en: "Money flow", bn: "মানি ফ্লো" },
+  "mh.moneyFlow": { en: "CMF proxy", bn: "CMF প্রক্সি" },
   "mh.momentum": { en: "Momentum", bn: "মোমেন্টাম" },
   "mh.volume": { en: "Volume", bn: "ভলিউম" },
   "mh.yield": { en: "Yield", bn: "ইল্ড" },
@@ -626,11 +640,11 @@ const STRINGS: Record<string, Entry> = {
   "mh.strength": { en: "Strength", bn: "শক্তি" },
   "mh.change": { en: "Change", bn: "পরিবর্তন" },
   // Metric chip words
-  "mc.strongInflow": { en: "Strong inflow", bn: "জোরালো প্রবাহ" },
-  "mc.inflow": { en: "Inflow", bn: "অর্থ ঢুকছে" },
-  "mc.strongOutflow": { en: "Strong outflow", bn: "জোরালো বহিঃপ্রবাহ" },
-  "mc.outflow": { en: "Outflow", bn: "অর্থ বেরোচ্ছে" },
-  "mc.flatFlow": { en: "Flat flow", bn: "স্থির প্রবাহ" },
+  "mc.strongInflow": { en: "Strong positive CMF", bn: "জোরালো ধনাত্মক CMF" },
+  "mc.inflow": { en: "Positive CMF", bn: "ধনাত্মক CMF" },
+  "mc.strongOutflow": { en: "Strong negative CMF", bn: "জোরালো ঋণাত্মক CMF" },
+  "mc.outflow": { en: "Negative CMF", bn: "ঋণাত্মক CMF" },
+  "mc.flatFlow": { en: "Neutral CMF", bn: "নিরপেক্ষ CMF" },
   "mc.overbought": { en: "Overbought zone", bn: "অতিরিক্ত কেনা অঞ্চল" },
   "mc.oversold": { en: "Oversold zone", bn: "অতিরিক্ত বিক্রি অঞ্চল" },
   "mc.strongMomentum": { en: "Strong momentum", bn: "শক্তিশালী মোমেন্টাম" },
@@ -943,14 +957,14 @@ const STRINGS: Record<string, Entry> = {
   "cat.beneficial_ownership": { en: "Beneficial ownership", bn: "বেনিফিশিয়াল মালিকানা" },
   "cat.registration": { en: "Registration", bn: "নিবন্ধন" },
   "cat.other": { en: "Other", bn: "অন্যান্য" },
-  // Watch today (trending activity)
-  "watch.title": { en: "Active today", bn: "আজকের সক্রিয়" },
+  // Latest completed-session activity ranking
+  "watch.title": { en: "Latest session activity", bn: "সর্বশেষ সেশনের সক্রিয়তা" },
   "watch.subtitle": {
     en: "Stocks unusually busy versus their own normal trading. ADTV and Order guide help you judge entry/exit risk.",
     bn: "নিজের স্বাভাবিক লেনদেনের তুলনায় অস্বাভাবিক ব্যস্ত শেয়ার। ADTV ও অর্ডার গাইড ঢোকা/বের হওয়ার ঝুঁকি বুঝতে সাহায্য করে।",
   },
   "watch.heating": { en: "Heating up", bn: "সরগরম" },
-  "watch.empty": { en: "No standout activity yet today.", bn: "আজ এখনো উল্লেখযোগ্য সক্রিয়তা নেই।" },
+  "watch.empty": { en: "No standout activity at the latest close.", bn: "সর্বশেষ ক্লোজে উল্লেখযোগ্য সক্রিয়তা নেই।" },
   "watch.footer": {
     en: "Ranked from latest completed trading data by volume + turnover anomaly. Liquid names only. Past activity, not a prediction.",
     bn: "সর্বশেষ সম্পন্ন ট্রেডিং ডেটা থেকে ভলিউম + টার্নওভার অস্বাভাবিকতা দিয়ে র‍্যাঙ্ক। শুধু তারল্যপূর্ণ নাম। অতীত সক্রিয়তা, ভবিষ্যদ্বাণী নয়।",

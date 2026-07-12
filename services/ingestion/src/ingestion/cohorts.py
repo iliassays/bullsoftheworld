@@ -28,6 +28,21 @@ class OnboardingPolicy(BaseModel):
     min_sec_facts: int = Field(default=1, ge=0, le=1000)
     require_analytics: bool = True
     require_13f: bool = False
+    min_market_cap_mn: float | None = Field(default=None, gt=0)
+    max_market_cap_mn: float | None = Field(default=None, gt=0)
+    min_adtv_mn: float | None = Field(default=None, gt=0)
+    min_price: float | None = Field(default=None, gt=0)
+    requires_risk_review: bool = False
+
+    @model_validator(mode="after")
+    def validate_market_cap_range(self) -> OnboardingPolicy:
+        if (
+            self.min_market_cap_mn is not None
+            and self.max_market_cap_mn is not None
+            and self.min_market_cap_mn >= self.max_market_cap_mn
+        ):
+            raise ValueError("min_market_cap_mn must be below max_market_cap_mn")
+        return self
 
 
 class CohortManifest(BaseModel):
@@ -39,6 +54,7 @@ class CohortManifest(BaseModel):
     market: str
     backfill_years: float = Field(default=10, ge=1, le=20)
     description: str = Field(default="", max_length=500)
+    risk_review_id: str | None = Field(default=None, min_length=3, max_length=128)
     symbols: tuple[str, ...]
     policy: OnboardingPolicy = Field(default_factory=OnboardingPolicy)
     manifest_sha256: str = Field(min_length=64, max_length=64)

@@ -87,6 +87,7 @@ def _evaluate_symbol(
     has_13f: bool,
     policy: OnboardingPolicy,
     as_of_date: dt.date,
+    analytics_snapshot: tuple[float | None, float | None, float | None] | None = None,
 ) -> GateEvidence:
     bar_count, first_date, last_date, adjusted_count, volume_count, invalid_ohlc = bars or (
         0,
@@ -104,6 +105,12 @@ def _evaluate_symbol(
     facts_required = instrument_type in policy.sec_facts_required_for
     stale_days = (as_of_date - last_date).days if last_date else None
     history_days = (last_date - first_date).days if first_date and last_date else 0
+    last_close, avg_volume_20, market_cap_mn = analytics_snapshot or (None, None, None)
+    adtv_mn = (
+        last_close * avg_volume_20 / 1e6
+        if last_close is not None and avg_volume_20 is not None
+        else None
+    )
 
     gates = {
         "symbol": _gate(symbol is not None, actual=bool(symbol), expected=True),
@@ -176,6 +183,38 @@ def _evaluate_symbol(
             required=policy.require_analytics,
             actual=has_analytics,
             expected=True if policy.require_analytics else "not required",
+        ),
+        "market_cap_floor": _gate(
+            market_cap_mn is not None and market_cap_mn >= policy.min_market_cap_mn
+            if policy.min_market_cap_mn is not None
+            else True,
+            required=policy.min_market_cap_mn is not None,
+            actual=round(market_cap_mn, 2) if market_cap_mn is not None else None,
+            expected=(f">={policy.min_market_cap_mn} USD mn" if policy.min_market_cap_mn else "not required"),
+        ),
+        "market_cap_ceiling": _gate(
+            market_cap_mn is not None and market_cap_mn <= policy.max_market_cap_mn
+            if policy.max_market_cap_mn is not None
+            else True,
+            required=policy.max_market_cap_mn is not None,
+            actual=round(market_cap_mn, 2) if market_cap_mn is not None else None,
+            expected=(f"<={policy.max_market_cap_mn} USD mn" if policy.max_market_cap_mn else "not required"),
+        ),
+        "liquidity": _gate(
+            adtv_mn is not None and adtv_mn >= policy.min_adtv_mn
+            if policy.min_adtv_mn is not None
+            else True,
+            required=policy.min_adtv_mn is not None,
+            actual=round(adtv_mn, 2) if adtv_mn is not None else None,
+            expected=f">={policy.min_adtv_mn} USD mn ADTV" if policy.min_adtv_mn else "not required",
+        ),
+        "price_floor": _gate(
+            last_close is not None and last_close >= policy.min_price
+            if policy.min_price is not None
+            else True,
+            required=policy.min_price is not None,
+            actual=round(last_close, 4) if last_close is not None else None,
+            expected=f">={policy.min_price} USD" if policy.min_price else "not required",
         ),
         "institutional_mapping": _gate(
             has_13f,
@@ -286,14 +325,22 @@ async def evaluate_cohort(
                 )
             ).all()
         )
-        analytics = set(
-            await session.scalars(
-                select(TickerAnalytics.code).where(
+        analytics = {
+            code: (last_close, avg_volume_20, market_cap_mn)
+            for code, last_close, avg_volume_20, market_cap_mn in (
+                await session.execute(
+                    select(
+                        TickerAnalytics.code,
+                        TickerAnalytics.last_close,
+                        TickerAnalytics.avg_volume_20,
+                        TickerAnalytics.market_cap_mn,
+                    ).where(
                     TickerAnalytics.market == market,
                     TickerAnalytics.code.in_(codes),
                 )
-            )
-        )
+                )
+            ).all()
+        }
         holdings = set(
             await session.scalars(
                 select(InstitutionalHoldingSummary.code)
@@ -314,6 +361,7 @@ async def evaluate_cohort(
             sec_filings=int(filing_counts.get(code, 0)),
             sec_facts=int(fact_counts.get(code, 0)),
             has_analytics=code in analytics,
+            analytics_snapshot=analytics.get(code),
             has_13f=code in holdings,
             policy=policy,
             as_of_date=as_of_date,

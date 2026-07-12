@@ -2,24 +2,29 @@
 
 Unlike the rest of the API, these endpoints don't resolve the tenant from the request host: the admin
 picks a tenant from a combo, so `tenant` is an explicit query param validated against the registry.
-Read-only aggregates across content, moderation, and data-pipeline health — the "overall picture".
+Aggregates across content, funnel, moderation and data health, plus institutional lead workflow.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import Date, cast, desc, distinct, func, select
+from sqlalchemy import Date, String, case, cast, desc, distinct, func, select
 
 from api.deps import DbSession, require_admin
 from bulls.core.models import (
+    BetaFeedback,
     Cashtag,
+    InstitutionalLead,
     ModerationEvent,
+    PageViewEvent,
     Post,
     PostReaction,
+    ProductEvent,
     QuoteSnapshot,
     Symbol,
     TickerAnalytics,
@@ -56,6 +61,76 @@ class TopCashtag(BaseModel):
     posts: int
 
 
+class InstitutionalLeadOut(BaseModel):
+    id: int
+    organization: str
+    contact_name: str
+    work_email: str
+    role: str
+    use_case: str
+    status: str
+    created_at: dt.datetime
+
+
+class InstitutionalLeadStatusIn(BaseModel):
+    status: Literal["new", "contacted", "qualified", "closed"]
+
+
+class BetaFeedbackOut(BaseModel):
+    id: int
+    locale: str
+    kind: str
+    message: str
+    path: str
+    symbol_code: str | None
+    user_id: int | None
+    contact_consent: bool
+    status: str
+    created_at: dt.datetime
+
+
+class BetaFeedbackStatusIn(BaseModel):
+    status: Literal["new", "reviewed", "resolved"]
+
+
+@router.patch("/institutional-leads/{lead_id}")
+async def update_institutional_lead(
+    lead_id: int,
+    body: InstitutionalLeadStatusIn,
+    request: Request,
+    session: DbSession,
+    tenant: str = Query(..., description="Tenant name (from /admin/tenants)"),
+) -> InstitutionalLeadOut:
+    selected = request.app.state.tenants.get(tenant)
+    if selected is None:
+        raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
+    lead = await session.get(InstitutionalLead, lead_id)
+    if lead is None or lead.tenant_id != selected.name:
+        raise HTTPException(status_code=404, detail="Institutional lead not found")
+    lead.status = body.status
+    await session.flush()
+    return InstitutionalLeadOut.model_validate(lead, from_attributes=True)
+
+
+@router.patch("/beta-feedback/{feedback_id}")
+async def update_beta_feedback(
+    feedback_id: int,
+    body: BetaFeedbackStatusIn,
+    request: Request,
+    session: DbSession,
+    tenant: str = Query(..., description="Tenant name (from /admin/tenants)"),
+) -> BetaFeedbackOut:
+    selected = request.app.state.tenants.get(tenant)
+    if selected is None:
+        raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
+    feedback = await session.get(BetaFeedback, feedback_id)
+    if feedback is None or feedback.tenant_id != selected.name:
+        raise HTTPException(status_code=404, detail="Beta feedback not found")
+    feedback.status = body.status
+    await session.flush()
+    return BetaFeedbackOut.model_validate(feedback, from_attributes=True)
+
+
 class OverviewOut(BaseModel):
     tenant: str
     market: str
@@ -81,6 +156,10 @@ class OverviewOut(BaseModel):
     latest_quote_as_of: dt.datetime | None
     symbols_active: int
     symbols_hidden: int
+    institutional_leads_open: int
+    recent_institutional_leads: list[InstitutionalLeadOut]
+    beta_feedback_open: int
+    recent_beta_feedback: list[BetaFeedbackOut]
 
 
 async def _count(session, stmt) -> int:
@@ -229,6 +308,42 @@ async def overview(
         .select_from(Symbol)
         .where(Symbol.market == market, Symbol.is_hidden.is_(True)),
     )
+    institutional_leads_open = await _count(
+        session,
+        select(func.count())
+        .select_from(InstitutionalLead)
+        .where(
+            InstitutionalLead.tenant_id == name,
+            InstitutionalLead.status.in_(("new", "contacted", "qualified")),
+        ),
+    )
+    recent_institutional_leads = [
+        InstitutionalLeadOut.model_validate(lead, from_attributes=True)
+        for lead in await session.scalars(
+            select(InstitutionalLead)
+            .where(InstitutionalLead.tenant_id == name)
+            .order_by(desc(InstitutionalLead.created_at))
+            .limit(10)
+        )
+    ]
+    beta_feedback_open = await _count(
+        session,
+        select(func.count())
+        .select_from(BetaFeedback)
+        .where(
+            BetaFeedback.tenant_id == name,
+            BetaFeedback.status.in_(("new", "reviewed")),
+        ),
+    )
+    recent_beta_feedback = [
+        BetaFeedbackOut.model_validate(item, from_attributes=True)
+        for item in await session.scalars(
+            select(BetaFeedback)
+            .where(BetaFeedback.tenant_id == name)
+            .order_by(desc(BetaFeedback.created_at))
+            .limit(20)
+        )
+    ]
 
     return OverviewOut(
         tenant=name,
@@ -251,6 +366,10 @@ async def overview(
         latest_quote_as_of=latest_quote_as_of,
         symbols_active=symbols_active,
         symbols_hidden=symbols_hidden,
+        institutional_leads_open=institutional_leads_open,
+        recent_institutional_leads=recent_institutional_leads,
+        beta_feedback_open=beta_feedback_open,
+        recent_beta_feedback=recent_beta_feedback,
     )
 
 
@@ -275,6 +394,11 @@ class AnalyticsKpis(BaseModel):
     agent_notes_total: int
     human_share_pct: float  # public posts / all published posts * 100
     reactions_7d: int
+    consented_visitors_30d: int
+    ticker_viewers_30d: int
+    watchlist_activations_30d: int
+    weekly_activated_researchers: int
+    institutional_leads_open: int
 
 
 class AnalyticsOut(BaseModel):
@@ -431,6 +555,87 @@ async def analytics(
     denom = public_posts_total + agent_notes_total
     human_share = round(public_posts_total / denom * 100, 1) if denom else 0.0
 
+    viewer_key = case(
+        (
+            PageViewEvent.user_id.is_not(None),
+            func.concat("user:", cast(PageViewEvent.user_id, String)),
+        ),
+        else_=func.concat("session:", PageViewEvent.session_hash),
+    )
+    product_viewer_key = case(
+        (
+            ProductEvent.user_id.is_not(None),
+            func.concat("user:", cast(ProductEvent.user_id, String)),
+        ),
+        else_=func.concat("session:", ProductEvent.session_hash),
+    )
+    consented_visitors_30d = await _count(
+        session,
+        select(func.count(distinct(product_viewer_key)))
+        .select_from(ProductEvent)
+        .where(
+            ProductEvent.tenant_id == name,
+            ProductEvent.name == "page_view",
+            ProductEvent.created_at >= since_30d,
+        ),
+    )
+    ticker_viewers_30d = await _count(
+        session,
+        select(func.count(distinct(viewer_key)))
+        .select_from(PageViewEvent)
+        .where(PageViewEvent.tenant_id == name, PageViewEvent.created_at >= since_30d),
+    )
+    watchlist_activations_30d = await _count(
+        session,
+        select(func.count(distinct(ProductEvent.user_id)))
+        .select_from(ProductEvent)
+        .where(
+            ProductEvent.tenant_id == name,
+            ProductEvent.name == "watchlist_activated",
+            ProductEvent.user_id.is_not(None),
+            ProductEvent.created_at >= since_30d,
+        ),
+    )
+    researched_users = set(
+        await session.scalars(
+            select(PageViewEvent.user_id)
+            .where(
+                PageViewEvent.tenant_id == name,
+                PageViewEvent.user_id.is_not(None),
+                PageViewEvent.created_at >= since_7d,
+            )
+            .group_by(PageViewEvent.user_id)
+            .having(func.count(distinct(PageViewEvent.code)) >= 3)
+        )
+    )
+    action_users = set(
+        await session.scalars(
+            select(distinct(ProductEvent.user_id)).where(
+                ProductEvent.tenant_id == name,
+                ProductEvent.user_id.is_not(None),
+                ProductEvent.created_at >= since_7d,
+                ProductEvent.name.in_(
+                    (
+                        "add_watchlist",
+                        "open_alert",
+                        "create_price_alert",
+                        "ask_stock_research",
+                        "open_idea",
+                    )
+                ),
+            )
+        )
+    )
+    institutional_leads_open = await _count(
+        session,
+        select(func.count())
+        .select_from(InstitutionalLead)
+        .where(
+            InstitutionalLead.tenant_id == name,
+            InstitutionalLead.status.in_(("new", "contacted", "qualified")),
+        ),
+    )
+
     return AnalyticsOut(
         tenant=name,
         market=market,
@@ -447,6 +652,11 @@ async def analytics(
             agent_notes_total=agent_notes_total,
             human_share_pct=human_share,
             reactions_7d=reactions_7d,
+            consented_visitors_30d=consented_visitors_30d,
+            ticker_viewers_30d=ticker_viewers_30d,
+            watchlist_activations_30d=watchlist_activations_30d,
+            weekly_activated_researchers=len(researched_users & action_users),
+            institutional_leads_open=institutional_leads_open,
         ),
         series=series,
     )

@@ -1,4 +1,5 @@
 import { currentLang } from "./i18n";
+import { analyticsConsentGranted } from "./consent";
 
 // Minimal typed API client. The short-lived access token is injected from memory.
 // Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
@@ -169,10 +170,25 @@ export interface SymbolOut {
   sector: string | null;
   category: string | null;
   is_active: boolean;
+  data_status: "reference_only" | "onboarding" | "ready" | "degraded";
 }
 export interface SymbolDetail {
   symbol: SymbolOut;
   quote: Quote | null;
+}
+export interface ResearchPreparation {
+  code: string;
+  status: "queued" | "running" | "review_required" | "ready" | "rejected" | "failed" | "reference_only" | "onboarding" | "degraded";
+  symbol_status: SymbolOut["data_status"];
+  run_id: string | null;
+  attempts: number;
+  request_count: number;
+  requested_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failure_reasons: string[];
+  can_open: boolean;
+  disclosure: string;
 }
 export interface Bar {
   date: string; // YYYY-MM-DD
@@ -221,8 +237,8 @@ export interface Level {
   value: number;
   date: string;
 }
-// A detected chart pattern (Finviz-style: triangles, channels, double top/bottom) — classic
-// technical analysis, not proven to have an edge on DSE. Always shown with evidence="framework".
+// A detected chart pattern. These are descriptive watchlist structures, not trade instructions;
+// the flat-base study improved selectivity but did not show stable standalone return edge.
 export interface PricePoint {
   date: string;
   price: number;
@@ -241,7 +257,8 @@ export type PatternType =
   | "descending_triangle"
   | "channel_up"
   | "channel_down"
-  | "channel_horizontal";
+  | "channel_horizontal"
+  | "high_volume_flat_base";
 export type PatternStatus =
   | "forming"
   | "confirmed_breakout_up"
@@ -260,6 +277,7 @@ export interface PatternMatch {
   strength_score: number;
   touches_resistance: number;
   touches_support: number;
+  metrics: Record<string, number>;
 }
 // Deterministic technical-analysis snapshot — descriptive facts only, never a recommendation.
 export interface Analytics {
@@ -350,6 +368,8 @@ export interface ScreenItem {
   how_to_read?: string | null;
   risk_note?: string | null;
   check_next?: string[];
+  pattern_status?: PatternStatus | null;
+  pattern_metrics?: Record<string, number> | null;
 }
 export interface Screen {
   key: string;
@@ -357,7 +377,8 @@ export interface Screen {
   description: string;
   value_label: string;
   group: string;
-  evidence?: "backtested" | "framework" | "utility" | null;
+  evidence?: "backtested" | "experimental" | "framework" | "utility" | null;
+  total_count?: number | null;
   items: ScreenItem[];
 }
 export interface MarketMethodology {
@@ -430,6 +451,7 @@ export interface Buzz {
 export interface Company {
   code: string;
   fundamentals: {
+    valuation_as_of: string | null;
     market_cap_mn: number | null;
     pe_ratio: number | null;
     pb_ratio: number | null;
@@ -453,8 +475,12 @@ export interface Company {
     institute_pct: number | null;
     foreign_pct: number | null;
     public_pct: number | null;
+    sponsor_delta: number | null;
+    govt_delta: number | null;
     institute_delta: number | null;
     foreign_delta: number | null;
+    public_delta: number | null;
+    composition_total: number | null;
     as_of: string | null;
     history: {
       as_of: string;
@@ -598,6 +624,8 @@ export interface InstitutionalActivity {
     manager_cik: number;
     manager_name: string;
     latest_value_usd: number;
+    manager_style: string | null;
+    interpretation: string | null;
     points: Array<{
       report_date: string;
       reported_manager_name: string;
@@ -682,6 +710,10 @@ export interface Pulse {
 export interface MarketStatus {
   phase: "open" | "pre_open" | "post_close" | "weekend";
   as_of: string | null;
+  market_time: string;
+  expected_analysis_date: string;
+  next_analysis_at: string;
+  quote_is_stale: boolean;
 }
 export interface MarketConfig {
   market: string;
@@ -724,6 +756,7 @@ export interface MarketConfig {
   logo_url: string;
   tagline_en: string;
   tagline_bn: string;
+  research_beta: boolean;
   social_url: string | null;
 }
 export interface MoodComponent {
@@ -753,6 +786,8 @@ export interface ScorecardDimension {
   label: string;
   score: number;
   detail: string;
+  assessment: string;
+  benchmark: string;
 }
 export interface RedFlag {
   key: string;
@@ -804,6 +839,12 @@ export interface Desk {
   followers: number;
   following: boolean;
   verified: boolean;
+  cadence: string;
+  next_evaluation_at: string;
+  methodology: string;
+  post_rule: string;
+  source_note: string;
+  last_post_at: string | null;
 }
 export interface UserProfile {
   handle: string;
@@ -864,7 +905,53 @@ export interface User {
   portfolio_public: boolean;
 }
 
+export interface InstitutionalLeadInput {
+  organization: string;
+  contact_name: string;
+  work_email: string;
+  role: string;
+  use_case: string;
+  source: string;
+  consent: true;
+  website: string;
+}
+
+export type BetaFeedbackKind = "useful" | "unclear" | "incorrect" | "missing" | "other";
+export interface BetaFeedbackInput {
+  kind: BetaFeedbackKind;
+  message: string;
+  path: string;
+  symbol_code: string | null;
+  contact_consent: boolean;
+  website: string;
+}
+
 export const api = {
+  productEvent: (
+    name: string,
+    properties: Record<string, string | number | boolean | null | undefined> = {},
+  ) =>
+    request<{ status: string }>("/product-events", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        analytics_consent: true,
+        session_id: clientId(),
+        path: typeof window === "undefined" ? null : window.location.pathname,
+        properties,
+      }),
+    }),
+  institutionalLead: (body: InstitutionalLeadInput) =>
+    request<{ status: string }>("/institutional-leads", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  betaFeedback: (body: BetaFeedbackInput) =>
+    request<{ status: string }>("/beta-feedback", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   // auth
   register: (b: { name: string; contact: string; password: string }) =>
     request<{ access_token: string; refresh_token?: string }>("/auth/register", {
@@ -939,6 +1026,12 @@ export const api = {
       `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}${direction ? `&direction=${direction}` : ""}`,
     ),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
+  researchPreparation: (code: string) =>
+    request<ResearchPreparation>(`/research-preparations/${encodeURIComponent(code)}`),
+  prepareResearch: (code: string) =>
+    request<ResearchPreparation>(`/research-preparations/${encodeURIComponent(code)}`, {
+      method: "POST",
+    }),
 
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
@@ -975,10 +1068,12 @@ export const api = {
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
   news: (code: string) => request<NewsItem[]>(`/symbols/${code}/news`),
   recordView: (code: string) =>
-    request<void>(`/symbols/${code}/view`, {
-      method: "POST",
-      body: JSON.stringify({ session_id: clientId() }),
-    }),
+    analyticsConsentGranted()
+      ? request<void>(`/symbols/${code}/view`, {
+          method: "POST",
+          body: JSON.stringify({ analytics_consent: true, session_id: clientId() }),
+        })
+      : Promise.resolve(),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   trendingStocks: (limit = 15) =>

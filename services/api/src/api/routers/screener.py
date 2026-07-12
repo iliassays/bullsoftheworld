@@ -14,6 +14,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
+from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature, visible_codes
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
@@ -104,7 +105,17 @@ def _screenable_codes(market: str):
     ]
     if _screen_settings(market).dse_category_filter:
         conds.append(or_(Symbol.category.is_(None), Symbol.category != "Z"))
-    return select(Symbol.code).where(*conds)
+    fresh = aliased(TickerAnalytics)
+    latest_date = (
+        select(func.max(TickerAnalytics.as_of_date))
+        .where(TickerAnalytics.market == market)
+        .scalar_subquery()
+    )
+    return (
+        select(Symbol.code)
+        .join(fresh, and_(fresh.market == Symbol.market, fresh.code == Symbol.code))
+        .where(*conds, fresh.as_of_date == latest_date)
+    )
 
 
 def _liquid(market: str):
@@ -188,8 +199,8 @@ _SCREENS: list[ScreenSpec] = [
     ),
     ScreenSpec(
         "accumulation",
-        "Money flowing in",
-        "Buying pressure — positive money flow",
+        "Positive CMF",
+        "Volume-weighted closes favored the upper daily range",
         "CMF",
         T.cmf_20 > 0,
         T.cmf_20.desc(),
@@ -197,8 +208,8 @@ _SCREENS: list[ScreenSpec] = [
     ),
     ScreenSpec(
         "distribution",
-        "Distribution",
-        "Volume flowing out (negative money flow)",
+        "Negative CMF",
+        "Volume-weighted closes favored the lower daily range",
         "CMF",
         T.cmf_20 < 0,
         T.cmf_20.asc(),
@@ -209,8 +220,8 @@ _SCREENS: list[ScreenSpec] = [
     # before the move. Differs from plain "Money flowing in" (CMF>0) by the not-yet-moved filter.
     ScreenSpec(
         "quiet_accumulation",
-        "Quiet accumulation",
-        "Money flowing in while the price is still flat — accumulation before a move",
+        "Quiet price-volume divergence",
+        "Positive CMF and rising OBV while price remains near its 50-day average",
         "CMF",
         and_(
             T.cmf_20 >= 0.10,  # clear money inflow (Chaikin)
@@ -387,6 +398,8 @@ class ScreenItem(BaseModel):
     how_to_read: str | None = None  # Scanner: plain-language read, not advice
     risk_note: str | None = None  # Scanner: what this pattern does not prove
     check_next: list[str] = []  # Scanner: concrete verification checklist
+    pattern_status: str | None = None
+    pattern_metrics: dict[str, float] | None = None
 
 
 class ScreenOut(BaseModel):
@@ -395,9 +408,10 @@ class ScreenOut(BaseModel):
     description: str
     value_label: str
     group: str = "technical"  # movers | community | value | technical
-    # Truth-in-labeling: backtested (validated on our DSE data) | framework (classic
-    # investing lens, not locally validated) | utility (descriptive, no edge claimed).
+    # Truth-in-labeling: backtested (historical edge) | experimental (tested, no stable edge) |
+    # framework (classic method, not locally validated) | utility (descriptive, no edge claimed).
     evidence: str | None = None
+    total_count: int | None = None
     items: list[ScreenItem]
 
 
@@ -912,6 +926,7 @@ def _setup_quality(screen: ScreenOut, item: ScreenItem, market: str = "DSE") -> 
     if (
         (settings.dse_category_filter and item.category == "Z")
         or "pump" in high_risk_note
+        or (screen.key == "dividend_yield" and item.value > 15)
         or (item.adtv_mn is not None and item.adtv_mn < settings.min_adtv_mn)
     ):
         return "High-risk read"
@@ -1319,6 +1334,7 @@ async def _sponsor_selling(session, market: str, limit: int = PER_SCREEN) -> Scr
 
 
 _PATTERN_TITLE = {
+    "high_volume_flat_base": "High-Volume Flat Base",
     "ascending_triangle": "Ascending Triangle",
     "descending_triangle": "Descending Triangle",
     "channel_up": "Rising Channel",
@@ -1354,6 +1370,8 @@ async def _chart_pattern_board(
                 T.last_close,
                 TickerPattern.status,
                 TickerPattern.strength_score,
+                TickerPattern.payload,
+                func.count().over().label("total_count"),
             )
             .join(T, and_(T.market == TickerPattern.market, T.code == TickerPattern.code))
             .where(
@@ -1367,27 +1385,57 @@ async def _chart_pattern_board(
             .limit(limit)
         )
     ).all()
-    items = [
-        ScreenItem(
-            code=code,
-            last_close=lc,
-            value=round(strength, 0),
-            note=_PATTERN_STATUS_TITLE[status],
-            why=f"{_PATTERN_TITLE[pattern_type]}, {_PATTERN_STATUS_TITLE[status]} (strength {strength:.0f}/100).",
+    items = []
+    for code, lc, status, strength, payload, _total_count in rows:
+        status_text = _PATTERN_STATUS_TITLE[status]
+        why = f"{_PATTERN_TITLE[pattern_type]}, {status_text} (strength {strength:.0f}/100)."
+        note = status_text
+        if pattern_type == "high_volume_flat_base":
+            metrics = (payload or {}).get("metrics", {})
+            depth = float(metrics.get("base_depth_pct", 0))
+            if status == "forming":
+                distance = float(metrics.get("distance_to_breakout_pct", 0))
+                note = f"forming {distance:.1f}% below resistance · {depth:.1f}% base"
+                why = (
+                    f"Tight 15-session base, {distance:.1f}% below resistance; breakout is not "
+                    "confirmed. Historical watchlist structure, not a buy signal."
+                )
+            else:
+                volume_ratio = float(metrics.get("volume_ratio", 0))
+                note = f"breakout on {volume_ratio:.1f}x base volume · {depth:.1f}% base"
+                why = (
+                    f"Closed above a tight 15-session base on {volume_ratio:.1f}x base volume. "
+                    "The DSE study found regime-dependent outcomes, not a stable standalone edge."
+                )
+        items.append(
+            ScreenItem(
+                code=code,
+                last_close=lc,
+                value=round(strength, 0),
+                note=note,
+                why=why,
+                pattern_status=status,
+                pattern_metrics=(payload or {}).get("metrics", {}),
+            )
         )
-        for code, lc, status, strength in rows
-    ]
     title = _PATTERN_TITLE[pattern_type]
     return ScreenOut(
         key=f"{_CHART_PATTERN_PREFIX}{pattern_type}",
         title=title,
         description=(
-            f"Stocks currently forming or just resolving a {title.lower()}. Descriptive "
-            "geometry, not a signal — see the lesson for what 'usually happens' means and "
-            "doesn't mean."
+            "Liquid stocks compressing near resistance or clearing it on at least 2x base "
+            "volume. Tested as a research watchlist, but not a proven standalone trade signal."
+            if pattern_type == "high_volume_flat_base"
+            else (
+                f"Stocks currently forming or just resolving a {title.lower()}. Descriptive "
+                "geometry, not a signal — see the lesson for what 'usually happens' means and "
+                "doesn't mean."
+            )
         ),
         value_label="score",
         group="technical",
+        evidence="experimental" if pattern_type == "high_volume_flat_base" else "framework",
+        total_count=int(rows[0].total_count) if rows else 0,
         items=items,
     )
 
@@ -1508,7 +1556,7 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    key = f"screens:v10:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
+    key = f"screens:v13:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1551,7 +1599,11 @@ async def _build_screens(
     out.append(await _attention_rising(session, tenant.market, tenant.name))
 
     await _enrich(session, tenant.market, out)
-    as_of = await session.scalar(select(T.as_of_date).where(T.market == tenant.market).limit(1))
+    # Page-level freshness must describe the newest analytics batch. A bare LIMIT 1 is unordered
+    # and can label the whole page with any older ticker's date.
+    as_of = await session.scalar(
+        select(func.max(T.as_of_date)).where(T.market == tenant.market)
+    )
     settings = _screen_settings(tenant.market)
     methodology = MarketMethodology(
         market=tenant.market,

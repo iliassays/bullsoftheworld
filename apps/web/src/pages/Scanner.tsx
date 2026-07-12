@@ -9,7 +9,6 @@ import { useAuth } from "../lib/auth";
 import { type Lang, useLang } from "../lib/i18n";
 import { formatCurrencyMillions, formatMoney } from "../lib/market";
 import { trackProductEvent } from "../lib/analytics";
-import { useTenantConfig } from "../lib/tenant";
 import { Watchlist } from "./Watchlist";
 
 type ResearchTab = ScannerResponse["tabs"][number];
@@ -63,25 +62,25 @@ const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; lab
   },
   active_today: {
     en: {
-      title: "Unusual Activity",
-      desc: "Liquid names where volume and turnover are above their own normal pace.",
-      label: "Unusual activity",
+      title: "Unusual Session Activity",
+      desc: "Liquid names whose completed-session volume and turnover were above their own normal pace.",
+      label: "Unusual session activity",
     },
     bn: {
-      title: "অস্বাভাবিক লেনদেন",
-      desc: "লিকুইড শেয়ার যেখানে নিজের স্বাভাবিক গতির তুলনায় আজ ভলিউম/টার্নওভার বেশি।",
-      label: "অস্বাভাবিক লেনদেন",
+      title: "সর্বশেষ সেশনে অস্বাভাবিক লেনদেন",
+      desc: "লিকুইড শেয়ার যেখানে সম্পূর্ণ হওয়া সেশনের ভলিউম ও টার্নওভার নিজের স্বাভাবিক গতির চেয়ে বেশি ছিল।",
+      label: "সেশনের অস্বাভাবিক লেনদেন",
     },
   },
   most_active: {
     en: {
       title: "Top Turnover",
-      desc: "Where the most traded value is today, liquidity-gated.",
+      desc: "Where the most traded value appears in the latest available price snapshot, liquidity-gated.",
       label: "High turnover",
     },
     bn: {
-      title: "আজ বেশি টাকার লেনদেন",
-      desc: "আজ কোথায় বেশি টাকা ঘুরছে, লিকুইডিটি ফিল্টারসহ।",
+      title: "সর্বশেষ স্ন্যাপশটে বেশি টাকার লেনদেন",
+      desc: "সর্বশেষ পাওয়া দামের স্ন্যাপশটে কোথায় বেশি টাকা ঘুরেছে, লিকুইডিটি ফিল্টারসহ।",
       label: "বেশি টার্নওভার",
     },
   },
@@ -264,8 +263,8 @@ function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: strin
     }
     if (board.key === "active_today") {
       return item.note === "heating_up"
-        ? "নিজের স্বাভাবিক গতির তুলনায় আজ ভলিউম ও টার্নওভার দুটোই বেশি।"
-        : "নিজের স্বাভাবিক লেনদেনের তুলনায় আজ লেনদেনের চাপ বেশি।";
+        ? "নিজের স্বাভাবিক গতির তুলনায় সর্বশেষ সেশনে ভলিউম ও টার্নওভার দুটোই বেশি ছিল।"
+        : "নিজের স্বাভাবিক লেনদেনের তুলনায় সর্বশেষ সেশনে লেনদেনের চাপ বেশি ছিল।";
     }
     if (board.key === "value_quality") {
       return `খাতের তুলনায় P/E কম (${item.value.toFixed(2)}x), সাথে লাভজনকতার সমর্থন আছে।`;
@@ -297,7 +296,6 @@ function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: strin
 
 function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void }) {
   const { lang } = useLang();
-  const { config } = useTenantConfig();
   const { board, item } = picked;
   const text = boardText(board, lang);
   const checks = checksFor(board, item, lang);
@@ -313,13 +311,6 @@ function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void
         ? `নিরাপদ অর্ডার ≤ ${formatCurrencyMillions(item.safe_order_mn)}`
         : `safe order ≤ ${formatCurrencyMillions(item.safe_order_mn)}`,
     );
-  if (item.turnover_mn != null)
-    liqParts.push(
-      lang === "bn"
-        ? `আজ ${formatCurrencyMillions(item.turnover_mn)}`
-        : `${config.features.intraday_quotes ? "today" : "latest session"} ${formatCurrencyMillions(item.turnover_mn)}`,
-    );
-
   const Row = ({ label, children }: { label: string; children: ReactNode }) => (
     <div className="flex items-baseline justify-between gap-4 border-b border-dashed border-border/70 py-2.5 text-[12.5px] last:border-b-0">
       <span className="shrink-0 text-muted">{label}</span>
@@ -454,7 +445,7 @@ function BoardCard({
           {text.title}
         </span>
         <span className="ml-auto shrink-0 text-[11px] text-muted">
-          {lang === "bn" ? "আজ কোনো ম্যাচ নেই — এটাও তথ্য" : "no match today — that's data too"}
+          {lang === "bn" ? "সর্বশেষ ক্লোজে কোনো ম্যাচ নেই" : "no match at the latest close"}
         </span>
       </section>
     );
@@ -574,9 +565,9 @@ function Boards({
   onMeta: (data: ScannerResponse) => void;
 }) {
   const { t } = useLang();
-  const [data, setData] = useState<ScannerResponse | null>(null);
+  const [data, setData] = useState<ScannerResponse | null | undefined>(undefined);
   useEffect(() => {
-    setData(null);
+    setData(undefined);
     let live = true;
     api
       .scannerRadar(tab, watched, tab === "lens" ? 25 : undefined)
@@ -591,7 +582,8 @@ function Boards({
     };
   }, [onMeta, tab, watched]);
 
-  if (!data) return <Spinner />;
+  if (data === undefined) return <Spinner />;
+  if (data === null) return <Empty>{t("scanner.unavailable")}</Empty>;
   if (data.boards.length === 0) {
     return <Empty>{watched ? t("scanner.emptyWatched") : t("scanner.empty")}</Empty>;
   }
@@ -600,10 +592,7 @@ function Boards({
       {/* Same freshness anchor Markets already shows — these boards are EOD-analytics-anchored
           (rankings frozen since the last close) even while the market is currently open; a bare
           per-row '1D' tag with no date anywhere on the page invited "is this today?" confusion. */}
-      <div className="flex items-center justify-end px-1 -mb-1.5">
-        <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} />
-      </div>
-      <div className="text-[10px] text-muted px-1 -mb-1">{t("mkt.rankNote")}</div>
+      <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} detail className="" />
       {data.boards.map((board) => (
         <BoardCard key={board.key} board={board} regime={data.market_regime} onPick={onPick} />
       ))}
@@ -614,7 +603,6 @@ function Boards({
 export function Scanner() {
   const { t, lang } = useLang();
   const { user } = useAuth();
-  const { config } = useTenantConfig();
   const [tab, setTab] = useState("today");
   const [researchTabs, setResearchTabs] = useState<ResearchTab[]>([
     { key: "today", title: "Today", description: "Latest research conditions." },
@@ -647,7 +635,7 @@ export function Scanner() {
   };
 
   const tabTitle = (item: ResearchTab) => {
-    if (item.key === "today") return t("scanner.today");
+    if (item.key === "today") return lang === "bn" ? "সর্বশেষ ক্লোজ" : "Latest close";
     if (item.key === "value") return t("scanner.value");
     if (item.key === "lens") return t("scanner.lens");
     return item.title;
@@ -655,6 +643,7 @@ export function Scanner() {
 
   const seg = (id: string, label: string) => (
     <button
+      key={id}
       onClick={() => setTab(id)}
       className={`min-w-fit flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition ${
         tab === id ? "bg-accent text-bg" : "text-muted"
@@ -670,8 +659,8 @@ export function Scanner() {
         <div className="text-lg font-bold">💡 {lang === "bn" ? "আইডিয়া" : "Ideas"}</div>
         <p className="mt-0.5 text-xs leading-snug text-muted">
           {lang === "bn"
-            ? "আজকের ডেটা থেকে shortlist — পরামর্শ নয়।"
-            : `Shortlists from ${config.features.intraday_quotes ? "today's" : "the latest session's"} data — not advice.`}
+            ? "প্রতিটি তালিকা সম্পূর্ণ হওয়া সেশনের পরে নিয়ম মেনে হিসাব করা গবেষণা-শর্টলিস্ট। সবুজ/লাল শতাংশ সেই সেশনের দামের পরিবর্তন, ভবিষ্যৎ রিটার্ন নয়।"
+            : "Each list is a rule-based research shortlist calculated after a completed session. Green/red percentages are that session's price move, not a forecast."}
         </p>
       </div>
 

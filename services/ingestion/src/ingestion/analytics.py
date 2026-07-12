@@ -187,9 +187,22 @@ async def _load_eps_growth(session, market: str) -> dict[str, float]:
         by_code.setdefault(r.code, []).append(r)
     out: dict[str, float] = {}
     for code, fins in by_code.items():
-        if len(fins) >= 2 and fins[0].eps is not None and fins[1].eps:
-            out[code] = round((fins[0].eps - fins[1].eps) / abs(fins[1].eps) * 100, 2)
+        if len(fins) >= 2:
+            growth = _comparable_eps_growth(fins[0].eps, fins[1].eps)
+            if growth is not None:
+                out[code] = growth
     return out
+
+
+def _comparable_eps_growth(current: float | None, prior: float | None) -> float | None:
+    """YoY percentage growth is meaningful only from a positive earnings base.
+
+    Loss-to-profit and loss-to-smaller-loss cases are turnarounds, not percentage growth. Returning
+    None keeps them out of growth rankings until a dedicated turnaround feature can label them.
+    """
+    if current is None or prior is None or prior <= 0:
+        return None
+    return round((current - prior) / prior * 100, 2)
 
 
 def _delta(cur: float | None, prev: float | None) -> float | None:

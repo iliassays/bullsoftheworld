@@ -8,32 +8,22 @@ view count anywhere — page views are too noisy/gameable to show as a signal.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api.analytics_identity import anonymous_session_hash
 from api.deps import CurrentTenant, DbSession, OptionalUser
 from api.ratelimit import client_ip, throttle
-from bulls.core.config import get_settings
 from bulls.core.models import PageViewEvent, Symbol
 
 router = APIRouter(tags=["views"])
 
 
 class ViewIn(BaseModel):
+    analytics_consent: Literal[True]
     session_id: str | None = Field(default=None, max_length=64)  # anon client id (optional)
-
-
-def _anonymous_session_hash(tenant_id: str, session_id: str | None) -> str | None:
-    if not session_id:
-        return None
-    return hmac.new(
-        get_settings().jwt_secret.encode(),
-        f"{tenant_id}:{session_id}".encode(),
-        hashlib.sha256,
-    ).hexdigest()
 
 
 @router.post("/symbols/{code}/view", status_code=204)
@@ -56,6 +46,6 @@ async def record_view(
             market=tenant.market,
             code=code,
             user_id=viewer.id if viewer else None,
-            session_hash=_anonymous_session_hash(tenant.name, body.session_id),
+            session_hash=anonymous_session_hash(tenant.name, body.session_id),
         )
     )

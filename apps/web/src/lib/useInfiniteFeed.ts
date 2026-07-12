@@ -14,20 +14,33 @@ export function useInfiniteFeed(
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
   const offset = useRef(0);
-  const busy = useRef(false);
+  const generation = useRef(0);
+  const busyGeneration = useRef<number | null>(null);
   const doneRef = useRef(false);
   const io = useRef<IntersectionObserver | null>(null);
   const loadRef = useRef(load);
   loadRef.current = load;
 
   const more = useCallback(async () => {
-    if (busy.current || doneRef.current) return;
-    busy.current = true;
+    const requestGeneration = generation.current;
+    if (busyGeneration.current === requestGeneration || doneRef.current) return;
+    busyGeneration.current = requestGeneration;
     setLoading(true);
     try {
       const batch = await loadRef.current(PAGE, offset.current);
+      // A filter/tab change can finish while the previous request is still in flight. Ignore that
+      // stale response so it cannot leak posts into the newly reset feed.
+      if (requestGeneration !== generation.current) return;
       offset.current += batch.length;
-      setItems((cur) => [...cur, ...batch]);
+      setItems((current) => {
+        const seen = new Set(current.map((post) => post.id));
+        const unique = batch.filter((post) => {
+          if (seen.has(post.id)) return false;
+          seen.add(post.id);
+          return true;
+        });
+        return [...current, ...unique];
+      });
       if (batch.length < PAGE) {
         doneRef.current = true;
         setDone(true);
@@ -36,15 +49,16 @@ export function useInfiniteFeed(
       doneRef.current = true;
       setDone(true);
     } finally {
-      busy.current = false;
-      setLoading(false);
+      if (busyGeneration.current === requestGeneration) busyGeneration.current = null;
+      if (requestGeneration === generation.current) setLoading(false);
     }
   }, []);
 
   // (re)start whenever the key changes
   useEffect(() => {
+    generation.current += 1;
     offset.current = 0;
-    busy.current = false;
+    busyGeneration.current = null;
     doneRef.current = false;
     setItems([]);
     setDone(false);

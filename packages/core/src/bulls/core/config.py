@@ -30,10 +30,12 @@ class Settings(BaseSettings):
     ai_queue_name: str = "arq:ai"
     dse_ingestion_queue_name: str = "arq:ingestion:dse"
     us_ingestion_queue_name: str = "arq:ingestion:us"
+    us_research_queue_name: str = "arq:research:us"
     sec_ingestion_queue_name: str = "arq:ingestion:sec"
     us_eod_min_coverage: float = Field(default=0.90, gt=0, le=1)
     us_universe_promotion_enabled: bool = False
     us_market_data_authorization_id: str = ""
+    on_demand_research_daily_limit: int = Field(default=5, ge=1, le=50)
     sec_contact_email: str = "hello@bullsofwallst.com"
 
     # LLM-only features are opt-in. Retrieval embeddings remain local and free when this is disabled.

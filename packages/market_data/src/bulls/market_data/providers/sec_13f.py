@@ -491,6 +491,7 @@ def build_holding_changes(
     prior: ArchiveResult,
     *,
     now: dt.datetime | None = None,
+    watched_manager_ciks: frozenset[int] = frozenset(),
 ) -> tuple[list[InstitutionalPositionChange], list[InstitutionalSummary]]:
     now = now or dt.datetime.now(dt.UTC)
     current_map = {(row.code, row.manager_cik): row for row in current.positions}
@@ -571,9 +572,20 @@ def build_holding_changes(
             key=lambda row: abs(row.share_change or 0),
             reverse=True,
         )[:TOP_BY_CHANGE]
-        keep = {(row.manager_cik, row.code) for row in ranked[:TOP_BY_VALUE] + by_change}
-        kept_rows = [row for row in ranked if (row.manager_cik, row.code) in keep]
-        stored.extend(kept_rows[:MAX_STORED_MANAGERS_PER_SYMBOL])
+        prioritized = [
+            row for row in ranked if row.manager_cik in watched_manager_ciks
+        ] + ranked[:TOP_BY_VALUE] + by_change
+        keep: list[InstitutionalPositionChange] = []
+        seen: set[tuple[int, str]] = set()
+        for row in prioritized:
+            key = (row.manager_cik, row.code)
+            if key in seen:
+                continue
+            seen.add(key)
+            keep.append(row)
+            if len(keep) == MAX_STORED_MANAGERS_PER_SYMBOL:
+                break
+        stored.extend(sorted(keep, key=lambda row: row.value_rank))
         net_change = total_shares - prior_total_shares
         summaries.append(
             InstitutionalSummary(

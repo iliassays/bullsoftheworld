@@ -27,7 +27,7 @@ def test_period_return_starts_when_disclosure_is_public() -> None:
 
     result = _period_return(bars, dt.date(2026, 1, 2), 20)
 
-    assert result == (121 / 102 - 1) * 100
+    assert result == (122 / 102 - 1) * 100
     assert _period_return(bars, dt.date(2026, 1, 20), 20) is None
 
 

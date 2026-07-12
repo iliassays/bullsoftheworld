@@ -5,6 +5,7 @@ import { type Lang, useLang } from "../lib/i18n";
 // Tapping it opens the one-sentence explanation — nobody should have to guess.
 const EVIDENCE_TEXT: Record<string, Record<Lang, string>> = {
   backtested: { en: "🧪 tested on history", bn: "🧪 ইতিহাসে যাচাইকৃত" },
+  experimental: { en: "🧭 tested watchlist", bn: "🧭 ইতিহাসে পরীক্ষিত ওয়াচ" },
   framework: { en: "📐 classic method", bn: "📐 ক্লাসিক পদ্ধতি" },
   utility: { en: "🔧 info list", bn: "🔧 তথ্যের তালিকা" },
 };
@@ -13,6 +14,10 @@ const EVIDENCE_EXPLAIN: Record<string, Record<Lang, string>> = {
   backtested: {
     en: "This showed a historical result in two years of DSE data covering one observed market regime. It has not been independently validated or proven in live trading.",
     bn: "DSE-র দুই বছরের একটি পর্যবেক্ষিত বাজার-পর্বে এটি ঐতিহাসিক ফল দেখিয়েছে। স্বাধীনভাবে যাচাই বা লাইভ ট্রেডিংয়ে প্রমাণ করা হয়নি।",
+  },
+  experimental: {
+    en: "We tested this watchlist rule on two years of DSE history. It improved some selection measures, but returns were not stable across periods, so it is not a proven signal.",
+    bn: "DSE-র দুই বছরের ইতিহাসে এই ওয়াচলিস্ট নিয়ম পরীক্ষা করা হয়েছে। কিছু বাছাইয়ের মান উন্নত হলেও সময়ভেদে রিটার্ন স্থিতিশীল ছিল না, তাই এটি প্রমাণিত সংকেত নয়।",
   },
   framework: {
     en: "A classic, widely-used method (e.g. Buffett/Graham-style value investing, or textbook chart-pattern reading). Sensible thinking — but we have not separately proven it on DSE data.",

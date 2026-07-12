@@ -1,4 +1,4 @@
-from bulls.analytics import build_investor_lens, dividend_score
+from bulls.analytics import build_investor_lens, dividend_score, technical_score
 
 
 def _by_key(result):
@@ -94,3 +94,20 @@ def test_us_lens_uses_us_currency_and_omits_dse_only_checks():
 
 def test_token_dividend_yield_cannot_look_like_strong_income():
     assert dividend_score(dividend_yield=0.3, roe=30, eps_growth_yoy=20) <= 4
+
+
+def test_technical_lens_uses_shared_score_and_caps_extended_setups() -> None:
+    kwargs = dict(
+        above_sma_50=True,
+        above_sma_200=True,
+        mom_12_1=55.0,
+        rsi_14=79.0,
+        relative_volume=2.0,
+        pct_from_52w_high=-1.0,
+    )
+    shared = technical_score(**kwargs)
+    assert shared is not None and shared > 6
+
+    result = build_investor_lens(code="HOT", as_of_date="2026-07-10", **kwargs)
+
+    assert _by_key(result)["technical_trader"].score == 6

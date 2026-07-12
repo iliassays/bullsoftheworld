@@ -1,31 +1,75 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { api } from "./api";
+import { analyticsConsentGranted } from "./consent";
 
-// GA4 SPA tracking. gtag.js + its config live in index.html (their sha256 is pinned in the CSP, so
-// they must not be edited here). GA4's auto page_view only fires on the initial hard load; this
-// hook fires page_view on every subsequent client route change, and a `view_stock` event on stock
-// pages so "most-viewed tickers" is a clean report in Analytics.
-//
-// Because URLs are now language-prefixed (/bn/s/GP), page_path already carries language + ticker,
-// so the Pages report shows per-ticker counts directly; `view_stock` + the `stock_code` custom
-// dimension (register it in the GA4 UI) gives the same, aggregated cleanly across bn/en.
+// Research-beta analytics stay first-party. No Google or advertising script is loaded; consented
+// route and feature events go only to the tenant-scoped API and are automatically pruned.
 
-declare global {
-  interface Window {
-    gtag?: (...args: unknown[]) => void;
+const ATTRIBUTION_KEY = "bulls.attribution";
+const SERVER_PROPERTY_KEYS = new Set([
+  "alert_kind",
+  "board_key",
+  "campaign",
+  "destination",
+  "direction",
+  "evaluation",
+  "market",
+  "medium",
+  "query_length",
+  "question_kind",
+  "result_rank",
+  "source",
+  "stock_code",
+  "step",
+  "strategy_pack",
+  "surface",
+  "watch_count",
+]);
+
+function attribution(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const query = new URLSearchParams(window.location.search);
+  const incoming = {
+    source: query.get("utm_source") ?? "",
+    medium: query.get("utm_medium") ?? "",
+    campaign: query.get("utm_campaign") ?? "",
+  };
+  if (incoming.source || incoming.medium || incoming.campaign) {
+    try {
+      sessionStorage.setItem(ATTRIBUTION_KEY, JSON.stringify(incoming));
+    } catch {
+      // Storage can be unavailable in strict privacy modes; events still work without attribution.
+    }
+    return incoming;
+  }
+  try {
+    return JSON.parse(sessionStorage.getItem(ATTRIBUTION_KEY) ?? "{}") as Record<string, string>;
+  } catch {
+    return {};
   }
 }
 
-function ga(...args: unknown[]) {
-  // gtag is defined synchronously inline (queues into dataLayer) even before gtag.js finishes.
-  if (typeof window !== "undefined" && typeof window.gtag === "function") window.gtag(...args);
+function serverProperties(
+  params: Record<string, string | number | boolean | null | undefined>,
+) {
+  const merged = { ...attribution(), ...params };
+  return Object.fromEntries(
+    Object.entries(merged).filter(
+      ([key, value]) => SERVER_PROPERTY_KEYS.has(key) && value !== undefined,
+    ),
+  );
 }
 
 export function trackProductEvent(
   name: string,
   params: Record<string, string | number | boolean | null | undefined> = {},
 ) {
-  ga("event", name, params);
+  if (!analyticsConsentGranted()) return Promise.resolve();
+  return api
+    .productEvent(name, serverProperties(params))
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 // /{bn|en}/s/{CODE} → CODE (uppercased); null for any other route.
@@ -34,29 +78,14 @@ function stockCodeFromPath(pathname: string): string | null {
   return m ? decodeURIComponent(m[1]).toUpperCase() : null;
 }
 
-export function usePageViewTracking() {
+export function usePageViewTracking(enabled: boolean) {
   const loc = useLocation();
-  const first = useRef(true);
   useEffect(() => {
-    const path = loc.pathname + loc.search;
-    const skipPageView = first.current; // GA4 config already auto-sent the first page_view
-    first.current = false;
+    if (!enabled) return;
     const code = stockCodeFromPath(loc.pathname);
-    // Defer a tick: the <Seo> head effect runs AFTER this one (it's higher in the tree, so its
-    // passive effect fires later), so document.title is stale until the next task. Sending on a
-    // 0ms timeout lets the title settle before it's read.
-    const id = window.setTimeout(() => {
-      if (!skipPageView) {
-        ga("event", "page_view", {
-          page_path: path,
-          page_location: window.location.href,
-          page_title: document.title,
-        });
-      }
-      // A dedicated stock-view event fires on EVERY stock page (incl. the first), so the
-      // most-viewed-tickers report is complete regardless of the page_view skip above.
-      if (code) ga("event", "view_stock", { stock_code: code });
-    }, 0);
-    return () => window.clearTimeout(id);
-  }, [loc.pathname, loc.search]);
+    trackProductEvent("page_view", {
+      surface: code ? "symbol" : "route",
+      stock_code: code ?? undefined,
+    });
+  }, [enabled, loc.pathname, loc.search]);
 }

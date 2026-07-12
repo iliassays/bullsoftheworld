@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from collections.abc import Iterable, Mapping
 
 import httpx
@@ -91,6 +92,8 @@ def classify_instrument(
     if is_etf:
         return "etf"
     if "preferred" in lower or "preference" in lower or " pfd" in lower:
+        return "preferred_stock"
+    if re.search(r"\b\d+(?:\.\d+)?%\s+.*\bseries\s+[a-z0-9-]+\b", lower):
         return "preferred_stock"
     if "warrant" in lower:
         return "warrant"

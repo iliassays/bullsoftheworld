@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
-from api.routers.market import load_freshest_quotes
+from api.eod import latest_completed_session_change_pct
 from bulls.analytics import RedFlags, Scorecard, build_red_flags, build_scorecard
 from bulls.core.markets import get_market_profile
 from bulls.core.models import Symbol, TickerAnalytics
@@ -39,14 +39,9 @@ async def get_scorecard(
 
     adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 and ta.last_close else None
     profile = get_market_profile(tenant.market)
-    quote = (
-        await load_freshest_quotes(
-            session,
-            tenant.market,
-            [code],
-            profile.tz,
-        )
-    ).get(code)
+    session_change_pct = await latest_completed_session_change_pct(
+        session, tenant.market, code, ta.as_of_date
+    )
 
     scorecard = build_scorecard(
         code=code,
@@ -71,6 +66,6 @@ async def get_scorecard(
         roe=ta.roe,
         dividend_yield=ta.dividend_yield,
         free_float_cap_mn=ta.free_float_cap_mn,
-        today_change_pct=quote.change_pct if quote and profile.features.circuit_breakers else None,
+        today_change_pct=session_change_pct if profile.features.circuit_breakers else None,
     )
     return ScorecardResponse(scorecard=scorecard, red_flags=red_flags)

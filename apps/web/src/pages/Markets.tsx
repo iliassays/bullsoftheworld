@@ -11,7 +11,7 @@ import {
   type ScreenItem,
   type ScreensResponse,
 } from "../lib/api";
-import { Spinner, taka } from "../components/ui";
+import { Empty, Spinner, taka } from "../components/ui";
 import { FreshnessTag } from "../components/FreshnessTag";
 import { InfoTip } from "../components/InfoTip";
 import { MarketPulse } from "../components/MarketPulse";
@@ -39,11 +39,11 @@ export const SCREEN_HELP: Record<string, string> = {
   overbought:
     "RSI rates recent momentum from 0–100. Above 70 is historically an 'overbought' zone. e.g. RSI 78. A fact about momentum, not a sell signal.",
   accumulation:
-    "Chaikin Money Flow (CMF) gauges buying vs selling pressure over 20 days, on a -1 to +1 scale. Positive = money flowing in. e.g. +0.30 = strong inflow.",
+    "Chaikin Money Flow (CMF) is a price-volume proxy on a -1 to +1 scale. Positive values mean closes tended toward the upper part of each day's range on heavier volume. It cannot identify actual buyers or cash inflows.",
   distribution:
-    "Chaikin Money Flow (CMF) below 0 means money is flowing out — net selling pressure over 20 days. e.g. -0.30 = strong outflow.",
+    "Negative CMF means closes tended toward the lower part of each day's range on heavier volume. It is a price-volume pressure proxy, not proof that money or institutions left the stock.",
   unusual_volume:
-    "How active a stock is vs its normal pace — a 1-day spike (1D) or sustained over a week/month (5D/1M). Tagged by today's direction: heavy volume while rising = buying, while falling = selling. e.g. 4.6x = 4.6 times its usual volume.",
+    "How active a stock is vs its normal full-session pace — a 1-day spike (1D) or sustained over a week/month (5D/1M). Direction tags say up-volume or down-volume; they do not reveal who bought or sold. e.g. 4.6x = 4.6 times usual volume.",
   institutional_13f_accumulation:
     "Quarter-over-quarter growth in aggregate reported long shares on SEC Form 13F. Reports can arrive up to 45 days after quarter-end and do not reveal actual trade dates or entry prices.",
   institutional_13f_distribution:
@@ -53,7 +53,7 @@ export const SCREEN_HELP: Record<string, string> = {
   near_52w_high: "Within 5% of its highest price over the past 52 weeks (one year).",
   near_52w_low: "Within 5% of its lowest price over the past 52 weeks (one year).",
   dividend_yield:
-    "A recent cash dividend as a percentage of today's price. Stock dividends are excluded, stale payouts are not treated as current yield, and extreme price-collapse yields are filtered.",
+    "A recent cash dividend as a percentage of the latest close. Stock dividends are excluded and stale payouts are not treated as current yield. Above 15% is shown as unusually high and needs payout-sustainability review.",
   value_vs_sector:
     "P/E compared with the sector's median. Below 1.0× = cheaper than typical peers. e.g. 0.7× means a 30% lower P/E than the sector median.",
   eps_growth: "Earnings per share vs the prior year. e.g. +20% YoY = earnings grew 20%.",
@@ -62,7 +62,7 @@ export const SCREEN_HELP: Record<string, string> = {
   attention_rising:
     "Discussion running well above this symbol's own usual pace. e.g. 3× usual = three times its normal daily chatter.",
   quiet_accumulation:
-    "Money is flowing in (positive Chaikin Money Flow) AND volume is confirming (On-Balance Volume trending up — volume leading price) while the price is still flat, within ~10% of its 50-day average. This 'buying into a quiet base' is the classic accumulation setup smart money looks for before a move. The flat price line next to a strong-inflow tag is the tell. A divergence, not a promise — bases can also just stay flat. Not advice.",
+    "Positive CMF and rising OBV appear while price remains within about 10% of its 50-day average. This is a price-volume divergence worth investigating, not evidence that institutions are secretly buying and not a prediction of a breakout.",
   foreign_buying:
     "How foreign investors increased their ownership since the prior disclosure. pp = percentage points (+5 pp ≈ they went from owning 10% to 15%). The line is the share price over that window; the dots are the stake at each disclosure (hover for figures). The 'since' date is the comparison point — disclosures come a few times a year, not daily. History, not a forecast.",
   institutional_buying:
@@ -82,12 +82,14 @@ export const SCREEN_HELP: Record<string, string> = {
   low_volatility:
     "Annualised size of daily price swings over the past year. Lower = steadier. e.g. 15% is calm, 60% is wild. Steadier doesn't mean higher returns — just a smoother ride.",
 };
-// One board per pattern type (chart_pattern_ascending_triangle, etc.) — same explanatory text for
-// all 7 since the "how to read this" logic is identical regardless of which specific shape it is.
+// One board per pattern type. Most are pivot geometry; the flat base is a separately tested
+// price-volume setup and receives a more precise explanation below.
 for (const type of PATTERN_ORDER) {
   SCREEN_HELP[`chart_pattern_${type}`] =
     "Built from confirmed swing highs/lows. This is textbook technical analysis — not proven to predict DSE moves (our own study found the related momentum factor actually hurt returns here). Descriptive geometry, never a signal. Tap the board title for what this pattern means and what 'usually happens' does and doesn't tell you.";
 }
+SCREEN_HELP.chart_pattern_high_volume_flat_base =
+  "A liquid stock held within a strict 15-session, ≤10% base and is within 5% of resistance, or has closed above it on at least 2× base volume. Our DSE walk-forward study improved selectivity versus generic breakouts but did not show a stable standalone return edge. Research watchlist only, not a buy signal.";
 
 // Bangla tooltip text — clear, simple retail phrasing (reviewed, not literal MT). Examples kept.
 const SCREEN_HELP_BN: Record<string, string> = {
@@ -102,11 +104,11 @@ const SCREEN_HELP_BN: Record<string, string> = {
   overbought:
     "RSI সাম্প্রতিক মোমেন্টাম ০–১০০-তে মাপে। ৭০-এর উপরে ঐতিহাসিকভাবে 'অতিরিক্ত কেনা' অঞ্চল। যেমন RSI ৭৮। এটি মোমেন্টামের তথ্য, বেচার সংকেত নয়।",
   accumulation:
-    "Chaikin Money Flow (CMF) ২০ দিনে ক্রয় বনাম বিক্রয়চাপ মাপে, -১ থেকে +১ স্কেলে। ধনাত্মক = অর্থ ঢুকছে। যেমন +০.৩০ = জোরালো প্রবাহ।",
+    "Chaikin Money Flow (CMF) হলো -১ থেকে +১ স্কেলের দাম-ভলিউম প্রক্সি। ধনাত্মক মানে বেশি ভলিউমের দিনে ক্লোজ দিনের রেঞ্জের উপরের দিকে ছিল। এটি প্রকৃত ক্রেতা বা নগদ প্রবাহ শনাক্ত করতে পারে না।",
   distribution:
-    "CMF ০-এর নিচে মানে অর্থ বেরোচ্ছে — ২০ দিনে নিট বিক্রয়চাপ। যেমন -০.৩০ = জোরালো বহিঃপ্রবাহ।",
+    "ঋণাত্মক CMF মানে বেশি ভলিউমের দিনে ক্লোজ দিনের রেঞ্জের নিচের দিকে ছিল। এটি দাম-ভলিউম চাপের প্রক্সি; প্রতিষ্ঠান বা অর্থ বেরিয়ে গেছে তার প্রমাণ নয়।",
   unusual_volume:
-    "স্বাভাবিকের তুলনায় কতটা সক্রিয় — ১ দিনের স্পাইক (1D) বা সপ্তাহ/মাসজুড়ে (5D/1M)। আজকের দিক অনুযায়ী ট্যাগ: বাড়ার সময় ভারী ভলিউম = ক্রয়, পড়ার সময় = বিক্রয়। যেমন ৪.৬x = স্বাভাবিকের ৪.৬ গুণ।",
+    "পূর্ণ সেশনের স্বাভাবিক ভলিউমের তুলনায় কতটা সক্রিয় — ১ দিনের স্পাইক (1D) বা সপ্তাহ/মাসজুড়ে (5D/1M)। দিকের ট্যাগ শুধু ঊর্ধ্বমুখী বা নিম্নমুখী ভলিউম বোঝায়; কে কিনেছে বা বিক্রি করেছে তা নয়।",
   institutional_13f_accumulation:
     "SEC Form 13F-এ রিপোর্ট করা মোট লং শেয়ার আগের ত্রৈমাসিকের তুলনায় বেড়েছে। রিপোর্ট ত্রৈমাসিক শেষের ৪৫ দিন পরেও আসতে পারে এবং প্রকৃত কেনার তারিখ বা দাম দেখায় না।",
   institutional_13f_distribution:
@@ -116,7 +118,7 @@ const SCREEN_HELP_BN: Record<string, string> = {
   near_52w_high: "গত ৫২ সপ্তাহের (এক বছর) সর্বোচ্চ দামের ৫% মধ্যে।",
   near_52w_low: "গত ৫২ সপ্তাহের (এক বছর) সর্বনিম্ন দামের ৫% মধ্যে।",
   dividend_yield:
-    "সাম্প্রতিক নগদ লভ্যাংশ আজকের দামের কত শতাংশ। স্টক লভ্যাংশ বাদ থাকে, পুরোনো পেআউটকে বর্তমান ইয়িল্ড ধরা হয় না এবং অস্বাভাবিক দাম-পতনের ইয়িল্ড ফিল্টার করা হয়।",
+    "সাম্প্রতিক নগদ লভ্যাংশ সর্বশেষ ক্লোজের কত শতাংশ। স্টক লভ্যাংশ বাদ থাকে এবং পুরোনো পেআউটকে বর্তমান ইল্ড ধরা হয় না। ১৫%-এর বেশি হলে অস্বাভাবিক বেশি হিসেবে দেখানো হয় এবং পেআউট টেকসই কি না যাচাই দরকার।",
   value_vs_sector:
     "খাতের মধ্যমার সাথে P/E তুলনা। ১.০×-এর নিচে = সাধারণ সমকক্ষদের চেয়ে সস্তা। যেমন ০.৭× মানে খাতের মধ্যমার চেয়ে ৩০% কম P/E।",
   eps_growth: "আগের বছরের তুলনায় শেয়ারপ্রতি আয়। যেমন +২০% YoY = আয় ২০% বেড়েছে।",
@@ -149,6 +151,8 @@ for (const type of PATTERN_ORDER) {
   SCREEN_HELP_BN[`chart_pattern_${type}`] =
     "নিশ্চিত সুইং হাই/লো থেকে তৈরি। এটি প্রথাগত টেকনিক্যাল অ্যানালাইসিস, এই বাজারে স্বাধীনভাবে যাচাই করা পূর্বাভাস নয়। বর্ণনামূলক জ্যামিতি, কখনো সংকেত নয়।";
 }
+SCREEN_HELP_BN.chart_pattern_high_volume_flat_base =
+  "তারল্যপূর্ণ শেয়ার ১৫ সেশনের সর্বোচ্চ ১০% বেসে থেকে রেজিস্ট্যান্সের ৫%-এর মধ্যে আছে, অথবা বেস ভলিউমের অন্তত ২×-এ উপরে ক্লোজ করেছে। DSE ওয়াক-ফরোয়ার্ড স্টাডিতে সাধারণ ব্রেকআউটের চেয়ে বাছাই ভালো হয়েছে, কিন্তু স্থিতিশীল স্বাধীন রিটার্ন এজ পাওয়া যায়নি। শুধু গবেষণার ওয়াচলিস্ট, কেনার সংকেত নয়।";
 
 // Localized tooltip text for a screen (falls back to English, then to the screen's own description).
 export function screenHelp(key: string, lang: Lang): string | undefined {
@@ -1364,6 +1368,7 @@ export function Markets() {
     },
   });
   const [data, setData] = useState<ScreensResponse | null>(null);
+  const [failed, setFailed] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lens, setLens] = useState("focus");
 
@@ -1371,9 +1376,10 @@ export function Markets() {
     api
       .screens()
       .then(setData)
-      .catch(() => setData({ as_of: null, screens: [] }));
+      .catch(() => setFailed(true));
   }, []);
 
+  if (failed) return <Empty>{t("markets.unavailable")}</Empty>;
   if (data === null) return <Spinner />;
   const live = data.screens.filter((s) => s.items.length > 0);
   const byKey = new Map(live.map((s) => [s.key, s]));
@@ -1403,7 +1409,7 @@ export function Markets() {
         ))}
       </div>
 
-      <div className="flex items-center justify-between px-1">
+      <div className="px-1">
         <div className="text-[11px] text-muted">
           {isFocus
             ? t(config.market === "US" ? "markets.focusBlurb.us" : "markets.focusBlurb")
@@ -1411,9 +1417,15 @@ export function Markets() {
               ? t(activeLens.blurbKey)
               : t("markets.browseAll")}
         </div>
-        <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} />
       </div>
-      <div className="text-[10px] text-muted px-1 -mt-1">{t("mkt.rankNote")}</div>
+      <FreshnessTag
+        asOf={data.as_of}
+        quoteAsOf={data.quote_as_of}
+        detail
+        scope="mixed"
+        priceMode="mixed"
+        className=""
+      />
 
       <MarketPulse />
       {isFocus && <MarketIntro />}

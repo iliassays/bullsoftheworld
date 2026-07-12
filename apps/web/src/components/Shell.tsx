@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { api, type MarketStatus } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { usePageViewTracking } from "../lib/analytics";
+import { useConsent } from "./ConsentManager";
 import { type Lang, SUPPORTED, useLang } from "../lib/i18n";
 import { Link, NavLink, useSwitchLang } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
@@ -123,7 +124,12 @@ function LanguageSelect() {
 export function Shell() {
   const { lang, t } = useLang();
   const { config } = useTenantConfig();
-  usePageViewTracking(); // GA4 SPA page_view on route change + view_stock on stock pages
+  const { analytics } = useConsent();
+  const location = useLocation();
+  const betaSource = location.pathname.endsWith("/beta")
+    ? new URLSearchParams(location.search).get("from") || "/"
+    : location.pathname + location.search;
+  usePageViewTracking(analytics === "granted");
   const tagline = lang === "bn" ? config.tagline_bn : config.tagline_en;
   const tabs = ALL_TABS.filter((tab) => {
     if (tab.to === "/ideas") return config.features.strategy_scanner;
@@ -151,11 +157,11 @@ export function Shell() {
         className="sticky top-0 z-20 bg-nav/90 backdrop-blur border-b border-border px-4 py-3 flex flex-col gap-2.5"
       >
         <div className="flex items-center gap-2.5">
-          <Link to="/" aria-label={`${config.brand_name} — home`} className="flex items-center gap-2.5 min-w-0">
-            <img src={config.logo_url} alt={config.brand_name} className="w-9 h-9 shrink-0" />
+          <Link to="/" aria-label={`${config.brand_name} — home`} className="flex min-w-0 flex-1 items-center gap-2">
+            <img src={config.logo_url} alt={config.brand_name} className="h-8 w-8 shrink-0" />
             <div className="leading-tight min-w-0">
-              <div className="font-bold text-base whitespace-nowrap">{config.brand_name}</div>
-              <div lang={lang} className="text-[11px] text-accent font-semibold truncate">
+              <div className="truncate text-sm font-bold">{config.brand_name}</div>
+              <div lang={lang} className="truncate text-[10px] font-semibold text-accent">
                 {tagline}
               </div>
             </div>
@@ -170,6 +176,15 @@ export function Shell() {
         </div>
         <SearchBar />
       </header>
+
+      {config.research_beta && (
+        <div className="flex items-center justify-between gap-3 border-b border-accent/30 bg-accent/8 px-4 py-2 text-[10px] leading-tight">
+          <span className="font-semibold text-accent">{lang === "bn" ? "রিসার্চ বেটা · তথ্য অসম্পূর্ণ হতে পারে" : "Research beta · data may be incomplete"}</span>
+          <Link to={`/beta?from=${encodeURIComponent(betaSource)}`} className="shrink-0 font-semibold text-text underline decoration-border underline-offset-2">
+            {lang === "bn" ? "মতামত দিন" : "Give feedback"}
+          </Link>
+        </div>
+      )}
 
       {/* Remount on language switch so all pages refetch dynamic content in the new locale.
           pb-24 clears the fixed bottom nav so the last content isn't hidden behind it. */}

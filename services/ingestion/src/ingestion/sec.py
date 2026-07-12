@@ -46,7 +46,22 @@ from ingestion.alerts import fan_out_evidence_alert, sec_filing_alert_text
 MARKET = "US"
 SOURCE = "sec_edgar"
 TENANT_ID = "bullsofwallst"
-_ALERT_FORMS = frozenset({"8-K", "10-Q", "10-K", "6-K", "20-F", "DEF 14A"})
+_ALERT_FORMS = frozenset(
+    {
+        "4",
+        "4/A",
+        "8-K",
+        "10-Q",
+        "10-K",
+        "6-K",
+        "20-F",
+        "DEF 14A",
+        "SC 13D",
+        "SC 13D/A",
+        "SC 13G",
+        "SC 13G/A",
+    }
+)
 
 
 def _sector_from_sic(sic: str | None, fallback: str | None) -> str | None:

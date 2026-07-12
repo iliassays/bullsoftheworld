@@ -57,11 +57,11 @@ def _live_en(
     # a one-sided level where the other side is None.
     p = f"Live (delayed) {currency}{price:g}"
     if rel == "below_support":
-        return f"{p} — now below the {currency}{s:g} support from last close; a daily close below confirms a break."
+        return f"{p} — now below the {currency}{s:g} support from last close; technicians would look for a daily close below."
     if rel == "near_support":
         return f"{p} — now testing the {currency}{s:g} support from last close."
     if rel == "above_resistance":
-        return f"{p} — now above the {currency}{r:g} resistance from last close; a daily close above confirms a breakout."
+        return f"{p} — now above the {currency}{r:g} resistance from last close; technicians would look for a daily close above."
     if rel == "near_resistance":
         return f"{p} — now testing the {currency}{r:g} resistance from last close."
     if rel == "between":
@@ -75,12 +75,12 @@ def _live_bn(
     # Build only the selected branch — see _live_en: a dict literal crashes on one-sided levels.
     p = f"লাইভ (বিলম্বিত) {currency}{price:g}"
     if rel == "below_support":
-        return f"{p} — এখন গত ক্লোজের {currency}{s:g} সাপোর্টের নিচে; দিন শেষে নিচে ক্লোজ হলে ব্রেক নিশ্চিত।"
+        return f"{p} — এখন গত ক্লোজের {currency}{s:g} সাপোর্টের নিচে; টেকনিক্যাল বিশ্লেষকেরা দিন শেষে নিচে ক্লোজ খুঁজবেন।"
     if rel == "near_support":
         return f"{p} — এখন গত ক্লোজের {currency}{s:g} সাপোর্ট পরীক্ষা করছে।"
     if rel == "above_resistance":
         return (
-            f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্সের উপরে; দিন শেষে উপরে ক্লোজ হলে ব্রেকআউট নিশ্চিত।"
+            f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্সের উপরে; টেকনিক্যাল বিশ্লেষকেরা দিন শেষে উপরে ক্লোজ খুঁজবেন।"
         )
     if rel == "near_resistance":
         return f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।"
@@ -103,14 +103,14 @@ def _render_en(code: str, i: LevelsInsight, currency: str = "৳") -> list[str]:
     if i.resistance is not None:
         vol = "above" if i.volume_confirms else "below"
         lines.append(
-            f"Resistance {currency}{_f(i.resistance)} — a daily close above this is a breakout, confirmed "
-            f"on above-average volume; on weak volume technicians treat it as unconfirmed and prone "
-            f"to failing. (Volume is {vol} its 20-day average now.)"
+            f"Resistance {currency}{_f(i.resistance)} — technicians often call a daily close above this "
+            f"a breakout. Above-average volume adds participation evidence; weak volume leaves less "
+            f"confirmation. (Latest full-session volume is {vol} its 20-day average.)"
         )
     if i.support is not None:
         lines.append(
-            f"Support {currency}{_f(i.support)} — a close below this breaks support, and the next lower "
-            f"level comes into focus. A dip below that closes back above is a support reclaim."
+            f"Support {currency}{_f(i.support)} — technicians often call a close below this a support "
+            f"break. A dip below that later closes back above is commonly called a support reclaim."
         )
     if i.rsi is not None and i.rsi_zone:
         note = {
@@ -146,14 +146,14 @@ def _render_bn(code: str, i: LevelsInsight, currency: str = "৳") -> list[str]:
     if i.resistance is not None:
         vol = "উপরে" if i.volume_confirms else "নিচে"
         lines.append(
-            f"রেজিস্ট্যান্স {currency}{_f(i.resistance)} — এর উপরে দিন শেষে ক্লোজ হলে তাকে ব্রেকআউট বলে; "
-            f"গড়ের বেশি ভলিউমে হলে তা নিশ্চিত ধরা হয়, কম ভলিউমে অনিশ্চিত ও ব্যর্থ হতে পারে। "
-            f"(এখন ভলিউম তার ২০-দিনের গড়ের {vol}।)"
+            f"রেজিস্ট্যান্স {currency}{_f(i.resistance)} — এর উপরে দিন শেষে ক্লোজকে টেকনিক্যাল বিশ্লেষকেরা "
+            f"সাধারণত ব্রেকআউট বলেন। গড়ের বেশি ভলিউম অংশগ্রহণের অতিরিক্ত প্রমাণ দেয়; কম ভলিউমে নিশ্চিতকরণ কম। "
+            f"(সর্বশেষ পূর্ণ সেশনের ভলিউম ২০-দিনের গড়ের {vol}।)"
         )
     if i.support is not None:
         lines.append(
-            f"সাপোর্ট {currency}{_f(i.support)} — এর নিচে ক্লোজ হলে সাপোর্ট ভেঙে যায়, পরের নিচের লেভেল "
-            f"গুরুত্বপূর্ণ হয়ে ওঠে। নিচে নেমে আবার উপরে ক্লোজ করলে তাকে সাপোর্ট রিক্লেইম বলে।"
+            f"সাপোর্ট {currency}{_f(i.support)} — এর নিচে ক্লোজকে টেকনিক্যাল বিশ্লেষকেরা সাধারণত সাপোর্ট "
+            f"ব্রেক বলেন। নিচে নেমে পরে আবার উপরে ক্লোজ করলে তাকে সাধারণত সাপোর্ট রিক্লেইম বলা হয়।"
         )
     if i.rsi is not None and i.rsi_zone:
         zone = {

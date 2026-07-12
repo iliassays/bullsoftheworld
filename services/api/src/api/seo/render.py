@@ -29,6 +29,10 @@ from bulls.market_data.calendar import market_close_on, market_timezone, to_mark
 SITE = "https://bullsofdhaka.com"
 LANGS = ("bn", "en")
 _PATTERN_TITLE = {
+    "high_volume_flat_base": {
+        "bn": "হাই-ভলিউম ফ্ল্যাট বেস",
+        "en": "High-Volume Flat Base",
+    },
     "ascending_triangle": {"bn": "ঊর্ধ্বমুখী ত্রিভুজ", "en": "Ascending Triangle"},
     "descending_triangle": {"bn": "নিম্নমুখী ত্রিভুজ", "en": "Descending Triangle"},
     "channel_up": {"bn": "ঊর্ধ্বমুখী চ্যানেল", "en": "Rising Channel"},
@@ -266,7 +270,19 @@ async def _render_pattern_detail(
     profile = get_market_profile(market)
     exchange = profile.exchange_label(lang)
     name = label[lang]
-    if lang == "bn":
+    if ptype == "high_volume_flat_base" and lang == "bn":
+        title = f"{name} — {exchange} দাম-ভলিউম ওয়াচলিস্ট | {brand}"
+        desc = (
+            f"{name} সেটআপের কঠোর নিয়ম, ঐতিহাসিক পরীক্ষার সীমা এবং এখন কোন {exchange} "
+            "শেয়ার এটি দেখাচ্ছে। গবেষণার ওয়াচলিস্ট, কেনার সংকেত নয়।"
+        )
+    elif ptype == "high_volume_flat_base":
+        title = f"{name} — {profile.exchange_code} price-volume watchlist | {brand}"
+        desc = (
+            f"Strict {name.lower()} rules, historical test limitations, and which "
+            f"{profile.exchange_code} stocks show the setup now. Research watchlist, not a signal."
+        )
+    elif lang == "bn":
         title = f"{name} — {exchange} চার্ট প্যাটার্ন | {brand}"
         desc = f"{name} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন {exchange} শেয়ার এটি দেখাচ্ছে। প্রথাগত টেকনিক্যাল অ্যানালাইসিস, পরামর্শ নয়।"
     else:
@@ -349,6 +365,46 @@ def _static_page(
             "en": (
                 f"About {brand} — a facts-first platform for {profile.exchange_code}",
                 f"What {brand} is, why 'facts, not rumours', and the automated desks that surface {profile.exchange_name} data.",
+            ),
+        },
+        "/institutions": {
+            "bn": (
+                f"প্রাতিষ্ঠানিক বাজার রিসার্চ সমাধান | {brand}",
+                f"{exchange_name}-এর জন্য ব্রোকার, অ্যাসেট ম্যানেজার, গবেষণা দল ও আর্থিক মিডিয়ার প্রমাণভিত্তিক মনিটরিং ও রিসার্চ ওয়ার্কফ্লো।",
+            ),
+            "en": (
+                f"Institutional market research solutions | {brand}",
+                f"Evidence-first monitoring and research workflows for brokers, asset managers, research teams and financial media covering {profile.exchange_name}.",
+            ),
+        },
+        "/trust": {
+            "bn": (
+                f"তথ্য ও পদ্ধতি | {brand}",
+                f"{brand} কীভাবে {exchange_name}-এর তথ্যের উৎস, সময়, গণনা, স্বয়ংক্রিয় ব্যাখ্যা ও সীমাবদ্ধতা দেখায়।",
+            ),
+            "en": (
+                f"Data and methodology | {brand}",
+                f"How {brand} handles sources, freshness, calculations, automated interpretation and limitations for {profile.exchange_name} research.",
+            ),
+        },
+        "/privacy": {
+            "bn": (
+                f"গোপনীয়তা নীতি | {brand}",
+                f"{brand} কী তথ্য সংগ্রহ করে, কেন ব্যবহার করে এবং কীভাবে আপনার নিয়ন্ত্রণ বজায় রাখে।",
+            ),
+            "en": (
+                f"Privacy policy | {brand}",
+                f"What information {brand} collects, why it is used and the controls available to users.",
+            ),
+        },
+        "/terms": {
+            "bn": (
+                f"ব্যবহারের শর্তাবলি | {brand}",
+                f"{brand} ব্যবহারের শর্ত, তথ্যের সীমাবদ্ধতা ও বিনিয়োগ-পরামর্শ সংক্রান্ত গুরুত্বপূর্ণ ব্যাখ্যা।",
+            ),
+            "en": (
+                f"Terms of use | {brand}",
+                f"Terms for using {brand}, including data limitations and the important no-investment-advice boundary.",
             ),
         },
     }
@@ -497,6 +553,16 @@ async def render_path(
         return _static_page(
             lang,
             "/about",
+            market=market,
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        ), 200
+    if len(rest) == 1 and f"/{rest[0]}" in {"/institutions", "/trust", "/privacy", "/terms"}:
+        return _static_page(
+            lang,
+            f"/{rest[0]}",
             market=market,
             site=site,
             brand=brand,

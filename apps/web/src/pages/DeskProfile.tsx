@@ -9,13 +9,15 @@ import { useInfiniteFeed } from "../lib/useInfiniteFeed";
 import { PostCard } from "../components/PostCard";
 import { useSeo } from "../components/Seo";
 import { Empty, Spinner, VerifiedBadge } from "../components/ui";
+import { marketUiFromConfig } from "../lib/market";
 import { useTenantConfig } from "../lib/tenant";
+import { formatMarketDateTime } from "../lib/time";
 
 // Official desk profile — StockTwits-style: header (name + verified badge + official label + bio +
 // joined + post count) then all of the desk's posts. Follow arrives in Phase 3.
 export function DeskProfile() {
   const { handle = "" } = useParams();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { config } = useTenantConfig();
   const { user } = useAuth();
   const [desk, setDesk] = useState<Desk | null>(null);
@@ -124,6 +126,44 @@ export function DeskProfile() {
           </div>
 
           <p className="text-sm text-text/90 leading-relaxed mt-4">{desk.bio}</p>
+
+          <div className="mt-4 border-t border-border/70 pt-3">
+            <div className="grid gap-2 text-[12px]">
+              <div className="flex items-start justify-between gap-4">
+                <span className="text-muted">{lang === "bn" ? "পরবর্তী নির্ধারিত পরীক্ষা" : "Next scheduled check"}</span>
+                <b className="text-right tnum">
+                  {formatMarketDateTime(desk.next_evaluation_at, marketUiFromConfig(config))}
+                </b>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <span className="text-muted">{lang === "bn" ? "সর্বশেষ পোস্ট" : "Last post"}</span>
+                <span className="text-right tnum">
+                  {desk.last_post_at
+                    ? formatMarketDateTime(desk.last_post_at, marketUiFromConfig(config))
+                    : lang === "bn"
+                      ? "এখনো পোস্ট নেই"
+                      : "No post yet"}
+                </span>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-muted">{desk.cadence}</p>
+            <p className="mt-1 text-[10px] leading-snug text-muted">
+              {lang === "bn"
+                ? "পরীক্ষা নির্ধারিত সময়ে হয়; যোগ্য নতুন ঘটনা না থাকলে এজেন্ট নীরব থাকবে।"
+                : "The check runs on schedule; the agent stays silent when no new event qualifies."}
+            </p>
+          </div>
+
+          <details className="mt-3 border-t border-border/70 pt-3">
+            <summary className="cursor-pointer text-[12px] font-semibold text-accent">
+              ⓘ {lang === "bn" ? "হিসাব ও উৎস" : "Calculation and source"}
+            </summary>
+            <div className="mt-2 grid gap-2 text-[11px] leading-relaxed text-muted">
+              <p><b className="text-text">{lang === "bn" ? "পদ্ধতি:" : "Method:"}</b> {desk.methodology}</p>
+              <p><b className="text-text">{lang === "bn" ? "পোস্টের নিয়ম:" : "Post rule:"}</b> {desk.post_rule}</p>
+              <p><b className="text-text">{lang === "bn" ? "উৎসের সীমা:" : "Source limit:"}</b> {desk.source_note}</p>
+            </div>
+          </details>
 
           <div className="flex gap-4 mt-3 text-xs text-muted">
             <span>

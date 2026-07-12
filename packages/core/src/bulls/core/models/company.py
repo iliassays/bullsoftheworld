@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, Integer, String
+from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -97,3 +97,20 @@ class ShareholdingSnapshot(Base):
     institute: Mapped[float | None] = mapped_column(Float)
     foreign_pct: Mapped[float | None] = mapped_column(Float)  # 'foreign' is a SQL reserved word
     public: Mapped[float | None] = mapped_column(Float)
+
+    __table_args__ = (
+        CheckConstraint(
+            "sponsor_director is not null and institute is not null and "
+            "foreign_pct is not null and public is not null and "
+            "sponsor_director between 0 and 100 and "
+            "coalesce(govt, 0) between 0 and 100 and "
+            "institute between 0 and 100 and foreign_pct between 0 and 100 and "
+            "public between 0 and 100",
+            name="ck_shareholding_category_percentages",
+        ),
+        CheckConstraint(
+            "sponsor_director + coalesce(govt, 0) + institute + foreign_pct + public "
+            "between 99 and 101",
+            name="ck_shareholding_composition_total",
+        ),
+    )

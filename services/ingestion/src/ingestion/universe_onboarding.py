@@ -29,7 +29,9 @@ from ingestion.sec import collect as collect_sec
 from ingestion.security_master import collect as collect_security_master
 
 
-async def _new_run(manifest: CohortManifest, promote: bool) -> UniverseOnboardingRun:
+async def create_onboarding_run(
+    manifest: CohortManifest, promote: bool = False
+) -> UniverseOnboardingRun:
     settings = get_settings()
     run = UniverseOnboardingRun(
         id=uuid.uuid4(),
@@ -48,6 +50,7 @@ async def _new_run(manifest: CohortManifest, promote: bool) -> UniverseOnboardin
             "market_data_authorization_id": (
                 settings.us_market_data_authorization_id if promote else None
             ),
+            "risk_review_id": manifest.risk_review_id,
         },
         error=None,
         started_at=dt.datetime.now(dt.UTC),
@@ -133,9 +136,11 @@ async def _mark_failed(run_id: uuid.UUID, error: Exception) -> None:
             await session.commit()
 
 
-def _validate_promotion(promote: bool) -> None:
+def _validate_promotion(promote: bool, manifest: CohortManifest) -> None:
     if not promote:
         return
+    if manifest.policy.requires_risk_review and not manifest.risk_review_id:
+        raise ValueError("risk_review_id is required to promote this enhanced-risk cohort")
     settings = get_settings()
     if not settings.us_universe_promotion_enabled:
         raise ValueError("US_UNIVERSE_PROMOTION_ENABLED is false")
@@ -150,11 +155,11 @@ async def run_onboarding(
     fetch: bool = True,
     promote: bool = False,
 ) -> dict[str, Any]:
-    _validate_promotion(promote)
+    _validate_promotion(promote, manifest)
     run = (
         await _resume_run(resume_id, manifest, promote)
         if resume_id
-        else await _new_run(manifest, promote)
+        else await create_onboarding_run(manifest, promote)
     )
     print(f"[onboarding] run_id={run.id}", flush=True)
     try:

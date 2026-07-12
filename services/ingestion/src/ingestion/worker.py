@@ -30,6 +30,7 @@ from ingestion.analytics import compute_all
 from ingestion.block_trades import pull_block_trades as collect_block_trades
 from ingestion.buzz import snapshot_all
 from ingestion.company import collect as collect_company
+from ingestion.growth_retention import prune_raw_events
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
 from ingestion.market_summary import collect as collect_summary
@@ -381,6 +382,13 @@ async def run_factor_signals(ctx) -> str:
     return f"factors={counts['published']}"
 
 
+async def prune_growth_analytics(ctx) -> str:
+    """Delete raw, pseudonymous funnel/page-view events after their 180-day analysis window."""
+    counts = await prune_raw_events()
+    log.info("growth analytics retention: %s", counts)
+    return f"product_events={counts['product_events']} page_views={counts['page_view_events']}"
+
+
 class WorkerSettings:
     """arq entry point for the ingestion scheduler."""
 
@@ -404,6 +412,7 @@ class WorkerSettings:
         pull_block_trades,
         run_earnings_week,
         run_mood_card,
+        prune_growth_analytics,
     ]
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
@@ -470,6 +479,8 @@ class WorkerSettings:
         # No weekday filter — arq only accepts a single weekday string (a comma-joined list
         # crash-loops the whole worker); the task itself skips non-trading days.
         cron(pull_block_trades, hour=9, minute=30, run_at_startup=False),
+        # Raw product/page-view events are operational analytics, not a permanent user profile.
+        cron(prune_growth_analytics, weekday="sun", hour=1, minute=30, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
     queue_name: ClassVar = get_settings().dse_ingestion_queue_name

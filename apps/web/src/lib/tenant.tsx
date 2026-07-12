@@ -28,6 +28,7 @@ const DSE_FALLBACK: MarketConfig = {
     { min_value_mn: 0, divisor_mn: 0.1, suffix: "L", decimals: 0 },
   ],
   market_cap_money_units: [{ min_value_mn: 0, divisor_mn: 10, suffix: " Cr", decimals: 0 }],
+  research_beta: false,
   features: {
     intraday_quotes: true,
     curated_screens: true,
@@ -87,6 +88,7 @@ const US_FALLBACK: MarketConfig = {
     { min_value_mn: 1000, divisor_mn: 1000, suffix: "B", decimals: 1 },
     { min_value_mn: 0, divisor_mn: 1, suffix: "M", decimals: 0 },
   ],
+  research_beta: true,
   features: {
     intraday_quotes: false,
     curated_screens: true,

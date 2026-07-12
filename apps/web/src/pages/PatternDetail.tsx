@@ -5,13 +5,31 @@ import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceNote } from "../components/EvidenceChip";
 import { useSeo } from "../components/Seo";
 import { Pct, Spinner, taka } from "../components/ui";
-import { api, type PatternType, type Screen } from "../lib/api";
+import { api, type PatternStatus, type PatternType, type Screen, type ScreenItem } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { getLesson } from "../lib/lessons";
-import { PATTERN_LABEL, PATTERN_LESSON_ID, PATTERN_ORDER } from "../lib/patterns";
+import { PATTERN_LABEL, PATTERN_LESSON_ID, PATTERN_ORDER, patternStatusLabel } from "../lib/patterns";
 import { useTenantConfig } from "../lib/tenant";
 
 const VALID_TYPES = new Set<string>(PATTERN_ORDER);
+
+function matchNote(item: ScreenItem, type: PatternType, lang: "bn" | "en"): string | null {
+  const status = item.pattern_status as PatternStatus | null | undefined;
+  if (!status) return item.note;
+  if (type !== "high_volume_flat_base") return patternStatusLabel(status, lang);
+  const metrics = item.pattern_metrics ?? {};
+  const depth = metrics.base_depth_pct?.toFixed(1) ?? "—";
+  if (status === "forming") {
+    const distance = metrics.distance_to_breakout_pct?.toFixed(1) ?? "—";
+    return lang === "bn"
+      ? `রেজিস্ট্যান্সের ${distance}% নিচে · ${depth}% বেস`
+      : `${distance}% below resistance · ${depth}% base`;
+  }
+  const volume = metrics.volume_ratio?.toFixed(1) ?? "—";
+  return lang === "bn"
+    ? `${volume}x ভলিউমে ব্রেকআউট · ${depth}% বেস`
+    : `breakout on ${volume}x volume · ${depth}% base`;
+}
 
 // One pattern's plain-language lesson + who's showing it right now on DSE — pairs "what usually
 // happens" with a live, checkable answer, rather than leaving the claim untested in the abstract.
@@ -33,8 +51,12 @@ export function PatternDetail() {
       : undefined,
     description: plabel
       ? {
-          bn: `${plabel.bn} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন ${config.exchange_code} শেয়ার এটি দেখাচ্ছে। প্রথাগত বিশ্লেষণ, পরামর্শ নয়।`,
-          en: `What a ${plabel.en.toLowerCase()} is, what usually happens next, and which ${config.exchange_code} stocks show it now. Textbook technical analysis, not advice.`,
+          bn: validType === "high_volume_flat_base"
+            ? `${plabel.bn} সেটআপের কঠোর নিয়ম, ঐতিহাসিক পরীক্ষার সীমা এবং এখন কোন ${config.exchange_code} শেয়ার এটি দেখাচ্ছে। গবেষণার ওয়াচলিস্ট, সংকেত নয়।`
+            : `${plabel.bn} প্যাটার্ন কী, সাধারণত এরপর কী হয়, আর এখন কোন ${config.exchange_code} শেয়ার এটি দেখাচ্ছে। প্রথাগত বিশ্লেষণ, পরামর্শ নয়।`,
+          en: validType === "high_volume_flat_base"
+            ? `Strict ${plabel.en.toLowerCase()} rules, historical test limitations, and which ${config.exchange_code} stocks show it now. Research watchlist, not a signal.`
+            : `What a ${plabel.en.toLowerCase()} is, what usually happens next, and which ${config.exchange_code} stocks show it now. Textbook technical analysis, not advice.`,
         }
       : undefined,
   });
@@ -81,7 +103,9 @@ export function PatternDetail() {
           {lang === "bn" ? PATTERN_LABEL[patternType].bn : PATTERN_LABEL[patternType].en}
         </div>
         <div className="mt-2">
-          <EvidenceNote evidence="framework" />
+          <EvidenceNote
+            evidence={screen?.evidence ?? (patternType === "high_volume_flat_base" ? "experimental" : "framework")}
+          />
         </div>
       </div>
 
@@ -114,6 +138,11 @@ export function PatternDetail() {
                 <div className="font-bold text-[13px]">${it.code}</div>
                 {it.name && it.name !== it.code && (
                   <div className="text-[11px] text-muted truncate">{it.name}</div>
+                )}
+                {matchNote(it, patternType, lang) && (
+                  <div className="mt-0.5 text-[10px] leading-tight text-accent">
+                    {matchNote(it, patternType, lang)}
+                  </div>
                 )}
               </div>
               <div className="text-right">

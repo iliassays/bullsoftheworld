@@ -43,39 +43,45 @@ _DISCLAIMER = {
 }
 
 
-# Thresholds calibrated to the DSE distribution (volatility p50≈41%, ROE p50≈3%, etc.).
-def _size_point(market_cap_mn: float | None, adtv_mn: float | None, bn: bool) -> ReadPoint | None:
+# Market-cap and liquidity labels must use market-specific currency-million thresholds.
+def _size_point(
+    market_cap_mn: float | None, adtv_mn: float | None, bn: bool, market: str = "DSE"
+) -> ReadPoint | None:
     if market_cap_mn is None:
         return None
+    large_cap = 10_000 if market == "US" else 5_000
+    small_cap = 2_000 if market == "US" else 1_000
+    active_adtv = 10 if market == "US" else 20
+    thin_adtv = 1 if market == "US" else 2
     if bn:
         size = (
             "একটি বড় কোম্পানি"
-            if market_cap_mn >= 5000
+            if market_cap_mn >= large_cap
             else "একটি ছোট কোম্পানি"
-            if market_cap_mn < 1000
+            if market_cap_mn < small_cap
             else "একটি মাঝারি আকারের কোম্পানি"
         )
         liq = ""
         if adtv_mn is not None:
             liq = (
-                ", খুব বেশি লেনদেন হয় (সহজে ঢোকা-বেরোনো যায়)"
-                if adtv_mn >= 20
+                ", তুলনামূলক বেশি লেনদেন হয়; তবু স্প্রেড ও অর্ডারের আকার গুরুত্বপূর্ণ"
+                if adtv_mn >= active_adtv
                 else ", কম লেনদেন হয় (ঢোকা-বেরোনো কঠিন)"
-                if adtv_mn < 2
+                if adtv_mn < thin_adtv
                 else ", ঢোকা-বেরোনোর মতো যথেষ্ট লেনদেন হয়"
             )
         return ReadPoint(tag="size", text=f"এটি {size}{liq}।")
-    if market_cap_mn >= 5000:
+    if market_cap_mn >= large_cap:
         size = "a large company"
-    elif market_cap_mn < 1000:
+    elif market_cap_mn < small_cap:
         size = "a small company"
     else:
         size = "a mid-sized company"
     liq = ""
     if adtv_mn is not None:
-        if adtv_mn >= 20:
-            liq = ", very heavily traded (easy to get in and out)"
-        elif adtv_mn < 2:
+        if adtv_mn >= active_adtv:
+            liq = ", relatively active; spread and order size still matter"
+        elif adtv_mn < thin_adtv:
             liq = ", thinly traded (harder to get in and out)"
         else:
             liq = ", traded actively enough to enter and exit"
@@ -137,7 +143,7 @@ def _quality_point(roe: float | None, bn: bool) -> ReadPoint | None:
         if roe <= 0:
             text = "এটি বর্তমানে লোকসানে (নেতিবাচক রিটার্ন অন ইকুইটি)।"
         elif roe >= 15:
-            text = f"এটি অত্যন্ত লাভজনক — শক্তিশালী রিটার্ন অন ইকুইটি (~{roe:.0f}%)।"
+            text = f"এর রিপোর্ট করা রিটার্ন অন ইকুইটি বেশি (~{roe:.0f}%); ঋণ ও এককালীন আয়ও যাচাই করা দরকার।"
         elif roe >= 8:
             text = f"এটি ভালোভাবে লাভজনক (রিটার্ন অন ইকুইটি ~{roe:.0f}%)।"
         else:
@@ -146,7 +152,7 @@ def _quality_point(roe: float | None, bn: bool) -> ReadPoint | None:
     if roe <= 0:
         text = "It's currently lossmaking (negative return on equity)."
     elif roe >= 15:
-        text = f"It's highly profitable — strong return on equity (~{roe:.0f}%)."
+        text = f"It reports high return on equity (~{roe:.0f}%); leverage and one-off earnings still need review."
     elif roe >= 8:
         text = f"It's solidly profitable (return on equity ~{roe:.0f}%)."
     else:
@@ -182,15 +188,15 @@ def _income_point(dividend_yield: float | None, bn: bool) -> ReadPoint | None:
     if dividend_yield is None or dividend_yield <= 0:
         return None
     if bn:
-        q = "ভালো" if dividend_yield >= 5 else "সামান্য"
+        q = "উচ্চ" if dividend_yield >= 5 else "সামান্য"
         return ReadPoint(
             tag="income",
-            text=f"এটি {q} নগদ লভ্যাংশ দেয় (এই দামে ~{dividend_yield:.1f}%)।",
+            text=f"সর্বশেষ নগদ লভ্যাংশ থেকে {q} ট্রেইলিং ইল্ড দেখা যায় (এই দামে ~{dividend_yield:.1f}%); পরের পেআউট নিশ্চিত নয়।",
         )
-    qualifier = "a healthy" if dividend_yield >= 5 else "a modest"
+    qualifier = "a high" if dividend_yield >= 5 else "a modest"
     return ReadPoint(
         tag="income",
-        text=f"It pays {qualifier} cash dividend (~{dividend_yield:.1f}% at this price).",
+        text=f"Its latest cash dividend implies {qualifier} trailing yield (~{dividend_yield:.1f}% at this price); the next payout is not guaranteed.",
     )
 
 
@@ -228,16 +234,16 @@ def _flow_point(cmf: float | None, bn: bool) -> ReadPoint | None:
         return None
     if cmf > 0.05:
         text = (
-            "সাম্প্রতিক ভলিউমে ক্রেতারা নিয়ন্ত্রণে (অর্থ ঢুকছে)।"
+            "সাম্প্রতিক দাম-ভলিউম প্রক্সি ধনাত্মক (CMF); বেশি ভলিউমের দিনে ক্লোজ রেঞ্জের উপরের দিকে ছিল।"
             if bn
-            else "Recent volume shows buyers in control (money flowing in)."
+            else "The recent price-volume proxy is positive (CMF); higher-volume sessions tended to close in the upper part of their range."
         )
         return ReadPoint(tag="flow", text=text)
     if cmf < -0.05:
         text = (
-            "সাম্প্রতিক ভলিউমে বিক্রেতারা নিয়ন্ত্রণে (অর্থ বেরোচ্ছে)।"
+            "সাম্প্রতিক দাম-ভলিউম প্রক্সি ঋণাত্মক (CMF); বেশি ভলিউমের দিনে ক্লোজ রেঞ্জের নিচের দিকে ছিল।"
             if bn
-            else "Recent volume shows sellers in control (money flowing out)."
+            else "The recent price-volume proxy is negative (CMF); higher-volume sessions tended to close in the lower part of their range."
         )
         return ReadPoint(tag="flow", text=text)
     return None
@@ -270,7 +276,7 @@ def _headline(
     if bn:
         traits: list[str] = []
         if roe is not None and roe >= 15:
-            traits.append("উচ্চ-মানের")
+            traits.append("উচ্চ-ROE")
         if volatility is not None and volatility < 30:
             traits.append("স্থির")
         if above_200 is True:
@@ -287,7 +293,7 @@ def _headline(
         return head + "।"
     traits = []
     if roe is not None and roe >= 15:
-        traits.append("high-quality")
+        traits.append("high-ROE")
     if volatility is not None and volatility < 30:
         traits.append("steady")
     if above_200 is True:
@@ -378,6 +384,7 @@ def build_plain_read(
     code: str,
     as_of_date: str,
     locale: str = "en",
+    market: str = "DSE",
     market_cap_mn: float | None = None,
     adtv_mn: float | None = None,
     above_sma_200: bool | None = None,
@@ -397,7 +404,7 @@ def build_plain_read(
     """Synthesise the factor row into a readable profile. Null factors are omitted."""
     bn = locale == "bn"
     candidates = [
-        _size_point(market_cap_mn, adtv_mn, bn),
+        _size_point(market_cap_mn, adtv_mn, bn, market),
         _trend_point(above_sma_200, mom_12_1, bn),
         _steadiness_point(volatility, bn),
         _quality_point(roe, bn),

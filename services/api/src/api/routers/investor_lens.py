@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
-from api.routers.market import load_freshest_quotes
+from api.eod import latest_completed_session_change_pct
 from bulls.analytics import InvestorLensResponse, build_investor_lens
 from bulls.core.markets import get_market_profile
 from bulls.core.models import (
@@ -43,14 +43,9 @@ async def get_investor_lens(
     if ta is None:
         raise HTTPException(status_code=404, detail=f"No analytics for {code!r} yet")
 
-    quote = (
-        await load_freshest_quotes(
-            session,
-            tenant.market,
-            [code],
-            get_market_profile(tenant.market).tz,
-        )
-    ).get(code)
+    session_change_pct = await latest_completed_session_change_pct(
+        session, tenant.market, code, ta.as_of_date
+    )
     adtv_mn = ta.avg_volume_20 * ta.last_close / 1e6 if ta.avg_volume_20 else None
 
     # Balance-sheet leverage from the company profile (loans vs book equity), so the lenses can SHOW
@@ -210,7 +205,9 @@ async def get_investor_lens(
         adtv_mn=adtv_mn,
         free_float_cap_mn=ta.free_float_cap_mn,
         volatility=ta.volatility,
-        today_change_pct=quote.change_pct if quote else None,
+        # The entire lens is labelled with ta.as_of_date, so its risk input must use that same
+        # completed session rather than a newer delayed quote.
+        today_change_pct=session_change_pct,
         debt_to_equity=debt_to_equity,
         credit_rating=credit_rating,
         nearest_support=ta.nearest_support,

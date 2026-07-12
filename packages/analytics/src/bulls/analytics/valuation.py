@@ -20,13 +20,6 @@ class ValuationResult(BaseModel):
     roe: float | None = None  # % — return on equity, EPS / NAV-per-share
 
 
-# Above this, a trailing cash yield reflects a collapsed price, not income (a "yield trap"): the
-# cluster of names yielding >15% on DSE are all trading below their ৳10 face value, so the high yield
-# is a price-depression artifact, not a sustainable payout. Genuine top payers (e.g. MARICO ~14%)
-# sit below this line. On an income screen a trap misleads more than it helps, so we omit it.
-_MAX_SANE_YIELD = 15.0
-
-
 def _r(x: float | None, n: int = 2) -> float | None:
     return None if x is None else round(x, n)
 
@@ -69,8 +62,9 @@ def compute_valuation(
     if cash_amount is None and cash_dividend_pct is not None and face_value:
         cash_amount = cash_dividend_pct / 100 * face_value
     if cash_amount is not None:
-        y = cash_amount / last_close * 100
-        dividend_yield = y if y <= _MAX_SANE_YIELD else None
+        # Preserve the observed trailing yield. An unusually high value can be a price-collapse or
+        # payout-sustainability warning, but suppressing it turns a calculable fact into missing data.
+        dividend_yield = cash_amount / last_close * 100
 
     return ValuationResult(
         market_cap_mn=_r(market_cap_mn),

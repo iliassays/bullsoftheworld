@@ -19,6 +19,7 @@ email_from = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"
 logo_url = "https://bullsofdhaka.com/logo-mark-v2.png"
 tagline_en = "Facts, not rumours"
 tagline_bn = "তথ্যে চলুন, গুজবে নয়"
+research_beta = false
 social_url = "https://www.facebook.com/1214682241723822"
 
 [theme]

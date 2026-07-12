@@ -38,6 +38,7 @@ class Tenant(BaseModel):
     logo_url: str
     tagline_en: str
     tagline_bn: str
+    research_beta: bool = False
     social_url: str | None = None
     theme: Theme = Field(default_factory=Theme)
 

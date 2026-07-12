@@ -77,7 +77,12 @@ export function MarketPulse() {
           {/* DSEX is EOD-anchored (one row/day) even though breadth/sectors below track the
               live 15-min quote poll — this card mixes both, so the anchor is worth calling out
               here specifically, not just relying on the page-level FreshnessTag elsewhere. */}
-          <FreshnessTag asOf={pulse.as_of} quoteAsOf={pulse.quote_as_of} className="" />
+          <FreshnessTag
+            asOf={pulse.as_of}
+            quoteAsOf={pulse.quote_as_of}
+            priceMode="mixed"
+            className=""
+          />
         </div>
       </div>
 

@@ -161,7 +161,7 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
           <div className="text-[10px] text-muted">
             {bn ? "রিপোর্ট করা মোট শেয়ারের পরিবর্তন" : "Aggregate reported share change"}
           </div>
-          <div className={`text-base font-semibold tnum ${(latest.net_change_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+          <div className="text-base font-semibold tnum text-text">
             {signedPct(latest.net_change_pct)}
           </div>
         </div>
@@ -177,8 +177,8 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
           )}
         </div>
         <div className="py-2 border-b border-border/60">
-          <div className="text-[10px] text-muted">{bn ? "ম্যানেজার প্রবণতা" : "Manager breadth"}</div>
-          <div className={`text-base font-semibold tnum ${(latest.net_breadth_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+          <div className="text-[10px] text-muted">{bn ? "ম্যানেজার পরিবর্তনের ভারসাম্য" : "Manager change balance"}</div>
+          <div className="text-base font-semibold tnum text-text">
             {signedPct(latest.net_breadth_pct)}
           </div>
           <div className="text-[9px] text-muted tnum">
@@ -208,6 +208,11 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
           ? "‘প্রথম রিপোর্ট’ মানে তুলনাযোগ্য লোড করা ইতিহাসে প্রথম দেখা; এটি নতুন কেনাকাটার প্রমাণ নয়।"
           : "First reported means first seen in the loaded comparable history; it does not prove a new purchase."}
       </p>
+      <p className="mt-1 text-[10px] leading-snug text-muted">
+        {bn
+          ? "ম্যানেজার পরিবর্তনের ভারসাম্য = (বাড়িয়েছে − কমিয়েছে) ÷ শ্রেণিবদ্ধ ম্যানেজার। এটি ম্যানেজারের সংখ্যা মাপে, বিনিয়োগের টাকার পরিমাণ নয়।"
+          : "Manager change balance = (adding − reducing) ÷ classified managers. It counts managers, not dollars invested."}
+      </p>
 
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {views.map((item) => (
@@ -235,13 +240,13 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
               <div key={horizon.quarters} className="grid grid-cols-[1fr_auto] gap-3 py-2">
                 <div>
                   <div className="text-[11px] font-medium">
-                    {bn ? `${horizon.quarters} প্রান্তিক` : `${horizon.quarters}-quarter snapshots`}
+                    {bn ? `${horizon.quarters}টি রিপোর্ট স্ন্যাপশট` : `${horizon.quarters} report snapshots`}
                   </div>
                   <div className="text-[9px] text-muted tnum">
                     {horizon.from_report_date} → {horizon.to_report_date}
                   </div>
                 </div>
-                <div className={`text-sm font-semibold tnum ${horizon.reported_share_change_pct >= 0 ? "text-up" : "text-down"}`}>
+                <div className="text-sm font-semibold tnum text-text">
                   {signedPct(horizon.reported_share_change_pct)}
                 </div>
               </div>
@@ -263,9 +268,17 @@ export function InstitutionalHoldingsPanel({ data }: { data: InstitutionalActivi
                   <div className="min-w-0">
                     <div className="truncate text-[11px] font-semibold">{manager.manager_name}</div>
                     <div className="text-[9px] text-muted tnum">CIK {manager.manager_cik}</div>
+                    {manager.manager_style && (
+                      <div className="mt-1 text-[9px] font-medium text-warn">
+                        {bn ? "কোয়ান্ট/মার্কেট মেকার · দৃঢ় বিশ্বাসের সংকেত নয়" : "Quant / market maker · exposure, not conviction"}
+                      </div>
+                    )}
                   </div>
                   <div className="shrink-0 text-[11px] font-semibold tnum">{compactUsd(manager.latest_value_usd)}</div>
                 </div>
+                {manager.interpretation && !bn && (
+                  <p className="mt-1 text-[9px] leading-relaxed text-muted">{manager.interpretation}</p>
+                )}
                 <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
                   {manager.points.map((point) => (
                     <a

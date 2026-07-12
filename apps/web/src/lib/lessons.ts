@@ -55,11 +55,11 @@ export const LESSONS: Record<string, Lesson> = {
     example: "RSI 75 on a stock that just spiked = stretched; many traders wait for it to cool before entering.",
   },
   moneyflow: {
-    title: "Money flow (CMF)",
-    what: "Whether recent volume is pushing the price up (buyers in control) or down (sellers in control).",
-    use: "It confirms a move: a rising price with money flowing in is more convincing than a rise on no real buying.",
-    watch: "It's a short-term read and flips quickly — use it to confirm, not to predict.",
-    example: "A breakout with strong inflow is more believable than one on thin volume.",
+    title: "Price-volume pressure (CMF)",
+    what: "A proxy based on where each session closes inside its high-low range, weighted by volume.",
+    use: "Positive CMF plus expanding volume adds participation evidence to a price move; it does not identify buyers or cash inflows.",
+    watch: "CMF can flip quickly and cannot prove institutional activity. Use it as context, not a prediction.",
+    example: "A breakout with positive CMF and expanding volume has more participation evidence than one on thin volume.",
   },
   volume: {
     title: "Volume & turnover",
@@ -81,6 +81,13 @@ export const LESSONS: Record<string, Lesson> = {
     use: "Retail often treats 'smart money' accumulation as a vote of confidence, and distribution as a caution flag — in a name.",
     watch: "Disclosures are monthly and backward-looking — it's history, not a live signal, big players can be wrong too, and funds sell for many routine reasons besides a change of view.",
     example: "Institutions adding 5 pp over a month suggests growing conviction; trimming 5 pp suggests the opposite — but either way the data is already a few weeks old.",
+  },
+  pattern_high_volume_flat_base: {
+    title: "High-Volume Flat Base",
+    what: "A liquid stock holds within a tight 15-session range no deeper than 10%, stays near resistance in a rising intermediate trend, then may clear that resistance with at least 2× its base volume.",
+    use: "'Forming' is an early research watch: price is compressed within 5% of resistance. 'Moved above' requires a close beyond resistance, strong volume and a close in the upper part of the day's range.",
+    watch: "This is not a proven buy signal. In our two-year DSE walk-forward study, the strict validation sample had 67 events: median 20-session return was +1.11% and 43.3% touched +10%, but the earlier training period was negative. False breakouts and regime dependence remain material.",
+    example: "ITC was marked forming on 22–23 June 2026 around a ৳43.9 ceiling, then confirmed on 24 June when it closed at ৳44.8 on 3.35× base volume. That historical example explains the structure; it does not promise another stock will repeat the move.",
   },
   pattern_ascending_triangle: {
     title: "Ascending Triangle",
@@ -178,11 +185,11 @@ export const LESSONS_BN: Record<string, Lesson> = {
     example: "সদ্য স্পাইক করা শেয়ারে RSI ৭৫ = বেশি বেড়ে গেছে; অনেক ট্রেডার ঢোকার আগে ঠান্ডা হওয়ার অপেক্ষা করেন।",
   },
   moneyflow: {
-    title: "মানি ফ্লো (CMF)",
-    what: "সাম্প্রতিক ভলিউম দামকে উপরে ঠেলছে (ক্রেতারা নিয়ন্ত্রণে) নাকি নিচে (বিক্রেতারা নিয়ন্ত্রণে)।",
-    use: "এটি একটি মুভ নিশ্চিত করে: অর্থ ঢুকতে থাকা অবস্থায় দাম বাড়া, প্রকৃত ক্রয় ছাড়া বাড়ার চেয়ে বেশি বিশ্বাসযোগ্য।",
-    watch: "এটি স্বল্পমেয়াদি পাঠ এবং দ্রুত উল্টে যায় — পূর্বাভাসের জন্য নয়, নিশ্চিত করতে ব্যবহার করুন।",
-    example: "জোরালো প্রবাহসহ ব্রেকআউট পাতলা ভলিউমের ব্রেকআউটের চেয়ে বেশি বিশ্বাসযোগ্য।",
+    title: "দাম-ভলিউম চাপ (CMF)",
+    what: "প্রতিটি সেশনের হাই-লো রেঞ্জের কোথায় ক্লোজ হয়েছে, ভলিউম দিয়ে ওজন করে তৈরি একটি প্রক্সি।",
+    use: "ধনাত্মক CMF ও বাড়তি ভলিউম দামের মুভে অংশগ্রহণের প্রমাণ যোগ করে; প্রকৃত ক্রেতা বা নগদ প্রবাহ শনাক্ত করে না।",
+    watch: "CMF দ্রুত বদলাতে পারে এবং প্রাতিষ্ঠানিক কার্যকলাপ প্রমাণ করে না। প্রেক্ষাপট হিসেবে ব্যবহার করুন, পূর্বাভাস হিসেবে নয়।",
+    example: "ধনাত্মক CMF ও বাড়তি ভলিউমের ব্রেকআউটে পাতলা ভলিউমের তুলনায় অংশগ্রহণের প্রমাণ বেশি।",
   },
   volume: {
     title: "ভলিউম ও টার্নওভার",
@@ -204,6 +211,13 @@ export const LESSONS_BN: Record<string, Lesson> = {
     use: "রিটেইল প্রায়ই 'স্মার্ট মানি' সঞ্চয়কে আস্থার ভোট, আর বিক্রিকে সতর্কতার সংকেত হিসেবে দেখে।",
     watch: "প্রকাশ মাসিক ও পেছনমুখী — এটি ইতিহাস, লাইভ সংকেত নয়, বড় খেলোয়াড়রাও ভুল হতে পারে, আর ফান্ড অনেক সময় সাধারণ কারণেও (দৃষ্টিভঙ্গি বদল ছাড়াই) বিক্রি করে।",
     example: "এক মাসে প্রতিষ্ঠান ৫ pp যোগ করা ক্রমবর্ধমান আস্থার ইঙ্গিত; ৫ pp কমানো বিপরীত ইঙ্গিত — তবে দুই ক্ষেত্রেই ডেটা ইতিমধ্যে কয়েক সপ্তাহ পুরনো।",
+  },
+  pattern_high_volume_flat_base: {
+    title: "হাই-ভলিউম ফ্ল্যাট বেস",
+    what: "তারল্যপূর্ণ একটি শেয়ার ১৫ সেশন ধরে সর্বোচ্চ ১০% গভীর টাইট রেঞ্জে থাকে, ঊর্ধ্বমুখী মধ্যমেয়াদি ট্রেন্ডে রেজিস্ট্যান্সের কাছে আসে, তারপর বেসের গড়ের অন্তত ২× ভলিউমে রেজিস্ট্যান্স পার হতে পারে।",
+    use: "‘গঠিত হচ্ছে’ মানে আগাম গবেষণার ওয়াচ: দাম রেজিস্ট্যান্সের ৫%-এর মধ্যে সংকুচিত। ‘সীমার উপরে গেছে’ দেখাতে রেজিস্ট্যান্সের উপরে ক্লোজ, শক্ত ভলিউম এবং দিনের রেঞ্জের উপরের অংশে ক্লোজ—সবই লাগবে।",
+    watch: "এটি প্রমাণিত কেনার সংকেত নয়। আমাদের দুই বছরের DSE ওয়াক-ফরোয়ার্ড স্টাডির কঠোর ভ্যালিডেশন নমুনায় ৬৭টি ঘটনা ছিল: ২০ সেশনের মধ্যম রিটার্ন +১.১১%, ৪৩.৩% ক্ষেত্রে কোনো সময় +১০% ছুঁয়েছে; কিন্তু আগের ট্রেনিং সময়কাল নেতিবাচক ছিল। ফলস ব্রেকআউট ও বাজার-রেজিম ঝুঁকি গুরুত্বপূর্ণ।",
+    example: "ITC ২২–২৩ জুন ২০২৬-এ প্রায় ৳৪৩.৯ রেজিস্ট্যান্সের নিচে ‘গঠিত হচ্ছে’ দেখাত, তারপর ২৪ জুন বেস ভলিউমের ৩.৩৫×-এ ৳৪৪.৮ ক্লোজ করে নিশ্চিত হয়। এটি কাঠামো বোঝানোর ইতিহাস, পুনরাবৃত্তির প্রতিশ্রুতি নয়।",
   },
   pattern_ascending_triangle: {
     title: "ঊর্ধ্বমুখী ত্রিভুজ",

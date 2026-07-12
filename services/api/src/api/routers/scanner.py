@@ -13,7 +13,8 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, OptionalUser, enforce_market_feature
 from api.routers.company import FinancialHealth, _financial_health
@@ -44,6 +45,7 @@ router = APIRouter(tags=["scanner"])
 _MIN_ADTV_MN = 5.0
 _MIN_MCAP_MN = 500.0
 _MIN_FREE_FLOAT_CAP_MN = 100.0
+_MAX_CURATED_DIVIDEND_YIELD = 15.0
 
 # Quality Reversal thresholds (from dse-trading-research.md Scheme-3).
 _WASHOUT_FROM_HIGH = -40.0  # >=40% off the 52-week high
@@ -105,12 +107,23 @@ async def _market_regime(session, market: str) -> str | None:
 
 def _clean_codes(market: str):
     """Visible, active, non-Z symbols for clean scanner boards."""
-    return select(Symbol.code).where(
-        Symbol.market == market,
-        Symbol.is_active.is_(True),
-        Symbol.is_hidden.is_(False),
-        Symbol.data_status == "ready",
-        or_(Symbol.category.is_(None), Symbol.category != "Z"),
+    fresh = aliased(TickerAnalytics)
+    latest_date = (
+        select(func.max(TickerAnalytics.as_of_date))
+        .where(TickerAnalytics.market == market)
+        .scalar_subquery()
+    )
+    return (
+        select(Symbol.code)
+        .join(fresh, and_(fresh.market == Symbol.market, fresh.code == Symbol.code))
+        .where(
+            Symbol.market == market,
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
+            Symbol.data_status == "ready",
+            or_(Symbol.category.is_(None), Symbol.category != "Z"),
+            fresh.as_of_date == latest_date,
+        )
     )
 
 
@@ -410,7 +423,7 @@ async def _oversold_quality(session, market: str, limit: int) -> ScreenOut:
 
 
 async def _trending_board(session, market: str, limit: int) -> ScreenOut:
-    """Active Today — the validated EOD self-normalised volume+turnover surge (trending_scores)."""
+    """Latest-session self-normalised volume and turnover surge (trending_scores)."""
     T = TickerAnalytics
     investable = select(T.code).where(
         T.market == market,
@@ -433,14 +446,6 @@ async def _trending_board(session, market: str, limit: int) -> ScreenOut:
             select(Symbol).where(Symbol.market == market, Symbol.code.in_(codes))
         )
     }
-    quotes = {
-        q.code: q
-        for q in await session.scalars(
-            select(QuoteSnapshot).where(
-                QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes)
-            )
-        )
-    }
     analytics = {
         a.code: a
         for a in await session.scalars(
@@ -453,27 +458,21 @@ async def _trending_board(session, market: str, limit: int) -> ScreenOut:
         ScreenItem(
             code=r.code,
             name=(names[r.code].name_en if r.code in names else "") or "",
-            last_close=(
-                quotes[r.code].ltp
-                if r.code in quotes
-                else analytics[r.code].last_close
-                if r.code in analytics
-                else 0.0
-            ),
+            last_close=analytics[r.code].last_close if r.code in analytics else 0.0,
             value=round(r.score, 1),
             change_1d=round(r.change_pct, 1),
             category=names[r.code].category if r.code in names else None,
             note="heating_up" if r.heating_up else None,
-            why="Unusually active today vs its own normal trading — heating up."
+            why="Latest session was unusually active versus its normal trading pace."
             if r.heating_up
-            else "More active than usual today.",
+            else "Latest session was more active than usual.",
         )
         for r in rows
     ]
     return ScreenOut(
         key="active_today",
-        title="Active Today",
-        description="Stocks trading unusually heavily versus their own normal — activity, not a call.",
+        title="Unusual Session Activity",
+        description="Stocks that traded unusually heavily in the latest completed session — activity, not a call.",
         value_label="activity",
         group="movers",
         items=items,
@@ -529,6 +528,7 @@ async def _dividend_quality(session, market: str, limit: int) -> ScreenOut:
                 T.code.in_(_clean_codes(market)),
                 T.dividend_yield.isnot(None),
                 T.dividend_yield > 0,
+                T.dividend_yield <= _MAX_CURATED_DIVIDEND_YIELD,
                 T.pe_ratio > 0,  # positive EPS; avoids pure yield traps from lossmaking names
                 _adtv_mn(T) >= _MIN_ADTV_MN,
                 T.market_cap_mn >= _MIN_MCAP_MN,
@@ -1220,13 +1220,15 @@ def _apply_dse_scanner_context(boards: list[ScreenOut]) -> None:
                 "5-day high. A study list, not a buy list — and in a downtrend the deepest can keep falling."
             )
         elif board.key == "active_today":
-            board.title = "Active Today"
+            board.title = "Unusual Session Activity"
             board.description = (
-                "Clean, liquid names trading unusually heavily versus their own normal pace."
+                "Clean, liquid names that traded unusually heavily in the latest completed session."
             )
         elif board.key == "most_active":
             board.title = "Top Turnover"
-            board.description = "Where money is trading today. Useful for liquidity, not a call."
+            board.description = (
+                "Where the most money traded in the latest price snapshot. Useful for liquidity, not a call."
+            )
         elif board.key == "value_quality":
             board.title = "Value + Quality"
             board.description = "Cheaper than sector peers with profitability support."
@@ -1291,14 +1293,14 @@ def _apply_dse_scanner_context(boards: list[ScreenOut]) -> None:
                 )
                 item.check_next = ["Why it fell (news)", "EPS trend", "Support level", "Order size"]
             elif board.key == "active_today":
-                item.scanner_label = "Unusual activity"
+                item.scanner_label = "Unusual session activity"
                 item.why = (
                     "Trading activity is above its own normal pace."
                     if item.note != "heating_up"
                     else "Volume and turnover are both unusually strong versus its own normal pace."
                 )
                 item.how_to_read = (
-                    "Start here to see where attention and money are moving today, then check the "
+                    "Start here to see where attention and money were concentrated, then check the "
                     "reason before acting."
                 )
                 item.risk_note = (
@@ -1307,7 +1309,7 @@ def _apply_dse_scanner_context(boards: list[ScreenOut]) -> None:
                 item.check_next = ["News", "Price direction", "ADTV/order guide", "Sector move"]
             elif board.key == "most_active":
                 item.scanner_label = "High turnover"
-                item.why = "Today's traded value is high" + (
+                item.why = "Traded value in the latest price snapshot is high" + (
                     f" ({item.turnover_mn:.1f} mn Tk)." if item.turnover_mn is not None else "."
                 )
                 item.how_to_read = (

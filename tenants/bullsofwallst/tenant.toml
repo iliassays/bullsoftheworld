@@ -18,6 +18,7 @@ email_from = "Bulls of Wall Street <no-reply@bullsofwallst.com>"
 logo_url = "https://bullsofwallst.com/logo-mark-v2.png"
 tagline_en = "US market intelligence, not noise"
 tagline_bn = "যুক্তরাষ্ট্রের বাজার তথ্য, গুজব নয়"
+research_beta = true
 
 [theme]
 accent = "#2563EB"

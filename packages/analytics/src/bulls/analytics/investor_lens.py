@@ -435,7 +435,7 @@ def _buffett(
             else "দীর্ঘমেয়াদি ট্রেন্ড অজানা"
         )
         points = [f"ROE {_fmt_pct(roe)}", f"EPS growth {_fmt_pct(eps_growth_yoy)}", trend]
-        watch_next = ["ব্যবসার moat"]
+        watch_next = ["ব্যবসার প্রতিযোগিতামূলক সুবিধা"]
     else:
         summary = (
             "Looks for business quality: durable profitability, steady earnings, and staying power."
@@ -543,33 +543,21 @@ def _technical(
     last_close: float | None = None,
     market: str = "DSE",
 ) -> InvestorLens:
-    if above_sma_50 is None and above_sma_200 is None and mom_12_1 is None and rsi_14 is None:
-        s = None
-    else:
-        score = 5.0
-        score += 1.5 if above_sma_50 is True else -1 if above_sma_50 is False else 0
-        score += 2 if above_sma_200 is True else -2 if above_sma_200 is False else 0
-        if mom_12_1 is not None:
-            score += 2 if mom_12_1 >= 40 else 1 if mom_12_1 > 0 else -1
-        if rsi_14 is not None:
-            score += 1 if 45 <= rsi_14 <= 70 else -1 if rsi_14 > 80 or rsi_14 < 30 else 0
-        if relative_volume is not None and relative_volume >= 1.5:
-            score += 1
-        if pct_from_52w_high is not None and pct_from_52w_high > -2 and rsi_14 and rsi_14 > 75:
-            score -= 1
-        extended = _extended_technical(
-            pct_from_52w_high=pct_from_52w_high,
-            rsi_14=rsi_14,
-            mom_12_1=mom_12_1,
-        )
-        if extended:
-            score = min(score, 6.0)
-        s = _clamp10(score)
+    s = technical_score(
+        above_sma_50=above_sma_50,
+        above_sma_200=above_sma_200,
+        mom_12_1=mom_12_1,
+        rsi_14=rsi_14,
+        relative_volume=relative_volume,
+        pct_from_52w_high=pct_from_52w_high,
+    )
     extended = _extended_technical(
         pct_from_52w_high=pct_from_52w_high,
         rsi_14=rsi_14,
         mom_12_1=mom_12_1,
     )
+    if extended and s is not None:
+        s = min(s, 6)
 
     if bn:
         summary = (
@@ -692,26 +680,26 @@ def _smart_money(
     )
     if bn:
         summary = (
-            "Form 13F-এ প্রকাশিত বিলম্বিত লং হোল্ডিং ও দামের মানি-ফ্লো একসাথে দেখায়।"
+            "Form 13F-এ প্রকাশিত বিলম্বিত লং হোল্ডিং ও দাম-ভলিউম প্রক্সি একসাথে দেখায়।"
             if market == "US"
-            else "প্রতিষ্ঠান/বিদেশি মালিকানা ও মানি-ফ্লো দেখে বড় অংশগ্রহণকারীদের আচরণ বোঝার চেষ্টা করে।"
+            else "প্রতিষ্ঠান/বিদেশি মালিকানা ও দাম-ভলিউম প্রক্সি দিয়ে বড় অংশগ্রহণকারীদের আচরণের প্রেক্ষাপট দেয়।"
         )
         points = [
             f"Institutions {_fmt_pct(institute_pct)} ({_fmt_pct(institute_delta, ' pp')})",
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
-            f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
+            f"CMF দাম-ভলিউম প্রক্সি {_fmt_pct(cmf_20, '')}",
         ]
         watch_next = []
     else:
         summary = (
-            "Combines delayed Form 13F reported long holdings with price-volume money flow."
+            "Combines delayed Form 13F reported long holdings with a price-volume proxy."
             if market == "US"
-            else "Checks whether institutional/foreign ownership and money flow support the story."
+            else "Adds institutional/foreign ownership and price-volume proxy context."
         )
         points = [
             f"Institutions {_fmt_pct(institute_pct)} ({_fmt_pct(institute_delta, ' pp')})",
             f"Foreign {_fmt_pct(foreign_pct)} ({_fmt_pct(foreign_delta, ' pp')})",
-            f"Chaikin money flow {_fmt_pct(cmf_20, '')}",
+            f"CMF price-volume proxy {_fmt_pct(cmf_20, '')}",
         ]
         watch_next = []
 
@@ -753,7 +741,7 @@ def _smart_money(
     checks = [
         *ownership_checks,
         _chk(
-            "মানি ফ্লো (CMF)" if bn else "Money flow (CMF)",
+            "দাম-ভলিউম প্রক্সি (CMF)" if bn else "Price-volume proxy (CMF)",
             cmf_20,
             "> 0",
             good=lambda x: x > 0.1,
@@ -947,9 +935,9 @@ def _taleb_risk(
         points = [
             *([f"ক্যাটাগরি {category or '—'}"] if market == "DSE" else []),
             f"দৈনিক গড় লেনদেন {_fmt_money_mn(adtv_mn, market)} · আনুমানিক ৫% অর্ডার সীমা {_fmt_money_mn(order_guide, market)}",
-            f"Volatility {_fmt_pct(volatility)} · today {_fmt_pct(today_change_pct)}",
+            f"Volatility {_fmt_pct(volatility)} · latest session {_fmt_pct(today_change_pct)}",
         ]
-        watch_next = ["বিড-আস্ক স্প্রেড", "অর্ডার সাইজ", "নিজের stop-loss"]
+        watch_next = ["বিড-আস্ক স্প্রেড", "অর্ডার সাইজ", "নিজের ক্ষতি-সীমা"]
     else:
         summary = (
             "Focuses on fragility: exit risk, volatility, and whether orders can move price."
@@ -959,7 +947,7 @@ def _taleb_risk(
         points = [
             *([f"Category {category or '—'}"] if market == "DSE" else []),
             f"ADTV {_fmt_money_mn(adtv_mn, market)} · rough 5% order guide {_fmt_money_mn(order_guide, market)}",
-            f"Volatility {_fmt_pct(volatility)} · today {_fmt_pct(today_change_pct)}",
+            f"Volatility {_fmt_pct(volatility)} · latest session {_fmt_pct(today_change_pct)}",
         ]
         watch_next = ["Bid-ask spread", "Order size", "Your stop-loss"]
 
@@ -978,7 +966,7 @@ def _taleb_risk(
         _chk(
             "লিকুইডিটি (ADTV)" if bn else "Liquidity (ADTV)",
             adtv_mn,
-            f"≥ {_fmt_money_mn(5, market)}/day",
+            f"≥ {_fmt_money_mn(5, market)}/{('দিন' if bn else 'day')}",
             good=lambda x: x >= 10,
             weak=lambda x: x < 5,
             fmt=lambda v: _fmt_money_mn(v, market),
@@ -992,7 +980,7 @@ def _taleb_risk(
             fmt=_fmt_pct,
         ),
         _chk(
-            "আজকের মুভ" if bn else "Today's move",
+            "সর্বশেষ সেশনের মুভ" if bn else "Latest session move",
             today_change_pct,
             ("সার্কিট সীমায় নয়" if bn else "not at circuit")
             if market == "DSE"

@@ -89,7 +89,7 @@ function Legend() {
   const items: [string, string][] = [
     ["9 EMA", C.ema9],
     ["20 EMA", C.ema20],
-    ["VWAP", C.vwap],
+    ["20D volume-weighted avg", C.vwap],
     [t("chart.support"), C.up],
     [t("chart.resistance"), C.down],
   ];

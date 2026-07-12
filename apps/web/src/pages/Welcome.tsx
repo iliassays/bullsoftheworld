@@ -1,208 +1,257 @@
 import { useEffect, useMemo, useState } from "react";
+import { CompanyLogo } from "../components/CompanyLogo";
 import { useSeo } from "../components/Seo";
-import { useNavigate } from "../lib/nav";
-import { api, type NoteBeat, type Sector, type SymbolOut } from "../lib/api";
+import { Spinner } from "../components/ui";
+import { trackProductEvent } from "../lib/analytics";
+import { api, type Sector, type SymbolOut } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
-import { CompanyLogo } from "../components/CompanyLogo";
-import { DeskIcon } from "../lib/deskIcons";
-import { Spinner } from "../components/ui";
+import { useNavigate } from "../lib/nav";
 
-// Post-register onboarding: sectors → stocks → desks, three taps to a seeded feed, watchlist and
-// alerts inbox. Skippable at every step — a wall here costs more signups than it seeds.
-const STOCKS_SHOWN = 9;
+const ACTIVATION_TARGET = 3;
+const STOCKS_SHOWN = 24;
 
-// A few sectors read better with an icon; anything unlisted gets the generic chart.
 const SECTOR_ICONS: Record<string, string> = {
   Bank: "🏦",
-  "Financial Institutions": "💰",
-  Insurance: "🛡️",
+  "Financial Institutions": "▣",
+  Insurance: "◆",
   "Fuel & Power": "⚡",
-  Pharmaceuticals: "💊",
-  "Pharmaceuticals & Chemicals": "💊",
-  Textile: "🧵",
-  Engineering: "⚙️",
-  "Food & Allied": "🍜",
-  Cement: "🏗️",
-  Telecommunication: "📱",
-  IT: "💻",
-  "IT Sector": "💻",
+  Pharmaceuticals: "+",
+  "Pharmaceuticals & Chemicals": "+",
+  Textile: "▥",
+  Engineering: "⚙",
+  "Food & Allied": "○",
+  Cement: "▰",
+  Telecommunication: "▤",
+  IT: "⌘",
+  "IT Sector": "⌘",
 };
 
 export function Welcome() {
   const { user } = useAuth();
-  const { t, lang } = useLang();
-  useSeo({ noindex: true }); // private/personal — keep out of the index
+  const { lang } = useLang();
+  const bn = lang === "bn";
+  useSeo({ noindex: true });
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [sectors, setSectors] = useState<Sector[] | null>(null);
   const [symbols, setSymbols] = useState<SymbolOut[]>([]);
-  const [desks, setDesks] = useState<NoteBeat[]>([]);
   const [pickedSectors, setPickedSectors] = useState<Set<string>>(new Set());
   const [pickedStocks, setPickedStocks] = useState<Set<string>>(new Set());
-  const [pickedDesks, setPickedDesks] = useState<Set<string>>(new Set());
+  const [existingStocks, setExistingStocks] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.sectors().then(setSectors).catch(() => setSectors([]));
-    api.symbols(500).then(setSymbols).catch(() => {});
-    api.noteBeats().then(setDesks).catch(() => {});
+    Promise.allSettled([api.sectors(), api.symbols(500), api.watchlist()]).then((results) => {
+      const [sectorResult, symbolResult, watchResult] = results;
+      setSectors(sectorResult.status === "fulfilled" ? sectorResult.value : []);
+      if (symbolResult.status === "fulfilled") setSymbols(symbolResult.value);
+      if (watchResult.status === "fulfilled") {
+        const watched = new Set(watchResult.value.map((item) => item.symbol.code));
+        setExistingStocks(watched);
+        setPickedStocks(watched);
+      }
+    });
+    trackProductEvent("onboarding_started", { source: "post_register" });
   }, []);
 
-  // Logged-out visitors have nothing to seed — send them to sign in first.
   useEffect(() => {
-    if (!user) navigate("/me", { replace: true });
+    if (!user) navigate("/me?mode=register&next=/welcome", { replace: true });
   }, [user, navigate]);
 
   const candidates = useMemo(() => {
-    const inSector = symbols.filter(
-      (s) => s.is_active && s.sector != null && pickedSectors.has(s.sector),
-    );
-    return inSector.slice(0, STOCKS_SHOWN);
-  }, [symbols, pickedSectors]);
+    const q = query.trim().toLowerCase();
+    return symbols
+      .filter((symbol) => symbol.is_active)
+      .filter(
+        (symbol) =>
+          pickedSectors.size === 0 ||
+          (symbol.sector != null && pickedSectors.has(symbol.sector)),
+      )
+      .filter(
+        (symbol) =>
+          !q ||
+          symbol.code.toLowerCase().includes(q) ||
+          symbol.name_en.toLowerCase().includes(q) ||
+          symbol.name_bn?.includes(q),
+      )
+      .sort((a, b) => Number(existingStocks.has(b.code)) - Number(existingStocks.has(a.code)))
+      .slice(0, STOCKS_SHOWN);
+  }, [symbols, pickedSectors, query, existingStocks]);
 
-  const toggle = (set: Set<string>, v: string, apply: (s: Set<string>) => void) => {
-    const next = new Set(set);
-    if (next.has(v)) next.delete(v);
-    else next.add(v);
-    apply(next);
+  const toggleSector = (sector: string) => {
+    setPickedSectors((current) => {
+      const next = new Set(current);
+      if (next.has(sector)) next.delete(sector);
+      else next.add(sector);
+      return next;
+    });
+  };
+
+  const toggleStock = (code: string) => {
+    setPickedStocks((current) => {
+      const next = new Set(current);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  const continueStep = () => {
+    trackProductEvent("onboarding_step_completed", {
+      step: step + 1,
+      watch_count: pickedStocks.size,
+    });
+    setStep((current) => current + 1);
+  };
+
+  const skip = () => {
+    trackProductEvent("onboarding_skipped", { step: step + 1, watch_count: pickedStocks.size });
+    navigate("/", { replace: true });
   };
 
   const finish = async () => {
     setSaving(true);
-    // Best-effort seeding: a failed add shouldn't strand the user on the welcome screen.
-    await Promise.allSettled([
-      ...[...pickedStocks].map((code) => api.watchAdd(code)),
-      ...[...pickedDesks].map((h) => api.followDesk(h)),
-    ]);
-    navigate("/", { replace: true });
+    const additions = [...pickedStocks].filter((code) => !existingStocks.has(code));
+    const results = await Promise.allSettled(additions.map((code) => api.watchAdd(code)));
+    const added = results.filter((result) => result.status === "fulfilled").length;
+    const finalCount = existingStocks.size + added;
+    if (finalCount >= ACTIVATION_TARGET) {
+      await trackProductEvent("watchlist_activated", {
+        source: "onboarding",
+        watch_count: finalCount,
+      });
+    }
+    navigate("/watchlist", { replace: true });
   };
 
-  const dots = (
-    <div className="flex gap-1.5 justify-center py-3">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className={`h-1 rounded-full transition-all ${i === step ? "w-5 bg-accent" : "w-3 bg-border"}`}
-        />
-      ))}
-    </div>
-  );
-
-  const skip = (
-    <button
-      onClick={() => (step < 2 ? setStep(step + 1) : navigate("/", { replace: true }))}
-      className="block mx-auto text-xs text-muted mt-3 hover:text-text"
-    >
-      {t("ob.skip")}
-    </button>
-  );
+  const remaining = Math.max(0, ACTIVATION_TARGET - pickedStocks.size);
+  const title = step === 0
+    ? bn ? "যে খাতগুলো আপনি অনুসরণ করেন" : "Choose the sectors you follow"
+    : step === 1
+      ? bn ? "অন্তত ৩টি শেয়ার বাছুন" : "Choose at least 3 stocks"
+      : bn ? "আপনার রিসার্চ তালিকা প্রস্তুত" : "Your research list is ready";
+  const body = step === 0
+    ? bn ? "পছন্দের খাত বাছলে প্রাসঙ্গিক শেয়ার খুঁজে পাওয়া সহজ হবে।" : "This narrows the stock list to the areas relevant to you."
+    : step === 1
+      ? bn ? "এই শেয়ারগুলোর গুরুত্বপূর্ণ ঘোষণা, মালিকানা ও দামের পরিবর্তন আপনার অ্যালার্টে আসবে।" : "Material disclosures, ownership and price changes for these names will flow into your alerts."
+      : bn ? `${pickedStocks.size}টি শেয়ার এক জায়গায় থাকবে। নতুন তথ্য এলে আবার ফিরে আসুন।` : `${pickedStocks.size} stocks will stay in one place. Return when new evidence arrives.`;
 
   return (
-    <div className="flex flex-col gap-3 pt-4">
-      <div className="text-center px-2">
-        <div className="text-[10px] font-semibold tracking-[0.12em] text-muted uppercase">
-          {t("ob.step")} {step + 1} / 3
+    <div className="flex flex-col gap-4 pt-2">
+      <header className="px-1">
+        <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-muted">
+          <span>{bn ? "ওয়াচলিস্ট সেটআপ" : "Watchlist setup"}</span>
+          <span>{step + 1} / 3</span>
         </div>
-        <h1 className="font-bold text-lg mt-1.5" lang={lang}>
-          {step === 0 ? t("ob.sectorsTitle") : step === 1 ? t("ob.stocksTitle") : t("ob.desksTitle")}
-        </h1>
-        <p className="text-xs text-muted mt-1">
-          {step === 0 ? t("ob.sectorsBody") : step === 1 ? t("ob.stocksBody") : t("ob.desksBody")}
-        </p>
-      </div>
+        <div className="mt-2 grid grid-cols-3 gap-1">
+          {[0, 1, 2].map((index) => (
+            <span key={index} className={`h-1 rounded-full ${index <= step ? "bg-accent" : "bg-border"}`} />
+          ))}
+        </div>
+        <h1 className="mt-4 text-lg font-bold">{title}</h1>
+        <p className="mt-1 text-xs leading-relaxed text-muted">{body}</p>
+      </header>
 
-      {step === 0 &&
-        (sectors === null ? (
-          <Spinner />
-        ) : (
-          <div className="flex flex-wrap gap-2 justify-center px-2">
-            {sectors.map((s) => (
+      {step === 0 && (sectors === null ? <Spinner /> : (
+        <div className="grid grid-cols-2 gap-2">
+          {sectors.map((sector) => (
+            <button
+              key={sector.sector}
+              type="button"
+              onClick={() => toggleSector(sector.sector)}
+              className={`flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold ${
+                pickedSectors.has(sector.sector)
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border bg-surface text-text"
+              }`}
+            >
+              <span className="w-5 text-center text-sm">{SECTOR_ICONS[sector.sector] ?? "▦"}</span>
+              <span className="min-w-0 break-words">{sector.sector}</span>
+            </button>
+          ))}
+        </div>
+      ))}
+
+      {step === 1 && (
+        <>
+          <div className="sticky z-10 flex items-center gap-2 bg-bg py-1" style={{ top: "var(--app-header-h)" }}>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={bn ? "টিকার বা কোম্পানি খুঁজুন" : "Search ticker or company"}
+              className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+            />
+            <span className={`min-w-16 text-center text-xs font-bold ${remaining ? "text-muted" : "text-up"}`}>
+              {pickedStocks.size} / {ACTIVATION_TARGET}
+            </span>
+          </div>
+          <div className="divide-y divide-border border-y border-border">
+            {candidates.map((symbol) => (
               <button
-                key={s.sector}
-                onClick={() => toggle(pickedSectors, s.sector, setPickedSectors)}
-                className={`text-sm font-semibold px-3.5 py-2 rounded-full border ${
-                  pickedSectors.has(s.sector)
-                    ? "text-accent border-accent bg-accent/10"
-                    : "text-muted border-border"
-                }`}
+                key={symbol.code}
+                type="button"
+                onClick={() => toggleStock(symbol.code)}
+                className="flex w-full items-center gap-2.5 py-2.5 text-left"
               >
-                {SECTOR_ICONS[s.sector] ?? "📈"} {s.sector}
+                <CompanyLogo code={symbol.code} size={30} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold">${symbol.code}</div>
+                  <div className="truncate text-[11px] text-muted">
+                    {bn && symbol.name_bn ? symbol.name_bn : symbol.name_en} · {symbol.sector}
+                  </div>
+                </div>
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-sm ${
+                  pickedStocks.has(symbol.code)
+                    ? "border-accent bg-accent text-bg"
+                    : "border-border text-muted"
+                }`}>
+                  {pickedStocks.has(symbol.code) ? "✓" : "+"}
+                </span>
               </button>
             ))}
           </div>
-        ))}
-
-      {step === 1 && (
-        <div className="bg-surface border border-border rounded-2xl p-3">
-          {candidates.length === 0 && (
-            <div className="text-sm text-muted text-center py-4">{t("ob.noStocks")}</div>
-          )}
-          {candidates.map((s) => (
-            <button
-              key={s.code}
-              onClick={() => toggle(pickedStocks, s.code, setPickedStocks)}
-              className="flex items-center gap-2.5 py-2.5 w-full text-left border-t border-border first:border-t-0"
-            >
-              <CompanyLogo code={s.code} size={30} />
-              <div className="min-w-0">
-                <div className="text-sm font-bold">${s.code}</div>
-                <div className="text-[11px] text-muted truncate">
-                  {lang === "bn" && s.name_bn ? s.name_bn : s.name_en} · {s.sector}
-                </div>
-              </div>
-              <span
-                className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-full border shrink-0 ${
-                  pickedStocks.has(s.code)
-                    ? "text-accent border-accent bg-accent/10"
-                    : "text-muted border-border"
-                }`}
-              >
-                {pickedStocks.has(s.code) ? `✓ ${t("ob.watching")}` : `＋ ${t("ob.watch")}`}
-              </span>
-            </button>
-          ))}
-        </div>
+        </>
       )}
 
       {step === 2 && (
-        <div className="bg-surface border border-border rounded-2xl p-3">
-          {desks.map((d) => (
-            <button
-              key={d.handle}
-              onClick={() => toggle(pickedDesks, d.handle, setPickedDesks)}
-              className="flex items-center gap-2.5 py-2.5 w-full text-left border-t border-border first:border-t-0"
-            >
-              <DeskIcon handle={d.handle} size={30} />
-              <div className="min-w-0">
-                <div className="text-sm font-bold truncate">
-                  {d.name} <span className="text-accent text-xs">✔</span>
-                </div>
-                <div className="text-[11px] text-muted">@{d.handle}</div>
-              </div>
-              <span
-                className={`ml-auto text-xs font-semibold px-2.5 py-1 rounded-full border shrink-0 ${
-                  pickedDesks.has(d.handle)
-                    ? "text-accent border-accent bg-accent/10"
-                    : "text-muted border-border"
-                }`}
-              >
-                {pickedDesks.has(d.handle) ? `✓ ${t("ob.following")}` : `＋ ${t("ob.follow")}`}
-              </span>
-            </button>
+        <div className="border-y border-border py-2">
+          {[
+            bn ? "অফিসিয়াল ঘোষণা ও আয়ের আপডেট" : "Official disclosures and earnings updates",
+            bn ? "মালিকানা ও অস্বাভাবিক বাজারের পরিবর্তন" : "Ownership and unusual market changes",
+            bn ? "আপনার নির্ধারিত দামের অ্যালার্ট" : "Price levels you choose to monitor",
+          ].map((item) => (
+            <div key={item} className="flex items-center gap-2 py-2 text-sm">
+              <span className="text-up">✓</span>
+              <span>{item}</span>
+            </div>
           ))}
+          <p className="mt-2 text-[10px] leading-relaxed text-muted">
+            {bn ? "অ্যালার্ট তথ্যভিত্তিক এবং বিলম্বিত হতে পারে। এটি কেনা-বেচার পরামর্শ নয়।" : "Alerts are descriptive and may be delayed. They are not buy or sell recommendations."}
+          </p>
         </div>
       )}
 
       <button
-        onClick={() => (step < 2 ? setStep(step + 1) : finish())}
-        disabled={saving || (step === 0 && pickedSectors.size === 0)}
-        className="rounded-2xl py-3 text-sm font-bold bg-accent text-bg hover:opacity-90 disabled:opacity-40 mx-2"
+        type="button"
+        onClick={step < 2 ? continueStep : finish}
+        disabled={saving || (step === 0 && pickedSectors.size === 0) || (step === 1 && remaining > 0)}
+        className="mx-1 rounded-lg bg-accent py-3 text-sm font-bold text-bg disabled:opacity-40"
       >
-        {saving ? "…" : step < 2 ? `${t("ob.continue")} →` : `${t("ob.finish")} 🎉`}
+        {saving
+          ? "…"
+          : step === 0
+            ? bn ? "শেয়ার বাছুন →" : "Choose stocks →"
+            : step === 1
+              ? remaining > 0
+                ? bn ? `আরও ${remaining}টি বাছুন` : `Choose ${remaining} more`
+                : bn ? "তালিকা যাচাই করুন →" : "Review the list →"
+              : bn ? "ওয়াচলিস্ট দেখুন" : "View watchlist"}
       </button>
-      {skip}
-      {dots}
+      <button type="button" onClick={skip} className="py-1 text-xs text-muted hover:text-text">
+        {bn ? "এখন বাদ দিন" : "Skip for now"}
+      </button>
     </div>
   );
 }

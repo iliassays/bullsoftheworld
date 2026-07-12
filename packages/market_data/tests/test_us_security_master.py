@@ -7,11 +7,27 @@ about: test issues, ETFs, common stocks, ADRs, warrants, units, preferreds, and 
 from __future__ import annotations
 
 from bulls.market_data.providers.us_security_master import (
+    classify_instrument,
     enrich_with_sec_ciks,
     parse_nasdaq_listed,
     parse_other_listed,
     parse_sec_tickers_exchange,
 )
+
+
+def test_coupon_series_name_is_classified_as_preferred_not_common() -> None:
+    assert (
+        classify_instrument(
+            "DigitalBridge Group, Inc. 7.125% Series H",
+            is_etf=False,
+            assume_common=True,
+        )
+        == "preferred_stock"
+    )
+    assert (
+        classify_instrument("Example Inc. Series A Common Stock", is_etf=False)
+        == "common_stock"
+    )
 
 NASDAQ_LISTED = """Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
 AAPL|Apple Inc. - Common Stock|Q|N|N|40|N|N

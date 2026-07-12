@@ -12,10 +12,11 @@ factor, momentum, actually HURT returns here (IC -0.077 @ 60d). So callers must 
 evidence="framework" (classic method, unproven locally) — never "backtested" — until a dedicated
 study says otherwise.
 
-v1 scope: channel_horizontal, channel_up, channel_down, ascending_triangle, descending_triangle,
-double_top, double_bottom. Wedges (converging channels) and head-and-shoulders are deliberately
-NOT detected yet — both need a manual accuracy pass against real DSE charts first; naive H&S
-detection in particular is one of the highest false-positive patterns in retail TA folklore.
+Scope: channel_horizontal, channel_up, channel_down, ascending_triangle, descending_triangle,
+double_top, double_bottom, and a strict high-volume flat base. The flat base has a dedicated
+walk-forward study: it improved selectivity over a generic volume breakout but did not show stable
+standalone return edge across regimes, so it remains framework evidence and a watchlist tool.
+Wedges and head-and-shoulders are deliberately not detected; both need a manual accuracy pass.
 
 The exact thresholds below (MIN_STRENGTH, the 3%/5% tolerances, the touch/duration weights in the
 strength score) are an initial calibration, not tuned against real DSE data yet — see the
@@ -32,6 +33,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
+from bulls.analytics.flat_base import DEFAULT_FLAT_BASE_CONFIG, FlatBaseSetup, detect_flat_base_at
 from bulls.analytics.indicators import atr, linreg, swing_high_indices, swing_low_indices
 
 LOOKBACK = 150  # trading days (~7 months) — enough for these shapes to form without going stale
@@ -54,6 +56,7 @@ PatternType = Literal[
     "channel_up",
     "channel_down",
     "channel_horizontal",
+    "high_volume_flat_base",
 ]
 PatternStatus = Literal[
     "forming", "confirmed_breakout_up", "confirmed_breakout_down", "invalidated"
@@ -89,6 +92,70 @@ class PatternMatch(BaseModel):
     strength_score: float
     touches_resistance: int = 0
     touches_support: int = 0
+    metrics: dict[str, float] = {}
+
+
+_FLAT_BASE_BREAKOUT_RETENTION = 5
+
+
+def _flat_base_match(rows: Sequence[BarLike]) -> PatternMatch | None:
+    """Adapt the volume-aware setup into the shared chart-pattern payload."""
+    if not rows or any(not hasattr(bar, "volume") for bar in rows):
+        return None
+
+    setup: FlatBaseSetup | None = detect_flat_base_at(
+        rows, len(rows) - 1, config=DEFAULT_FLAT_BASE_CONFIG
+    )
+    sessions_since_breakout = 0
+    if setup is None:
+        for age in range(1, min(_FLAT_BASE_BREAKOUT_RETENTION, len(rows) - 1) + 1):
+            candidate = detect_flat_base_at(
+                rows,
+                len(rows) - 1 - age,
+                config=DEFAULT_FLAT_BASE_CONFIG,
+            )
+            if candidate is None or candidate.status != "confirmed_breakout_up":
+                continue
+            if rows[-1].close < candidate.resistance:
+                continue
+            setup = candidate
+            sessions_since_breakout = age
+            break
+    if setup is None:
+        return None
+
+    current_date = rows[-1].date
+    current_close = rows[-1].close
+    confirmed = setup.status == "confirmed_breakout_up"
+    strength = max(0.0, setup.strength_score - 2 * sessions_since_breakout)
+    return PatternMatch(
+        pattern_type="high_volume_flat_base",
+        status=setup.status,
+        start_date=setup.start_date,
+        end_date=current_date,
+        breakout_date=setup.as_of_date if confirmed else None,
+        resistance_line=LineSeg(
+            start=PricePoint(date=setup.start_date, price=setup.resistance),
+            end=PricePoint(date=current_date, price=setup.resistance),
+        ),
+        support_line=LineSeg(
+            start=PricePoint(date=setup.start_date, price=setup.support),
+            end=PricePoint(date=current_date, price=setup.support),
+        ),
+        key_levels=[setup.resistance, setup.support],
+        strength_score=round(strength, 1),
+        touches_resistance=setup.resistance_touches,
+        metrics={
+            "base_depth_pct": round(100 * setup.depth, 2),
+            "volume_ratio": round(setup.volume_ratio, 2),
+            "dry_up_ratio": round(setup.dry_up_ratio, 2),
+            "average_turnover": setup.average_turnover,
+            "distance_to_breakout_pct": round(
+                100 * max(setup.resistance / current_close - 1, 0), 2
+            ),
+            "sessions_since_breakout": float(sessions_since_breakout),
+        },
+    )
 
 
 class _Fit:
@@ -413,6 +480,9 @@ def detect_patterns(
     sl_idx = swing_low_indices(lows, pivot_k)
 
     candidates: list[PatternMatch] = []
+    flat_base = _flat_base_match(rows)
+    if flat_base is not None:
+        candidates.append(flat_base)
     tri = _detect_triangle_channel(sh_idx, sl_idx, highs, lows, closes, dates, atr14, n)
     if tri is not None:
         candidates.append(tri)

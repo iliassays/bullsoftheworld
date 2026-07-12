@@ -7,9 +7,13 @@ import { Empty } from "./ui";
 import { InfoTip } from "./InfoTip";
 
 const OWN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const discMonth = (iso: string) => {
+const OWN_MONTHS_BN = ["জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"];
+const bnDigits = (value: string | number) =>
+  String(value).replace(/\d/g, (digit) => "০১২৩৪৫৬৭৮৯"[Number(digit)]);
+const discMonth = (iso: string, bn = false) => {
   const [y, m] = iso.split("-");
-  return `${OWN_MONTHS[Number(m) - 1] ?? "?"} ${y}`;
+  const month = (bn ? OWN_MONTHS_BN : OWN_MONTHS)[Number(m) - 1] ?? "?";
+  return `${month} ${bn ? bnDigits(y) : y}`;
 };
 
 // Plain-language help for the jargon fundamentals, each with a worked example — descriptive only.
@@ -38,8 +42,20 @@ const F_HELP_BN: Record<string, string> = {
   eps_growth: "আগের বছরের তুলনায় EPS পরিবর্তন। যেমন -১৭.৩% মানে শেয়ারপ্রতি আয় ১৭.৩% কমেছে।",
   nav: "শেয়ারপ্রতি নিট সম্পদমূল্য — প্রতি শেয়ারের পেছনে কোম্পানির বইমূল্য। যেমন শেয়ারপ্রতি ৳৫৭ নিট সম্পদ।",
 };
-const fhelp = (key: string, lang: Lang) =>
-  (lang === "bn" ? F_HELP_BN[key] : undefined) ?? F_HELP[key];
+const F_HELP_US: Record<string, string> = {
+  market_cap: "Total market value of all listed shares: latest close × shares outstanding.",
+  pe: "Price-to-earnings: share price ÷ trailing earnings per share. e.g. price $100 and EPS $5 gives P/E 20. Compare similar businesses and reporting periods.",
+  pe_sector: "This stock's P/E ÷ its sector median P/E. Below 1.0× is cheaper than the median; above 1.0× is pricier. Different business mixes can limit the comparison.",
+  pb: "Price-to-book: share price ÷ book value per share. e.g. price $100 and book value $80 gives P/B 1.25. Asset-light and financial companies need different context.",
+  yield: "Trailing cash dividends per share ÷ latest close. It describes past distributions, not the next dividend, and a high yield can reflect a falling share price.",
+  eps: "Earnings per share: profit attributable to common shareholders ÷ diluted shares. TTM uses the latest four reported quarters.",
+  eps_growth: "Comparable EPS change versus the prior positive earnings period. Loss-base turnarounds are not shown as percentage growth.",
+  nav: "Book value per share: reported common equity ÷ shares. It is an accounting measure, not a liquidation value or price target.",
+};
+const fhelp = (key: string, lang: Lang, market: string) => {
+  if (market === "US") return F_HELP_US[key];
+  return (lang === "bn" ? F_HELP_BN[key] : undefined) ?? F_HELP[key];
+};
 
 const NEWS_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // "2026-07-07" → "7 Jul 2026"; the year matters when old filings remain research-relevant.
@@ -597,16 +613,16 @@ export function FundamentalsPanel({
       <Row
         label={t("f.marketCap")}
         value={crore(f.market_cap_mn)}
-        help={config.market === "DSE" ? fhelp("market_cap", lang) : undefined}
+        help={fhelp("market_cap", lang, config.market)}
       />
-      <Row label={t("f.pe")} value={ratio(f.pe_ratio)} help={fhelp("pe", lang)} />
+      <Row label={t("f.pe")} value={ratio(f.pe_ratio)} help={fhelp("pe", lang, config.market)} />
       <Row
         label={t("f.peSector")}
         value={f.pe_vs_sector == null ? dash : `${f.pe_vs_sector.toFixed(2)}×`}
-        help={fhelp("pe_sector", lang)}
+        help={fhelp("pe_sector", lang, config.market)}
       />
-      <Row label={t("f.pb")} value={ratio(f.pb_ratio)} help={fhelp("pb", lang)} />
-      <Row label={t("f.divYield")} value={pct(f.dividend_yield)} help={fhelp("yield", lang)} />
+      <Row label={t("f.pb")} value={ratio(f.pb_ratio)} help={fhelp("pb", lang, config.market)} />
+      <Row label={t("f.divYield")} value={pct(f.dividend_yield)} help={fhelp("yield", lang, config.market)} />
       <Row
         label={config.market === "US" ? (bn ? "EPS (গত ১২ মাস)" : "EPS (TTM)") : t("f.epsAnnual")}
         value={taka(f.eps)}
@@ -615,14 +631,14 @@ export function FundamentalsPanel({
             ? `(FY ${earnings[0].fiscal_year}: ${formatMoney(earnings[0].eps)})`
             : lastFY(prior?.eps)
         }
-        help={fhelp("eps", lang)}
+        help={fhelp("eps", lang, config.market)}
       />
-      <Row label={t("f.epsGrowthYoY")} value={yoy} hint={yoyHint} help={fhelp("eps_growth", lang)} />
+      <Row label={t("f.epsGrowthYoY")} value={yoy} hint={yoyHint} help={fhelp("eps_growth", lang, config.market)} />
       <Row
         label={t("f.navShare")}
         value={taka(f.nav_per_share)}
         hint={lastFY(prior?.nav_per_share)}
-        help={fhelp("nav", lang)}
+        help={fhelp("nav", lang, config.market)}
       />
       <Row
         label={t("range.52w")}
@@ -641,7 +657,9 @@ export function FundamentalsPanel({
       <Row label={t("f.sector")} value={f.sector ?? dash} />
       <Row label={t("f.creditRating")} value={f.credit_rating ?? dash} />
       <p className="text-[10px] text-muted mt-2">
-        Valuation derived from the latest close. Descriptive, not advice.
+        {bn
+          ? `${f.valuation_as_of ?? "সর্বশেষ"} সেশনের ক্লোজ থেকে মূল্যায়ন হিসাব করা হয়েছে। বর্ণনামূলক তথ্য, পরামর্শ নয়।`
+          : `Valuation is derived from the ${f.valuation_as_of ?? "latest"} session close. Descriptive, not advice.`}
       </p>
     </Card>
   );
@@ -725,21 +743,6 @@ export function FinancialHealthPanel({ company }: { company: Company }) {
   );
 }
 
-// Plain-language read of who's been buying/selling, from the month-over-month deltas.
-function smartMoneyRead(o: Company["ownership"], bn: boolean): string {
-  const moves: string[] = [];
-  if (o.institute_delta != null && o.institute_delta >= 0.1) moves.push(bn ? "প্রতিষ্ঠান বাড়িয়েছে" : "institutions added");
-  else if (o.institute_delta != null && o.institute_delta <= -0.1) moves.push(bn ? "প্রতিষ্ঠান কমিয়েছে" : "institutions trimmed");
-  if (o.foreign_delta != null && o.foreign_delta >= 0.1) moves.push(bn ? "বিদেশি বিনিয়োগকারী বাড়িয়েছে" : "foreign investors added");
-  else if (o.foreign_delta != null && o.foreign_delta <= -0.1) moves.push(bn ? "বিদেশি বিনিয়োগকারী কমিয়েছে" : "foreign investors trimmed");
-  if (!moves.length)
-    return bn
-      ? "আগের প্রকাশের পর বড় বিনিয়োগকারীদের মালিকানা প্রায় অপরিবর্তিত।"
-      : "Big-money holdings barely changed since the prior disclosure.";
-  const s = moves.join(bn ? ", এবং " : ", and ") + (bn ? " আগের প্রকাশের পর।" : " since the prior disclosure.");
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 const OWN_GREEN = "#2fbf71";
 
 // Who each holder group actually is — the labels are meaningless to a first-time investor.
@@ -769,111 +772,79 @@ const OWN_WHO: Record<string, Record<Lang, string>> = {
 export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
   const { lang } = useLang();
   const bn = lang === "bn";
+  const hist = o.history ?? [];
+  const latest = hist[hist.length - 1];
+  const previous = hist[hist.length - 2];
   const cats = [
-    { key: "sponsor", label: bn ? "উদ্যোক্তা / পরিচালক" : "Sponsor / Director", color: "var(--color-accent)", v: o.sponsor_pct },
-    { key: "govt", label: bn ? "সরকার" : "Government", color: "#8b5cf6", v: o.govt_pct },
-    { key: "institute", label: bn ? "প্রতিষ্ঠান" : "Institutional", color: "#0ea5e9", v: o.institute_pct },
-    { key: "foreign", label: bn ? "বিদেশি" : "Foreign", color: OWN_GREEN, v: o.foreign_pct },
-    { key: "public", label: bn ? "সাধারণ বিনিয়োগকারী" : "Public", color: "var(--color-muted)", v: o.public_pct },
+    { key: "sponsor", label: bn ? "উদ্যোক্তা / পরিচালক" : "Sponsor / Director", color: "var(--color-accent)", v: o.sponsor_pct, delta: o.sponsor_delta },
+    { key: "govt", label: bn ? "সরকার" : "Government", color: "#8b5cf6", v: o.govt_pct, delta: o.govt_delta },
+    { key: "institute", label: bn ? "প্রতিষ্ঠান" : "Institutional", color: "#0ea5e9", v: o.institute_pct, delta: o.institute_delta },
+    { key: "foreign", label: bn ? "বিদেশি" : "Foreign", color: OWN_GREEN, v: o.foreign_pct, delta: o.foreign_delta },
+    { key: "public", label: bn ? "সাধারণ বিনিয়োগকারী" : "Public", color: "var(--color-muted)", v: o.public_pct, delta: o.public_delta },
   ] as const;
   if (!cats.some((c) => c.v != null))
     return <Empty>{bn ? "এখনো মালিকানা প্রকাশ পাওয়া যায়নি।" : "No ownership disclosure yet."}</Empty>;
 
-  const hist = o.history ?? [];
-  const first = hist[0];
-  const reportedNonSponsor =
-    (o.govt_pct ?? 0) + (o.institute_pct ?? 0) + (o.foreign_pct ?? 0) + (o.public_pct ?? 0);
   const stale =
     o.as_of != null && (Date.now() - new Date(o.as_of).getTime()) / 86_400_000 > 270;
-
-  // Smart money = institutions + foreign. The positive story to highlight: has it grown over the
-  // disclosed window? (first → latest). Only celebrate a real rise; otherwise stay factual.
-  const smartNow = (o.institute_pct ?? 0) + (o.foreign_pct ?? 0);
-  const smartThen = first ? (first.institute ?? 0) + (first.foreign ?? 0) : null;
-  const smartGrew = !stale && smartThen != null && smartNow - smartThen >= 0.5;
-  // Latest step of the same combined series — surfaced as a caveat when it disagrees with
-  // the long-run rise, so the banner never contradicts the ▼ chips right below it.
-  const smartStep =
-    hist.length >= 2
-      ? (hist[hist.length - 1].institute ?? 0) +
-        (hist[hist.length - 1].foreign ?? 0) -
-        ((hist[hist.length - 2].institute ?? 0) + (hist[hist.length - 2].foreign ?? 0))
-      : null;
-
-  // Sponsor falling streak — same rule as the backend agent (≥3 consecutive declining
-  // disclosures, ≥1.0pp cumulative). Insiders steadily reducing is the one ownership story
-  // worth a warning banner; a single noisy month is not.
-  const sponsorSeries = hist
-    .map((p) => p.sponsor)
-    .filter((x): x is number => x != null);
-  let sponsorRun = 0;
-  for (let i = sponsorSeries.length - 1; i > 0; i--) {
-    if (sponsorSeries[i] < sponsorSeries[i - 1]) sponsorRun++;
-    else break;
-  }
-  const sponsorDrop =
-    sponsorRun >= 3
-      ? sponsorSeries[sponsorSeries.length - 1 - sponsorRun] - sponsorSeries[sponsorSeries.length - 1]
-      : 0;
-  const sponsorStreak = !stale && sponsorRun >= 3 && sponsorDrop >= 1.0;
 
   const stepDelta = (key: (typeof cats)[number]["key"]) => {
     const s = hist.map((p) => p[key]).filter((x): x is number => x != null);
     return s.length >= 2 ? s[s.length - 1] - s[s.length - 2] : null;
   };
+  const changes = cats
+    .map((cat) => ({ ...cat, delta: cat.delta ?? stepDelta(cat.key) }))
+    .filter((cat): cat is typeof cat & { delta: number } => cat.delta != null && Math.abs(cat.delta) >= 0.1)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const compositionTotal =
+    o.composition_total ?? cats.reduce((total, cat) => total + (cat.v ?? 0), 0);
+  const ownNumber = (value: number, digits = 2) =>
+    bn ? bnDigits(value.toFixed(digits)) : value.toFixed(digits);
+  const ownPct = (value: number | null) => value == null ? dash : `${ownNumber(value)}%`;
+  const changeSummary = changes
+    .map((cat) =>
+      bn
+        ? `${cat.label} ${cat.v == null ? dash : ownPct(cat.v)} (${cat.delta > 0 ? "বেড়েছে" : "কমেছে"} ${ownNumber(Math.abs(cat.delta))} শতাংশ-পয়েন্ট)`
+        : `${cat.label} ${cat.v?.toFixed(2)}% (${cat.delta > 0 ? "up" : "down"} ${Math.abs(cat.delta).toFixed(2)}pp)`,
+    )
+    .join(bn ? "; " : "; ");
   const chip = (d: number | null) =>
     d == null || Math.abs(d) < 0.01 ? null : (
-      <span className={`text-[11px] font-semibold tnum ${d > 0 ? "text-up" : "text-down"}`}>
-        {d > 0 ? "▲" : "▼"} {Math.abs(d).toFixed(2)}pp
+      <span className="text-[11px] font-semibold tnum text-muted">
+        {d > 0 ? "▲" : "▼"} {ownNumber(Math.abs(d))}{bn ? " পয়েন্ট" : "pp"}
       </span>
     );
 
   return (
     <Card title={bn ? "মালিকানা" : "Ownership"}>
-      {/* Highlight: stale flag, or the positive smart-money story, or a neutral read. */}
+      {/* A disclosure is a holdings snapshot, not evidence of a trade. Keep the read factual. */}
       {stale ? (
         <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug text-muted">
           {bn
-            ? `সর্বশেষ প্রকাশ ${o.as_of ? discMonth(o.as_of) : dash}; নতুন তথ্য না আসায় নিচের সংখ্যা পুরোনো হতে পারে।`
+            ? `সর্বশেষ প্রকাশ ${o.as_of ? discMonth(o.as_of, true) : dash}; নতুন তথ্য না আসায় নিচের সংখ্যা পুরোনো হতে পারে।`
             : `Latest disclosure ${o.as_of ? discMonth(o.as_of) : dash}; without a newer filing, these figures may be stale.`}
         </div>
-      ) : sponsorStreak ? (
-        <div
-          className="rounded-xl p-3 mb-3"
-          style={{ backgroundColor: "rgba(240,86,74,0.08)", border: "1px solid rgba(240,86,74,0.35)" }}
-        >
-          <div className="text-[13px] leading-snug font-semibold text-down">
-            {bn
-              ? `উদ্যোক্তার অংশ টানা ${sponsorRun}টি প্রকাশে কমেছে`
-              : `Sponsor stake fell across ${sponsorRun} consecutive disclosures`}
-          </div>
-          <div className="text-[12px] text-muted mt-0.5">
-            {(sponsorSeries[sponsorSeries.length - 1 - sponsorRun]).toFixed(1)}% →{" "}
-            <b className="text-fg">{sponsorSeries[sponsorSeries.length - 1].toFixed(1)}%</b>{" "}
-            (−{sponsorDrop.toFixed(1)}pp) — {bn ? "উৎস: DSE মালিকানা প্রকাশ। তথ্যমূলক, পরামর্শ নয়।" : "insiders reduced their reported stake. Source: DSE ownership disclosures. Descriptive, not advice."}
-          </div>
-        </div>
-      ) : smartGrew && smartThen != null && first ? (
-        <div
-          className="rounded-xl p-3 mb-3"
-          style={{ backgroundColor: "rgba(22,199,132,0.10)", border: "1px solid rgba(22,199,132,0.35)" }}
-        >
-          <div className="text-[13px] leading-snug font-semibold text-up">
-            {bn ? "বড় বিনিয়োগকারীদের প্রকাশিত অংশ আগের চেয়ে বেশি" : "Reported big-investor ownership is higher than before"}
-          </div>
-          <div className="text-[12px] text-muted mt-0.5">
-            {bn ? "প্রতিষ্ঠান ও বিদেশি বিনিয়োগকারীদের অংশ " : "Institutions and foreign investors report "}<b className="text-fg">{smartNow.toFixed(1)}%</b>,
-            {bn ? ` ${discMonth(first.as_of)}-এর ${smartThen.toFixed(1)}% থেকে বেশি` : ` up from ${smartThen.toFixed(1)}% in ${discMonth(first.as_of)}`}
-            {smartStep != null && smartStep <= -0.1
-              ? bn
-                ? `; তবে সর্বশেষ প্রকাশে সামান্য কমেছে (−${Math.abs(smartStep).toFixed(2)}pp)।`
-                : `, though the latest disclosure shows a small dip (−${Math.abs(smartStep).toFixed(2)}pp).`
-              : "."}
-          </div>
-        </div>
       ) : (
-        <div className="rounded-xl bg-card border border-border p-3 mb-3 text-[13px] leading-snug">
-          {smartMoneyRead(o, bn)}
+        <div
+          className="rounded-xl p-3 mb-3"
+          style={{ backgroundColor: "rgba(245,184,36,0.07)", border: "1px solid rgba(245,184,36,0.30)" }}
+        >
+          <div className="text-[13px] leading-snug font-semibold text-fg">
+            {changes.length
+              ? bn
+                ? "সর্বশেষ প্রকাশে মালিকানার বণ্টন বদলেছে"
+                : "Latest disclosure shows an ownership shift"
+              : bn
+                ? "সর্বশেষ প্রকাশে উল্লেখযোগ্য পরিবর্তন নেই"
+                : "No material change in the latest disclosure"}
+          </div>
+          <div className="text-[12px] text-muted mt-0.5">
+            {latest && previous
+              ? `${discMonth(latest.as_of, bn)} ${bn ? "বনাম" : "vs"} ${discMonth(previous.as_of, bn)}: ${changeSummary || (bn ? "সব শ্রেণি প্রায় অপরিবর্তিত।" : "all categories were broadly unchanged.")}`
+              : bn
+                ? "তুলনার জন্য আগের বৈধ প্রকাশ পাওয়া যায়নি।"
+                : "No prior validated disclosure is available for comparison."}
+          </div>
         </div>
       )}
 
@@ -884,7 +855,9 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
       <div className="flex flex-col gap-1.5 mb-3">
         {hist.map((p) => (
           <div key={p.as_of} className="flex items-center gap-2">
-            <span className="text-[10px] text-muted tnum w-14 shrink-0">{discMonth(p.as_of)}</span>
+            <span className={`text-[10px] text-muted tnum shrink-0 ${bn ? "w-20" : "w-14"}`}>
+              {discMonth(p.as_of, bn)}
+            </span>
             <span className="flex h-2.5 flex-1 rounded-full overflow-hidden bg-border/40">
               {cats.map((c) => (
                 <span key={c.key} style={{ width: `${p[c.key] ?? 0}%`, backgroundColor: c.color }} />
@@ -894,7 +867,10 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
         ))}
       </div>
 
-      {/* Legend + latest % + change vs prior disclosure. */}
+      <div className="flex justify-end text-[9px] uppercase tracking-wide text-muted/70 mb-0.5 pr-16">
+        {bn ? "আগের প্রকাশ থেকে পরিবর্তন" : "Change vs prior"}
+      </div>
+      {/* Legend + latest % + change vs prior disclosure. Direction is neutral, not a trade signal. */}
       {cats.map((c) => (
         <div key={c.key} className="flex items-center gap-3 py-2 border-b border-border/60">
           <span className="flex items-center gap-2 flex-1 min-w-0">
@@ -902,18 +878,18 @@ export function OwnershipPanel({ o }: { o: Company["ownership"] }) {
             <span className="text-xs text-muted truncate">{c.label}</span>
             <InfoTip text={OWN_WHO[c.key][lang]} />
           </span>
-          {chip(stepDelta(c.key))}
-          <span className="text-sm font-semibold tnum w-16 text-right">{pct(c.v)}</span>
+          {chip(c.delta ?? stepDelta(c.key))}
+          <span className="text-sm font-semibold tnum w-16 text-right">{ownPct(c.v)}</span>
         </div>
       ))}
 
       <p className="text-[10px] text-muted mt-2">
         {bn
-          ? `প্রকাশিত অ-উদ্যোক্তা মালিকানা প্রায় ${reportedNonSponsor.toFixed(0)}%। এটি উপরে দেখানো এক্সচেঞ্জ-সমন্বিত ফ্রি ফ্লোট নয়। `
-          : `Reported non-sponsor ownership is about ${reportedNonSponsor.toFixed(0)}%. This is not the exchange-adjusted free float shown above. `}
+          ? `DSE-তে প্রকাশিত শ্রেণিগুলোর মোট ${ownNumber(compositionTotal)}%। এগুলো মাসশেষের মালিকানা দেখায়; কে কখন, কোন দামে বা কেন শেয়ার কেনাবেচা করেছে তা দেখায় না। বাজারে লেনদেন ছাড়াও হস্তান্তর, নতুন শেয়ার ইস্যু বা শ্রেণি পরিবর্তনে শতাংশ বদলাতে পারে। “সাধারণ বিনিয়োগকারী” শ্রেণি আর লেনদেনযোগ্য শেয়ারের হিসাব (ফ্রি ফ্লোট) এক বিষয় নয়। `
+          : `DSE-reported categories total ${compositionTotal.toFixed(2)}%. They show month-end ownership, not who traded, when, at what price, or why. Percentages can also change through transfers, new share issuance, or category reclassification. “Public” is not the same as exchange-adjusted free float. `}
         {hist.length > 1
           ? bn
-            ? `${hist.length}টি প্রকাশ, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}। `
+            ? `${bnDigits(hist.length)}টি প্রকাশ, ${discMonth(hist[0].as_of, true)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of, true)}। `
             : `${hist.length} disclosures, ${discMonth(hist[0].as_of)}–${discMonth(o.as_of ?? hist[hist.length - 1].as_of)}. `
           : ""}
         {bn
@@ -1008,11 +984,6 @@ function fillYears(pts: { year: number; v: number | null }[], cap = 8) {
   return filled.slice(-cap);
 }
 
-const _EY_TIP =
-  "Earnings yield = a company's yearly EPS ÷ its share price (the inverse of P/E). e.g. 5% means it earns ৳5 a year for every ৳100 you pay. Higher = more earnings for your money. Compare it with the bank deposit rate.";
-const _PAYOUT_TIP =
-  "Payout ratio = cash dividend ÷ EPS — how much of each year's profit is handed out as cash. e.g. 45% means ৳45 of every ৳100 earned is paid out; the rest is kept in the business.";
-
 export function EarningsPanel({
   earnings,
   dividends,
@@ -1022,7 +993,9 @@ export function EarningsPanel({
   dividends: Company["dividends"];
   f: Company["fundamentals"];
 }) {
+  const { lang } = useLang();
   const { config } = useTenantConfig();
+  const bn = lang === "bn";
   if (!earnings.length && !dividends.length)
     return <Empty>No earnings history yet.</Empty>;
 
@@ -1036,6 +1009,12 @@ export function EarningsPanel({
       </span>
     );
   const earningsYield = f.pe_ratio && f.pe_ratio > 0 ? 100 / f.pe_ratio : null;
+  const earningsYieldTip = bn
+    ? `আয়-ইল্ড = বার্ষিক EPS ÷ শেয়ারের দাম (P/E-এর উল্টো)। ৫% মানে প্রতি ${formatMoney(100)} দামে বছরে ${formatMoney(5)} আয়। একই ধরনের কোম্পানি ও বিকল্প আয়ের সঙ্গে তুলনা করুন।`
+    : `Earnings yield = annual EPS ÷ share price (the inverse of P/E). A 5% yield means ${formatMoney(5)} of annual earnings for each ${formatMoney(100)} of price. Compare similar companies and alternative yields.`;
+  const payoutTip = bn
+    ? "পেআউট অনুপাত = শেয়ারপ্রতি নগদ লভ্যাংশ ÷ EPS। ৪৫% মানে আয়ের ৪৫% নগদে দেওয়া হয়েছে; এটি ভবিষ্যৎ পেআউটের নিশ্চয়তা নয়।"
+    : "Payout ratio = cash dividend per share ÷ EPS. A 45% ratio means 45% of earnings was distributed as cash; it does not guarantee the next payout.";
 
   const eps0 = f.eps ?? earnings[0]?.eps ?? null;
   const face = f.face_value ?? 10;
@@ -1059,18 +1038,18 @@ export function EarningsPanel({
   return (
     <div className="flex flex-col gap-3">
       {earnings.length > 0 && (
-        <Card title="Earnings">
+        <Card title={bn ? "আয়ের ইতিহাস" : "Earnings"}>
           <div className="flex gap-2 mb-1">
-            <Stat label="EPS (latest)" value={<>{taka(earnings[0]?.eps ?? null)}{yoyChip}</>} />
-            <Stat label="Earnings yield" value={pct(earningsYield)} tip={_EY_TIP} />
-            <Stat label="NAV / share" value={taka(earnings[0]?.nav_per_share ?? null)} />
+            <Stat label={bn ? "সর্বশেষ EPS" : "EPS (latest)"} value={<>{taka(earnings[0]?.eps ?? null)}{yoyChip}</>} />
+            <Stat label={bn ? "আয়-ইল্ড" : "Earnings yield"} value={pct(earningsYield)} tip={earningsYieldTip} />
+            <Stat label={bn ? "শেয়ারপ্রতি NAV" : "NAV / share"} value={taka(earnings[0]?.nav_per_share ?? null)} />
           </div>
           <YearBars data={epsBars} fmt={(n) => formatMoney(n)} />
           <div className="grid grid-cols-4 text-[11px] text-muted font-semibold pb-1 border-b border-border">
-            <span>FY</span>
+            <span>{bn ? "অর্থবছর" : "FY"}</span>
             <span className="text-right">EPS</span>
             <span className="text-right">NAV</span>
-            <span className="text-right">Profit</span>
+            <span className="text-right">{bn ? "মুনাফা" : "Profit"}</span>
           </div>
           {earnings.slice(0, 6).map((e) => (
             <div
@@ -1086,32 +1065,32 @@ export function EarningsPanel({
         </Card>
       )}
       {dividends.length > 0 && (
-        <Card title="Dividends">
+        <Card title={bn ? "লভ্যাংশ" : "Dividends"}>
           <div className="flex gap-2 mb-1">
-            <Stat label="Dividend yield" value={pct(f.dividend_yield)} />
+            <Stat label={bn ? "লভ্যাংশ ইল্ড" : "Dividend yield"} value={pct(f.dividend_yield)} />
             <Stat
-              label="Cash (latest)"
+              label={bn ? "সর্বশেষ নগদ" : "Cash (latest)"}
               value={
                 config.market === "DSE" ? pct(latestCashPct) : taka(latestCashPerShare)
               }
               sub={
                 latestCashPerShare == null
                   ? undefined
-                  : `${taka(latestCashPerShare)}/share`
+                  : `${taka(latestCashPerShare)}/${bn ? "শেয়ার" : "share"}`
               }
             />
-            <Stat label="Payout ratio" value={pct(payout)} tip={_PAYOUT_TIP} />
+            <Stat label={bn ? "পেআউট অনুপাত" : "Payout ratio"} value={pct(payout)} tip={payoutTip} />
           </div>
           <YearBars
             data={cashBars}
             fmt={(n) => (config.market === "DSE" ? `${n.toFixed(0)}%` : formatMoney(n))}
             color="#0ea5e9"
-            emptyLabel="no div"
+            emptyLabel={bn ? "নেই" : "no div"}
           />
           <div className="grid grid-cols-3 text-[11px] text-muted font-semibold pb-1 border-b border-border">
-            <span>Year</span>
-            <span className="text-right">Cash</span>
-            <span className="text-right">Bonus</span>
+            <span>{bn ? "বছর" : "Year"}</span>
+            <span className="text-right">{bn ? "নগদ" : "Cash"}</span>
+            <span className="text-right">{bn ? "বোনাস" : "Bonus"}</span>
           </div>
           {dividends.slice(0, 6).map((d) => (
             <div

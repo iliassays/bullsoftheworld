@@ -14,6 +14,14 @@ from api.routers.scanner import (
 )
 
 
+def test_scanner_universe_is_pinned_to_latest_analytics_date() -> None:
+    from api.routers.scanner import _clean_codes
+
+    sql = str(_clean_codes("DSE")).lower()
+    assert "max(" in sql
+    assert "as_of_date" in sql
+
+
 def test_every_tab_board_carries_an_evidence_label() -> None:
     """Truth-in-labeling: no board reaches the Ideas page without declaring its evidence class."""
     for tab, keys in _TABS.items():

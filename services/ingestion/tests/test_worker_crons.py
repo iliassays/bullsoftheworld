@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import datetime as dt
 
+from ingestion.research_worker import WorkerSettings as ResearchWorkerSettings
 from ingestion.worker import WorkerSettings, _after_eod_window, _after_market_date_utc_time
 
 
 def test_every_cron_job_can_calculate_its_next_run() -> None:
     now = dt.datetime(2026, 7, 1, 0, 0, tzinfo=dt.UTC)
-    for job in WorkerSettings.cron_jobs:
+    for job in [*WorkerSettings.cron_jobs, *ResearchWorkerSettings.cron_jobs]:
         job.calculate_next(now)  # raises on any invalid spec (e.g. bad weekday string)
         assert job.next_run is not None, job.name
 

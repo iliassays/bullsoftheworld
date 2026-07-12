@@ -58,6 +58,28 @@ export interface AdminRecentEvent {
   layer: number;
   created_at: string;
 }
+export interface InstitutionalLead {
+  id: number;
+  organization: string;
+  contact_name: string;
+  work_email: string;
+  role: string;
+  use_case: string;
+  status: string;
+  created_at: string;
+}
+export interface BetaFeedback {
+  id: number;
+  locale: string;
+  kind: string;
+  message: string;
+  path: string;
+  symbol_code: string | null;
+  user_id: number | null;
+  contact_consent: boolean;
+  status: string;
+  created_at: string;
+}
 export interface AdminOverview {
   tenant: string;
   market: string;
@@ -79,6 +101,10 @@ export interface AdminOverview {
   latest_quote_as_of: string | null;
   symbols_active: number;
   symbols_hidden: number;
+  institutional_leads_open: number;
+  recent_institutional_leads: InstitutionalLead[];
+  beta_feedback_open: number;
+  recent_beta_feedback: BetaFeedback[];
 }
 export interface ModQueueItem {
   post_id: number;
@@ -118,6 +144,11 @@ export interface Analytics {
     agent_notes_total: number;
     human_share_pct: number;
     reactions_7d: number;
+    consented_visitors_30d: number;
+    ticker_viewers_30d: number;
+    watchlist_activations_30d: number;
+    weekly_activated_researchers: number;
+    institutional_leads_open: number;
   };
   series: DailyPoint[];
 }
@@ -128,6 +159,16 @@ export const api = {
     request<AdminOverview>(`/admin/overview?tenant=${encodeURIComponent(tenant)}`),
   analytics: (tenant: string, days: number) =>
     request<Analytics>(`/admin/analytics?tenant=${encodeURIComponent(tenant)}&days=${days}`),
+  institutionalLeadStatus: (tenant: string, leadId: number, status: string) =>
+    request<InstitutionalLead>(
+      `/admin/institutional-leads/${leadId}?tenant=${encodeURIComponent(tenant)}`,
+      { method: "PATCH", body: JSON.stringify({ status }) },
+    ),
+  betaFeedbackStatus: (tenant: string, feedbackId: number, status: string) =>
+    request<BetaFeedback>(
+      `/admin/beta-feedback/${feedbackId}?tenant=${encodeURIComponent(tenant)}`,
+      { method: "PATCH", body: JSON.stringify({ status }) },
+    ),
   modQueue: (tenant: string, status: "pending" | "held") =>
     request<{ count: number; items: ModQueueItem[] }>(
       `/moderation/queue?tenant=${encodeURIComponent(tenant)}&status=${status}`,

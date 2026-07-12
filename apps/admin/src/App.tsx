@@ -145,6 +145,24 @@ export function App() {
     }
   }
 
+  async function updateLead(id: number, status: string) {
+    try {
+      await api.institutionalLeadStatus(tenant, id, status);
+      await load();
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function updateFeedback(id: number, status: string) {
+    try {
+      await api.betaFeedbackStatus(tenant, id, status);
+      await load();
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   if (!authed) return <TokenGate onAuthed={() => setAuthed(true)} />;
 
   const k = an?.kpis;
@@ -223,6 +241,16 @@ export function App() {
                   sub="awaiting approve/block"
                   tone={(ov?.review_pending ?? 0) ? "text-accent" : "text-text"}
                 />
+              </div>
+
+              <div className="text-[11px] uppercase tracking-wide text-muted mb-2">Go-to-market funnel</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-5">
+                <Kpi label="Consented visitors" value={k.consented_visitors_30d} sub="distinct first-party visitors in 30d" />
+                <Kpi label="Ticker researchers" value={k.ticker_viewers_30d} sub="distinct ticker viewers in 30d" />
+                <Kpi label="Watchlist activated" value={k.watchlist_activations_30d} sub="3+ stocks completed in 30d" tone="text-up" />
+                <Kpi label="Activated researchers" value={k.weekly_activated_researchers} sub="3+ tickers plus a research action in 7d" tone="text-up" />
+                <Kpi label="Interview volunteers" value={k.institutional_leads_open} sub="research conversations, not sales" tone={k.institutional_leads_open ? "text-accent" : "text-text"} />
+                <Kpi label="Beta feedback" value={ov?.beta_feedback_open ?? 0} sub="new or under review" tone={(ov?.beta_feedback_open ?? 0) ? "text-accent" : "text-text"} />
               </div>
 
               {/* content mix */}
@@ -332,6 +360,69 @@ export function App() {
                   )}
                 </section>
                 <div className="space-y-4">
+                  {ov && (
+                    <Panel title="Research beta feedback" note={`${ov.beta_feedback_open} open`}>
+                      {ov.recent_beta_feedback.length === 0 ? (
+                        <div className="text-muted text-sm">No beta feedback yet.</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {ov.recent_beta_feedback.map((item) => (
+                            <div key={item.id} className="border-t border-border pt-2 first:border-t-0 first:pt-0">
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span className="font-semibold text-text">{item.kind}</span>
+                                <select
+                                  value={item.status}
+                                  onChange={(event) => updateFeedback(item.id, event.target.value)}
+                                  aria-label={`Status for feedback ${item.id}`}
+                                  className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-accent"
+                                >
+                                  <option value="new">new</option>
+                                  <option value="reviewed">reviewed</option>
+                                  <option value="resolved">resolved</option>
+                                </select>
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-muted">
+                                {item.locale.toUpperCase()} · {item.symbol_code ? `$${item.symbol_code} · ` : ""}{item.path}
+                                {item.contact_consent ? " · follow-up allowed" : ""}
+                              </div>
+                              {item.message && <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-muted">{item.message}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Panel>
+                  )}
+                  {ov && (
+                    <Panel title="Institutional enquiries" note={`${ov.institutional_leads_open} open`}>
+                      {ov.recent_institutional_leads.length === 0 ? (
+                        <div className="text-muted text-sm">No enquiries yet.</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {ov.recent_institutional_leads.map((lead) => (
+                            <div key={lead.id} className="border-t border-border pt-2 first:border-t-0 first:pt-0">
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span className="font-semibold text-text truncate">{lead.organization}</span>
+                                <select
+                                  value={lead.status}
+                                  onChange={(event) => updateLead(lead.id, event.target.value)}
+                                  aria-label={`Status for ${lead.organization}`}
+                                  className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-accent"
+                                >
+                                  <option value="new">new</option>
+                                  <option value="contacted">contacted</option>
+                                  <option value="qualified">qualified</option>
+                                  <option value="closed">closed</option>
+                                </select>
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-muted">{lead.contact_name} · {lead.role}</div>
+                              <a href={`mailto:${lead.work_email}`} className="text-[11px] text-accent">{lead.work_email}</a>
+                              <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-muted">{lead.use_case}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Panel>
+                  )}
                   {ov && (
                     <Panel title="Recent flags">
                       {ov.recent_events.length === 0 ? (

@@ -11,9 +11,11 @@ export const PATTERN_LABEL: Record<PatternType, { en: string; bn: string }> = {
   channel_horizontal: { en: "Horizontal Channel", bn: "আনুভূমিক চ্যানেল" },
   double_top: { en: "Double Top", bn: "ডাবল টপ" },
   double_bottom: { en: "Double Bottom", bn: "ডাবল বটম" },
+  high_volume_flat_base: { en: "High-Volume Flat Base", bn: "হাই-ভলিউম ফ্ল্যাট বেস" },
 };
 
 export const PATTERN_ORDER: PatternType[] = [
+  "high_volume_flat_base",
   "ascending_triangle",
   "descending_triangle",
   "channel_up",
@@ -46,4 +48,5 @@ export const PATTERN_LESSON_ID: Record<PatternType, string> = {
   channel_horizontal: "pattern_channel_horizontal",
   double_top: "pattern_double_top",
   double_bottom: "pattern_double_bottom",
+  high_volume_flat_base: "pattern_high_volume_flat_base",
 };

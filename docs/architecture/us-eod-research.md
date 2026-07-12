@@ -65,10 +65,11 @@ bypassed for an unreviewed free bootstrap source.
 
 ## Product measurement
 
-GA4 receives non-sensitive funnel events only: search selection, idea open, watchlist change,
-research question, price-alert change, and alert open. Events carry market, board, event kind, or
-ticker where relevant. They never carry email, phone, portfolio quantity, cost basis, alert price,
-or free-form community content.
+Consent-gated first-party analytics receive non-sensitive funnel events only: page view, search
+selection, idea open, watchlist change, research question, price-alert change, and alert open. No
+Google Analytics or advertising tracker runs during the research beta. Events carry market, board,
+event kind, or ticker where relevant. They never carry email, phone, portfolio quantity, cost basis,
+alert price, or free-form community content.
 
 Review weekly:
 

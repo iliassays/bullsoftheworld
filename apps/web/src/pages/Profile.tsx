@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useSeo } from "../components/Seo";
 import { Link, useNavigate } from "../lib/nav";
 import { api, ApiError, type User } from "../lib/api";
@@ -6,6 +7,8 @@ import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
 import { useTenantConfig } from "../lib/tenant";
+import { trackProductEvent } from "../lib/analytics";
+import { useConsent } from "../components/ConsentManager";
 
 const PHONE_RE = /^\+?\d{7,15}$/; // lenient: BD (01…) or international (+cc…); server normalizes
 
@@ -178,6 +181,7 @@ const FB_URL = "https://www.facebook.com/1214682241723822";
 function ContactLine() {
   const { t } = useLang();
   const { config } = useTenantConfig();
+  const { openSettings } = useConsent();
   return (
     <div className="mt-2 flex flex-col gap-1.5 text-center">
       <p className="text-muted text-xs">
@@ -186,6 +190,24 @@ function ContactLine() {
           {config.support_email}
         </a>
       </p>
+      <p className="text-muted text-[11px] leading-relaxed">
+        <Link to="/trust" className="text-accent">{t("nav.methodology")}</Link>
+        {config.research_beta && (
+          <>
+            {" · "}
+            <Link to="/beta" className="text-accent">{t("nav.beta")}</Link>
+          </>
+        )}
+        {" · "}
+        <Link to="/privacy" className="text-accent">{t("nav.privacy")}</Link>
+        {" · "}
+        <Link to="/terms" className="text-accent">{t("nav.terms")}</Link>
+        {" · "}
+        <Link to="/institutions" className="text-accent">{t("nav.institutions")}</Link>
+      </p>
+      <button type="button" onClick={openSettings} className="text-xs text-accent">
+        {t("nav.cookieSettings")}
+      </button>
       {/* Relocated from the header (2026-07 noise cut) — reachable, not omnipresent. */}
       <p className="text-muted text-xs">
         <Link to="/about" className="text-accent">
@@ -208,7 +230,13 @@ export function Profile() {
   const { user, login, register, logout, refresh } = useAuth();
   const { t } = useLang();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [params] = useSearchParams();
+  const requestedMode = params.get("mode") === "register" ? "register" : "login";
+  const [mode, setMode] = useState<"login" | "register">(requestedMode);
+  const requestedNext = params.get("next");
+  const next = requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+    ? requestedNext
+    : null;
 
   // Re-fetch on mount + when the tab regains focus, so a verification done elsewhere
   // (e.g. clicking the email link in another tab) reflects here without a manual reload.
@@ -258,10 +286,15 @@ export function Profile() {
     setBusy(true);
     setErr("");
     try {
-      if (mode === "login") await login(idField.trim(), password);
+      if (mode === "login") {
+        await login(idField.trim(), password);
+        trackProductEvent("login_completed", { source: "profile" });
+        if (next) navigate(next, { replace: true });
+      }
       else {
         await register(name.trim(), idField.trim(), password);
-        navigate("/welcome", { replace: true }); // seed sectors → stocks → desks
+        trackProductEvent("sign_up_completed", { source: "profile" });
+        navigate(next ?? "/welcome", { replace: true });
       }
     } catch (e) {
       setErr(e instanceof ApiError ? e.detail : t("profile.error"));

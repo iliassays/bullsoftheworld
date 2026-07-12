@@ -36,10 +36,10 @@ function verdictDot(v: string): string {
 }
 
 function verdictLabel(v: string, bn: boolean): string {
-  if (v === "supportive") return bn ? "সহায়ক" : "Supportive";
-  if (v === "caution") return bn ? "সতর্ক" : "Caution";
+  if (v === "supportive") return bn ? "মূল ফ্যাক্টর সহায়ক" : "Core supportive";
+  if (v === "caution") return bn ? "মূল ফ্যাক্টরে সতর্কতা" : "Core caution";
   if (v === "thin_data") return bn ? "ডেটা কম" : "Thin data";
-  return bn ? "মিশ্র" : "Mixed";
+  return bn ? "মূল ফ্যাক্টর মিশ্র" : "Core mixed";
 }
 
 function shortName(key: string, fallback: string, bn: boolean): string {
@@ -54,31 +54,20 @@ function checkDot(status: string): string {
   return "bg-accent"; // watch
 }
 
-function checkAssessment(lens: InvestorLensItem, bn: boolean) {
+function checkSummary(lens: InvestorLensItem, bn: boolean) {
   const checks = lens.checks ?? [];
   const pass = checks.filter((check) => check.status === "pass").length;
-  const fail = checks.filter((check) => check.status === "fail").length;
   const missing = checks.filter((check) => check.status === "na").length;
   const assessed = checks.length - missing;
-  const missingDominates = missing > assessed || missing >= Math.ceil(checks.length / 2);
-  const passRatio = assessed ? pass / assessed : 0;
-  const tone =
-    assessed === 0 || missingDominates
-      ? "thin_data"
-      : fail > 0
-        ? "caution"
-        : pass >= 2 && passRatio >= 0.75
-          ? "supportive"
-          : "mixed";
   const label =
     assessed === 0
       ? bn
         ? "পরীক্ষার তথ্য নেই"
         : "No assessed checks"
       : bn
-        ? `${assessed}টির মধ্যে ${pass}টি পরীক্ষায় উত্তীর্ণ${missing ? ` · ${missing}টি তথ্য নেই` : ""}`
-        : `${pass}/${assessed} assessed checks pass${missing ? ` · ${missing} unavailable` : ""}`;
-  return { tone, label };
+        ? `বাড়তি পরীক্ষায় ${assessed}টির মধ্যে ${pass}টি উত্তীর্ণ${missing ? ` · ${missing}টি তথ্য নেই` : ""}`
+        : `${pass}/${assessed} extended checks pass${missing ? ` · ${missing} unavailable` : ""}`;
+  return label;
 }
 
 export function InvestorLensCard({ code }: { code: string }) {
@@ -112,19 +101,23 @@ export function InvestorLensCard({ code }: { code: string }) {
           ? "একই তথ্য বিভিন্ন বিনিয়োগ-স্টাইল কীভাবে পড়ে। পরামর্শ নয়।"
           : "How different investing styles read the same facts. Not advice."}
       </p>
+      <p className="mt-1 text-[10.5px] leading-snug text-muted">
+        {bn
+          ? "মূল স্কোর পুরো বাজারে তুলনাযোগ্য ফ্যাক্টর ব্যবহার করে; নিচের বাড়তি পরীক্ষাগুলো ঋণ, ইতিহাস ও অনুপস্থিত তথ্যের প্রেক্ষাপট যোগ করে।"
+          : "The core score uses market-wide comparable factors; extended checks add debt, history, and missing-data context."}
+      </p>
 
       {/* at-a-glance: every lens as a colored chip, readable in one glance */}
       <div className="mt-3 flex flex-wrap gap-1.5">
         {data.lenses.map((l) => {
-          const assessment = checkAssessment(l, bn);
           return (
             <span
               key={l.key}
               className={`flex items-center gap-1.5 text-[11px] font-semibold rounded-full border px-2 py-1 ${verdictStyle(
-                assessment.tone,
+                l.verdict,
               )}`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${verdictDot(assessment.tone)}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${verdictDot(l.verdict)}`} />
               {shortName(l.key, l.name, bn)}
             </span>
           );
@@ -133,7 +126,7 @@ export function InvestorLensCard({ code }: { code: string }) {
 
       <div className="mt-4 grid gap-3">
         {data.lenses.map((l) => {
-          const assessment = checkAssessment(l, bn);
+          const checks = checkSummary(l, bn);
           return (
           <article key={l.key} className="rounded-xl border border-border bg-card/50 p-3">
             <div className="flex items-start gap-2">
@@ -143,15 +136,18 @@ export function InvestorLensCard({ code }: { code: string }) {
                   <h3 className="text-sm font-bold">{l.name}</h3>
                   <span
                     className={`text-[10px] font-bold rounded-full border px-2 py-0.5 ${verdictStyle(
-                      assessment.tone,
+                      l.verdict,
                     )}`}
                   >
-                    {verdictLabel(assessment.tone, bn)}
+                    {verdictLabel(l.verdict, bn)}
                   </span>
                 </div>
-                {/* plain-English takeaway leads; the persona/ratios are secondary detail */}
+                {/* Backend score/verdict is authoritative. Check rows add context but do not
+                    silently create a competing frontend rating. */}
                 <p className="text-[13px] font-semibold mt-1 leading-snug">
-                  {assessment.label}
+                  {l.score == null
+                    ? checks
+                    : `${bn ? "মূল স্কোর" : "Core score"} ${l.score}/10 · ${checks}`}
                 </p>
               </div>
             </div>
