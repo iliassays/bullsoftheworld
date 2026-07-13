@@ -1,10 +1,9 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { api } from "./api";
-import { analyticsConsentGranted } from "./consent";
 
-// Research-beta analytics stay first-party. No Google or advertising script is loaded; consented
-// route and feature events go only to the tenant-scoped API and are automatically pruned.
+// First-party route and feature events go to the tenant-scoped API; GA/GTM (see index.html)
+// tracks in parallel.
 
 const ATTRIBUTION_KEY = "bulls.attribution";
 const SERVER_PROPERTY_KEYS = new Set([
@@ -65,7 +64,6 @@ export function trackProductEvent(
   name: string,
   params: Record<string, string | number | boolean | null | undefined> = {},
 ) {
-  if (!analyticsConsentGranted()) return Promise.resolve();
   return api
     .productEvent(name, serverProperties(params))
     .then(() => undefined)

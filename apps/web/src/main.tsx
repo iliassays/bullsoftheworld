@@ -3,8 +3,8 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import { App } from "./App";
+import { EuConsentGate } from "./components/EuConsentGate";
 import { SeoProvider } from "./components/Seo";
-import { ConsentProvider } from "./components/ConsentManager";
 import { AuthProvider } from "./lib/auth";
 import { LanguageProvider } from "./lib/i18n";
 import { TenantConfigProvider } from "./lib/tenant";
@@ -16,9 +16,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <TenantConfigProvider>
           <SeoProvider>
             <AuthProvider>
-              <ConsentProvider>
-                <App />
-              </ConsentProvider>
+              <App />
+              <EuConsentGate />
             </AuthProvider>
           </SeoProvider>
         </TenantConfigProvider>

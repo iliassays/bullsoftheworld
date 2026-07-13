@@ -6,7 +6,7 @@ import { useLang } from "../lib/i18n";
 import { Link } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
 
-const ACTIVATION_TARGET = 3;
+const ACTIVATION_TARGET = 10;
 
 export function LaunchIntro() {
   const { user } = useAuth();
@@ -35,7 +35,7 @@ export function LaunchIntro() {
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm font-bold">
-              {bn ? "৩টি শেয়ার ট্র্যাক করে শুরু করুন" : "Start by tracking 3 stocks"}
+              {bn ? "১০টি শেয়ার ট্র্যাক করে শুরু করুন" : "Start by tracking 10 stocks"}
             </div>
             <div className="mt-0.5 text-[11px] leading-relaxed text-muted">
               {bn
@@ -121,7 +121,7 @@ export function LaunchIntro() {
           }
           className="rounded-lg bg-accent px-4 py-2.5 text-center text-sm font-bold text-bg"
         >
-          {bn ? "বিনামূল্যে ৩টি শেয়ার ট্র্যাক করুন" : "Track 3 stocks for free"}
+          {bn ? "বিনামূল্যে ১০টি শেয়ার ট্র্যাক করুন" : "Track 10 stocks for free"}
         </Link>
         <Link
           to="/ideas"

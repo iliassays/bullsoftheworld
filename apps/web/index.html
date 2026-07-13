@@ -1,11 +1,59 @@
 <!doctype html>
 <html lang="%VITE_DEFAULT_LANG%">
   <head>
-    <!-- The research beta uses no third-party analytics or advertising scripts. -->
+    <!-- Content-Security-Policy: defense in depth for the memory-only access token — only our own
+         bundles + the three hashed consent/GTM/GA snippets may execute; scripts can only talk to
+         our APIs and Google Analytics. ⚠ Editing any inline script below breaks its sha256 hash
+         (GA silently stops — check the console); the ids themselves live in the meta tags above,
+         not in these scripts, so per-tenant GA/GTM ids never require recomputing these hashes.
+         Future ad networks need their domains added here. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; connect-src 'self' https://api.bullsofdhaka.com https://api.bullsofwallst.com https://bullsofdhaka-api.bullstreetai.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'"
+      content="default-src 'self'; script-src 'self' https://www.googletagmanager.com 'sha256-mrD+cGweRvazRNyO3jZaslNMtWp/5U223Dzs/ouarCU=' 'sha256-o84XAhuNUayiP4CSY8QqPyyeAbA1xiV1xSt5LIEbGhU=' 'sha256-gPcNQcXFZF0vwsteVxO6rHAWM3mHVGKNgzcRAs5EFr8='; connect-src 'self' https://api.bullsofdhaka.com https://api.bullsofwallst.com https://bullsofdhaka-api.bullstreetai.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://www.googletagmanager.com"
     />
+    <!-- Per-tenant GA4/GTM ids live here, not in the scripts below — so every inline script stays
+         byte-identical across tenant builds and its sha256 hash never needs recomputing. -->
+    <meta name="ga-measurement-id" content="%VITE_GA_ID%" />
+    <meta name="gtm-container-id" content="%VITE_GTM_ID%" />
+    <!-- Google Consent Mode v2 — EEA + UK default to no tracking until the visitor opts in via
+         EuConsentGate.tsx; every other region is unaffected. Google's own geo-IP decides who this
+         default applies to, not any client-side check of ours. Must run before GTM/gtag load. -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("consent", "default", {
+        ad_storage: "denied",
+        analytics_storage: "denied",
+        region: [
+          "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IS", "IE",
+          "IT", "LV", "LI", "LT", "LU", "MT", "NL", "NO", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+          "GB"
+        ],
+      });
+    </script>
+    <!-- Google Tag Manager -->
+    <script>
+      (function (w, d, s, l, i) {
+        w[l] = w[l] || [];
+        w[l].push({ "gtm.start": new Date().getTime(), event: "gtm.js" });
+        var f = d.getElementsByTagName(s)[0],
+          j = d.createElement(s),
+          dl = l != "dataLayer" ? "&l=" + l : "";
+        j.async = true;
+        j.src = "https://www.googletagmanager.com/gtm.js?id=" + i + dl;
+        f.parentNode.insertBefore(j, f);
+      })(window, document, "script", "dataLayer", document.querySelector('meta[name="gtm-container-id"]').content);
+    </script>
+    <!-- End Google Tag Manager -->
+    <!-- Google tag (gtag.js) — GA4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=%VITE_GA_ID%"></script>
+    <script>
+      gtag("js", new Date());
+      gtag("config", document.querySelector('meta[name="ga-measurement-id"]').content);
+    </script>
+    <!-- End Google tag -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1322" />
@@ -43,6 +91,16 @@
     <meta name="twitter:image" content="%VITE_SITE_URL%/og.png" />
   </head>
   <body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript
+      ><iframe
+        src="https://www.googletagmanager.com/ns.html?id=%VITE_GTM_ID%"
+        height="0"
+        width="0"
+        style="display: none; visibility: hidden"
+      ></iframe
+    ></noscript>
+    <!-- End Google Tag Manager (noscript) -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -3,7 +3,6 @@ import { Outlet, useLocation } from "react-router-dom";
 import { api, type MarketStatus } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { usePageViewTracking } from "../lib/analytics";
-import { useConsent } from "./ConsentManager";
 import { type Lang, SUPPORTED, useLang } from "../lib/i18n";
 import { Link, NavLink, useSwitchLang } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
@@ -124,12 +123,11 @@ function LanguageSelect() {
 export function Shell() {
   const { lang, t } = useLang();
   const { config } = useTenantConfig();
-  const { analytics } = useConsent();
   const location = useLocation();
   const betaSource = location.pathname.endsWith("/beta")
     ? new URLSearchParams(location.search).get("from") || "/"
     : location.pathname + location.search;
-  usePageViewTracking(analytics === "granted");
+  usePageViewTracking(true);
   const tagline = lang === "bn" ? config.tagline_bn : config.tagline_en;
   const tabs = ALL_TABS.filter((tab) => {
     if (tab.to === "/ideas") return config.features.strategy_scanner;

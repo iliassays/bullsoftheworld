@@ -28,4 +28,6 @@ WEB_OG_TITLE="${PROD_OG_TITLE:-Bulls of Dhaka - Facts, not rumours}" \
 WEB_OG_DESCRIPTION="${PROD_OG_DESCRIPTION:-Live DSE data, daily market signals, and a community for Bangladeshi retail investors. Descriptive data, not financial advice.}" \
 WEB_TWITTER_TITLE="${PROD_TWITTER_TITLE:-Bulls of Dhaka - Facts, not rumours}" \
 WEB_TWITTER_DESCRIPTION="${PROD_TWITTER_DESCRIPTION:-Live DSE data, daily market signals, and a community for Bangladeshi retail investors.}" \
+WEB_GA_ID="${PROD_GA_ID:-G-WPD860DBCK}" \
+WEB_GTM_ID="${PROD_GTM_ID:-GTM-KJWW62ZH}" \
 ./deploy-web.sh

@@ -1,5 +1,4 @@
 import { currentLang } from "./i18n";
-import { analyticsConsentGranted } from "./consent";
 
 // Minimal typed API client. The short-lived access token is injected from memory.
 // Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
@@ -1068,12 +1067,10 @@ export const api = {
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
   news: (code: string) => request<NewsItem[]>(`/symbols/${code}/news`),
   recordView: (code: string) =>
-    analyticsConsentGranted()
-      ? request<void>(`/symbols/${code}/view`, {
-          method: "POST",
-          body: JSON.stringify({ analytics_consent: true, session_id: clientId() }),
-        })
-      : Promise.resolve(),
+    request<void>(`/symbols/${code}/view`, {
+      method: "POST",
+      body: JSON.stringify({ analytics_consent: true, session_id: clientId() }),
+    }),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   trendingStocks: (limit = 15) =>

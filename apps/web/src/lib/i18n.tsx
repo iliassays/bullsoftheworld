@@ -57,7 +57,6 @@ const STRINGS: Record<string, Entry> = {
   "nav.terms": { en: "Terms", bn: "শর্তাবলি" },
   "nav.institutions": { en: "Institutions", bn: "প্রতিষ্ঠান" },
   "nav.beta": { en: "Research beta", bn: "রিসার্চ বেটা" },
-  "nav.cookieSettings": { en: "Analytics settings", bn: "অ্যানালিটিক্স সেটিংস" },
   "nav.scanner": { en: "Scanner", bn: "স্ক্যানার" },
   "scanner.today": { en: "Today", bn: "আজ" },
   "scanner.value": { en: "Value", bn: "ভ্যালু" },

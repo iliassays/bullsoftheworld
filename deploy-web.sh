@@ -14,6 +14,8 @@
 #   WEB_LANGS           Comma-separated language list, default bn,en
 #   WEB_HTML_TITLE      Static index.html title
 #   WEB_SITE_DESCRIPTION Static index.html meta description
+#   WEB_GA_ID           GA4 measurement id, default G-WPD860DBCK (Bulls of Dhaka's property)
+#   WEB_GTM_ID           GTM container id, default GTM-KJWW62ZH (Bulls of Dhaka's container)
 #   WEB_SITEMAP_RESOLVE_IP Override DNS only for build-time API reads (TLS still verifies hostname)
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -32,8 +34,10 @@ OG_TITLE="${WEB_OG_TITLE:-$BRAND_NAME - Market data, not noise}"
 OG_DESCRIPTION="${WEB_OG_DESCRIPTION:-$SITE_DESCRIPTION}"
 TWITTER_TITLE="${WEB_TWITTER_TITLE:-$OG_TITLE}"
 TWITTER_DESCRIPTION="${WEB_TWITTER_DESCRIPTION:-$OG_DESCRIPTION}"
+GA_ID="${WEB_GA_ID:-G-WPD860DBCK}"
+GTM_ID="${WEB_GTM_ID:-GTM-KJWW62ZH}"
 
-echo "→ building frontend (VITE_API_BASE=$API_URL)"
+echo "→ building frontend (VITE_API_BASE=$API_URL, GA=$GA_ID, GTM=$GTM_ID)"
 (
   cd apps/web
   VITE_API_BASE="$API_URL" \
@@ -46,6 +50,8 @@ echo "→ building frontend (VITE_API_BASE=$API_URL)"
   VITE_OG_DESCRIPTION="$OG_DESCRIPTION" \
   VITE_TWITTER_TITLE="$TWITTER_TITLE" \
   VITE_TWITTER_DESCRIPTION="$TWITTER_DESCRIPTION" \
+  VITE_GA_ID="$GA_ID" \
+  VITE_GTM_ID="$GTM_ID" \
   npm run build
 )
 

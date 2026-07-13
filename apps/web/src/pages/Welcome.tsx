@@ -8,7 +8,7 @@ import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useNavigate } from "../lib/nav";
 
-const ACTIVATION_TARGET = 3;
+const ACTIVATION_TARGET = 10;
 const STOCKS_SHOWN = 24;
 
 const SECTOR_ICONS: Record<string, string> = {
@@ -130,7 +130,7 @@ export function Welcome() {
   const title = step === 0
     ? bn ? "যে খাতগুলো আপনি অনুসরণ করেন" : "Choose the sectors you follow"
     : step === 1
-      ? bn ? "অন্তত ৩টি শেয়ার বাছুন" : "Choose at least 3 stocks"
+      ? bn ? "শেয়ার বাছুন" : "Pick stocks to follow"
       : bn ? "আপনার রিসার্চ তালিকা প্রস্তুত" : "Your research list is ready";
   const body = step === 0
     ? bn ? "পছন্দের খাত বাছলে প্রাসঙ্গিক শেয়ার খুঁজে পাওয়া সহজ হবে।" : "This narrows the stock list to the areas relevant to you."
@@ -236,7 +236,7 @@ export function Welcome() {
       <button
         type="button"
         onClick={step < 2 ? continueStep : finish}
-        disabled={saving || (step === 0 && pickedSectors.size === 0) || (step === 1 && remaining > 0)}
+        disabled={saving || (step === 0 && pickedSectors.size === 0) || (step === 1 && pickedStocks.size === 0)}
         className="mx-1 rounded-lg bg-accent py-3 text-sm font-bold text-bg disabled:opacity-40"
       >
         {saving
@@ -244,9 +244,7 @@ export function Welcome() {
           : step === 0
             ? bn ? "শেয়ার বাছুন →" : "Choose stocks →"
             : step === 1
-              ? remaining > 0
-                ? bn ? `আরও ${remaining}টি বাছুন` : `Choose ${remaining} more`
-                : bn ? "তালিকা যাচাই করুন →" : "Review the list →"
+              ? bn ? "তালিকা যাচাই করুন →" : "Review the list →"
               : bn ? "ওয়াচলিস্ট দেখুন" : "View watchlist"}
       </button>
       <button type="button" onClick={skip} className="py-1 text-xs text-muted hover:text-text">

@@ -8,7 +8,6 @@ import { useLang } from "../lib/i18n";
 import { Avatar } from "../components/ui";
 import { useTenantConfig } from "../lib/tenant";
 import { trackProductEvent } from "../lib/analytics";
-import { useConsent } from "../components/ConsentManager";
 
 const PHONE_RE = /^\+?\d{7,15}$/; // lenient: BD (01…) or international (+cc…); server normalizes
 
@@ -181,7 +180,6 @@ const FB_URL = "https://www.facebook.com/1214682241723822";
 function ContactLine() {
   const { t } = useLang();
   const { config } = useTenantConfig();
-  const { openSettings } = useConsent();
   return (
     <div className="mt-2 flex flex-col gap-1.5 text-center">
       <p className="text-muted text-xs">
@@ -205,9 +203,6 @@ function ContactLine() {
         {" · "}
         <Link to="/institutions" className="text-accent">{t("nav.institutions")}</Link>
       </p>
-      <button type="button" onClick={openSettings} className="text-xs text-accent">
-        {t("nav.cookieSettings")}
-      </button>
       {/* Relocated from the header (2026-07 noise cut) — reachable, not omnipresent. */}
       <p className="text-muted text-xs">
         <Link to="/about" className="text-accent">
