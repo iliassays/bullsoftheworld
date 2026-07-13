@@ -33,6 +33,8 @@ echo "→ building frontend (VITE_API_BASE=$API_URL)"
   VITE_OG_DESCRIPTION="Live DSE data, daily market signals, and a community for Bangladeshi retail investors. Descriptive data, not financial advice." \
   VITE_TWITTER_TITLE="Bulls of Dhaka - Facts, not rumours" \
   VITE_TWITTER_DESCRIPTION="Live DSE data, daily market signals, and a community for Bangladeshi retail investors." \
+  VITE_GA_ID="G-WPD860DBCK" \
+  VITE_GTM_ID="GTM-KJWW62ZH" \
   npm run build
 )
 
