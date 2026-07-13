@@ -1,13 +1,16 @@
-"""Onboard company logos. DSE hosts none, so we hop to each company's own website (from the DSE
-"Web Address" field) and cache its best icon (apple-touch-icon > declared icon > og:image > favicon).
+"""Onboard company logos. Neither market's provider hosts one directly, so we hop to each
+company's own website (DSE's "Web Address" field; a best-effort guessed domain for US, which has
+no such field — see us_yahoo._guess_domain) and cache its best icon (apple-touch-icon > declared
+icon > og:image > favicon).
 
 Bytes are stored in `company_logos` and served by the API; a missing/failed row falls back to a
 monogram in the UI. `status` + `checked_at` let a re-run skip names looked at recently instead of
 re-hitting dead sites. We only ever GET, and keep a row only when the response is a real image within
 a size cap — never anything executable.
 
-    uv run python -m ingestion.logos backfill   # fetch for every symbol
-    uv run python -m ingestion.logos daily        # only symbols not checked within RECHECK_DAYS
+    uv run python -m ingestion.logos backfill DSE   # fetch for every DSE symbol
+    uv run python -m ingestion.logos backfill US    # fetch for every US symbol
+    uv run python -m ingestion.logos daily DSE        # only symbols not checked within RECHECK_DAYS
 """
 
 from __future__ import annotations
@@ -27,9 +30,8 @@ from bulls.core.db import get_sessionmaker
 from bulls.core.models import CompanyLogo, Symbol
 from bulls.market_data import get_provider
 
-MARKET = "DSE"
 RECHECK_DAYS = 30  # in daily mode, skip names already checked this recently
-_CONCURRENCY = 8  # be polite to DSE + company sites
+_CONCURRENCY = 8  # be polite to company sites / favicon service
 _MIN_BYTES = 100
 _MAX_BYTES = 1_000_000
 # Full browser-ish headers — a bare UA gets 403'd by some company sites.
@@ -105,14 +107,14 @@ async def _download_image(client: httpx.AsyncClient, url: str) -> dict | None:
     return None
 
 
-async def _fetch_one(client: httpx.AsyncClient, provider, code: str) -> dict:
+async def _fetch_one(client: httpx.AsyncClient, provider, market: str, code: str) -> dict:
     """Resolve one company's logo → an upsert row dict (image + status).
 
     Order: the company site's own declared icons, then a favicon service (which has icons cached for
-    sites that block or time out on us). An override domain wins over the DSE-listed one.
+    sites that block or time out on us). An override domain wins over the provider-resolved one.
     """
     row: dict = {
-        "market": MARKET,
+        "market": market,
         "code": code,
         "image": None,
         "content_type": None,
@@ -165,17 +167,17 @@ async def _fetch_one(client: httpx.AsyncClient, provider, code: str) -> dict:
     return row
 
 
-async def collect(*, recheck_days: int) -> dict[str, int]:
-    provider = get_provider(MARKET)
+async def collect(*, market: str, recheck_days: int) -> dict[str, int]:
+    provider = get_provider(market)
     sm = get_sessionmaker()
     async with sm() as session:
-        codes = list(await session.scalars(select(Symbol.code).where(Symbol.market == MARKET)))
+        codes = list(await session.scalars(select(Symbol.code).where(Symbol.market == market)))
         cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=recheck_days)
         # Only skip names we already have a logo for — so re-runs keep retrying the failures.
         recent = set(
             await session.scalars(
                 select(CompanyLogo.code).where(
-                    CompanyLogo.market == MARKET,
+                    CompanyLogo.market == market,
                     CompanyLogo.status == "ok",
                     CompanyLogo.checked_at >= cutoff,
                 )
@@ -189,7 +191,7 @@ async def collect(*, recheck_days: int) -> dict[str, int]:
 
         async def worker(code: str) -> dict:
             async with sem:
-                return await _fetch_one(client, provider, code)
+                return await _fetch_one(client, provider, market, code)
 
         # Process (and commit) in batches so a long run persists progress incrementally.
         for i in range(0, len(todo), 50):
@@ -224,9 +226,10 @@ async def collect(*, recheck_days: int) -> dict[str, int]:
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else "daily"
+    market = sys.argv[2] if len(sys.argv) > 2 else "DSE"
     recheck = 0 if mode == "backfill" else RECHECK_DAYS
-    print(f"[logos] {mode}: fetching company logos (recheck_days={recheck})")
-    stats = asyncio.run(collect(recheck_days=recheck))
+    print(f"[logos] {mode} {market}: fetching company logos (recheck_days={recheck})")
+    stats = asyncio.run(collect(market=market, recheck_days=recheck))
     print(f"[logos] done: {stats}")
 
 
