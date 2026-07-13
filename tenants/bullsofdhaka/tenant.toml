@@ -5,10 +5,15 @@ market = "DSE"
 locale = "bn"
 supported_locales = ["bn", "en"]
 timezone = "Asia/Dhaka"
+# api.bullsofdhaka.com is deliberately NOT listed here: it's the shared backend every tenant's
+# frontend calls (see WEB_API_URL in deploy-web.sh), so its Host header can't identify which
+# tenant a request is for. Adding it back would make `host` win over X-Tenant-Host in
+# TenantRegistry.resolve() for every tenant, silently resolving all shared-API traffic to DSE
+# (the 2026-07-13 cross-tenant data leak: bullsofwallst.com served Bangla/DSE content because of
+# exactly this).
 domains = [
   "bullsofdhaka.com",
   "www.bullsofdhaka.com",
-  "api.bullsofdhaka.com",
   "bullsofdhaka.bullstreetai.com",
   "bullsofdhaka-api.bullstreetai.com",
   "localhost",

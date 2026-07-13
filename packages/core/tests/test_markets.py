@@ -76,6 +76,9 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     registry = TenantRegistry.from_dir(tenants_dir, default="bullsofdhaka")
 
     assert registry.resolve("localhost").name == "bullsofdhaka"
+    # api.bullsofdhaka.com is the shared backend, not a registered domain: with no other
+    # signal it falls through to the default tenant, but it must never win outright over
+    # X-Tenant-Host (see the regression case below).
     assert registry.resolve("api.bullsofdhaka.com").name == "bullsofdhaka"
     assert registry.resolve("bullsofdhaka-api.bullstreetai.com").name == "bullsofdhaka"
     assert registry.resolve("bullsofwallst.com").name == "bullsofwallst"
@@ -97,6 +100,13 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     ).name == ("bullsofwallst")
     assert registry.resolve("bullsofdhaka.com", tenant_host="bullsofwallst.com").name == (
         "bullsofdhaka"
+    )
+    # Regression: api.bullsofdhaka.com is the real shared backend host every tenant's frontend
+    # calls. It must defer to X-Tenant-Host, not win outright the way a genuine per-tenant
+    # frontend domain does above — otherwise every bullsofwallst.com request silently resolves
+    # to DSE (the 2026-07-13 cross-tenant data leak).
+    assert registry.resolve("api.bullsofdhaka.com", tenant_host="bullsofwallst.com").name == (
+        "bullsofwallst"
     )
     assert registry.resolve_known("unknown.example") is None
 

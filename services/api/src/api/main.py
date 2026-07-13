@@ -125,12 +125,28 @@ async def request_context(request: Request, call_next):
 @app.middleware("http")
 async def resolve_tenant(request: Request, call_next):
     registry: TenantRegistry = request.app.state.tenants
+    x_tenant_host = request.headers.get("x-tenant-host")
     tenant = registry.resolve_known(
         request.headers.get("host"),
-        tenant_host=request.headers.get("x-tenant-host"),
+        tenant_host=x_tenant_host,
         origin=request.headers.get("origin"),
         referer=request.headers.get("referer"),
     )
+    # Tripwire for the 2026-07-13 cross-tenant leak's failure mode: a caller explicitly named a
+    # tenant via X-Tenant-Host, but the resolved tenant is a different one — meaning some other
+    # signal (almost always a Host header on a domain shared by more than one tenant's frontend,
+    # e.g. this API's own hostname) outranked it. That should never happen; log loudly if it does
+    # instead of silently serving the wrong tenant's content again.
+    if x_tenant_host:
+        claimed = registry.resolve_known(None, tenant_host=x_tenant_host)
+        if claimed is not None and tenant is not None and claimed.name != tenant.name:
+            log.warning(
+                "tenant_resolution_mismatch host=%s x_tenant_host=%s resolved=%s claimed=%s",
+                request.headers.get("host"),
+                x_tenant_host,
+                tenant.name,
+                claimed.name,
+            )
     settings = get_settings()
     local_env = settings.env.lower() in {"local", "dev", "development", "test"}
     probe = request.url.path in {"/health", "/live", "/ready"}
