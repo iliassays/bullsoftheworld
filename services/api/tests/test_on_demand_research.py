@@ -14,6 +14,7 @@ from bulls.core.models import (
     OnDemandResearchJob,
     OnDemandResearchRequest,
     Symbol,
+    UniverseOnboardingResult,
     User,
 )
 from bulls.core.tenancy import Tenant
@@ -37,6 +38,58 @@ def test_failed_jobs_can_retry_but_recent_rejections_wait_for_new_evidence() -> 
     assert not _retry_allowed(_job("rejected", now - dt.timedelta(days=29)), now)
     assert _retry_allowed(_job("rejected", now - dt.timedelta(days=30)), now)
     assert not _retry_allowed(_job("review_required", now), now)
+
+
+def test_passed_staged_symbol_is_review_required_not_preparing() -> None:
+    symbol = Symbol(
+        market="US",
+        code="VEEE",
+        name_en="Twin Vee PowerCats Co.",
+        is_active=True,
+        is_hidden=False,
+        data_status="onboarding",
+    )
+    result = UniverseOnboardingResult(
+        run_id=uuid.uuid4(),
+        market="US",
+        code="VEEE",
+        decision="passed",
+        required_gates_passed=True,
+        gates={},
+        failure_reasons=[],
+        bar_count=1249,
+        sec_filings_count=185,
+        sec_facts_count=348,
+        has_13f=True,
+    )
+
+    assert on_demand_research._preparation_status(symbol, None, result) == "review_required"
+
+
+def test_failed_staged_symbol_is_not_reported_as_still_preparing() -> None:
+    symbol = Symbol(
+        market="US",
+        code="VMAR",
+        name_en="Vision Marine Technologies Inc.",
+        is_active=True,
+        is_hidden=False,
+        data_status="onboarding",
+    )
+    result = UniverseOnboardingResult(
+        run_id=uuid.uuid4(),
+        market="US",
+        code="VMAR",
+        decision="failed",
+        required_gates_passed=False,
+        gates={},
+        failure_reasons=["nonzero_volume"],
+        bar_count=1412,
+        sec_filings_count=176,
+        sec_facts_count=6,
+        has_13f=True,
+    )
+
+    assert on_demand_research._preparation_status(symbol, None, result) == "rejected"
 
 
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with local Postgres")

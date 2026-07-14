@@ -52,36 +52,55 @@ def _retry_allowed(job: OnDemandResearchJob, now: dt.datetime) -> bool:
     )
 
 
-async def _failure_reasons(session, job: OnDemandResearchJob | None) -> list[str]:
-    if job is None or job.run_id is None:
-        return []
-    result = await session.scalar(
-        select(UniverseOnboardingResult).where(
-            UniverseOnboardingResult.run_id == job.run_id,
-            UniverseOnboardingResult.code == job.code,
-        )
+async def _onboarding_result(
+    session,
+    symbol: Symbol,
+    job: OnDemandResearchJob | None,
+) -> UniverseOnboardingResult | None:
+    stmt = select(UniverseOnboardingResult).where(
+        UniverseOnboardingResult.market == symbol.market,
+        UniverseOnboardingResult.code == symbol.code,
     )
-    return list(result.failure_reasons or []) if result else []
+    if job is not None and job.run_id is not None:
+        stmt = stmt.where(UniverseOnboardingResult.run_id == job.run_id)
+    else:
+        stmt = stmt.order_by(UniverseOnboardingResult.evaluated_at.desc()).limit(1)
+    return await session.scalar(stmt)
+
+
+def _preparation_status(
+    symbol: Symbol,
+    job: OnDemandResearchJob | None,
+    result: UniverseOnboardingResult | None,
+) -> str:
+    if symbol.data_status == "ready":
+        return "ready"
+    if job is not None:
+        return job.status
+    if result is not None:
+        return "review_required" if result.required_gates_passed else "rejected"
+    return symbol.data_status
 
 
 async def _response(
     session,
     symbol: Symbol,
     job: OnDemandResearchJob | None,
+    result: UniverseOnboardingResult | None = None,
 ) -> ResearchPreparationOut:
     ready = symbol.data_status == "ready"
-    status = "ready" if ready else (job.status if job else symbol.data_status)
+    result = result or await _onboarding_result(session, symbol, job)
     return ResearchPreparationOut(
         code=symbol.code,
-        status=status,
+        status=_preparation_status(symbol, job, result),
         symbol_status=symbol.data_status,
-        run_id=job.run_id if job else None,
+        run_id=job.run_id if job and job.run_id else result.run_id if result else None,
         attempts=job.attempts if job else 0,
         request_count=job.request_count if job else 0,
         requested_at=job.requested_at if job else None,
         started_at=job.started_at if job else None,
         completed_at=job.completed_at if job else None,
-        failure_reasons=await _failure_reasons(session, job),
+        failure_reasons=list(result.failure_reasons or []) if result else [],
         can_open=ready,
         disclosure=(
             "Preparation collects delayed market and public filing evidence. "
@@ -144,6 +163,12 @@ async def request_preparation(
     symbol, _ = await _symbol_and_security(session, tenant.market, code)
     if symbol.data_status == "ready":
         return await _response(session, symbol, None)
+
+    staged_result = await _onboarding_result(session, symbol, None)
+    if staged_result is not None and staged_result.required_gates_passed:
+        # A manually staged cohort has finished. Do not create an endless duplicate preparation
+        # job merely because publication authorization/review has not promoted the symbol yet.
+        return await _response(session, symbol, None, staged_result)
 
     now = dt.datetime.now(dt.UTC)
     today = now.date()

@@ -148,7 +148,9 @@ export function SearchBar() {
               {s.data_status !== "ready" && (
                 <span className="ml-auto shrink-0 text-[10px] font-medium text-warn">
                   {preparingCode === s.code || s.data_status === "onboarding"
-                    ? "Preparing"
+                    ? preparingCode === s.code
+                      ? "Preparing"
+                      : "Review pending"
                     : s.data_status === "degraded"
                       ? "Retry research"
                       : "Prepare research"}
