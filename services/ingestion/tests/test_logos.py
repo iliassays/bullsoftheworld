@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import datetime as dt
 import socket
 from io import BytesIO
 
 from PIL import Image
+from sqlalchemy.dialects import postgresql
 
 from ingestion import logos
 
@@ -11,6 +13,26 @@ from ingestion import logos
 def test_logo_target_codes_are_normalized_and_deduplicated() -> None:
     assert logos._normalize_codes([" nxtc ", "AGEN", "NXTC", ""]) == ["AGEN", "NXTC"]
     assert logos._normalize_codes(None) is None
+
+
+def test_failed_logo_recheck_preserves_an_existing_valid_asset() -> None:
+    stmt = logos._logo_upsert(
+        {
+            "market": "US",
+            "code": "NXTC",
+            "image": None,
+            "content_type": None,
+            "source_url": None,
+            "status": "no_site",
+        },
+        dt.datetime(2026, 7, 14, tzinfo=dt.UTC),
+    )
+    sql = str(
+        stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "CASE WHEN (excluded.status = 'ok') THEN excluded.image ELSE company_logos.image END" in sql
+    assert "WHEN (company_logos.status = 'ok') THEN company_logos.status" in sql
 
 
 async def test_logo_url_validation_rejects_private_networks(monkeypatch) -> None:

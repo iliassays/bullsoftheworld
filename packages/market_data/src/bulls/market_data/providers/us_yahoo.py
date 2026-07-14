@@ -49,6 +49,21 @@ _ISSUER_DOMAINS: dict[str, str] = {
     "pimco": "pimco.com",
     "blackrock": "blackrock.com",
 }
+
+# Ticker-specific issuer domains are added only after reviewing the issuer/IR site. This avoids
+# attaching an unrelated logo when a generic company-name domain happens to exist.
+_SYMBOL_DOMAINS: dict[str, str] = {
+    "AEON": "aeonbiopharma.com",
+    "AGEN": "agenusbio.com",
+    "MIMI": "mimintinc.com",
+    "NXTC": "nextcure.com",
+    "QTTB": "q32bio.com",
+    "SKYQ": "skyquarry.com",
+    "VEEE": "twinvee.com",
+    "VMAR": "visionmarinetechnologies.com",
+}
+
+
 def _guess_domain(name: str) -> str | None:
     """Return only an audited issuer domain; never synthesize a company domain."""
     for keyword, domain in _ISSUER_DOMAINS.items():
@@ -189,10 +204,13 @@ class YahooUsEodProvider:
 
     async def get_company_website(self, code: str) -> str | None:
         """Audited issuer domain for logo fetching, when one is known."""
+        normalized = code.strip().upper()
+        if normalized in _SYMBOL_DOMAINS:
+            return _SYMBOL_DOMAINS[normalized]
         if self._names_by_code is None:
             records = await fetch_us_security_master(_UA)
             self._names_by_code = {r.symbol: r.security_name for r in records}
-        name = self._names_by_code.get(code.strip().upper())
+        name = self._names_by_code.get(normalized)
         return _guess_domain(name) if name else None
 
     async def get_sector_pe(self) -> list[SectorPE]:

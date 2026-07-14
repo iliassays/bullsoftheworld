@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import datetime as dt
 
-from bulls.market_data.providers.us_yahoo import parse_yahoo_chart, yahoo_symbol
+from bulls.market_data.providers.us_yahoo import (
+    YahooUsEodProvider,
+    parse_yahoo_chart,
+    yahoo_symbol,
+)
 
 
 def test_yahoo_symbol_maps_public_share_class_codes() -> None:
     assert yahoo_symbol("brk.b") == "BRK-B"
     assert yahoo_symbol("AAPL") == "AAPL"
+
+
+async def test_reviewed_symbol_domain_does_not_require_a_security_master_fetch() -> None:
+    provider = YahooUsEodProvider()
+
+    assert await provider.get_company_website("nxtc") == "nextcure.com"
 
 
 def test_parse_yahoo_chart_builds_daily_bars_and_skips_bad_rows() -> None:

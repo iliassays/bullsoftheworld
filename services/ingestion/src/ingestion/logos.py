@@ -29,7 +29,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from PIL import Image, UnidentifiedImageError
 from selectolax.parser import HTMLParser
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
@@ -327,20 +327,7 @@ async def collect(
                 for row in rows:
                     stats["checked"] += 1
                     stats[row["status"]] = stats.get(row["status"], 0) + 1
-                    await session.execute(
-                        pg_insert(CompanyLogo)
-                        .values(**row, checked_at=now)
-                        .on_conflict_do_update(
-                            index_elements=["market", "code"],
-                            set_={
-                                "image": row["image"],
-                                "content_type": row["content_type"],
-                                "source_url": row["source_url"],
-                                "status": row["status"],
-                                "checked_at": now,
-                            },
-                        )
-                    )
+                    await session.execute(_logo_upsert(row, now))
                 await session.commit()
             print(
                 f"[logos] {stats['checked']}/{len(todo)} · ok={stats['ok']} "
@@ -348,6 +335,31 @@ async def collect(
                 flush=True,
             )
     return stats
+
+
+def _logo_upsert(row: dict, checked_at: dt.datetime):
+    """A failed recheck must never destroy a previously validated cached image."""
+    stmt = pg_insert(CompanyLogo).values(**row, checked_at=checked_at)
+    incoming_ok = stmt.excluded.status == "ok"
+    existing_ok = CompanyLogo.status == "ok"
+    return stmt.on_conflict_do_update(
+        index_elements=["market", "code"],
+        set_={
+            "image": case((incoming_ok, stmt.excluded.image), else_=CompanyLogo.image),
+            "content_type": case(
+                (incoming_ok, stmt.excluded.content_type), else_=CompanyLogo.content_type
+            ),
+            "source_url": case(
+                (incoming_ok, stmt.excluded.source_url), else_=CompanyLogo.source_url
+            ),
+            "status": case(
+                (incoming_ok, stmt.excluded.status),
+                (existing_ok, CompanyLogo.status),
+                else_=stmt.excluded.status,
+            ),
+            "checked_at": checked_at,
+        },
+    )
 
 
 def _args(argv: list[str] | None = None) -> argparse.Namespace:
