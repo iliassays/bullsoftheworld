@@ -85,18 +85,43 @@ async def _collect_symbol(provider, code: str, start: dt.date, end: dt.date) -> 
     return 0
 
 
-async def _active_codes_from_db(market: str, *, include_reference: bool) -> list[str]:
+async def _active_codes_from_db(
+    market: str,
+    *,
+    include_reference: bool,
+    requested: Iterable[str] | None = None,
+) -> list[str]:
     sm = get_sessionmaker()
     async with sm() as session:
-        stmt = select(Symbol.code).where(
-            Symbol.market == market,
-            Symbol.is_active.is_(True),
-            Symbol.is_hidden.is_(False),
+        stmt = _active_symbol_stmt(
+            market,
+            include_reference=include_reference,
+            requested=requested,
         )
-        if not include_reference:
-            stmt = stmt.where(Symbol.data_status == "ready")
         rows = list(await session.scalars(stmt.order_by(Symbol.code)))
     return rows
+
+
+def _active_symbol_stmt(
+    market: str,
+    *,
+    include_reference: bool,
+    requested: Iterable[str] | None = None,
+):
+    requested_codes = tuple(
+        sorted({code.strip().upper() for code in requested or () if code.strip()})
+    )
+    stmt = select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+    )
+    # Hidden research symbols are reachable only through an explicit targeted backfill.
+    if include_reference and requested_codes:
+        return stmt.where(Symbol.code.in_(requested_codes))
+    stmt = stmt.where(Symbol.is_hidden.is_(False))
+    if not include_reference:
+        stmt = stmt.where(Symbol.data_status == "ready")
+    return stmt
 
 
 def _is_ready(total_bars: int, latest_bar: dt.date, requested_end: dt.date) -> bool:
@@ -124,8 +149,18 @@ async def _mark_onboarding(market: str, codes: list[str]) -> None:
         await session.commit()
 
 
-async def _symbol_codes(market: str, provider, *, include_reference: bool) -> list[str]:
-    codes = await _active_codes_from_db(market, include_reference=include_reference)
+async def _symbol_codes(
+    market: str,
+    provider,
+    *,
+    include_reference: bool,
+    requested: Iterable[str] | None = None,
+) -> list[str]:
+    codes = await _active_codes_from_db(
+        market,
+        include_reference=include_reference,
+        requested=requested,
+    )
     if codes:
         return codes
     symbols = await provider.list_symbols()
@@ -163,8 +198,19 @@ async def collect(
     """Pull `days` of daily bars for every instrument and upsert. Returns run stats."""
     market = market.upper()
     provider = get_provider(market)
-    all_codes = await _symbol_codes(market, provider, include_reference=include_reference)
-    selected_codes = _select_codes(all_codes, wanted=codes, offset=offset, limit=limit)
+    requested_codes = list(codes) if codes is not None else None
+    all_codes = await _symbol_codes(
+        market,
+        provider,
+        include_reference=include_reference,
+        requested=requested_codes,
+    )
+    selected_codes = _select_codes(
+        all_codes,
+        wanted=requested_codes,
+        offset=offset,
+        limit=limit,
+    )
     end = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     start = end - dt.timedelta(days=days)
 

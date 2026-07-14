@@ -36,6 +36,7 @@ from ingestion.buzz import snapshot_all
 from ingestion.finra_short import collect as collect_finra_short
 from ingestion.history import US_DAILY_LOOKBACK_DAYS, collect
 from ingestion.portfolio_snapshot import run as snapshot_portfolios
+from ingestion.restricted_research import refresh_restricted_market_data
 from ingestion.security_master import collect as refresh_security_master
 from ingestion.signals.runner import (
     run_eod_volume_agent,
@@ -223,6 +224,16 @@ async def run_finra_short_chain(ctx) -> str:
     return f"{result} {notes}"
 
 
+async def refresh_restricted_research(ctx) -> str:
+    """Maintain hidden enhanced-risk research without feeding public agents or coverage gates."""
+    try:
+        stats = await refresh_restricted_market_data()
+    except Exception:
+        log.warning("restricted_research refresh failed", exc_info=True)
+        return "restricted_research=failed (will retry)"
+    return f"restricted_research={stats}"
+
+
 class WorkerSettings:
     functions: ClassVar = [
         run_us_eod_chain,
@@ -230,6 +241,7 @@ class WorkerSettings:
         pull_finra_short_volume,
         run_short_flow_notes,
         run_finra_short_chain,
+        refresh_restricted_research,
     ]
     cron_jobs: ClassVar = [
         # First attempt 22:45 UTC = 17:45 ET winter / 18:45 ET summer — inside the 1-3h
@@ -245,6 +257,10 @@ class WorkerSettings:
         # One ordered job prevents a note evaluation from racing ahead of the file transaction.
         # It is anchored to the latest ingested session and deduped, so restarts cannot double-post.
         cron(run_finra_short_chain, hour=23, minute=45, run_at_startup=True),
+        # A separate bounded job keeps hidden research names fresh without making them part of
+        # public EOD coverage, alerts, screeners, Ideas, or agent publication.
+        cron(refresh_restricted_research, hour=23, minute=35, run_at_startup=False),
+        cron(refresh_restricted_research, hour=13, minute=35, run_at_startup=False),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
     queue_name: ClassVar = get_settings().us_ingestion_queue_name

@@ -14,12 +14,17 @@ import sys
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import Symbol, UniverseOnboardingResult, UniverseOnboardingRun
+from bulls.core.models import (
+    SecurityMaster,
+    Symbol,
+    UniverseOnboardingResult,
+    UniverseOnboardingRun,
+)
 from bulls.market_data.calendar import to_market_tz
 from ingestion.analytics import compute_all
 from ingestion.cohorts import CohortManifest, load_cohort
@@ -51,6 +56,7 @@ async def create_onboarding_run(
                 settings.us_market_data_authorization_id if promote else None
             ),
             "risk_review_id": manifest.risk_review_id,
+            "allow_restricted_research": manifest.allow_restricted_research,
         },
         error=None,
         started_at=dt.datetime.now(dt.UTC),
@@ -136,6 +142,58 @@ async def _mark_failed(run_id: uuid.UUID, error: Exception) -> None:
             await session.commit()
 
 
+async def _stage_restricted_research_symbols(manifest: CohortManifest) -> int:
+    """Stage explicitly requested deficient common stocks as private research records only."""
+    if not manifest.allow_restricted_research:
+        return 0
+    sm = get_sessionmaker()
+    async with sm() as session:
+        securities = list(
+            await session.scalars(
+                select(SecurityMaster).where(
+                    SecurityMaster.market == manifest.market,
+                    SecurityMaster.symbol.in_(manifest.symbols),
+                    SecurityMaster.is_active.is_(True),
+                    SecurityMaster.is_product_eligible.is_(False),
+                    SecurityMaster.instrument_type.in_(manifest.policy.allowed_instrument_types),
+                    SecurityMaster.exclude_reason.like("financial_status_%"),
+                )
+            )
+        )
+        if not securities:
+            return 0
+        rows = [
+            {
+                "security_id": security.security_id,
+                "market": security.market,
+                "code": security.symbol,
+                "name_en": security.security_name,
+                "name_bn": None,
+                "sector": None,
+                "category": None,
+                "is_active": True,
+                "is_hidden": True,
+                "data_status": "onboarding",
+            }
+            for security in securities
+        ]
+        stmt = pg_insert(Symbol).values(rows)
+        await session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["market", "code"],
+                set_={
+                    "security_id": stmt.excluded.security_id,
+                    "name_en": stmt.excluded.name_en,
+                    "is_active": True,
+                    "is_hidden": True,
+                    "data_status": "onboarding",
+                },
+            )
+        )
+        await session.commit()
+    return len(securities)
+
+
 def _validate_promotion(promote: bool, manifest: CohortManifest) -> None:
     if not promote:
         return
@@ -166,6 +224,9 @@ async def run_onboarding(
         fetch_stats: dict[str, Any] = {}
         if fetch:
             fetch_stats["security_master"] = await collect_security_master(manifest.market)
+            fetch_stats["restricted_research_symbols"] = (
+                await _stage_restricted_research_symbols(manifest)
+            )
             fetch_stats["history"] = await collect_history(
                 manifest.market,
                 days=round(manifest.backfill_years * 365.25),
@@ -177,6 +238,7 @@ async def run_onboarding(
                 manifest.market,
                 codes=list(manifest.symbols),
                 include_onboarding=True,
+                include_restricted=manifest.allow_restricted_research,
             )
         as_of_date = to_market_tz(dt.datetime.now(dt.UTC), market=manifest.market).date()
         evidence = await evaluate_cohort(

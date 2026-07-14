@@ -56,9 +56,11 @@ _SYMBOL_DOMAINS: dict[str, str] = {
     "AEON": "aeonbiopharma.com",
     "AGEN": "agenusbio.com",
     "MIMI": "mimintinc.com",
+    "NVVE": "nuvve.com",
     "NXTC": "nextcure.com",
     "QTTB": "q32bio.com",
     "SKYQ": "skyquarry.com",
+    "SOBR": "sobrsafe.com",
     "VEEE": "twinvee.com",
     "VMAR": "visionmarinetechnologies.com",
 }

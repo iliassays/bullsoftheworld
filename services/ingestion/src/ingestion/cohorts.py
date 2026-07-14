@@ -55,6 +55,7 @@ class CohortManifest(BaseModel):
     backfill_years: float = Field(default=10, ge=1, le=20)
     description: str = Field(default="", max_length=500)
     risk_review_id: str | None = Field(default=None, min_length=3, max_length=128)
+    allow_restricted_research: bool = False
     symbols: tuple[str, ...]
     policy: OnboardingPolicy = Field(default_factory=OnboardingPolicy)
     manifest_sha256: str = Field(min_length=64, max_length=64)

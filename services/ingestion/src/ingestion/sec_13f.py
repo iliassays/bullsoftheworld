@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 import httpx
 from arq import create_pool
 from arq.connections import RedisSettings
-from sqlalchemy import case, delete, distinct, func, select
+from sqlalchemy import and_, case, delete, distinct, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
@@ -33,6 +33,7 @@ from bulls.core.models import (
     RegulatoryDataState,
     SecurityIdentifier,
     SecurityMaster,
+    Symbol,
 )
 from bulls.market_data.providers.sec_13f import (
     DATASET_PAGE,
@@ -52,7 +53,7 @@ UPSERT_BATCH_ROWS = 1000
 HTTP_RETRIES = 8
 RETRY_BASE_SECONDS = 5.0
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
-MAPPING_SCOPE = "eligible_security_master_v2"
+MAPPING_SCOPE = "eligible_plus_restricted_research_v3"
 _ARCHIVE_NAME = re.compile(
     r"^(?P<prefix>.*/)(?P<start_day>\d{2})(?P<start_month>[a-z]{3})(?P<start_year>\d{4})-"
     r"(?P<end_day>\d{2})(?P<end_month>[a-z]{3})(?P<end_year>\d{4})_form13f\.zip$"
@@ -231,11 +232,27 @@ async def _symbol_context(
 ) -> tuple[list[SymbolIdentity], dict[str, str]]:
     sm = get_sessionmaker()
     async with sm() as session:
-        names_stmt = select(SecurityMaster.symbol, SecurityMaster.security_name).where(
-            SecurityMaster.market == MARKET,
-            SecurityMaster.is_active.is_(True),
-            SecurityMaster.is_product_eligible.is_(True),
-            SecurityMaster.instrument_type.in_(("common_stock", "adr", "etf")),
+        names_stmt = (
+            select(SecurityMaster.symbol, SecurityMaster.security_name)
+            .outerjoin(
+                Symbol,
+                (Symbol.market == SecurityMaster.market)
+                & (Symbol.code == SecurityMaster.symbol),
+            )
+            .where(
+                SecurityMaster.market == MARKET,
+                SecurityMaster.is_active.is_(True),
+                SecurityMaster.instrument_type.in_(("common_stock", "adr", "etf")),
+                or_(
+                    SecurityMaster.is_product_eligible.is_(True),
+                    and_(
+                        Symbol.is_active.is_(True),
+                        Symbol.is_hidden.is_(True),
+                        Symbol.data_status.in_(("onboarding", "degraded")),
+                        SecurityMaster.exclude_reason.like("financial_status_%"),
+                    ),
+                ),
+            )
         )
         identifier_stmt = select(SecurityIdentifier.identifier, SecurityIdentifier.code).where(
             SecurityIdentifier.market == MARKET,
@@ -496,7 +513,7 @@ async def collect(
     if codes is not None and len(symbols) != len(codes):
         found = {symbol.code for symbol in symbols}
         missing = sorted(set(codes) - found)
-        raise ValueError(f"ineligible or unknown target symbols: {', '.join(missing)}")
+        raise ValueError(f"unsupported or unknown target symbols: {', '.join(missing)}")
     try:
         urls = await _dataset_urls(retries=1 if force else HTTP_RETRIES)
     except httpx.HTTPError:

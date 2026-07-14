@@ -3,8 +3,15 @@ from __future__ import annotations
 import json
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
-from ingestion.history import _default_days, _load_cohort, _mode_market, _select_codes
+from ingestion.history import (
+    _active_symbol_stmt,
+    _default_days,
+    _load_cohort,
+    _mode_market,
+    _select_codes,
+)
 
 
 def test_mode_market_keeps_legacy_dse_cli_shape() -> None:
@@ -24,6 +31,25 @@ def test_select_codes_filters_then_slices_stably() -> None:
     assert _select_codes(codes, wanted=["tsla", "aapl"], limit=5) == ["AAPL", "TSLA"]
 
 
+def test_hidden_research_history_requires_explicit_codes() -> None:
+    broad = str(
+        _active_symbol_stmt("US", include_reference=True).compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    targeted = str(
+        _active_symbol_stmt(
+            "US",
+            include_reference=True,
+            requested=["SOBR", "NVVE"],
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "symbols.is_hidden IS false" in broad
+    assert "symbols.is_hidden IS false" not in targeted
+    assert "symbols.code IN ('NVVE', 'SOBR')" in targeted
+
+
 def test_cohort_manifest_is_validated_and_normalized(tmp_path) -> None:
     path = tmp_path / "cohort.json"
     path.write_text(
@@ -32,6 +58,7 @@ def test_cohort_manifest_is_validated_and_normalized(tmp_path) -> None:
                 "name": "launch-v1",
                 "market": "US",
                 "backfill_years": 10,
+                "allow_restricted_research": True,
                 "symbols": ["aapl", "BRK.B"],
             }
         )
@@ -41,6 +68,7 @@ def test_cohort_manifest_is_validated_and_normalized(tmp_path) -> None:
     assert cohort.name == "launch-v1"
     assert cohort.symbols == ("AAPL", "BRK.B")
     assert cohort.backfill_years == 10
+    assert cohort.allow_restricted_research is True
     assert len(cohort.manifest_sha256) == 64
     assert cohort.policy.min_bars == 1250
 

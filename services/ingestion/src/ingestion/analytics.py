@@ -16,7 +16,7 @@ import sys
 from collections import defaultdict
 from types import SimpleNamespace
 
-from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy import delete, exists, func, select, true, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics import adjust_bars, compute, compute_valuation, detect_patterns
@@ -346,8 +346,11 @@ async def compute_all(
     *,
     codes: list[str] | None = None,
     include_onboarding: bool = False,
+    include_restricted: bool = False,
 ) -> dict[str, int]:
     """Compute + upsert analytics for every symbol with price history. Returns counts."""
+    if include_restricted and not codes:
+        raise ValueError("include_restricted requires an explicit non-empty code list")
     sm = get_sessionmaker()
     async with sm() as session:
         statuses = ("ready", "onboarding") if include_onboarding else ("ready",)
@@ -356,7 +359,7 @@ async def compute_all(
                 select(Symbol.code).where(
                     Symbol.market == market,
                     Symbol.is_active.is_(True),
-                    Symbol.is_hidden.is_(False),
+                    true() if include_restricted else Symbol.is_hidden.is_(False),
                     Symbol.data_status.in_(statuses),
                     Symbol.code.in_(codes) if codes is not None else True,
                     exists().where(

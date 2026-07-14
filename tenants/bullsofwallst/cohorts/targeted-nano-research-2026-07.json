@@ -4,8 +4,9 @@
   "version": "2026.07.14-v1",
   "market": "US",
   "backfill_years": 10,
-  "description": "Owner-requested enhanced-risk research cohort. Every symbol remains private unless it passes identity, price-history, SEC-evidence, liquidity, price and analytics gates; exchange financial-status exclusions remain fail-closed.",
+  "description": "Owner-requested enhanced-risk research cohort. Exchange-status restricted common stocks may be collected only as hidden research records; public identity, data-quality, liquidity, price and authorization gates remain fail-closed.",
   "risk_review_id": "owner-request-2026-07-14",
+  "allow_restricted_research": true,
   "policy": {
     "allowed_instrument_types": ["common_stock"],
     "min_bars": 252,

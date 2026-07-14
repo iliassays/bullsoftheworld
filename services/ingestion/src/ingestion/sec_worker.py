@@ -9,6 +9,7 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from bulls.core.config import get_settings
+from ingestion.restricted_research import restricted_research_codes
 from ingestion.sec import collect as refresh_sec_evidence
 from ingestion.sec_13f import collect as refresh_sec_13f
 from ingestion.signals.runner import run_sec_filing_agents, run_us_institutional_agent
@@ -19,9 +20,24 @@ TENANT_ID = "bullsofwallst"
 
 async def refresh_sec_company_data(ctx) -> str:
     stats = await refresh_sec_evidence()
+    try:
+        restricted_codes = await restricted_research_codes()
+        restricted = (
+            await refresh_sec_evidence(codes=restricted_codes)
+            if restricted_codes
+            else {"symbols": 0}
+        )
+    except Exception as error:
+        log.warning("restricted SEC refresh failed; public agents will continue", exc_info=True)
+        restricted = {"failed": type(error).__name__}
     notes = await run_sec_filing_agents(tenant_id=TENANT_ID)
-    log.info("sec_company_data_complete stats=%s notes=%s", stats, notes)
-    return f"sec={stats} notes={notes}"
+    log.info(
+        "sec_company_data_complete stats=%s restricted=%s notes=%s",
+        stats,
+        restricted,
+        notes,
+    )
+    return f"sec={stats} restricted={restricted} notes={notes}"
 
 
 async def refresh_sec_institutional_data(ctx) -> str:

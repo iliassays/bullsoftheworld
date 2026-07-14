@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import RegulatoryDataState, SecurityMaster, ShortVolumeDaily, Symbol
 from bulls.market_data.calendar import is_trading_day, to_market_tz
+from bulls.market_data.providers.us_security_master import PRODUCT_INSTRUMENT_TYPES
 
 log = logging.getLogger(__name__)
 
@@ -175,15 +176,17 @@ async def collect(target: dt.date | None = None) -> dict[str, int]:
     sm = get_sessionmaker()
     async with sm() as session:
         known = set(await session.scalars(select(Symbol.code).where(Symbol.market == MARKET)))
-        eligible_securities = list(
+        covered_securities = list(
             await session.scalars(
                 select(SecurityMaster).where(
                     SecurityMaster.market == MARKET,
-                    SecurityMaster.is_product_eligible.is_(True),
+                    SecurityMaster.is_active.is_(True),
+                    SecurityMaster.symbol.in_(known),
+                    SecurityMaster.instrument_type.in_(PRODUCT_INSTRUMENT_TYPES),
                 )
             )
         )
-        aliases = _build_symbol_aliases(eligible_securities, known)
+        aliases = _build_symbol_aliases(covered_securities, known)
         state = await session.get(RegulatoryDataState, (MARKET, _SOURCE))
         completed_sessions = (
             dict((state.details or {}).get("completed_sessions") or {}) if state else {}

@@ -17,7 +17,7 @@ from collections import defaultdict
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
@@ -392,7 +392,6 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
             .where(
                 Symbol.market == MARKET,
                 Symbol.is_active.is_(True),
-                Symbol.is_hidden.is_(False),
                 SecurityMaster.cik.isnot(None),
             )
             .order_by(Symbol.code)
@@ -400,10 +399,23 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
         if codes:
             stmt = stmt.where(
                 Symbol.code.in_(codes),
-                Symbol.data_status.in_(("onboarding", "ready")),
+                Symbol.data_status.in_(("onboarding", "ready", "degraded")),
+                or_(
+                    Symbol.is_hidden.is_(False),
+                    (
+                        Symbol.is_hidden.is_(True)
+                        & SecurityMaster.is_active.is_(True)
+                        & SecurityMaster.is_product_eligible.is_(False)
+                        & SecurityMaster.exclude_reason.like("financial_status_%")
+                    ),
+                ),
             )
         else:
-            stmt = stmt.where(Symbol.data_status == "ready")
+            stmt = stmt.where(
+                Symbol.data_status == "ready",
+                Symbol.is_hidden.is_(False),
+                SecurityMaster.is_product_eligible.is_(True),
+            )
         rows = (await session.execute(stmt)).all()
         cik_counts = dict(
             (
@@ -412,7 +424,7 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
                     .where(
                         SecurityMaster.market == MARKET,
                         SecurityMaster.is_active.is_(True),
-                        SecurityMaster.is_product_eligible.is_(True),
+                        SecurityMaster.instrument_type.in_(("common_stock", "adr")),
                         SecurityMaster.cik.isnot(None),
                     )
                     .group_by(SecurityMaster.cik)
