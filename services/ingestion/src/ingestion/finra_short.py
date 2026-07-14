@@ -18,6 +18,8 @@ import asyncio
 import datetime as dt
 import logging
 import sys
+from collections import defaultdict
+from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -25,7 +27,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import RegulatoryDataState, ShortVolumeDaily, Symbol
+from bulls.core.models import RegulatoryDataState, SecurityMaster, ShortVolumeDaily, Symbol
 from bulls.market_data.calendar import is_trading_day, to_market_tz
 
 log = logging.getLogger(__name__)
@@ -77,7 +79,10 @@ def parse_cnms(text: str, *, expected_date: dt.date | None = None) -> list[dict]
             raise ValueError(
                 f"FINRA CNMS date mismatch at line {line_number}: {date} != {expected_date}"
             )
-        code = parts[1].strip().upper()
+        # SIP symbols are case-sensitive: e.g. BCpC (a preferred issue) and BCPC (common stock)
+        # are different securities. Canonical product mapping happens later via security-master
+        # aliases; changing case here would merge them and corrupt both records.
+        code = parts[1].strip()
         if (
             not code
             or len(code) > 16
@@ -102,6 +107,29 @@ def parse_cnms(text: str, *, expected_date: dt.date | None = None) -> list[dict]
             }
         )
     return rows
+
+
+def _build_symbol_aliases(
+    securities: Iterable[SecurityMaster], known_codes: set[str]
+) -> dict[str, str]:
+    """Map exact source aliases to one canonical product code; omit ambiguous aliases."""
+    candidates: dict[str, set[str]] = defaultdict(set)
+    for code in known_codes:
+        candidates[code].add(code)
+    for security in securities:
+        for alias in {
+            security.symbol,
+            security.raw_symbol,
+            security.cqs_symbol,
+            security.nasdaq_symbol,
+        }:
+            if alias:
+                candidates[alias.strip()].add(security.symbol)
+    return {
+        alias: next(iter(codes))
+        for alias, codes in candidates.items()
+        if len(codes) == 1 and next(iter(codes)) in known_codes
+    }
 
 
 async def _fetch_day(
@@ -135,6 +163,15 @@ async def collect(target: dt.date | None = None) -> dict[str, int]:
     sm = get_sessionmaker()
     async with sm() as session:
         known = set(await session.scalars(select(Symbol.code).where(Symbol.market == MARKET)))
+        eligible_securities = list(
+            await session.scalars(
+                select(SecurityMaster).where(
+                    SecurityMaster.market == MARKET,
+                    SecurityMaster.is_product_eligible.is_(True),
+                )
+            )
+        )
+        aliases = _build_symbol_aliases(eligible_securities, known)
         state = await session.get(RegulatoryDataState, (MARKET, _SOURCE))
         completed_sessions = (
             dict((state.details or {}).get("completed_sessions") or {}) if state else {}
@@ -175,7 +212,12 @@ async def collect(target: dt.date | None = None) -> dict[str, int]:
                 stats["days_skipped"] += 1
                 continue
             rows, downloaded_bytes = fetched
-            keep = [r for r in rows if r["code"] in known]
+            keep = [{**row, "code": aliases[row["code"]]} for row in rows if row["code"] in aliases]
+            canonical_keys = {(row["code"], row["date"]) for row in keep}
+            if len(canonical_keys) != len(keep):
+                raise ValueError(
+                    f"multiple FINRA rows map to one canonical symbol for {day}; refusing file"
+                )
             stats["rows_unknown_symbol"] += len(rows) - len(keep)
             async with sm() as session:
                 for i in range(0, len(keep), _BATCH):

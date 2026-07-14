@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
-from ingestion.finra_short import _recent_sessions, parse_cnms
+from ingestion.finra_short import _build_symbol_aliases, _recent_sessions, parse_cnms
 from ingestion.signals.shorts import detect
 
 HEADER = "Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market"
@@ -29,6 +30,36 @@ def test_parse_cnms_preserves_fractional_volume_and_validates_trailer() -> None:
     assert rows[1]["total_volume"] == Decimal("0.057000")
     assert rows[1]["short_volume"] == Decimal("0.050000")
     assert rows[1]["short_exempt_volume"] == Decimal("0.020000")
+
+
+def test_finra_symbols_preserve_case_and_map_only_authoritative_aliases() -> None:
+    rows = parse_cnms(
+        "\n".join(
+            [
+                HEADER,
+                "20260608|BCpC|1757|0|4007|Q",
+                "20260608|BCPC|24070.127951|1680|49038.772549|B,Q,N",
+                "2",
+            ]
+        ),
+        expected_date=dt.date(2026, 6, 8),
+    )
+    assert [row["code"] for row in rows] == ["BCpC", "BCPC"]
+
+    aliases = _build_symbol_aliases(
+        [
+            SimpleNamespace(
+                symbol="BRK-B",
+                raw_symbol="BRK.B",
+                cqs_symbol="BRK.B",
+                nasdaq_symbol="BRK-B",
+            )
+        ],
+        {"BCPC", "BRK-B"},
+    )
+    assert aliases["BCPC"] == "BCPC"
+    assert aliases["BRK.B"] == "BRK-B"
+    assert "BCpC" not in aliases
 
 
 @pytest.mark.parametrize(
