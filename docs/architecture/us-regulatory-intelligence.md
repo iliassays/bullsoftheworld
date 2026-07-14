@@ -32,6 +32,9 @@ flowchart LR
   published immediately afterward. Form 13F runs Sundays at `10:00 UTC`; the institutional desk is
   evaluated only after the archive transaction completes. No qualifying event is a valid quiet run,
   not evidence that the worker failed.
+- Deploy/restart startup performs only a lightweight agent reconciliation over committed SQL rows.
+  It never downloads Company Facts or parses 13F archives; heavy official-source refreshes remain
+  on their schedules so deployment cannot starve the API on a constrained host.
 - Every request sends a descriptive User-Agent and monitored `SEC_CONTACT_EMAIL`. The Company Facts
   client stays below five requests per second and retries only rate-limit/server failures.
 - SEC submissions are mandatory. Company Facts may legitimately be absent, especially for funds;

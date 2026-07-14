@@ -33,6 +33,14 @@ def test_every_cron_job_can_calculate_its_next_run() -> None:
             assert job.next_run is not None, job.name
 
 
+def test_sec_archive_downloads_never_run_at_worker_startup() -> None:
+    jobs = {job.name: job for job in SecWorkerSettings.cron_jobs}
+
+    assert not jobs["cron:refresh_sec_company_data"].run_at_startup
+    assert not jobs["cron:refresh_sec_institutional_data"].run_at_startup
+    assert jobs["cron:evaluate_stored_regulatory_agents"].run_at_startup
+
+
 def test_eod_startup_recovery_is_time_guarded() -> None:
     assert not _after_eod_window(dt.datetime(2026, 7, 8, 8, 30, tzinfo=dt.UTC))
     assert _after_eod_window(dt.datetime(2026, 7, 8, 11, 0, tzinfo=dt.UTC))

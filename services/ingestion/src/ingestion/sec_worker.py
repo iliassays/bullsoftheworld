@@ -31,17 +31,35 @@ async def refresh_sec_institutional_data(ctx) -> str:
     return f"sec_13f={stats} notes={notes}"
 
 
+async def evaluate_stored_regulatory_agents(ctx) -> str:
+    """Cheap startup reconciliation over committed evidence; never downloads SEC archives."""
+    filing_notes = await run_sec_filing_agents(tenant_id=TENANT_ID)
+    institutional_notes = await run_us_institutional_agent(tenant_id=TENANT_ID)
+    log.info(
+        "stored_regulatory_agents_complete filings=%s institutional=%s",
+        filing_notes,
+        institutional_notes,
+    )
+    return f"filings={filing_notes} institutional={institutional_notes}"
+
+
 class WorkerSettings:
-    functions: ClassVar = [refresh_sec_company_data, refresh_sec_institutional_data]
+    functions: ClassVar = [
+        refresh_sec_company_data,
+        refresh_sec_institutional_data,
+        evaluate_stored_regulatory_agents,
+    ]
     cron_jobs: ClassVar = [
-        cron(refresh_sec_company_data, hour=6, minute=15, run_at_startup=True),
-        # A startup check is cheap when the latest official archive is already checkpointed and
-        # ensures the institutional desk is evaluated after deploys instead of waiting for Sunday.
+        # Network/archive refreshes never run merely because code was deployed. On constrained
+        # hosts, repeated 95+ MiB 13F archive parses can starve API and TLS workers.
+        cron(refresh_sec_company_data, hour=6, minute=15, run_at_startup=False),
+        cron(refresh_sec_institutional_data, weekday="sun", hour=10, minute=0),
+        # Startup only evaluates already-committed rows; dedupe makes this safe and inexpensive.
         cron(
-            refresh_sec_institutional_data,
+            evaluate_stored_regulatory_agents,
             weekday="sun",
             hour=10,
-            minute=0,
+            minute=30,
             run_at_startup=True,
         ),
     ]
