@@ -46,6 +46,8 @@ ssh "$REMOTE" "cd $APP \
   && git pull -q origin main \
   && ~/.local/bin/uv sync -q \
   && ( cd services/api && ~/.local/bin/uv run alembic upgrade head ) \
+  && sudo cp infra/systemd/bulls-ai-worker.service \
+       /etc/systemd/system/bullsofdhaka-ai-worker.service \
   && sudo cp infra/systemd/bullsofwallst-worker.service \
        infra/systemd/bullsofwallst-sec-worker.service \
        infra/systemd/bullsofwallst-research-worker.service \
@@ -53,7 +55,7 @@ ssh "$REMOTE" "cd $APP \
        infra/systemd/bullsofwallst-sec-watchdog.timer \
        /etc/systemd/system/ \
   && sudo systemctl daemon-reload \
-  && sudo systemctl enable bullsofwallst-worker bullsofwallst-sec-worker \
+  && sudo systemctl enable bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bullsofwallst-sec-watchdog.timer \
   && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker \
        bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \

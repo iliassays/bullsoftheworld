@@ -27,9 +27,10 @@ Requires `ALERT_EMAIL` in `/home/ubuntu/bullsofdhaka/.env` (comma-separated reci
 The three arq workers use separate Redis queues. Install the DSE and AI workers with:
 
 ```bash
-sudo cp infra/systemd/bullsofdhaka-worker.service infra/systemd/bulls-ai-worker.service /etc/systemd/system/
+sudo cp infra/systemd/bullsofdhaka-worker.service /etc/systemd/system/
+sudo cp infra/systemd/bulls-ai-worker.service /etc/systemd/system/bullsofdhaka-ai-worker.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now bullsofdhaka-worker bulls-ai-worker
+sudo systemctl enable --now bullsofdhaka-worker bullsofdhaka-ai-worker
 ```
 
 Official U.S. regulatory data runs independently from the EOD market-data worker:
@@ -57,6 +58,10 @@ The SEC watchdog has its own six-hour alert cooldown and checks worker/API liven
 freshness, weekly 13F freshness, 8-quarter history depth, refresh failures, and ready-universe
 coverage. Set `WALLST_ALERT_EMAIL` to route these separately; otherwise it uses `ALERT_EMAIL` and
 then `SUPPORT_EMAIL`. It restarts only an inactive SEC worker and never touches DSE services.
+
+The SEC and AI units run at lower CPU/I/O weight with bounded memory. The SEC worker also discards
+jobs cancelled by a deployment instead of replaying archive work at the next process startup;
+freshness monitoring surfaces the missed run and the normal cron schedule retries it.
 
 The U.S. EOD worker is now an active production unit. On a new server, install it after the provider,
 same-site API hostname, verified exchange calendar, and initial coverage checks in

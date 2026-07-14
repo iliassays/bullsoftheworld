@@ -39,6 +39,7 @@ def test_sec_archive_downloads_never_run_at_worker_startup() -> None:
     assert not jobs["cron:refresh_sec_company_data"].run_at_startup
     assert not jobs["cron:refresh_sec_institutional_data"].run_at_startup
     assert jobs["cron:evaluate_stored_regulatory_agents"].run_at_startup
+    assert SecWorkerSettings.retry_jobs is False
 
 
 def test_eod_startup_recovery_is_time_guarded() -> None:

@@ -12,6 +12,13 @@ ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/arq ingestion.sec_worker.WorkerSet
 Restart=always
 RestartSec=10
 TimeoutStopSec=60
+# Preserve API capacity when official archives are decompressed and reconciled.
+Nice=10
+CPUWeight=20
+IOWeight=20
+MemoryHigh=1536M
+MemoryMax=2560M
+OOMScoreAdjust=500
 NoNewPrivileges=true
 PrivateTmp=true
 

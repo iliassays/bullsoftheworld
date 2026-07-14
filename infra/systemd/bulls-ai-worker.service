@@ -12,6 +12,13 @@ ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/arq ai_worker.worker.WorkerSetting
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
+# Embedding backlogs are throughput work and must yield to API traffic.
+Nice=10
+CPUWeight=20
+IOWeight=20
+MemoryHigh=1536M
+MemoryMax=2560M
+OOMScoreAdjust=500
 NoNewPrivileges=true
 PrivateTmp=true
 
