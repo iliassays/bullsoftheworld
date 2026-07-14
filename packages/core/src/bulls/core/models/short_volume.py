@@ -1,8 +1,9 @@
 """Daily short-sale volume per symbol, from FINRA's Reg SHO consolidated NMS files.
 
-One row per (market, code, session date). `(short_volume + short_exempt_volume) / total_volume` is
-the short-sale share of volume reported to FINRA facilities — not whole-market volume and NOT short interest. It includes
-market-maker liquidity provision, so the UI/agents must never frame it as "bearish bets". FINRA publishes the file each evening
+One row per (market, code, session date). `short_volume / total_volume` is the short-sale share of
+volume reported to FINRA facilities; FINRA defines short volume as including short-exempt volume.
+It is not whole-market volume or short interest and includes market-maker liquidity provision, so
+the UI/agents must never frame it as "bearish bets". FINRA publishes the file each evening
 (~18:00 ET); ingestion is idempotent per day and quietly skips days FINRA hasn't published.
 """
 

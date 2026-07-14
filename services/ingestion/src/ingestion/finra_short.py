@@ -85,7 +85,10 @@ def parse_cnms(text: str, *, expected_date: dt.date | None = None) -> list[dict]
             or total_vol <= 0
             or short_vol < 0
             or exempt_vol < 0
-            or short_vol + exempt_vol > total_vol
+            # FINRA defines ShortVolume as including ShortExemptVolume; exempt is a subset,
+            # not an additional amount to add when calculating the short-sale share.
+            or short_vol > total_vol
+            or exempt_vol > short_vol
         ):
             raise ValueError(f"invalid FINRA CNMS volume relationship at line {line_number}")
         rows.append(

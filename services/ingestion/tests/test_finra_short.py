@@ -17,7 +17,8 @@ def test_parse_cnms_preserves_fractional_volume_and_validates_trailer() -> None:
             [
                 HEADER,
                 "20260713|AAPL|120.500000|1.250000|300.750000|Q,N",
-                "20260713|EMDV|0.050000|0.007000|0.057000|Q",
+                # ShortVolume includes the exempt subset, so short + exempt may exceed total.
+                "20260713|EMDV|0.050000|0.020000|0.057000|Q",
                 "2",
             ]
         ),
@@ -27,6 +28,7 @@ def test_parse_cnms_preserves_fractional_volume_and_validates_trailer() -> None:
     assert len(rows) == 2
     assert rows[1]["total_volume"] == Decimal("0.057000")
     assert rows[1]["short_volume"] == Decimal("0.050000")
+    assert rows[1]["short_exempt_volume"] == Decimal("0.020000")
 
 
 @pytest.mark.parametrize(
@@ -34,6 +36,7 @@ def test_parse_cnms_preserves_fractional_volume_and_validates_trailer() -> None:
     [
         f"{HEADER}\n20260713|AAPL|1|0|2|Q\n2",
         f"{HEADER}\n20260713|AAPL|3|0|2|Q\n1",
+        f"{HEADER}\n20260713|AAPL|1|2|3|Q\n1",
         "wrong|header\n20260713|AAPL|1|0|2|Q\n1",
     ],
 )

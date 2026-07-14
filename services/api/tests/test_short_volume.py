@@ -1,4 +1,10 @@
-from api.routers.regulatory import _short_volume_classification
+import datetime as dt
+from decimal import Decimal
+
+import pytest
+
+from api.routers.regulatory import _short_ratio, _short_volume_classification
+from bulls.core.models import ShortVolumeDaily
 
 
 def _classify(**overrides):
@@ -30,3 +36,16 @@ def test_short_volume_below_norm_is_not_called_bullish() -> None:
     status, _, interpretation = _classify(ratio=0.25, deviation=-0.12, z_score=-2.0)
     assert status == "below_normal"
     assert "must not be interpreted as a bullish signal" in interpretation
+
+
+def test_short_ratio_does_not_double_count_short_exempt_subset() -> None:
+    row = ShortVolumeDaily(
+        market="US",
+        code="AACBR",
+        date=dt.date(2026, 6, 8),
+        short_volume=Decimal("250"),
+        short_exempt_volume=Decimal("240"),
+        total_volume=Decimal("251.753414"),
+    )
+
+    assert _short_ratio(row) == pytest.approx(250 / 251.753414)

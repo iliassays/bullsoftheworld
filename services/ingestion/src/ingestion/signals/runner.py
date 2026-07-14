@@ -351,14 +351,10 @@ async def run_short_flow_agent(market: str, *, tenant_id: str) -> dict[str, int]
             select(
                 ShortVolumeDaily.code,
                 func.avg(
-                    (ShortVolumeDaily.short_volume + ShortVolumeDaily.short_exempt_volume)
-                    * 1.0
-                    / ShortVolumeDaily.total_volume
+                    ShortVolumeDaily.short_volume * 1.0 / ShortVolumeDaily.total_volume
                 ).label("avg_ratio"),
                 func.stddev_samp(
-                    (ShortVolumeDaily.short_volume + ShortVolumeDaily.short_exempt_volume)
-                    * 1.0
-                    / ShortVolumeDaily.total_volume
+                    ShortVolumeDaily.short_volume * 1.0 / ShortVolumeDaily.total_volume
                 ).label("ratio_stddev"),
                 func.avg(ShortVolumeDaily.total_volume).label("avg_total_volume"),
                 func.count().label("sessions"),
@@ -376,9 +372,7 @@ async def run_short_flow_agent(market: str, *, tenant_id: str) -> dict[str, int]
             await session.execute(
                 select(
                     ShortVolumeDaily.code,
-                    (
-                        ShortVolumeDaily.short_volume + ShortVolumeDaily.short_exempt_volume
-                    ).label("short_marked_volume"),
+                    ShortVolumeDaily.short_volume.label("short_marked_volume"),
                     ShortVolumeDaily.total_volume,
                     baseline.c.avg_ratio,
                     baseline.c.ratio_stddev,

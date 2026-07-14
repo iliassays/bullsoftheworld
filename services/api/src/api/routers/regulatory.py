@@ -165,9 +165,8 @@ class ShortVolumeOut(BaseModel):
 
 def _short_ratio(row: ShortVolumeDaily) -> float:
     total = float(row.total_volume)
-    return (
-        (float(row.short_volume) + float(row.short_exempt_volume)) / total if total > 0 else 0.0
-    )
+    # FINRA's ShortVolume already includes ShortExemptVolume; adding it double-counts exempt sales.
+    return float(row.short_volume) / total if total > 0 else 0.0
 
 
 def _short_volume_classification(
@@ -244,6 +243,7 @@ async def symbol_short_volume(
     limitations = [
         "FINRA daily files cover trades reported to FINRA facilities, not all U.S. trading venues.",
         "Daily short-sale volume is not short interest and includes market-maker and hedging activity.",
+        "FINRA's short volume already includes the separately reported short-exempt subset.",
         "It does not reveal whether a short position stayed open after the trade.",
     ]
     if not rows:
