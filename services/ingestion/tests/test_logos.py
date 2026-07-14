@@ -8,13 +8,16 @@ from PIL import Image
 from ingestion import logos
 
 
+def test_logo_target_codes_are_normalized_and_deduplicated() -> None:
+    assert logos._normalize_codes([" nxtc ", "AGEN", "NXTC", ""]) == ["AGEN", "NXTC"]
+    assert logos._normalize_codes(None) is None
+
+
 async def test_logo_url_validation_rejects_private_networks(monkeypatch) -> None:
     monkeypatch.setattr(
         socket,
         "getaddrinfo",
-        lambda *_args, **_kwargs: [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
-        ],
+        lambda *_args, **_kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))],
     )
     assert not await logos._is_public_url("https://company.example/logo.png")
 

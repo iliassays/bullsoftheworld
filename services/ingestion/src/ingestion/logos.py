@@ -15,13 +15,14 @@ a size cap, then decode and normalize it to PNG — never stored executable mark
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import datetime as dt
 import ipaddress
 import re
 import socket
-import sys
 import warnings
+from collections.abc import Iterable
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
 
@@ -271,11 +272,23 @@ async def _fetch_one(client: httpx.AsyncClient, provider, market: str, code: str
     return row
 
 
-async def collect(*, market: str, recheck_days: int) -> dict[str, int]:
+def _normalize_codes(codes: Iterable[str] | None) -> list[str] | None:
+    if codes is None:
+        return None
+    return sorted({code.strip().upper() for code in codes if code.strip()})
+
+
+async def collect(
+    *, market: str, recheck_days: int, codes: Iterable[str] | None = None
+) -> dict[str, int]:
     provider = get_provider(market)
+    requested = _normalize_codes(codes)
     sm = get_sessionmaker()
     async with sm() as session:
-        codes = list(await session.scalars(select(Symbol.code).where(Symbol.market == market)))
+        code_stmt = select(Symbol.code).where(Symbol.market == market)
+        if requested is not None:
+            code_stmt = code_stmt.where(Symbol.code.in_(requested))
+        selected_codes = list(await session.scalars(code_stmt.order_by(Symbol.code)))
         cutoff = dt.datetime.now(dt.UTC) - dt.timedelta(days=recheck_days)
         # Only skip names we already have a logo for — so re-runs keep retrying the failures.
         recent = set(
@@ -287,8 +300,17 @@ async def collect(*, market: str, recheck_days: int) -> dict[str, int]:
                 )
             )
         )
-    todo = [c for c in codes if c not in recent]
-    stats = {"total": len(codes), "checked": 0, "ok": 0, "no_site": 0, "no_icon": 0, "error": 0}
+    todo = [c for c in selected_codes if c not in recent]
+    stats = {
+        "requested": len(requested) if requested is not None else len(selected_codes),
+        "missing": len(set(requested or ()) - set(selected_codes)),
+        "total": len(selected_codes),
+        "checked": 0,
+        "ok": 0,
+        "no_site": 0,
+        "no_icon": 0,
+        "error": 0,
+    }
     sem = asyncio.Semaphore(_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
@@ -328,12 +350,24 @@ async def collect(*, market: str, recheck_days: int) -> dict[str, int]:
     return stats
 
 
+def _args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Fetch bounded company-logo assets")
+    parser.add_argument("mode", nargs="?", default="daily", choices=("daily", "backfill"))
+    parser.add_argument("market", nargs="?", default="DSE")
+    parser.add_argument("--codes", help="comma-separated symbol codes")
+    return parser.parse_args(argv)
+
+
 def main() -> None:
-    mode = sys.argv[1] if len(sys.argv) > 1 else "daily"
-    market = sys.argv[2] if len(sys.argv) > 2 else "DSE"
-    recheck = 0 if mode == "backfill" else RECHECK_DAYS
-    print(f"[logos] {mode} {market}: fetching company logos (recheck_days={recheck})")
-    stats = asyncio.run(collect(market=market, recheck_days=recheck))
+    args = _args()
+    market = args.market.upper()
+    recheck = 0 if args.mode == "backfill" else RECHECK_DAYS
+    codes = args.codes.split(",") if args.codes else None
+    print(
+        f"[logos] {args.mode} {market}: fetching company logos "
+        f"(recheck_days={recheck}, targeted={codes is not None})"
+    )
+    stats = asyncio.run(collect(market=market, recheck_days=recheck, codes=codes))
     print(f"[logos] done: {stats}")
 
 

@@ -220,29 +220,32 @@ async def _download_archive(
     raise RuntimeError("unreachable")
 
 
-async def _symbol_context() -> tuple[list[SymbolIdentity], dict[str, str]]:
+def _normalize_codes(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    return sorted({code.strip().upper() for code in raw.split(",") if code.strip()})
+
+
+async def _symbol_context(
+    codes: list[str] | None = None,
+) -> tuple[list[SymbolIdentity], dict[str, str]]:
     sm = get_sessionmaker()
     async with sm() as session:
-        names = (
-            await session.execute(
-                select(SecurityMaster.symbol, SecurityMaster.security_name)
-                .where(
-                    SecurityMaster.market == MARKET,
-                    SecurityMaster.is_active.is_(True),
-                    SecurityMaster.is_product_eligible.is_(True),
-                    SecurityMaster.instrument_type.in_(("common_stock", "adr", "etf")),
-                )
-                .order_by(SecurityMaster.symbol)
-            )
-        ).all()
-        identifiers = (
-            await session.execute(
-                select(SecurityIdentifier.identifier, SecurityIdentifier.code).where(
-                    SecurityIdentifier.market == MARKET,
-                    SecurityIdentifier.identifier_type == "cusip",
-                )
-            )
-        ).all()
+        names_stmt = select(SecurityMaster.symbol, SecurityMaster.security_name).where(
+            SecurityMaster.market == MARKET,
+            SecurityMaster.is_active.is_(True),
+            SecurityMaster.is_product_eligible.is_(True),
+            SecurityMaster.instrument_type.in_(("common_stock", "adr", "etf")),
+        )
+        identifier_stmt = select(SecurityIdentifier.identifier, SecurityIdentifier.code).where(
+            SecurityIdentifier.market == MARKET,
+            SecurityIdentifier.identifier_type == "cusip",
+        )
+        if codes is not None:
+            names_stmt = names_stmt.where(SecurityMaster.symbol.in_(codes))
+            identifier_stmt = identifier_stmt.where(SecurityIdentifier.code.in_(codes))
+        names = (await session.execute(names_stmt.order_by(SecurityMaster.symbol))).all()
+        identifiers = (await session.execute(identifier_stmt)).all()
     return (
         [SymbolIdentity(code=code, name=name) for code, name in names],
         {identifier: code for identifier, code in identifiers},
@@ -297,7 +300,9 @@ async def _upsert_managers(session, rows: list[dict]) -> int:
     return len(rows)
 
 
-async def _persist_period(current, changes, summaries) -> dict[str, int]:
+async def _persist_period(
+    current, changes, summaries, *, codes: list[str] | None = None
+) -> dict[str, int]:
     now = dt.datetime.now(dt.UTC)
     manager_rows: dict[int, dict] = {}
     for row in changes:
@@ -328,18 +333,9 @@ async def _persist_period(current, changes, summaries) -> dict[str, int]:
 
     sm = get_sessionmaker()
     async with sm() as session:
-        await session.execute(
-            delete(InstitutionalPosition).where(
-                InstitutionalPosition.market == MARKET,
-                InstitutionalPosition.report_date == current.report_date,
-            )
-        )
-        await session.execute(
-            delete(InstitutionalHoldingSummary).where(
-                InstitutionalHoldingSummary.market == MARKET,
-                InstitutionalHoldingSummary.report_date == current.report_date,
-            )
-        )
+        position_delete, summary_delete = _period_deletes(current.report_date, codes)
+        await session.execute(position_delete)
+        await session.execute(summary_delete)
         await _upsert(
             session,
             SecurityIdentifier,
@@ -359,18 +355,19 @@ async def _persist_period(current, changes, summaries) -> dict[str, int]:
             summary_rows,
             ("market", "code", "report_date"),
         )
-        await session.execute(
-            delete(InstitutionalPosition).where(
-                InstitutionalPosition.market == MARKET,
-                InstitutionalPosition.report_date < cutoff,
-            )
+        position_prune = delete(InstitutionalPosition).where(
+            InstitutionalPosition.market == MARKET,
+            InstitutionalPosition.report_date < cutoff,
         )
-        await session.execute(
-            delete(InstitutionalHoldingSummary).where(
-                InstitutionalHoldingSummary.market == MARKET,
-                InstitutionalHoldingSummary.report_date < cutoff,
-            )
+        summary_prune = delete(InstitutionalHoldingSummary).where(
+            InstitutionalHoldingSummary.market == MARKET,
+            InstitutionalHoldingSummary.report_date < cutoff,
         )
+        if codes is not None:
+            position_prune = position_prune.where(InstitutionalPosition.code.in_(codes))
+            summary_prune = summary_prune.where(InstitutionalHoldingSummary.code.in_(codes))
+        await session.execute(position_prune)
+        await session.execute(summary_prune)
         await session.commit()
     return {
         "positions": len(changes),
@@ -378,6 +375,21 @@ async def _persist_period(current, changes, summaries) -> dict[str, int]:
         "identifiers": len(identifier_rows),
         "managers": len(manager_rows),
     }
+
+
+def _period_deletes(report_date: dt.date, codes: list[str] | None = None):
+    position_delete = delete(InstitutionalPosition).where(
+        InstitutionalPosition.market == MARKET,
+        InstitutionalPosition.report_date == report_date,
+    )
+    summary_delete = delete(InstitutionalHoldingSummary).where(
+        InstitutionalHoldingSummary.market == MARKET,
+        InstitutionalHoldingSummary.report_date == report_date,
+    )
+    if codes is not None:
+        position_delete = position_delete.where(InstitutionalPosition.code.in_(codes))
+        summary_delete = summary_delete.where(InstitutionalHoldingSummary.code.in_(codes))
+    return position_delete, summary_delete
 
 
 async def _persist_state(
@@ -472,10 +484,19 @@ async def _already_current(candidate_url: str, requested_quarters: int) -> bool:
     return current
 
 
-async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str, int]:
+async def collect(
+    *,
+    force: bool = False,
+    history_quarters: int = 1,
+    codes: list[str] | None = None,
+) -> dict[str, int]:
     if not 1 <= history_quarters <= RETENTION_QUARTERS:
         raise ValueError(f"history_quarters must be between 1 and {RETENTION_QUARTERS}")
-    symbols, known_cusips = await _symbol_context()
+    symbols, known_cusips = await _symbol_context(codes)
+    if codes is not None and len(symbols) != len(codes):
+        found = {symbol.code for symbol in symbols}
+        missing = sorted(set(codes) - found)
+        raise ValueError(f"ineligible or unknown target symbols: {', '.join(missing)}")
     try:
         urls = await _dataset_urls(retries=1 if force else HTTP_RETRIES)
     except httpx.HTTPError:
@@ -490,7 +511,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
             )
     if not urls:
         raise RuntimeError("SEC page did not list Form 13F archives")
-    if not force and await _already_current(urls[0], history_quarters):
+    if codes is None and not force and await _already_current(urls[0], history_quarters):
         return {
             "symbols_requested": len(symbols),
             "history_quarters": history_quarters,
@@ -552,7 +573,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
                     prior,
                     watched_manager_ciks=WATCHED_MANAGER_CIKS,
                 )
-                period_stats.append(await _persist_period(current, changes, summaries))
+                period_stats.append(await _persist_period(current, changes, summaries, codes=codes))
                 summaries_to_index.extend(summaries)
                 completed += 1
                 baseline = prior
@@ -570,14 +591,21 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
                 f"SEC page provided {completed} comparable quarters; {history_quarters} requested"
             )
 
-        stats = await _persist_state(
-            newest=newest,
-            baseline=baseline,
-            downloaded_bytes=downloaded_bytes,
-            requested_quarters=history_quarters,
-            new_matches=new_matches,
-            unmatched_cusips=unmatched_cusips,
-        )
+        if codes is None:
+            stats = await _persist_state(
+                newest=newest,
+                baseline=baseline,
+                downloaded_bytes=downloaded_bytes,
+                requested_quarters=history_quarters,
+                new_matches=new_matches,
+                unmatched_cusips=unmatched_cusips,
+            )
+        else:
+            stats = {
+                "positions": sum(row["positions"] for row in period_stats),
+                "summaries": sum(row["summaries"] for row in period_stats),
+                "history_quarters": completed,
+            }
         alerts_delivered = 0
         sm = get_sessionmaker()
         async with sm() as session:
@@ -629,7 +657,7 @@ async def collect(*, force: bool = False, history_quarters: int = 1) -> dict[str
     }
 
 
-def _args() -> argparse.Namespace:
+def _args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest bounded SEC Form 13F history")
     parser.add_argument(
         "--history-quarters",
@@ -638,16 +666,20 @@ def _args() -> argparse.Namespace:
         choices=range(1, RETENTION_QUARTERS + 1),
     )
     parser.add_argument("--force", action="store_true")
-    return parser.parse_args()
+    parser.add_argument("--codes", help="comma-separated eligible symbols to process safely")
+    return parser.parse_args(argv)
 
 
 def main() -> None:
     args = _args()
+    codes = _normalize_codes(args.codes)
     print(
         f"[sec-13f] refreshing {args.history_quarters} bounded institutional quarters",
         flush=True,
     )
-    stats = asyncio.run(collect(force=args.force, history_quarters=args.history_quarters))
+    stats = asyncio.run(
+        collect(force=args.force, history_quarters=args.history_quarters, codes=codes)
+    )
     print(f"[sec-13f] done: {stats}", flush=True)
 
 
