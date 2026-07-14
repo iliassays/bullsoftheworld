@@ -92,9 +92,6 @@ export function DhakaMood() {
       <div className="flex items-start justify-between gap-3">
         <div className="text-sm font-extrabold">
           {bn ? "ঢাকা মুড ইনডেক্স" : "Dhaka Mood Index"}
-          <span className="ml-2 text-[10px] font-semibold text-muted">
-            {bn ? "Dhaka Mood Index" : "ঢাকা মুড ইনডেক্স"}
-          </span>
         </div>
         {mood.as_of_date && (
           <div className="shrink-0 text-right text-[10px] leading-relaxed" aria-live="polite">
