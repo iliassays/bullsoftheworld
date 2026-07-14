@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "name": "bullsofwallst-targeted-nano-research",
+  "version": "2026.07.14-v1",
+  "market": "US",
+  "backfill_years": 10,
+  "description": "Owner-requested enhanced-risk research cohort. Every symbol remains private unless it passes identity, price-history, SEC-evidence, liquidity, price and analytics gates; exchange financial-status exclusions remain fail-closed.",
+  "risk_review_id": "owner-request-2026-07-14",
+  "policy": {
+    "allowed_instrument_types": ["common_stock"],
+    "min_bars": 252,
+    "min_history_days": 365,
+    "max_staleness_days": 10,
+    "min_adjusted_close_ratio": 0.98,
+    "min_nonzero_volume_ratio": 0.95,
+    "require_cik_for": ["common_stock"],
+    "sec_filings_required_for": ["common_stock"],
+    "sec_facts_required_for": ["common_stock"],
+    "min_sec_filings": 1,
+    "min_sec_facts": 5,
+    "require_analytics": true,
+    "require_13f": false,
+    "min_market_cap_mn": 1.0,
+    "max_market_cap_mn": null,
+    "min_adtv_mn": 0.05,
+    "min_price": 0.1,
+    "requires_risk_review": true
+  },
+  "symbols": [
+    "NXTC",
+    "VMAR",
+    "AEON",
+    "VEEE",
+    "SOBR",
+    "QTTB",
+    "AGEN",
+    "MIMI",
+    "NVVE",
+    "SKYQ"
+  ]
+}
