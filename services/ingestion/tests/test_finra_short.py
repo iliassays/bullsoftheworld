@@ -59,7 +59,25 @@ def test_finra_symbols_preserve_case_and_map_only_authoritative_aliases() -> Non
     )
     assert aliases["BCPC"] == "BCPC"
     assert aliases["BRK.B"] == "BRK-B"
+    assert aliases["BRK/B"] == "BRK-B"
     assert "BCpC" not in aliases
+
+
+def test_finra_class_alias_maps_to_the_product_canonical_code() -> None:
+    aliases = _build_symbol_aliases(
+        [
+            SimpleNamespace(
+                symbol="BRK-B",
+                raw_symbol="BRK.B",
+                cqs_symbol="BRK.B",
+                nasdaq_symbol="BRK-B",
+            )
+        ],
+        {"BRK.B"},
+    )
+
+    assert aliases["BRK/B"] == "BRK.B"
+    assert aliases["BRK-B"] == "BRK.B"
 
 
 @pytest.mark.parametrize(

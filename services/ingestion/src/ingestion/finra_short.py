@@ -117,14 +117,26 @@ def _build_symbol_aliases(
     for code in known_codes:
         candidates[code].add(code)
     for security in securities:
-        for alias in {
-            security.symbol,
-            security.raw_symbol,
-            security.cqs_symbol,
-            security.nasdaq_symbol,
-        }:
-            if alias:
-                candidates[alias.strip()].add(security.symbol)
+        aliases = {
+            alias.strip()
+            for alias in {
+                security.symbol,
+                security.raw_symbol,
+                security.cqs_symbol,
+                security.nasdaq_symbol,
+            }
+            if alias and alias.strip()
+        }
+        canonical_matches = aliases & known_codes
+        if len(canonical_matches) != 1:
+            continue
+        canonical = next(iter(canonical_matches))
+        # FINRA represents class shares with a slash (BRK/B), while exchange/product symbols
+        # commonly use a dot (BRK.B). Derive only from an authoritative eligible-security alias;
+        # do not change case, which would collapse preferred and common SIP identities.
+        finra_aliases = {alias.replace(".", "/") for alias in aliases if "." in alias}
+        for alias in aliases | finra_aliases:
+            candidates[alias].add(canonical)
     return {
         alias: next(iter(codes))
         for alias, codes in candidates.items()
