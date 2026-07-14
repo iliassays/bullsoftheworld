@@ -7,6 +7,17 @@ import { useTenantConfig } from "../lib/tenant";
 import { trackProductEvent } from "../lib/analytics";
 import { CompanyLogo } from "./CompanyLogo";
 
+const canOpenResearch = (status: SymbolOut["data_status"]) =>
+  status === "ready" || status === "research_only";
+
+function searchStatusLabel(symbol: SymbolOut, preparingCode: string | null): string | null {
+  if (symbol.data_status === "ready") return null;
+  if (symbol.data_status === "research_only") return "High risk";
+  if (preparingCode === symbol.code || symbol.data_status === "onboarding") return "Preparing";
+  if (symbol.data_status === "degraded") return "Retry research";
+  return "Prepare research";
+}
+
 export function SearchBar() {
   const { t } = useLang();
   const { config } = useTenantConfig();
@@ -47,23 +58,24 @@ export function SearchBar() {
   useEffect(() => {
     if (!preparingCode) return;
     const poll = window.setInterval(() => {
-      api.researchPreparation(preparingCode).then((status) => {
-        if (status.can_open) {
-          window.clearInterval(poll);
-          setPreparingCode(null);
-          navigate(`/s/${status.code}`);
-        } else if (["review_required", "rejected", "failed"].includes(status.status)) {
-          window.clearInterval(poll);
-          setPreparingCode(null);
-          setPreparationMessage(
-            status.status === "review_required"
-              ? "Research prepared; evidence review is pending."
-              : status.status === "rejected"
+      api
+        .researchPreparation(preparingCode)
+        .then((status) => {
+          if (status.can_open) {
+            window.clearInterval(poll);
+            setPreparingCode(null);
+            navigate(`/s/${status.code}`);
+          } else if (["review_required", "rejected", "failed"].includes(status.status)) {
+            window.clearInterval(poll);
+            setPreparingCode(null);
+            setPreparationMessage(
+              status.status === "rejected"
                 ? `Preparation stopped: ${status.failure_reasons.join(", ") || "quality gates failed"}.`
-                : "Preparation failed and can be retried.",
-          );
-        }
-      }).catch(() => undefined);
+                : "Preparation could not finish and can be retried.",
+            );
+          }
+        })
+        .catch(() => undefined);
     }, 5000);
     return () => window.clearInterval(poll);
   }, [navigate, preparingCode]);
@@ -76,7 +88,7 @@ export function SearchBar() {
       result_rank: rank,
       query_length: raw.length,
     });
-    if (symbol.data_status !== "ready") {
+    if (!canOpenResearch(symbol.data_status)) {
       if (config.market !== "US") return;
       setPreparingCode(code);
       setPreparationMessage("Preparing research in the background...");
@@ -87,9 +99,11 @@ export function SearchBar() {
             item.code === code ? { ...item, data_status: "onboarding" } : item,
           ),
         );
-        if (status.status === "review_required") {
+        if (status.can_open) {
           setPreparingCode(null);
-          setPreparationMessage("Research prepared; evidence review is pending.");
+          setQ("");
+          setOpen(false);
+          navigate(`/s/${status.code}`);
         } else if (status.status === "rejected") {
           setPreparingCode(null);
           setPreparationMessage(
@@ -137,7 +151,7 @@ export function SearchBar() {
             <button
               key={s.code}
               onMouseDown={() => void go(s, index + 1)}
-              className="w-full text-left px-3 py-2 hover:bg-card flex items-center gap-2"
+              className="w-full cursor-pointer text-left px-3 py-2 hover:bg-card flex items-center gap-2"
             >
               <CompanyLogo code={s.code} size={22} />
               <span className="font-bold text-[13px] text-accent shrink-0">${s.code}</span>
@@ -145,15 +159,9 @@ export function SearchBar() {
                 {s.name_en}
                 {s.name_bn ? ` · ${s.name_bn}` : ""}
               </span>
-              {s.data_status !== "ready" && (
+              {searchStatusLabel(s, preparingCode) && (
                 <span className="ml-auto shrink-0 text-[10px] font-medium text-warn">
-                  {preparingCode === s.code || s.data_status === "onboarding"
-                    ? preparingCode === s.code
-                      ? "Preparing"
-                      : "Review pending"
-                    : s.data_status === "degraded"
-                      ? "Retry research"
-                      : "Prepare research"}
+                  {searchStatusLabel(s, preparingCode)}
                 </span>
               )}
             </button>

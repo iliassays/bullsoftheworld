@@ -76,7 +76,10 @@ async def test_symbol_search_builds_server_side_filter_and_ranking() -> None:
         )
     )
     assert "symbols.market = 'US'" in sql
-    assert "symbols.data_status IN ('ready', 'reference_only', 'onboarding', 'degraded')" in sql
+    assert (
+        "symbols.data_status IN "
+        "('ready', 'research_only', 'reference_only', 'onboarding', 'degraded')" in sql
+    )
     assert "upper(symbols.code) LIKE" in sql
     assert "upper(symbols.name_en) LIKE" in sql
     assert "ORDER BY CASE" in sql

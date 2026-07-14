@@ -57,6 +57,14 @@ const TABS: { id: Tab; icon?: string; key: string }[] = [
   { id: "ownership", key: "tab.ownership" },
 ];
 
+const RESEARCH_LIMITATION_LABELS: Record<string, string> = {
+  product_eligible: "Exchange listing status needs verification",
+  nonzero_volume: "Trading volume is irregular or often zero",
+  liquidity: "Liquidity is below the normal coverage threshold",
+  price_floor: "Price is below the normal coverage threshold",
+  market_cap_floor: "Company size is below the normal coverage threshold",
+};
+
 function QuickStrip({
   f,
   volume,
@@ -407,6 +415,28 @@ export function SymbolPage() {
           <QuickStrip f={company.fundamentals} volume={q?.volume} price={q?.ltp} />
         )}
       </div>
+
+      {detail.symbol.data_status === "research_only" && (
+        <section
+          role="alert"
+          className="border border-warn/50 bg-warn/10 px-4 py-3 text-sm"
+        >
+          <div className="font-semibold text-warn">High-risk research coverage</div>
+          <p className="mt-1 leading-relaxed text-text">
+            This stock is open for due diligence, but it is excluded from Ideas and automated
+            rankings because it did not meet one or more normal eligibility checks.
+          </p>
+          {(detail.research_limitations ?? []).length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted">
+              {(detail.research_limitations ?? []).map((reason) => (
+                <li key={reason}>
+                  {RESEARCH_LIMITATION_LABELS[reason] ?? reason.split("_").join(" ")}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {alertsOpen && config.features.price_alerts && (
         <PriceAlertSheet code={sym} onClose={() => setAlertsOpen(false)} />

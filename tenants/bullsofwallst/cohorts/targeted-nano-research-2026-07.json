@@ -4,7 +4,7 @@
   "version": "2026.07.14-v1",
   "market": "US",
   "backfill_years": 10,
-  "description": "Owner-requested enhanced-risk research cohort. Exchange-status restricted common stocks may be collected only as hidden research records; public identity, data-quality, liquidity, price and authorization gates remain fail-closed.",
+  "description": "Owner-requested enhanced-risk research cohort. Complete names open for due diligence; names failing only approved marketability gates use the research-only tier and stay out of Ideas, rankings, agents and market aggregates.",
   "risk_review_id": "owner-request-2026-07-14",
   "allow_restricted_research": true,
   "policy": {

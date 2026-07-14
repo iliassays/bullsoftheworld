@@ -13,6 +13,7 @@ async def test_analytics_rejects_unbounded_restricted_scope() -> None:
 async def test_restricted_refresh_is_explicit_and_does_not_publish_agents(monkeypatch) -> None:
     history_calls: list[dict] = []
     analytics_calls: list[dict] = []
+    quote_calls: list[dict] = []
 
     async def fake_codes() -> list[str]:
         return ["NVVE", "SOBR"]
@@ -25,9 +26,14 @@ async def test_restricted_refresh_is_explicit_and_does_not_publish_agents(monkey
         analytics_calls.append({"market": market, **kwargs})
         return {"computed": 2}
 
+    async def fake_quotes(**kwargs):
+        quote_calls.append(kwargs)
+        return 2
+
     monkeypatch.setattr(restricted_research, "restricted_research_codes", fake_codes)
     monkeypatch.setattr(restricted_research, "collect_history", fake_history)
     monkeypatch.setattr(restricted_research, "compute_all", fake_analytics)
+    monkeypatch.setattr(restricted_research, "publish_quotes", fake_quotes)
 
     result = await restricted_research.refresh_restricted_market_data()
 
@@ -37,6 +43,8 @@ async def test_restricted_refresh_is_explicit_and_does_not_publish_agents(monkey
     assert analytics_calls[0]["codes"] == ["NVVE", "SOBR"]
     assert analytics_calls[0]["include_onboarding"] is True
     assert analytics_calls[0]["include_restricted"] is True
+    assert quote_calls == [{"codes": ["NVVE", "SOBR"]}]
+    assert result["quotes"] == 2
 
 
 async def test_restricted_sec_failure_does_not_block_public_agents(monkeypatch) -> None:

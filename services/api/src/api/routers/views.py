@@ -38,7 +38,7 @@ async def record_view(
     await throttle(f"view:{tenant.name}:{client_ip(request)}", limit=300, window_s=3600)
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     session.add(
         PageViewEvent(

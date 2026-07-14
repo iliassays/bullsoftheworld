@@ -67,7 +67,7 @@ async def symbol_news(
     enforce_market_feature(tenant, "official_disclosures")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     if get_market_profile(tenant.market).features.sec_filings:
         filings = await session.scalars(

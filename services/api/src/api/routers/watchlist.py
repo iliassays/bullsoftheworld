@@ -21,7 +21,7 @@ async def add(
 ) -> dict[str, str]:
     code = body.code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     if await session.get(WatchlistItem, (user.id, tenant.market, code)) is None:
         session.add(WatchlistItem(user_id=user.id, market=tenant.market, code=code))
@@ -55,7 +55,7 @@ async def list_watchlist(
             select(Symbol).where(
                 Symbol.market == tenant.market,
                 Symbol.code.in_(codes),
-                Symbol.data_status == "ready",
+                Symbol.data_status.in_(("ready", "research_only")),
                 Symbol.is_active.is_(True),
                 Symbol.is_hidden.is_(False),
             )

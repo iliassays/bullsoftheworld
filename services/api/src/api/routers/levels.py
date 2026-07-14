@@ -49,9 +49,7 @@ def _relation(price: float, support: float | None, resistance: float | None) -> 
     return "unknown"
 
 
-def _live_en(
-    price: float, rel: str, s: float | None, r: float | None, currency: str = "৳"
-) -> str:
+def _live_en(price: float, rel: str, s: float | None, r: float | None, currency: str = "৳") -> str:
     # Build only the selected branch: _relation guarantees s (resp. r) is set for the support
     # (resp. resistance) cases, but a dict literal would eagerly format every branch and crash on
     # a one-sided level where the other side is None.
@@ -69,9 +67,7 @@ def _live_en(
     return f"{p}."
 
 
-def _live_bn(
-    price: float, rel: str, s: float | None, r: float | None, currency: str = "৳"
-) -> str:
+def _live_bn(price: float, rel: str, s: float | None, r: float | None, currency: str = "৳") -> str:
     # Build only the selected branch — see _live_en: a dict literal crashes on one-sided levels.
     p = f"লাইভ (বিলম্বিত) {currency}{price:g}"
     if rel == "below_support":
@@ -79,9 +75,7 @@ def _live_bn(
     if rel == "near_support":
         return f"{p} — এখন গত ক্লোজের {currency}{s:g} সাপোর্ট পরীক্ষা করছে।"
     if rel == "above_resistance":
-        return (
-            f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্সের উপরে; টেকনিক্যাল বিশ্লেষকেরা দিন শেষে উপরে ক্লোজ খুঁজবেন।"
-        )
+        return f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্সের উপরে; টেকনিক্যাল বিশ্লেষকেরা দিন শেষে উপরে ক্লোজ খুঁজবেন।"
     if rel == "near_resistance":
         return f"{p} — এখন গত ক্লোজের {currency}{r:g} রেজিস্ট্যান্স পরীক্ষা করছে।"
     if rel == "between":
@@ -185,7 +179,7 @@ async def get_levels(
     enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     bars = list(

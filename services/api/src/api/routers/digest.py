@@ -35,11 +35,9 @@ class DigestResponse(BaseModel):
     change_pct_1d: float
 
 
-async def _gather_facts(
-    session, market: str, code: str, *, tenant_id: str
-) -> SymbolFacts | None:
+async def _gather_facts(session, market: str, code: str, *, tenant_id: str) -> SymbolFacts | None:
     symbol = await session.get(Symbol, (market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         return None
 
     bars = list(
@@ -148,9 +146,7 @@ def _render_digest_en(
 
     delayed = " (delayed)" if f.is_delayed else ""
     period = "in the latest session" if eod else "today"
-    parts = [
-        f"{_head(f)} {move(f.change_pct_1d)} {period} to {currency}{f.last_price:g}{delayed}."
-    ]
+    parts = [f"{_head(f)} {move(f.change_pct_1d)} {period} to {currency}{f.last_price:g}{delayed}."]
     if f.change_pct_5d is not None:
         parts.append(f"Over the last 5 sessions it {move(f.change_pct_5d)}.")
     rel = _rel_volume(f)
@@ -201,7 +197,9 @@ def _render_digest_bn(
 
     delayed = " (বিলম্বিত)" if f.is_delayed else ""
     period = "সর্বশেষ সেশনে" if eod else "আজ"
-    parts = [f"{_head(f)} {period} {move(f.change_pct_1d)}, দর {currency}{f.last_price:g}{delayed}।"]
+    parts = [
+        f"{_head(f)} {period} {move(f.change_pct_1d)}, দর {currency}{f.last_price:g}{delayed}।"
+    ]
     if f.change_pct_5d is not None:
         parts.append(f"গত ৫ সেশনে {move(f.change_pct_5d)}।")
     rel = _rel_volume(f)

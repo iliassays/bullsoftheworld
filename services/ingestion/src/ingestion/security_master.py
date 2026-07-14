@@ -134,7 +134,10 @@ async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, 
                     ),
                 )
                 .values(
-                    is_hidden=True,
+                    is_hidden=case(
+                        (Symbol.data_status == "research_only", False),
+                        else_=True,
+                    ),
                     data_status=case(
                         (Symbol.data_status == "ready", "degraded"),
                         else_=Symbol.data_status,

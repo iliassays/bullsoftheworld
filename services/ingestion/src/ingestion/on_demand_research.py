@@ -12,6 +12,7 @@ from sqlalchemy import or_, select
 
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import OnDemandResearchJob, SecurityMaster, Symbol
+from bulls.core.symbol_lifecycle import research_publication_status
 from ingestion.cohorts import CohortManifest
 from ingestion.universe_onboarding import create_onboarding_run, run_onboarding
 
@@ -32,8 +33,8 @@ def on_demand_manifest(code: str, *, generated_at: dt.datetime) -> CohortManifes
         "market": MARKET,
         "backfill_years": 10,
         "description": (
-            "User-requested private research preparation; enhanced-risk review and market-data "
-            "authorization remain required before public promotion."
+            "User-requested research preparation. Deterministic evidence gates choose normal, "
+            "research-only, or unavailable coverage without a manual review queue."
         ),
         "risk_review_id": None,
         "policy": {
@@ -54,7 +55,7 @@ def on_demand_manifest(code: str, *, generated_at: dt.datetime) -> CohortManifes
             "max_market_cap_mn": None,
             "min_adtv_mn": 0.05,
             "min_price": 0.10,
-            "requires_risk_review": True,
+            "requires_risk_review": False,
         },
         "symbols": [code],
     }
@@ -112,6 +113,7 @@ async def _finish_job(
     *,
     status: str,
     error: str | None = None,
+    symbol_status: str | None = None,
 ) -> None:
     sm = get_sessionmaker()
     async with sm() as session:
@@ -122,8 +124,14 @@ async def _finish_job(
         job.error = error[:2000] if error else None
         job.completed_at = dt.datetime.now(dt.UTC)
         symbol = await session.get(Symbol, (job.market, job.code))
-        if symbol is not None and status in {"rejected", "failed"}:
-            symbol.data_status = "degraded"
+        if symbol is not None:
+            if symbol_status in {"ready", "research_only"}:
+                symbol.data_status = symbol_status
+                symbol.is_hidden = False
+            elif status == "rejected":
+                symbol.data_status = "degraded"
+            elif status == "failed" and symbol.data_status == "onboarding":
+                symbol.data_status = "reference_only"
         await session.commit()
 
 
@@ -196,10 +204,11 @@ async def prepare_on_demand_research(ctx, job_id: str) -> str:
         await _attach_run(job.id, run.id)
         result = await run_onboarding(manifest, resume_id=run.id, fetch=True, promote=False)
         passed = result["passed"] == 1
-        await _finish_job(job.id, status="review_required" if passed else "rejected")
-        return (
-            f"code={job.code} status={'review_required' if passed else 'rejected'} run_id={run.id}"
-        )
+        failure_reasons = list(result["failures"].get(job.code, []))
+        symbol_status = research_publication_status(passed, failure_reasons)
+        job_status = "ready" if symbol_status is not None else "rejected"
+        await _finish_job(job.id, status=job_status, symbol_status=symbol_status)
+        return f"code={job.code} status={symbol_status or job_status} run_id={run.id}"
     except Exception as error:
         if job is not None:
             await _finish_job(

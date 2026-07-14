@@ -170,15 +170,16 @@ export interface SymbolOut {
   sector: string | null;
   category: string | null;
   is_active: boolean;
-  data_status: "reference_only" | "onboarding" | "ready" | "degraded";
+  data_status: "reference_only" | "onboarding" | "ready" | "research_only" | "degraded";
 }
 export interface SymbolDetail {
   symbol: SymbolOut;
   quote: Quote | null;
+  research_limitations: string[];
 }
 export interface ResearchPreparation {
   code: string;
-  status: "queued" | "running" | "review_required" | "ready" | "rejected" | "failed" | "reference_only" | "onboarding" | "degraded";
+  status: "queued" | "running" | "review_required" | "ready" | "research_only" | "rejected" | "failed" | "reference_only" | "onboarding" | "degraded";
   symbol_status: SymbolOut["data_status"];
   run_id: string | null;
   attempts: number;

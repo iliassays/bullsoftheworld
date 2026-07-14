@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SymbolOut(BaseModel):
@@ -42,6 +42,7 @@ class QuoteOut(BaseModel):
 class SymbolDetail(BaseModel):
     symbol: SymbolOut
     quote: QuoteOut | None = None
+    research_limitations: list[str] = Field(default_factory=list)
 
 
 class BarOut(BaseModel):

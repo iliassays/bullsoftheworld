@@ -70,6 +70,30 @@ def test_staging_does_not_require_market_data_authorization(monkeypatch) -> None
     universe_onboarding._validate_promotion(False, _manifest())
 
 
+def test_owner_directed_research_publication_requires_a_named_acknowledgement() -> None:
+    with pytest.raises(ValueError, match="risk_review_id"):
+        universe_onboarding._validate_promotion(
+            False,
+            _manifest(),
+            publish_research=True,
+        )
+
+    universe_onboarding._validate_promotion(
+        False,
+        _manifest(risk_review_id="owner-ack-2026-07"),
+        publish_research=True,
+    )
+
+
+def test_publication_modes_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        universe_onboarding._validate_promotion(
+            True,
+            _manifest(risk_review_id="owner-ack-2026-07"),
+            publish_research=True,
+        )
+
+
 def test_enhanced_risk_cohort_requires_named_review_before_promotion(monkeypatch) -> None:
     monkeypatch.setattr(
         universe_onboarding,

@@ -139,21 +139,24 @@ but it must never hide the underlying evidence or become an unsupported buy/sell
 
 ## On-demand preparation
 
-US symbol search includes the active reference master, but only `ready` symbols open a public ticker
-page. An authenticated request for any other eligible common stock creates or reuses one market-level
-preparation job and records a separate tenant/user request for quota and audit purposes.
+US symbol search includes the active reference master. `ready` symbols open normally;
+`research_only` symbols open with a high-risk warning and remain excluded from Ideas, rankings,
+agents, and market aggregates. An authenticated request for any other eligible common stock creates
+or reuses one market-level preparation job and records a separate tenant/user request for quota and
+audit purposes.
 
 The isolated `ingestion.research_worker.WorkerSettings` process handles one explicit job at a time:
 
 1. validate immutable security identity and common-stock eligibility;
 2. collect ten-year EOD history, targeted EDGAR submissions and Company Facts;
 3. recompute analytics and deterministic quality gates;
-4. finish as `review_required`, `rejected` or `failed` without public promotion.
+4. automatically open as `ready` when all gates pass, open as `research_only` when only approved
+   marketability gates fail, or remain unavailable on critical data and regulatory-evidence failure.
 
 The API limits each user to five new tickers per UTC day by default. Repeated and concurrent requests
 reuse the existing job. A rejected ticker waits 30 days before user-triggered reevaluation; failed
-infrastructure work may retry immediately. Public visibility still requires a named risk review and
-the existing market-data authorization controls.
+infrastructure work may retry immediately. There is no manual or invisible reviewer in this path;
+the durable job result and deterministic gate evidence are the publication decision.
 
 PostgreSQL is the durable job ledger; Redis is only the delivery mechanism. The research worker
 reconciles queued rows every minute and recovers a `running` lease after the two-hour job timeout,

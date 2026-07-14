@@ -230,7 +230,7 @@ async def symbol_short_volume(
     enforce_market_feature(tenant, "finra_short_volume")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     rows = list(
         await session.scalars(
@@ -280,9 +280,7 @@ async def symbol_short_volume(
         if history_ratios
         else None
     )
-    avg_volume = (
-        statistics.fmean(float(row.total_volume) for row in baseline) if baseline else None
-    )
+    avg_volume = statistics.fmean(float(row.total_volume) for row in baseline) if baseline else None
     activity_vs = float(latest.total_volume) / avg_volume if avg_volume else None
 
     status, label, interpretation = _short_volume_classification(
@@ -317,10 +315,7 @@ async def symbol_short_volume(
             )
             for row in reversed(rows[:30])
         ],
-        source_url=(
-            "https://cdn.finra.org/equity/regsho/daily/"
-            f"CNMSshvol{latest.date:%Y%m%d}.txt"
-        ),
+        source_url=(f"https://cdn.finra.org/equity/regsho/daily/CNMSshvol{latest.date:%Y%m%d}.txt"),
         interpretation=interpretation,
         limitations=limitations,
     )
@@ -342,7 +337,7 @@ async def symbol_filings(
     enforce_market_feature(tenant, "sec_filings")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     filings = list(
         await session.scalars(
@@ -471,12 +466,8 @@ async def _price_context(
             return_since_public=return_since,
             return_30=_period_return(symbol_bars, summary.latest_filing_date, 30),
             return_60=_period_return(symbol_bars, summary.latest_filing_date, 60),
-            benchmark_return_30=_period_return(
-                benchmark_bars, summary.latest_filing_date, 30
-            ),
-            benchmark_return_60=_period_return(
-                benchmark_bars, summary.latest_filing_date, 60
-            ),
+            benchmark_return_30=_period_return(benchmark_bars, summary.latest_filing_date, 30),
+            benchmark_return_60=_period_return(benchmark_bars, summary.latest_filing_date, 60),
         )
     return out, latest
 
@@ -533,9 +524,7 @@ async def _manager_histories(
         reverse=True,
     )[:4]
     watched = [row for row in latest_positions if row.manager_cik in WATCHED_MANAGER_CIKS]
-    selected_ciks = list(
-        dict.fromkeys(row.manager_cik for row in [*watched, *ranked, *movers])
-    )
+    selected_ciks = list(dict.fromkeys(row.manager_cik for row in [*watched, *ranked, *movers]))
     if not selected_ciks:
         return []
     history = list(
@@ -592,7 +581,7 @@ async def institutional_holdings(
     enforce_market_feature(tenant, "institutional_holdings")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     summaries = list(
         await session.scalars(
@@ -651,9 +640,7 @@ async def institutional_holdings(
             )
         )
     )
-    manager_histories = await _manager_histories(
-        session, tenant.market, code, positions
-    )
+    manager_histories = await _manager_histories(session, tenant.market, code, positions)
     period_rows = []
     for row in summaries:
         price = prices.get(

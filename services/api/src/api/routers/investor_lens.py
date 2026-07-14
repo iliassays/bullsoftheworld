@@ -36,7 +36,7 @@ async def get_investor_lens(
     enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     sym = await session.get(Symbol, (tenant.market, code))
-    if sym is None or not sym.is_retail_ready:
+    if sym is None or not sym.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     ta = await session.get(TickerAnalytics, (tenant.market, code))

@@ -399,7 +399,7 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
         if codes:
             stmt = stmt.where(
                 Symbol.code.in_(codes),
-                Symbol.data_status.in_(("onboarding", "ready", "degraded")),
+                Symbol.data_status.in_(("onboarding", "ready", "research_only", "degraded")),
                 or_(
                     Symbol.is_hidden.is_(False),
                     (
@@ -412,9 +412,12 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
             )
         else:
             stmt = stmt.where(
-                Symbol.data_status == "ready",
+                Symbol.data_status.in_(("ready", "research_only")),
                 Symbol.is_hidden.is_(False),
-                SecurityMaster.is_product_eligible.is_(True),
+                or_(
+                    SecurityMaster.is_product_eligible.is_(True),
+                    Symbol.data_status == "research_only",
+                ),
             )
         rows = (await session.execute(stmt)).all()
         cik_counts = dict(

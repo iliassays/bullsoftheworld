@@ -225,7 +225,7 @@ async def run_finra_short_chain(ctx) -> str:
 
 
 async def refresh_restricted_research(ctx) -> str:
-    """Maintain hidden enhanced-risk research without feeding public agents or coverage gates."""
+    """Maintain high-risk research without feeding agents, Ideas, or coverage gates."""
     try:
         stats = await refresh_restricted_market_data()
     except Exception:
@@ -257,8 +257,8 @@ class WorkerSettings:
         # One ordered job prevents a note evaluation from racing ahead of the file transaction.
         # It is anchored to the latest ingested session and deduped, so restarts cannot double-post.
         cron(run_finra_short_chain, hour=23, minute=45, run_at_startup=True),
-        # A separate bounded job keeps hidden research names fresh without making them part of
-        # public EOD coverage, alerts, screeners, Ideas, or agent publication.
+        # A separate bounded job keeps research-only names fresh without making them part of
+        # EOD coverage, alerts, screeners, Ideas, market aggregates, or agent publication.
         cron(refresh_restricted_research, hour=23, minute=35, run_at_startup=False),
         cron(refresh_restricted_research, hour=13, minute=35, run_at_startup=False),
     ]

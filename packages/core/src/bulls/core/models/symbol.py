@@ -18,7 +18,7 @@ class Symbol(Base):
     __tablename__ = "symbols"
     __table_args__ = (
         CheckConstraint(
-            "data_status IN ('reference_only', 'onboarding', 'ready', 'degraded')",
+            "data_status IN ('reference_only', 'onboarding', 'ready', 'research_only', 'degraded')",
             name="ck_symbols_data_status",
         ),
     )
@@ -41,7 +41,8 @@ class Symbol(Base):
     # scraper never touches (e.g. hide bonds/funds). Visible = is_active AND NOT is_hidden.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    # Reference ingestion and price onboarding are separate. Only `ready` symbols are public.
+    # `ready` participates in discovery/rankings. `research_only` has a public ticker page but is
+    # deliberately excluded from screeners and agents because it failed a non-critical risk gate.
     data_status: Mapped[str] = mapped_column(
         String(20), default="ready", server_default="ready", index=True
     )
@@ -49,5 +50,7 @@ class Symbol(Base):
     data_last_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
 
     @property
-    def is_retail_ready(self) -> bool:
-        return self.is_active and not self.is_hidden and self.data_status == "ready"
+    def is_public_research(self) -> bool:
+        return (
+            self.is_active and not self.is_hidden and self.data_status in {"ready", "research_only"}
+        )

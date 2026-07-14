@@ -46,7 +46,7 @@ async def get_explainer(
     enforce_market_feature(tenant, "interpreted_analytics")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     bars = list(

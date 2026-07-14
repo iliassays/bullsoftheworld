@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
+from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -21,25 +22,24 @@ def _as_of(date: dt.date) -> dt.datetime:
     return dt.datetime.combine(date, profile.close_time, tzinfo=profile.tz).astimezone(dt.UTC)
 
 
-async def publish_quotes() -> int:
+async def publish_quotes(*, codes: Sequence[str] | None = None) -> int:
     row_number = (
         func.row_number()
         .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
         .label("row_number")
     )
-    ranked = (
-        select(
-            DailyBar.code,
-            DailyBar.date,
-            DailyBar.open,
-            DailyBar.high,
-            DailyBar.low,
-            DailyBar.close,
-            DailyBar.volume,
-            row_number,
-        )
-        .where(
-            DailyBar.market == MARKET,
+    ranked = select(
+        DailyBar.code,
+        DailyBar.date,
+        DailyBar.open,
+        DailyBar.high,
+        DailyBar.low,
+        DailyBar.close,
+        DailyBar.volume,
+        row_number,
+    ).where(DailyBar.market == MARKET)
+    if codes is None:
+        ranked = ranked.where(
             DailyBar.code.in_(
                 select(Symbol.code).where(
                     Symbol.market == MARKET,
@@ -47,10 +47,11 @@ async def publish_quotes() -> int:
                     Symbol.is_hidden.is_(False),
                     Symbol.data_status == "ready",
                 )
-            ),
+            )
         )
-        .subquery()
-    )
+    else:
+        ranked = ranked.where(DailyBar.code.in_(codes))
+    ranked = ranked.subquery()
     sm = get_sessionmaker()
     async with sm() as session:
         rows = (await session.execute(select(ranked).where(ranked.c.row_number <= 2))).all()

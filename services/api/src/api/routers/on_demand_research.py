@@ -21,6 +21,7 @@ from bulls.core.models import (
     Symbol,
     UniverseOnboardingResult,
 )
+from bulls.core.symbol_lifecycle import research_publication_status
 
 router = APIRouter(tags=["on-demand-research"])
 _CODE_RE = re.compile(r"^[A-Z0-9.-]{1,16}$")
@@ -73,12 +74,12 @@ def _preparation_status(
     job: OnDemandResearchJob | None,
     result: UniverseOnboardingResult | None,
 ) -> str:
-    if symbol.data_status == "ready":
-        return "ready"
+    if symbol.is_public_research:
+        return symbol.data_status
     if job is not None:
-        return job.status
+        return "failed" if job.status == "review_required" else job.status
     if result is not None:
-        return "review_required" if result.required_gates_passed else "rejected"
+        return "ready" if result.required_gates_passed else "rejected"
     return symbol.data_status
 
 
@@ -88,7 +89,7 @@ async def _response(
     job: OnDemandResearchJob | None,
     result: UniverseOnboardingResult | None = None,
 ) -> ResearchPreparationOut:
-    ready = symbol.data_status == "ready"
+    ready = symbol.is_public_research
     result = result or await _onboarding_result(session, symbol, job)
     return ResearchPreparationOut(
         code=symbol.code,
@@ -161,14 +162,20 @@ async def request_preparation(
     if tenant.market != "US" or not _CODE_RE.fullmatch(code):
         raise HTTPException(status_code=404, detail="On-demand research is unavailable")
     symbol, _ = await _symbol_and_security(session, tenant.market, code)
-    if symbol.data_status == "ready":
+    if symbol.is_public_research:
         return await _response(session, symbol, None)
 
     staged_result = await _onboarding_result(session, symbol, None)
-    if staged_result is not None and staged_result.required_gates_passed:
-        # A manually staged cohort has finished. Do not create an endless duplicate preparation
-        # job merely because publication authorization/review has not promoted the symbol yet.
-        return await _response(session, symbol, None, staged_result)
+    if staged_result is not None:
+        publication_status = research_publication_status(
+            staged_result.required_gates_passed,
+            list(staged_result.failure_reasons or []),
+        )
+        if publication_status is not None:
+            symbol.data_status = publication_status
+            symbol.is_hidden = False
+            await session.commit()
+            return await _response(session, symbol, None, staged_result)
 
     now = dt.datetime.now(dt.UTC)
     today = now.date()

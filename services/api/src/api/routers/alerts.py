@@ -149,7 +149,7 @@ async def create_price_alert(
     enforce_market_feature(tenant, "price_alerts")
     code = body.code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     active = await session.scalar(
         select(func.count())

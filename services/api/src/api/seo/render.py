@@ -138,7 +138,7 @@ async def _render_stock(
     profile = get_market_profile(market)
     exchange = profile.exchange_label(lang)
     sym = await session.get(Symbol, (market, code))
-    if sym is None or not sym.is_retail_ready:
+    if sym is None or not sym.is_public_research:
         return None
     quote = await session.get(QuoteSnapshot, (market, code))
     bar = await session.scalar(

@@ -323,7 +323,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
     enforce_market_feature(tenant, "company_fundamentals")
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
 
     ta = await session.get(TickerAnalytics, (tenant.market, code))

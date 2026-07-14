@@ -40,7 +40,7 @@ def test_failed_jobs_can_retry_but_recent_rejections_wait_for_new_evidence() -> 
     assert not _retry_allowed(_job("review_required", now), now)
 
 
-def test_passed_staged_symbol_is_review_required_not_preparing() -> None:
+def test_passed_staged_symbol_has_no_manual_review_state() -> None:
     symbol = Symbol(
         market="US",
         code="VEEE",
@@ -63,7 +63,7 @@ def test_passed_staged_symbol_is_review_required_not_preparing() -> None:
         has_13f=True,
     )
 
-    assert on_demand_research._preparation_status(symbol, None, result) == "review_required"
+    assert on_demand_research._preparation_status(symbol, None, result) == "ready"
 
 
 def test_failed_staged_symbol_is_not_reported_as_still_preparing() -> None:
@@ -146,12 +146,8 @@ async def test_request_is_persisted_and_enqueued_once(monkeypatch) -> None:
             await session.refresh(user)
             user_id = user.id
 
-            first = await on_demand_research.request_preparation(
-                "CDIO", user, tenant, session
-            )
-            second = await on_demand_research.request_preparation(
-                "CDIO", user, tenant, session
-            )
+            first = await on_demand_research.request_preparation("CDIO", user, tenant, session)
+            second = await on_demand_research.request_preparation("CDIO", user, tenant, session)
 
             assert first.status == "queued"
             assert second.status == "queued"

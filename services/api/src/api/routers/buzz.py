@@ -174,6 +174,6 @@ async def gather_buzz(session, market: str, code: str, *, tenant_id: str) -> Buz
 async def get_buzz(code: str, tenant: CurrentTenant, session: DbSession) -> BuzzResponse:
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     return await gather_buzz(session, tenant.market, code, tenant_id=tenant.name)

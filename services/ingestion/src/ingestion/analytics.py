@@ -353,7 +353,13 @@ async def compute_all(
         raise ValueError("include_restricted requires an explicit non-empty code list")
     sm = get_sessionmaker()
     async with sm() as session:
-        statuses = ("ready", "onboarding") if include_onboarding else ("ready",)
+        statuses = (
+            ("ready", "onboarding", "research_only", "degraded")
+            if include_restricted
+            else ("ready", "onboarding")
+            if include_onboarding
+            else ("ready",)
+        )
         code_rows = list(
             await session.scalars(
                 select(Symbol.code).where(

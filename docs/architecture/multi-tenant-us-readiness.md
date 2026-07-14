@@ -28,11 +28,15 @@ flowchart LR
 
 ## Enforced invariants
 
-- Every public symbol must be active, not hidden, and `data_status = 'ready'`.
+- Every public ticker page must be active, not hidden, and either `ready` or `research_only`.
+  Only `ready` symbols participate in market aggregates, Ideas, screeners, and signal agents.
+  `research_only` is a visible high-risk due-diligence tier with its failed gates disclosed.
 - US security-master records start as `reference_only`; a selected cohort moves to `onboarding`.
-  No price-ingestion job may promote a symbol. Only an immutable, versioned cohort run can set
-  `ready`, and only after every instrument-aware identity, price, SEC, and analytics gate passes.
-  Daily collection processes only ready symbols.
+  A versioned cohort run sets `ready` only after every instrument-aware identity, price, SEC, and
+  analytics gate passes. An owner-acknowledged `--publish-research` run may set
+  `research_only` when only marketability gates fail; identity, history, freshness, integrity, and
+  regulatory-evidence failures stay private. A bounded daily job refreshes research-only data
+  without sending those symbols into recommendation surfaces.
 - Access and purpose tokens require issuer, audience, tenant, issued-at, and expiry claims. Access
   tokens carry `auth_version`; reset/verification links are bound to the current email, and reset
   tokens are one-time through `auth_version`. Refresh rotation locks its row before replacement.

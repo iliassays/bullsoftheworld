@@ -45,6 +45,7 @@ from bulls.core.models import (
     Symbol,
     TickerAnalytics,
     TrendingScore,
+    UniverseOnboardingResult,
 )
 from bulls.core.scheduling import analysis_schedule
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
@@ -584,7 +585,7 @@ async def list_symbols(
 ) -> list[SymbolOut]:
     raw_query = q.strip() if q else ""
     statuses = (
-        ("ready", "reference_only", "onboarding", "degraded")
+        ("ready", "research_only", "reference_only", "onboarding", "degraded")
         if tenant.market == "US" and raw_query
         else ("ready",)
     )
@@ -631,12 +632,29 @@ async def list_symbols(
 async def get_symbol(code: str, tenant: CurrentTenant, session: DbSession) -> SymbolDetail:
     key = (tenant.market, code.upper())
     symbol = await session.get(Symbol, key)
-    if symbol is None or symbol.data_status != "ready" or symbol.is_hidden or not symbol.is_active:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
     quote = (await load_freshest_quotes(session, key[0], [key[1]], ZoneInfo(tenant.timezone))).get(
         key[1]
     )
-    return SymbolDetail(symbol=SymbolOut.model_validate(symbol), quote=quote)
+    limitations: list[str] = []
+    if symbol.data_status == "research_only":
+        result = await session.scalar(
+            select(UniverseOnboardingResult)
+            .where(
+                UniverseOnboardingResult.market == key[0],
+                UniverseOnboardingResult.code == key[1],
+            )
+            .order_by(UniverseOnboardingResult.evaluated_at.desc())
+            .limit(1)
+        )
+        if result is not None:
+            limitations = list(result.failure_reasons or [])
+    return SymbolDetail(
+        symbol=SymbolOut.model_validate(symbol),
+        quote=quote,
+        research_limitations=limitations,
+    )
 
 
 @router.get("/symbols/{code}/bars")
@@ -648,12 +666,14 @@ async def get_bars(
 ) -> list[BarOut]:
     """OHLCV history, oldest-first, with the current delayed quote appended during the session."""
     code = code.upper()
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_public_research:
+        raise HTTPException(status_code=404, detail=f"No public price history for {code!r} yet")
     stmt = (
         select(DailyBar)
         .where(
             DailyBar.market == tenant.market,
             DailyBar.code == code,
-            DailyBar.code.in_(visible_codes(tenant.market)),
         )
         .order_by(DailyBar.date.desc())
         .limit(limit)
@@ -707,7 +727,7 @@ async def get_analytics(
     """
     code = code.upper()
     symbol = await session.get(Symbol, (tenant.market, code))
-    if symbol is None or not symbol.is_retail_ready:
+    if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
 
     stmt = (
