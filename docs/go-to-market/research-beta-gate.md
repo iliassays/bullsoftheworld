@@ -57,7 +57,7 @@ Measure:
 | Measure | Initial decision threshold |
 |---|---:|
 | Registration from qualified visits | >= 5% |
-| Three-stock watchlist activation | >= 35% |
+| Ten-stock watchlist activation (`watchlist-10-v1`) | >= 35% |
 | Week-two activated retention | >= 25% |
 | Participants completing a ticker task without help | >= 70% |
 | Participants saying the product saved meaningful time | >= 60% |

@@ -39,6 +39,7 @@ from bulls.core.models.sec import (
     SecurityIdentifier,
 )
 from bulls.core.models.security_master import SecurityMaster
+from bulls.core.models.short_volume import ShortVolumeDaily
 from bulls.core.models.signal_event import SignalEvent
 from bulls.core.models.symbol import Symbol
 from bulls.core.models.ticker_analytics import TickerAnalytics
@@ -90,6 +91,7 @@ __all__ = [
     "SecurityIdentifier",
     "SecurityMaster",
     "ShareholdingSnapshot",
+    "ShortVolumeDaily",
     "SignalEvent",
     "Symbol",
     "TickerAnalytics",

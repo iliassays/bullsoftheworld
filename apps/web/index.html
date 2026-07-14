@@ -9,7 +9,7 @@
          Future ad networks need their domains added here. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://www.googletagmanager.com 'sha256-mrD+cGweRvazRNyO3jZaslNMtWp/5U223Dzs/ouarCU=' 'sha256-o84XAhuNUayiP4CSY8QqPyyeAbA1xiV1xSt5LIEbGhU=' 'sha256-gPcNQcXFZF0vwsteVxO6rHAWM3mHVGKNgzcRAs5EFr8='; connect-src 'self' https://api.bullsofdhaka.com https://api.bullsofwallst.com https://bullsofdhaka-api.bullstreetai.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://www.googletagmanager.com"
+      content="default-src 'self'; script-src 'self' https://www.googletagmanager.com 'sha256-ClcOxL+wMGktvp3v7/UoWrTkKm5c7KO65nEd8UV2hNA=' 'sha256-o84XAhuNUayiP4CSY8QqPyyeAbA1xiV1xSt5LIEbGhU=' 'sha256-gPcNQcXFZF0vwsteVxO6rHAWM3mHVGKNgzcRAs5EFr8='; connect-src 'self' https://api.bullsofdhaka.com https://api.bullsofwallst.com https://bullsofdhaka-api.bullstreetai.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src https://www.googletagmanager.com"
     />
     <!-- Per-tenant GA4/GTM ids live here, not in the scripts below — so every inline script stays
          byte-identical across tenant builds and its sha256 hash never needs recomputing. -->
@@ -26,6 +26,8 @@
       gtag("consent", "default", {
         ad_storage: "denied",
         analytics_storage: "denied",
+        ad_user_data: "denied",
+        ad_personalization: "denied",
         region: [
           "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IS", "IE",
           "IT", "LV", "LI", "LT", "LU", "MT", "NL", "NO", "PL", "PT", "RO", "SK", "SI", "ES", "SE",

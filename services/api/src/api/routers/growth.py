@@ -44,6 +44,8 @@ EventName = Literal[
 ]
 
 _PROPERTY_KEYS = {
+    "activation_target",
+    "activation_version",
     "alert_kind",
     "board_key",
     "campaign",

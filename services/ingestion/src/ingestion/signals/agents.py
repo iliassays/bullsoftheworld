@@ -29,11 +29,33 @@ _AGENT_DEFS: dict[str, tuple[str, str]] = {
     "accumulation": ("Accumulation", "Accumulation"),
     "circuit": ("Circuit", "Circuit Limit"),
     "breakout": ("Breakout", "52-Week Breakout"),
+    "shorts": ("Shorts", "Short Volume"),  # US: FINRA Reg SHO daily short-sale share
+    "filings": ("Filings", "SEC Filings"),
 }
 
 _TENANT_AGENT_BRANDS = {
     "bullsofdhaka": ("BullsOfDhaka", "bn"),
     "bullsofwallst": ("BullsOfWallSt", "en"),
+}
+
+_TENANT_BEATS: dict[str, frozenset[str]] = {
+    "bullsofdhaka": frozenset(_AGENT_DEFS) - {"shorts", "filings"},
+    "bullsofwallst": frozenset(
+        {
+            "levels",
+            "volume",
+            "institution",
+            "earnings",
+            "market",
+            "momentum",
+            "strength",
+            "quality",
+            "accumulation",
+            "breakout",
+            "shorts",
+            "filings",
+        }
+    ),
 }
 
 
@@ -53,16 +75,22 @@ _LOCKED = hash_password("agent-no-login-" + "x" * 16)
 
 async def ensure_agents(session, tenant_id: str) -> dict[str, int]:
     """Create any missing agent accounts; return {beat: user_id}."""
-    identities = {beat: agent_identity(tenant_id, beat) for beat in _AGENT_DEFS}
+    supported = _TENANT_BEATS[tenant_id]
+    all_identities = {beat: agent_identity(tenant_id, beat) for beat in _AGENT_DEFS}
+    identities = {beat: all_identities[beat] for beat in sorted(supported)}
     existing = {
         u.handle: u
         for u in await session.scalars(
             select(User).where(
                 User.tenant_id == tenant_id,
-                User.handle.in_([handle for handle, _ in identities.values()]),
+                User.handle.in_([handle for handle, _ in all_identities.values()]),
             )
         )
     }
+    supported_handles = {handle for handle, _ in identities.values()}
+    for handle, user in existing.items():
+        if handle not in supported_handles and user.is_official:
+            user.is_official = False
     ids: dict[str, int] = {}
     for beat, (handle, name) in identities.items():
         user = existing.get(handle)

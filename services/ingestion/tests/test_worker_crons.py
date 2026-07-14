@@ -9,19 +9,33 @@ from __future__ import annotations
 import datetime as dt
 
 from ingestion.research_worker import WorkerSettings as ResearchWorkerSettings
-from ingestion.worker import WorkerSettings, _after_eod_window, _after_market_date_utc_time
+from ingestion.sec_worker import WorkerSettings as SecWorkerSettings
+from ingestion.us_worker import WorkerSettings as UsWorkerSettings
+from ingestion.worker import (
+    WorkerSettings,
+    _after_eod_window,
+    _after_market_date_utc_time,
+    _eod_completion_key,
+)
 
 
 def test_every_cron_job_can_calculate_its_next_run() -> None:
     now = dt.datetime(2026, 7, 1, 0, 0, tzinfo=dt.UTC)
-    for job in [*WorkerSettings.cron_jobs, *ResearchWorkerSettings.cron_jobs]:
-        job.calculate_next(now)  # raises on any invalid spec (e.g. bad weekday string)
-        assert job.next_run is not None, job.name
+    worker_settings = (
+        WorkerSettings,
+        ResearchWorkerSettings,
+        UsWorkerSettings,
+        SecWorkerSettings,
+    )
+    for settings in worker_settings:
+        for job in settings.cron_jobs:
+            job.calculate_next(now)  # raises on any invalid spec (e.g. bad weekday string)
+            assert job.next_run is not None, job.name
 
 
 def test_eod_startup_recovery_is_time_guarded() -> None:
     assert not _after_eod_window(dt.datetime(2026, 7, 8, 8, 30, tzinfo=dt.UTC))
-    assert _after_eod_window(dt.datetime(2026, 7, 8, 13, 0, tzinfo=dt.UTC))
+    assert _after_eod_window(dt.datetime(2026, 7, 8, 11, 0, tzinfo=dt.UTC))
     # 22:00 UTC is already the next Dhaka date, but that market date's EOD is still in the future.
     assert not _after_eod_window(dt.datetime(2026, 7, 8, 22, 0, tzinfo=dt.UTC))
 
@@ -34,4 +48,10 @@ def test_market_date_utc_guard_handles_dhaka_rollover() -> None:
     )
     assert _after_market_date_utc_time(
         dt.datetime(2026, 7, 9, 3, 30, tzinfo=dt.UTC), market_date, 3, 30
+    )
+
+
+def test_dse_eod_completion_marker_is_tenant_session_and_version_specific() -> None:
+    assert _eod_completion_key(dt.date(2026, 7, 9)) == (
+        "ingestion:bullsofdhaka:eod-complete:v2:2026-07-09"
     )

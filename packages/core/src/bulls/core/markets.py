@@ -30,6 +30,7 @@ class MarketFeatures:
     block_trades: bool = False
     sec_filings: bool = False
     institutional_holdings: bool = False
+    finra_short_volume: bool = False
     extended_hours: bool = False
 
 
@@ -184,8 +185,8 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         place_label_bn="নিউ ইয়র্ক",
         open_time=dt.time(9, 30),
         close_time=dt.time(16, 0),
-        # First US EOD publication attempt is 01:30 UTC after the session close.
-        analytics_ready_utc=dt.time(1, 30),
+        # First US EOD publication attempt: 22:45 UTC, 1h45-2h45 after the regular close.
+        analytics_ready_utc=dt.time(22, 45),
         trading_isoweekdays=frozenset({1, 2, 3, 4, 5}),
         holidays=US_HOLIDAYS_2026,
         early_closes=US_EARLY_CLOSES_2026,
@@ -215,6 +216,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
             price_alerts=True,
             sec_filings=True,
             institutional_holdings=True,
+            finra_short_volume=True,
         ),
     ),
 }

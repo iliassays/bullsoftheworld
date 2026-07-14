@@ -1,12 +1,12 @@
 """Onboard company logos. Neither market's provider hosts one directly, so we hop to each
-company's own website (DSE's "Web Address" field; a best-effort guessed domain for US, which has
-no such field — see us_yahoo._guess_domain) and cache its best icon (apple-touch-icon > declared
+company's own website (DSE's "Web Address" field; audited issuer domains only for US, which has
+no official website field) and cache its best icon (apple-touch-icon > declared
 icon > og:image > favicon).
 
 Bytes are stored in `company_logos` and served by the API; a missing/failed row falls back to a
 monogram in the UI. `status` + `checked_at` let a re-run skip names looked at recently instead of
 re-hitting dead sites. We only ever GET, and keep a row only when the response is a real image within
-a size cap — never anything executable.
+a size cap, then decode and normalize it to PNG — never stored executable markup.
 
     uv run python -m ingestion.logos backfill DSE   # fetch for every DSE symbol
     uv run python -m ingestion.logos backfill US    # fetch for every US symbol
@@ -17,11 +17,16 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import ipaddress
 import re
+import socket
 import sys
+import warnings
+from io import BytesIO
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from PIL import Image, UnidentifiedImageError
 from selectolax.parser import HTMLParser
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -34,6 +39,10 @@ RECHECK_DAYS = 30  # in daily mode, skip names already checked this recently
 _CONCURRENCY = 8  # be polite to company sites / favicon service
 _MIN_BYTES = 100
 _MAX_BYTES = 1_000_000
+_MAX_HTML_BYTES = 2_000_000
+_MAX_REDIRECTS = 4
+_MAX_IMAGE_DIMENSION = 4096
+Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_DIMENSION * _MAX_IMAGE_DIMENSION
 # Full browser-ish headers — a bare UA gets 403'd by some company sites.
 _HDRS = {
     "User-Agent": (
@@ -92,18 +101,117 @@ def pick_icons(html: str, base: str) -> list[str]:
 
 
 async def _download_image(client: httpx.AsyncClient, url: str) -> dict | None:
-    """GET `url`; return an image row fragment if it's a real image within the size cap, else None."""
-    try:
-        r = await client.get(url, headers=_HDRS)
-    except Exception:
+    """Fetch, decode and normalize one public raster image.
+
+    Decoding with Pillow rejects HTML disguised as an image and strips active metadata. SVG is
+    intentionally not accepted from third parties; the API should never serve stored executable
+    markup under an image content type.
+    """
+    response = await _safe_get(client, url, max_bytes=_MAX_BYTES)
+    if response is None or response[0] != 200:
         return None
-    ct = r.headers.get("content-type", "").split(";")[0].strip().lower()
-    if (
-        r.status_code == 200
-        and ct.startswith("image/")
-        and _MIN_BYTES < len(r.content) <= _MAX_BYTES
+    content, final_url = response[2], response[3]
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as opened:
+                if (
+                    opened.width <= 0
+                    or opened.height <= 0
+                    or opened.width > _MAX_IMAGE_DIMENSION
+                    or opened.height > _MAX_IMAGE_DIMENSION
+                ):
+                    return None
+                opened.load()
+                image = opened.convert("RGBA")
+                image.thumbnail((512, 512))
+                output = BytesIO()
+                image.save(output, format="PNG", optimize=True)
+                normalized = output.getvalue()
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
     ):
-        return {"image": r.content, "content_type": ct, "source_url": str(r.url), "status": "ok"}
+        return None
+    if not (_MIN_BYTES < len(normalized) <= _MAX_BYTES):
+        return None
+    return {
+        "image": normalized,
+        "content_type": "image/png",
+        "source_url": final_url,
+        "status": "ok",
+    }
+
+
+async def _is_public_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        return False
+    try:
+        infos = await asyncio.to_thread(
+            socket.getaddrinfo,
+            parsed.hostname,
+            parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM,
+        )
+    except OSError:
+        return False
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_multicast
+            or address.is_reserved
+            or address.is_unspecified
+        ):
+            return False
+    return bool(infos)
+
+
+async def _safe_get(
+    client: httpx.AsyncClient, url: str, *, max_bytes: int
+) -> tuple[int, dict[str, str], bytes, str] | None:
+    """Bounded public-network GET with every redirect target revalidated."""
+    current = url
+    for _ in range(_MAX_REDIRECTS + 1):
+        if not await _is_public_url(current):
+            return None
+        try:
+            async with client.stream("GET", current, headers=_HDRS) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current = urljoin(str(response.url), location)
+                    continue
+                declared = int(response.headers.get("content-length") or 0)
+                if declared > max_bytes:
+                    return None
+                chunks = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        return None
+                    chunks.append(chunk)
+                return (
+                    response.status_code,
+                    dict(response.headers),
+                    b"".join(chunks),
+                    str(response.url),
+                )
+        except (httpx.HTTPError, ValueError):
+            return None
     return None
 
 
@@ -141,15 +249,11 @@ async def _fetch_one(client: httpx.AsyncClient, provider, market: str, code: str
         site = "http://" + site
 
     # 1. The company site's own icons (best quality when reachable).
-    home_ok = False
-    try:
-        home = await client.get(site, headers=_HDRS)
-        home.raise_for_status()
-        home_ok = True
-    except Exception:
-        home = None
-    if home is not None:
-        for icon in pick_icons(home.text, str(home.url))[:4]:
+    home = await _safe_get(client, site, max_bytes=_MAX_HTML_BYTES)
+    home_ok = home is not None and home[0] == 200
+    if home_ok and home is not None:
+        html = home[2].decode("utf-8", errors="replace")
+        for icon in pick_icons(html, home[3])[:4]:
             got = await _download_image(client, icon)
             if got:
                 row.update(got)
@@ -187,7 +291,7 @@ async def collect(*, market: str, recheck_days: int) -> dict[str, int]:
     stats = {"total": len(codes), "checked": 0, "ok": 0, "no_site": 0, "no_icon": 0, "error": 0}
     sem = asyncio.Semaphore(_CONCURRENCY)
 
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True, verify=False) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
 
         async def worker(code: str) -> dict:
             async with sem:

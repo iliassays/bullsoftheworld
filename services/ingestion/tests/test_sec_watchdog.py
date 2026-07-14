@@ -6,11 +6,21 @@ from types import SimpleNamespace
 from ingestion.sec_watchdog import _eod_state_problems, _state_problems
 
 
-def _state(source: str, now: dt.datetime, *, covered: int, details: dict | None = None):
+def _state(
+    source: str,
+    now: dt.datetime,
+    *,
+    covered: int,
+    details: dict | None = None,
+    as_of_date: dt.date | None = None,
+    records: int = 1,
+):
     return SimpleNamespace(
         source=source,
         last_success_at=now,
         symbols_covered=covered,
+        as_of_date=as_of_date,
+        records=records,
         details=details or {},
     )
 
@@ -29,6 +39,12 @@ def test_regulatory_state_is_healthy_at_expected_depth_and_coverage() -> None:
             now - dt.timedelta(days=2),
             covered=58,
             details={"history_quarters_loaded": 8},
+        ),
+        "finra_short_volume": _state(
+            "finra_short_volume",
+            now - dt.timedelta(minutes=15),
+            covered=55,
+            as_of_date=dt.date(2026, 7, 9),
         ),
     }
 
@@ -50,11 +66,18 @@ def test_regulatory_state_reports_staleness_depth_coverage_and_failures() -> Non
             covered=40,
             details={"history_quarters_loaded": 4},
         ),
+        "finra_short_volume": _state(
+            "finra_short_volume",
+            now - dt.timedelta(days=5),
+            covered=0,
+            as_of_date=dt.date(2026, 7, 8),
+            records=0,
+        ),
     }
 
     problems = _state_problems(now, 60, states)  # type: ignore[arg-type]
 
-    assert len(problems) == 6
+    assert len(problems) == 8
     assert any("48.0 hours old" in problem for problem in problems)
     assert any("4/8 quarters" in problem for problem in problems)
 

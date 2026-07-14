@@ -31,5 +31,5 @@ def test_us_publication_readiness_requires_depth_and_freshness() -> None:
 
 def test_eod_completion_marker_is_tenant_and_session_specific() -> None:
     assert _completion_key(dt.date(2026, 7, 9)) == (
-        "ingestion:bullsofwallst:eod-complete:2026-07-09"
+        "ingestion:bullsofwallst:eod-complete:v2:2026-07-09"
     )

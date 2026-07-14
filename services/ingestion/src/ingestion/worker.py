@@ -21,8 +21,11 @@ from typing import ClassVar
 import httpx
 from arq import cron
 from arq.connections import RedisSettings
+from sqlalchemy import func, select
 
 from bulls.core.config import get_settings
+from bulls.core.db import get_sessionmaker
+from bulls.core.models import DailyBar, MarketSummary
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion import news
 from ingestion.agent_trader import run_agents
@@ -40,6 +43,7 @@ from ingestion.signals.news_agents import run_news_agents
 from ingestion.signals.runner import (
     run_factor_agents,
     run_levels_agent,
+    run_market_update,
     run_ownership_agents,
     run_volume_agent,
 )
@@ -48,7 +52,13 @@ from ingestion.trending import compute_trending
 log = logging.getLogger(__name__)
 MARKET = "DSE"
 TENANT_ID = "bullsofdhaka"
-EOD_START_UTC_HOUR = 13
+EOD_START_UTC_HOUR = 11
+_EOD_CHAIN_VERSION = "v2"
+_EOD_COMPLETION_TTL_S = 400 * 24 * 60 * 60
+
+
+def _eod_completion_key(market_date: dt.date) -> str:
+    return f"ingestion:{TENANT_ID}:eod-complete:{_EOD_CHAIN_VERSION}:{market_date}"
 
 
 def _after_market_date_utc_time(
@@ -165,28 +175,55 @@ async def recover_eod_chain(ctx) -> str:
     if not is_trading_day(today):
         return "skipped: non-trading day"
 
+    redis = ctx.get("redis") if ctx else None
+    completion_key = _eod_completion_key(today)
+    if redis is not None and await redis.get(completion_key):
+        return f"skipped: {today} EOD chain already complete"
+
     bars = await collect(MARKET, days=DAILY_LOOKBACK_DAYS)
     summary = await collect_summary(MARKET, days=SUMMARY_LOOKBACK_DAYS)
+    async with get_sessionmaker()() as session:
+        latest_bar = await session.scalar(
+            select(func.max(DailyBar.date)).where(DailyBar.market == MARKET)
+        )
+        latest_summary = await session.scalar(
+            select(func.max(MarketSummary.date)).where(MarketSummary.market == MARKET)
+        )
+    if latest_bar != today or latest_summary != today:
+        # The first attempt is intentionally early. A source that has not published yet is normal;
+        # downstream analytics must never run against yesterday while appearing current.
+        return (
+            f"pending: source not published for {today} "
+            f"(bars={latest_bar}, summary={latest_summary})"
+        )
+
     analytics = await compute_all(MARKET)
     portfolios = await snapshot_portfolios_run(MARKET)
     trending = await compute_trending(MARKET)
+    buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
     levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
     factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
+    market_note = await run_market_update(MARKET, tenant_id=TENANT_ID)
+    if redis is not None:
+        await redis.set(completion_key, "1", ex=_EOD_COMPLETION_TTL_S)
     log.info(
         "eod recovery: bars=%s summary=%s analytics=%s portfolios=%s trending=%s "
-        "levels=%s factors=%s",
+        "buzz=%s levels=%s factors=%s market=%s",
         bars["bars_upserted"],
         summary["days_upserted"],
         analytics["computed"],
         portfolios["users"],
         trending["stored"],
+        buzz["symbols"],
         levels["published"],
         factors["published"],
+        market_note["published"],
     )
     return (
         f"recovered bars={bars['bars_upserted']} summary={summary['days_upserted']} "
         f"analytics={analytics['computed']} portfolios={portfolios['users']} "
-        f"trending={trending['stored']} levels={levels['published']} factors={factors['published']}"
+        f"trending={trending['stored']} buzz={buzz['symbols']} levels={levels['published']} "
+        f"factors={factors['published']} market={market_note['published']}"
     )
 
 
@@ -421,7 +458,11 @@ class WorkerSettings:
         cron(
             run_agent_portfolios, hour={4, 5, 6, 7, 8}, minute={3, 18, 33, 48}, run_at_startup=False
         ),
-        # End-of-day bar pull at 13:00 UTC (~19:00 Dhaka, after the EOD publish).
+        # Early ordered attempts at 17:00/18:00 Dhaka put research in the user's 1-3h post-close
+        # window whenever the source is ready. Freshness gates make an unpublished source a clean
+        # pending result; the canonical 19:00 jobs and 20:05 recovery remain the safety net.
+        cron(recover_eod_chain, hour={11, 12}, minute=0, run_at_startup=False),
+        # Canonical end-of-day bar pull at 13:00 UTC (~19:00 Dhaka).
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Market-wide summary (index/turnover) right after the bar pull.
         cron(pull_eod_summary, hour=13, minute=5, run_at_startup=False),

@@ -319,6 +319,7 @@ dependencies = [
     { name = "bulls-analytics" },
     { name = "bulls-core" },
     { name = "bulls-market-data" },
+    { name = "pillow" },
     { name = "redis" },
 ]
 
@@ -328,6 +329,7 @@ requires-dist = [
     { name = "bulls-analytics", editable = "packages/analytics" },
     { name = "bulls-core", editable = "packages/core" },
     { name = "bulls-market-data", editable = "packages/market_data" },
+    { name = "pillow", specifier = ">=10" },
     { name = "redis", specifier = ">=5.0" },
 ]
 

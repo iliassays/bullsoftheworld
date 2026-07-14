@@ -21,6 +21,21 @@ class FactorSignal:
     cooldown_days: int
     payload: dict
 
+    @property
+    def rank(self) -> float:
+        """Comparable within one beat; used to keep the public feed selective."""
+        if self.beat == "momentum":
+            return float(self.payload.get("mom") or 0)
+        if self.beat == "quality":
+            return (1 - float(self.payload.get("pe_vs") or 1)) * 100 + float(
+                self.payload.get("roe") or 0
+            )
+        if self.beat == "smartmoney":
+            return float(self.payload.get("pp") or 0)
+        if self.beat == "accumulation":
+            return float(self.payload.get("cmf") or 0) * 100
+        return abs(float(self.payload.get("chg") or 0))
+
 
 # --- thresholds (calibrated to the DSE factor distributions) ---
 _MOM_MIN = 60.0  # 12-1 month return % to count as a "strong trend"
@@ -35,6 +50,7 @@ _ACCUM_CMF = 0.10  # quiet accumulation: money inflow (Chaikin) ...
 _ACCUM_BAND = 0.10  # ... while price stays within ±10% of its 50-day base
 _BREAKOUT_NEAR = -2.0  # within 2% of the 52-week high ...
 _BREAKOUT_UP = 1.0  # ... and up at least this much today (a fresh push, not just sitting there)
+MAX_NOTES_PER_BEAT = 5
 
 
 def detect_momentum(ta, month_key: str) -> FactorSignal | None:
@@ -169,7 +185,7 @@ _T = {
         "পয়েন্ট) — বিস্তৃত 'স্মার্ট মানি' সঞ্চয়। ইতিহাস, পূর্বাভাস নয়।",
     ),
     "strength": (
-        "{code} rose {chg}% while the market (DSEX) fell {idx_abs}% — relative strength. "
+        "{code} rose {chg}% while {benchmark} fell {idx_abs}% — relative strength. "
         "Descriptive, not advice.",
         "{code} {chg}% বেড়েছে যেখানে বাজার (DSEX) {idx_abs}% পড়েছে — আপেক্ষিক শক্তি। তথ্য, পরামর্শ নয়।",
     ),
@@ -192,7 +208,7 @@ _T = {
         "পরামর্শ নয়।",
     ),
     "breakout": (
-        "{code} is pushing to a new 52-week high — ৳{close} after +{chg}% today. Strength — but "
+        "{code} is pushing to a new 52-week high — {currency}{close} after +{chg}% today. Strength — but "
         "extended moves can pull back, so check the volume behind it. Descriptive, not advice.",
         "{code} নতুন ৫২-সপ্তাহের সর্বোচ্চে উঠছে — আজ +{chg}% বেড়ে ৳{close}। শক্তি — তবে বেশি বেড়ে গেলে "
         "পিছিয়ে আসতে পারে, তাই পেছনের ভলিউম দেখুন। তথ্যমূলক, পরামর্শ নয়।",
@@ -226,7 +242,14 @@ _VARIANTS: dict[str, list[tuple[str, str]]] = {
 }
 
 
-def render(sig: FactorSignal, code: str, locale: str) -> str:
+def render(
+    sig: FactorSignal,
+    code: str,
+    locale: str,
+    *,
+    currency: str = "৳",
+    benchmark: str = "DSEX",
+) -> str:
     # circuit shares one beat but two templates (up/down), chosen by direction.
     key = (
         ("circuit_up" if sig.payload.get("dir") == "up" else "circuit_down")
@@ -238,7 +261,7 @@ def render(sig: FactorSignal, code: str, locale: str) -> str:
         tmpl = vs[sum(ord(c) for c in code) % len(vs)][1 if locale == "bn" else 0]
     else:
         tmpl = _T[key][1 if locale == "bn" else 0]
-    p = dict(sig.payload, code=code)
+    p = dict(sig.payload, code=code, currency=currency, benchmark=benchmark)
     if sig.beat == "momentum":
         caution = (
             " A move this fast can reverse hard — treat with care."

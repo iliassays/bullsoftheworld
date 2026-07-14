@@ -24,7 +24,7 @@ flowchart LR
   Bars["Authorized EOD bars"] --> Coverage["Session coverage gate"]
   Coverage --> Snapshot["Quote and SPY market snapshots"]
   Snapshot --> Analytics["Adjusted-price analytics"]
-  Analytics --> Signals["Levels and full-session volume events"]
+  Analytics --> Signals["Levels, factors, full-session volume and market wrap"]
   Signals --> Alerts["Watcher and holder inbox"]
   Analytics --> Portfolio["Portfolio close snapshot"]
   Analytics --> Brief["Tenant strategy-pack daily brief"]
@@ -34,6 +34,15 @@ The completion marker is written only after price snapshots, analytics, signals,
 snapshots, and buzz snapshots finish. Retries are safe: signal occurrences, one-shot price alerts,
 and external evidence source keys prevent duplicate delivery.
 
+The first run is `22:45 UTC`, which is 1h45 after the regular close in standard time and 2h45 after
+the close in daylight time. `23:30`, `01:30`, and `13:30 UTC` are idempotent recovery checks. A run
+cannot publish until the configured ready-symbol coverage threshold is met.
+
+FINRA Reg SHO is a separate ordered nightly chain at `23:45 UTC`: download, validate header/date/
+record-count trailer, persist matched rows and a `regulatory_data_state` checkpoint, then evaluate
+the short-sale-activity desk. A missing holiday file or transient failure produces no user content;
+the five-session catch-up window retries it and the watchdog reports prolonged staleness privately.
+
 ## Alert semantics
 
 - US price levels are evaluated after a completed session and are labelled **session close**, not
@@ -42,6 +51,11 @@ and external evidence source keys prevent duplicate delivery.
 - New material SEC filings fan out only to users watching or holding the security.
 - New 13F quarter summaries fan out only to interested users and explicitly state that 13F omits
   trade dates, execution prices, shorts, and intent.
+- The institutional desk runs after the weekly Sunday 13F refresh. It requires material aggregate
+  share change plus manager-breadth confirmation and publishes at most ten names per new quarter.
+- FINRA activity is available on every ready ticker page. The public desk publishes only the five
+  largest statistically confirmed anomalies; it never calls daily short volume short interest or a
+  bearish signal.
 - External evidence alerts use a unique `(tenant, user, source_key)` index, so a worker retry cannot
   send the same disclosure twice.
 
@@ -66,8 +80,9 @@ bypassed for an unreviewed free bootstrap source.
 ## Product measurement
 
 Consent-gated first-party analytics receive non-sensitive funnel events only: page view, search
-selection, idea open, watchlist change, research question, price-alert change, and alert open. No
-Google Analytics or advertising tracker runs during the research beta. Events carry market, board,
+selection, idea open, watchlist change, research question, price-alert change, and alert open.
+For EEA/UK visitors, Google Analytics and first-party product analytics remain denied until consent;
+the saved choice is reapplied on every load. Events carry market, board,
 event kind, or ticker where relevant. They never carry email, phone, portfolio quantity, cost basis,
 alert price, or free-form community content.
 

@@ -33,10 +33,17 @@ from bulls.market_data.calendar import (
 from ingestion.alerts import check_price_alerts
 from ingestion.analytics import compute_all
 from ingestion.buzz import snapshot_all
+from ingestion.finra_short import collect as collect_finra_short
 from ingestion.history import US_DAILY_LOOKBACK_DAYS, collect
 from ingestion.portfolio_snapshot import run as snapshot_portfolios
 from ingestion.security_master import collect as refresh_security_master
-from ingestion.signals.runner import run_eod_volume_agent, run_levels_agent
+from ingestion.signals.runner import (
+    run_eod_volume_agent,
+    run_factor_agents,
+    run_levels_agent,
+    run_market_update,
+    run_short_flow_agent,
+)
 from ingestion.us_eod_snapshot import collect as publish_us_eod
 
 log = logging.getLogger(__name__)
@@ -44,10 +51,11 @@ MARKET = "US"
 TENANT_ID = "bullsofwallst"
 EOD_PUBLICATION_DELAY = dt.timedelta(minutes=90)
 _COMPLETION_TTL_S = 400 * 24 * 60 * 60
+_CHAIN_VERSION = "v2"
 
 
 def _completion_key(session_date: dt.date) -> str:
-    return f"ingestion:{TENANT_ID}:eod-complete:{session_date.isoformat()}"
+    return f"ingestion:{TENANT_ID}:eod-complete:{_CHAIN_VERSION}:{session_date.isoformat()}"
 
 
 def most_recent_due_session(now: dt.datetime) -> dt.date:
@@ -151,6 +159,8 @@ async def run_us_eod_chain(ctx) -> str:
     analytics = await compute_all(MARKET)
     levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
     volume = await run_eod_volume_agent(MARKET, tenant_id=TENANT_ID)
+    factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
+    market_note = await run_market_update(MARKET, tenant_id=TENANT_ID)
     price_alerts = await _evaluate_eod_price_alerts()
     portfolios = await snapshot_portfolios(MARKET)
     buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
@@ -168,6 +178,7 @@ async def run_us_eod_chain(ctx) -> str:
         f"session={session_date} coverage={covered}/{ready} bars={bars['bars_upserted']} "
         f"eod_snapshot={eod_snapshot} analytics={analytics['computed']} "
         f"levels={levels['published']} volume={volume['published']} "
+        f"factors={factors['published']} market={market_note['published']} "
         f"price_alerts={price_alerts} portfolios={portfolios} buzz={buzz}"
     )
 
@@ -178,13 +189,62 @@ async def refresh_us_security_master(ctx) -> str:
     return f"security_master={stats}"
 
 
+async def pull_finra_short_volume(ctx) -> str:
+    """FINRA Reg SHO daily short volume — whole US universe, self-healing catch-up.
+
+    Deliberately never raises: an unpublished file (holiday, early run) or a transient FINRA
+    outage is a routine skip, and the next run's catch-up window recovers it silently.
+    """
+    try:
+        stats = await collect_finra_short()
+    except Exception:
+        log.warning("finra_short_volume run failed; next run will catch up", exc_info=True)
+        return "finra_short=failed (will catch up)"
+    log.info("finra_short_volume_complete stats=%s", stats)
+    return f"finra_short={stats}"
+
+
+async def run_short_flow_notes(ctx) -> str:
+    """Short-flow agent notes from the latest ingested Reg SHO session (skips when no data)."""
+    try:
+        stats = await run_short_flow_agent(MARKET, tenant_id=TENANT_ID)
+    except Exception:
+        log.warning("short_flow_agent run failed", exc_info=True)
+        return "short_flow=failed"
+    return f"short_flow={stats}"
+
+
+async def run_finra_short_chain(ctx) -> str:
+    """Ordered FINRA fetch -> validation/checkpoint -> agent evaluation."""
+    result = await pull_finra_short_volume(ctx)
+    if "failed" in result:
+        return result
+    notes = await run_short_flow_notes(ctx)
+    return f"{result} {notes}"
+
+
 class WorkerSettings:
-    functions: ClassVar = [run_us_eod_chain, refresh_us_security_master]
+    functions: ClassVar = [
+        run_us_eod_chain,
+        refresh_us_security_master,
+        pull_finra_short_volume,
+        run_short_flow_notes,
+        run_finra_short_chain,
+    ]
     cron_jobs: ClassVar = [
-        # 23:30 UTC is 19:30 ET in summer / 18:30 ET in winter. 01:30 is a recovery run;
-        # 13:30 verifies the previous session after restarts. Coverage makes all runs idempotent.
+        # First attempt 22:45 UTC = 17:45 ET winter / 18:45 ET summer — inside the 1-3h
+        # post-close window users actually check, and safely past the provider's 90-minute
+        # publication delay in both DST states (the due-time gate skips it if not ready yet).
+        # 23:30 and 01:30 are recovery runs; 13:30 verifies the previous session after restarts.
+        # Coverage gate + completion key make every run idempotent.
+        cron(run_us_eod_chain, hour=22, minute=45, run_at_startup=False),
         cron(run_us_eod_chain, hour={1, 13, 23}, minute=30, run_at_startup=True),
         cron(refresh_us_security_master, weekday="sun", hour=12, minute=0),
+        # FINRA publishes the daily file ~18:00 ET; 23:45 UTC = 18:45 EST / 19:45 EDT is past it
+        # year-round. Startup run + a multi-session catch-up window make missed evenings heal.
+        # One ordered job prevents a note evaluation from racing ahead of the file transaction.
+        # It is anchored to the latest ingested session and deduped, so restarts cannot double-post.
+        cron(run_finra_short_chain, hour=23, minute=45, run_at_startup=True),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
     queue_name: ClassVar = get_settings().us_ingestion_queue_name

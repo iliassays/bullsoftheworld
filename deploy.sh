@@ -46,9 +46,17 @@ ssh "$REMOTE" "cd $APP \
   && git pull -q origin main \
   && ~/.local/bin/uv sync -q \
   && ( cd services/api && ~/.local/bin/uv run alembic upgrade head ) \
-  && sudo cp infra/systemd/bullsofwallst-research-worker.service /etc/systemd/system/ \
+  && sudo cp infra/systemd/bullsofwallst-worker.service \
+       infra/systemd/bullsofwallst-sec-worker.service \
+       infra/systemd/bullsofwallst-research-worker.service \
+       infra/systemd/bullsofwallst-sec-watchdog.service \
+       infra/systemd/bullsofwallst-sec-watchdog.timer \
+       /etc/systemd/system/ \
   && sudo systemctl daemon-reload \
-  && sudo systemctl enable bullsofwallst-research-worker \
-  && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker bullsofdhaka-ai-worker bullsofwallst-research-worker"
+  && sudo systemctl enable bullsofwallst-worker bullsofwallst-sec-worker \
+       bullsofwallst-research-worker bullsofwallst-sec-watchdog.timer \
+  && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker \
+       bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
+       bullsofwallst-research-worker bullsofwallst-sec-watchdog.timer"
 
 echo "✓ deployed → https://bullsofdhaka.bullstreetai.com"

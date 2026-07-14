@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import statistics
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -18,6 +19,7 @@ from bulls.core.models import (
     InstitutionalPosition,
     SecFiling,
     SecurityIdentifier,
+    ShortVolumeDaily,
     Symbol,
 )
 
@@ -134,6 +136,194 @@ class InstitutionalActivityOut(BaseModel):
     bounded_manager_history: bool
     disclosure_note: str
     limitations: list[str]
+
+
+class ShortVolumePointOut(BaseModel):
+    date: str
+    short_share_pct: float
+    short_exempt_share_pct: float
+    finra_reported_volume: float
+
+
+class ShortVolumeOut(BaseModel):
+    code: str
+    as_of_date: str | None
+    status: str
+    status_label: str
+    short_share_pct: float | None
+    average_20_pct: float | None
+    deviation_pp: float | None
+    percentile_60: float | None
+    z_score: float | None
+    activity_vs_20x: float | None
+    baseline_sessions: int
+    points: list[ShortVolumePointOut]
+    source_url: str | None
+    interpretation: str
+    limitations: list[str]
+
+
+def _short_ratio(row: ShortVolumeDaily) -> float:
+    total = float(row.total_volume)
+    return (
+        (float(row.short_volume) + float(row.short_exempt_volume)) / total if total > 0 else 0.0
+    )
+
+
+def _short_volume_classification(
+    *,
+    baseline_sessions: int,
+    latest_total_volume: float,
+    ratio: float,
+    deviation: float | None,
+    z_score: float | None,
+    activity_vs: float | None,
+) -> tuple[str, str, str]:
+    """Interpret one reading using the same conservative gates as the public agent."""
+    elevated = bool(
+        baseline_sessions >= 15
+        and latest_total_volume >= 100_000
+        and ratio >= 0.55
+        and deviation is not None
+        and deviation >= 0.12
+        and (z_score is None or z_score >= 1.5)
+        and (activity_vs is None or activity_vs >= 0.5)
+    )
+    if baseline_sessions < 15:
+        return (
+            "limited_history",
+            "Building a baseline",
+            f"{15 - baseline_sessions} more completed sessions are needed before this reading "
+            "can be classified against a stable baseline.",
+        )
+    if elevated:
+        return (
+            "elevated",
+            "Unusually high short-sale activity",
+            "Short-marked activity is materially above this ticker's own norm with enough "
+            "reported volume and statistical confirmation. Investigate the catalyst and market "
+            "structure; this does not establish bearish direction.",
+        )
+    if deviation is not None and deviation <= -0.10:
+        return (
+            "below_normal",
+            "Below its recent norm",
+            "The short-marked share is below this ticker's own recent norm. That is descriptive "
+            "and must not be interpreted as a bullish signal.",
+        )
+    return (
+        "normal",
+        "Within its recent range",
+        "The short-marked share is within this ticker's recent range; no unusual FINRA "
+        "short-sale activity is identified.",
+    )
+
+
+@router.get("/symbols/{code}/short-volume")
+async def symbol_short_volume(
+    code: str, tenant: CurrentTenant, session: DbSession
+) -> ShortVolumeOut:
+    """FINRA daily short-sale activity for every retail-ready U.S. symbol.
+
+    This is intentionally interpretation-first: the API compares the latest observation with the
+    security's own history while refusing to label the result bullish or bearish.
+    """
+    enforce_market_feature(tenant, "finra_short_volume")
+    code = code.upper()
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_retail_ready:
+        raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
+    rows = list(
+        await session.scalars(
+            select(ShortVolumeDaily)
+            .where(ShortVolumeDaily.market == tenant.market, ShortVolumeDaily.code == code)
+            .order_by(ShortVolumeDaily.date.desc())
+            .limit(61)
+        )
+    )
+    limitations = [
+        "FINRA daily files cover trades reported to FINRA facilities, not all U.S. trading venues.",
+        "Daily short-sale volume is not short interest and includes market-maker and hedging activity.",
+        "It does not reveal whether a short position stayed open after the trade.",
+    ]
+    if not rows:
+        return ShortVolumeOut(
+            code=code,
+            as_of_date=None,
+            status="not_available",
+            status_label="No FINRA history yet",
+            short_share_pct=None,
+            average_20_pct=None,
+            deviation_pp=None,
+            percentile_60=None,
+            z_score=None,
+            activity_vs_20x=None,
+            baseline_sessions=0,
+            points=[],
+            source_url=None,
+            interpretation="The nightly FINRA file has not produced a matched record for this symbol yet.",
+            limitations=limitations,
+        )
+
+    latest = rows[0]
+    history = rows[1:]
+    baseline = history[:20]
+    ratio = _short_ratio(latest)
+    baseline_ratios = [_short_ratio(row) for row in baseline]
+    average = statistics.fmean(baseline_ratios) if baseline_ratios else None
+    deviation = ratio - average if average is not None else None
+    stddev = statistics.stdev(baseline_ratios) if len(baseline_ratios) >= 2 else None
+    z_score = deviation / stddev if deviation is not None and stddev and stddev > 0 else None
+    history_ratios = [_short_ratio(row) for row in history[:60]]
+    percentile = (
+        sum(value <= ratio for value in history_ratios) / len(history_ratios) * 100
+        if history_ratios
+        else None
+    )
+    avg_volume = (
+        statistics.fmean(float(row.total_volume) for row in baseline) if baseline else None
+    )
+    activity_vs = float(latest.total_volume) / avg_volume if avg_volume else None
+
+    status, label, interpretation = _short_volume_classification(
+        baseline_sessions=len(baseline),
+        latest_total_volume=float(latest.total_volume),
+        ratio=ratio,
+        deviation=deviation,
+        z_score=z_score,
+        activity_vs=activity_vs,
+    )
+
+    return ShortVolumeOut(
+        code=code,
+        as_of_date=str(latest.date),
+        status=status,
+        status_label=label,
+        short_share_pct=round(ratio * 100, 2),
+        average_20_pct=round(average * 100, 2) if average is not None else None,
+        deviation_pp=round(deviation * 100, 2) if deviation is not None else None,
+        percentile_60=round(percentile, 1) if percentile is not None else None,
+        z_score=round(z_score, 2) if z_score is not None else None,
+        activity_vs_20x=round(activity_vs, 2) if activity_vs is not None else None,
+        baseline_sessions=len(baseline),
+        points=[
+            ShortVolumePointOut(
+                date=str(row.date),
+                short_share_pct=round(_short_ratio(row) * 100, 2),
+                short_exempt_share_pct=round(
+                    float(row.short_exempt_volume) / float(row.total_volume) * 100, 2
+                ),
+                finra_reported_volume=float(row.total_volume),
+            )
+            for row in reversed(rows[:30])
+        ],
+        source_url=(
+            "https://cdn.finra.org/equity/regsho/daily/"
+            f"CNMSshvol{latest.date:%Y%m%d}.txt"
+        ),
+        interpretation=interpretation,
+        limitations=limitations,
+    )
 
 
 def _filing_title(filing: SecFiling) -> str:

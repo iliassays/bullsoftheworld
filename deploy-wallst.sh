@@ -20,5 +20,7 @@ WEB_OG_TITLE="${WALLST_OG_TITLE:-Bulls of Wall Street - US market data, not nois
 WEB_OG_DESCRIPTION="${WALLST_OG_DESCRIPTION:-US stock prices, price history, and market discussion for retail investors.}" \
 WEB_TWITTER_TITLE="${WALLST_TWITTER_TITLE:-Bulls of Wall Street - US market data, not noise}" \
 WEB_TWITTER_DESCRIPTION="${WALLST_TWITTER_DESCRIPTION:-US stock prices, price history, and market discussion for retail investors.}" \
+WEB_GA_ID="${WALLST_GA_ID:-G-6JL7K89D1T}" \
+WEB_GTM_ID="${WALLST_GTM_ID:-GTM-NJB37CCD}" \
 WEB_SITEMAP_RESOLVE_IP="${WALLST_SITEMAP_RESOLVE_IP:-}" \
 ./deploy-web.sh

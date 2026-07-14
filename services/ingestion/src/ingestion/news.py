@@ -196,10 +196,12 @@ async def _ingest(market: str, items: list) -> int:
                 )
             )
             result = await session.execute(stmt)
+            # RETURNING yields the row's id on both the insert and update paths, so its presence
+            # is the "kept one row" signal; .rowcount doesn't exist on a streamed RETURNING result.
             announcement_id = result.scalar_one_or_none()
             if announcement_id is not None:
                 announcement_ids.append(announcement_id)
-            kept += result.rowcount or 0
+                kept += 1
         await session.commit()
     await _enqueue_embeddings(announcement_ids)
     return kept

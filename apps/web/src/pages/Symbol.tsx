@@ -10,6 +10,7 @@ import {
   type InstitutionalActivity,
   type NewsItem,
   type Post,
+  type ShortVolumeActivity,
   type SymbolDetail,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -29,6 +30,7 @@ import {
   OwnershipPanel,
 } from "../components/CompanyPanels";
 import { InstitutionalHoldingsPanel } from "../components/InstitutionalHoldingsPanel";
+import { ShortVolumePanel } from "../components/ShortVolumePanel";
 import { BeforeYouTrade } from "../components/BeforeYouTrade";
 import { useSeo, breadcrumbJsonLd } from "../components/Seo";
 import { KeyLevels } from "../components/KeyLevels";
@@ -118,6 +120,7 @@ export function SymbolPage() {
   const [buzz, setBuzz] = useState<Buzz | null>(null);
   const [company, setCompany] = useState<Company | null | undefined>(undefined);
   const [institutional, setInstitutional] = useState<InstitutionalActivity | null | undefined>(undefined);
+  const [shortVolume, setShortVolume] = useState<ShortVolumeActivity | null | undefined>(undefined);
   const [news, setNews] = useState<NewsItem[] | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [watched, setWatched] = useState(false);
@@ -134,6 +137,7 @@ export function SymbolPage() {
     setBuzz(null);
     setCompany(undefined);
     setInstitutional(undefined);
+    setShortVolume(undefined);
     setNews(null);
     setBars([]);
     api
@@ -172,6 +176,12 @@ export function SymbolPage() {
         .then((value) => active && setInstitutional(value))
         .catch(() => active && setInstitutional(null));
     }
+    if (config.features.finra_short_volume) {
+      api
+        .shortVolume(sym)
+        .then((value) => active && setShortVolume(value))
+        .catch(() => active && setShortVolume(null));
+    }
     api.recordView(sym).catch(() => {}); // internal analytics; fire-and-forget
     return () => {
       active = false;
@@ -180,6 +190,7 @@ export function SymbolPage() {
     sym,
     config.features.company_fundamentals,
     config.features.institutional_holdings,
+    config.features.finra_short_volume,
     config.features.official_disclosures,
   ]);
 
@@ -256,7 +267,8 @@ export function SymbolPage() {
     (candidate) =>
       (candidate.id !== "ownership" ||
         config.features.shareholding_breakdown ||
-        config.features.institutional_holdings) &&
+        config.features.institutional_holdings ||
+        config.features.finra_short_volume) &&
       (candidate.id !== "lens" || config.features.interpreted_analytics) &&
       (candidate.id !== "financials" || config.features.company_fundamentals) &&
       (candidate.id !== "news" || config.features.official_disclosures),
@@ -497,22 +509,31 @@ export function SymbolPage() {
         ) : (
           <Empty>{lang === "bn" ? "আর্থিক তথ্য এখন পাওয়া যাচ্ছে না।" : "Financial data is unavailable."}</Empty>
         ))}
-      {tab === "ownership" &&
-        (config.features.institutional_holdings ? (
-          institutional === undefined ? (
+      {tab === "ownership" && (
+        <>
+          {config.features.institutional_holdings ? (
+            institutional === undefined ? (
+              <Spinner />
+            ) : institutional ? (
+              <InstitutionalHoldingsPanel data={institutional} />
+            ) : (
+              <Empty>{lang === "bn" ? "প্রাতিষ্ঠানিক হোল্ডিং এখন পাওয়া যাচ্ছে না।" : "Institutional holdings are unavailable."}</Empty>
+            )
+          ) : company ? (
+            <OwnershipPanel o={company.ownership} />
+          ) : company === undefined ? (
             <Spinner />
-          ) : institutional ? (
-            <InstitutionalHoldingsPanel data={institutional} />
           ) : (
-            <Empty>{lang === "bn" ? "প্রাতিষ্ঠানিক হোল্ডিং এখন পাওয়া যাচ্ছে না।" : "Institutional holdings are unavailable."}</Empty>
-          )
-        ) : company ? (
-          <OwnershipPanel o={company.ownership} />
-        ) : company === undefined ? (
-          <Spinner />
-        ) : (
-          <Empty>{lang === "bn" ? "মালিকানার তথ্য এখন পাওয়া যাচ্ছে না।" : "Ownership data is unavailable."}</Empty>
-        ))}
+            <Empty>{lang === "bn" ? "মালিকানার তথ্য এখন পাওয়া যাচ্ছে না।" : "Ownership data is unavailable."}</Empty>
+          )}
+          {config.features.finra_short_volume &&
+            (shortVolume === undefined ? (
+              <Spinner />
+            ) : shortVolume ? (
+              <ShortVolumePanel data={shortVolume} />
+            ) : null)}
+        </>
+      )}
     </div>
   );
 }

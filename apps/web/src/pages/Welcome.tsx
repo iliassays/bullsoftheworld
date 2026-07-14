@@ -9,6 +9,7 @@ import { useLang } from "../lib/i18n";
 import { useNavigate } from "../lib/nav";
 
 const ACTIVATION_TARGET = 10;
+const ACTIVATION_VERSION = "watchlist-10-v1";
 const STOCKS_SHOWN = 24;
 
 const SECTOR_ICONS: Record<string, string> = {
@@ -121,6 +122,8 @@ export function Welcome() {
       await trackProductEvent("watchlist_activated", {
         source: "onboarding",
         watch_count: finalCount,
+        activation_target: ACTIVATION_TARGET,
+        activation_version: ACTIVATION_VERSION,
       });
     }
     navigate("/watchlist", { replace: true });

@@ -7,6 +7,8 @@ import { api } from "./api";
 
 const ATTRIBUTION_KEY = "bulls.attribution";
 const SERVER_PROPERTY_KEYS = new Set([
+  "activation_target",
+  "activation_version",
   "alert_kind",
   "board_key",
   "campaign",

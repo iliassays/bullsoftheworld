@@ -1,7 +1,8 @@
 # systemd units (production server)
 
-These run on the bullstreetai server. They are **not** auto-deployed by `deploy.sh` — install them
-by hand once (or after a server rebuild). They live here so the config is version-controlled.
+These run on the bullstreetai server and live here so their configuration is version-controlled.
+`deploy.sh` refreshes the active U.S. worker units on every release; the commands below remain the
+server-bootstrap procedure and cover the independent DSE watchdog units too.
 
 ## Health watchdog
 
@@ -31,7 +32,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bullsofdhaka-worker bulls-ai-worker
 ```
 
-Official U.S. regulatory data runs independently from licensed/third-party market-data workers:
+Official U.S. regulatory data runs independently from the EOD market-data worker:
 
 ```bash
 sudo cp infra/systemd/bullsofwallst-sec-worker.service \
@@ -57,6 +58,12 @@ freshness, weekly 13F freshness, 8-quarter history depth, refresh failures, and 
 coverage. Set `WALLST_ALERT_EMAIL` to route these separately; otherwise it uses `ALERT_EMAIL` and
 then `SUPPORT_EMAIL`. It restarts only an inactive SEC worker and never touches DSE services.
 
-`bullsofwallst-worker.service` is deliberately not included above. Install and enable it only after
-the US market-data license, same-site API hostname, verified exchange calendar, and initial cohort
-coverage checks in `docs/architecture/multi-tenant-us-readiness.md` are complete.
+The U.S. EOD worker is now an active production unit. On a new server, install it after the provider,
+same-site API hostname, verified exchange calendar, and initial coverage checks in
+`docs/architecture/multi-tenant-us-readiness.md` are complete:
+
+```bash
+sudo cp infra/systemd/bullsofwallst-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bullsofwallst-worker
+```

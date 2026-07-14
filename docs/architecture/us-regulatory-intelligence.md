@@ -28,6 +28,10 @@ flowchart LR
 
 - `ingestion.sec_worker.WorkerSettings` owns the `arq:ingestion:sec` queue. It cannot block DSE or
   US EOD collection. Concurrency is one because EDGAR completeness matters more than throughput.
+- Company submissions/Company Facts run daily at `06:15 UTC`; qualifying recent filings are
+  published immediately afterward. Form 13F runs Sundays at `10:00 UTC`; the institutional desk is
+  evaluated only after the archive transaction completes. No qualifying event is a valid quiet run,
+  not evidence that the worker failed.
 - Every request sends a descriptive User-Agent and monitored `SEC_CONTACT_EMAIL`. The Company Facts
   client stays below five requests per second and retries only rate-limit/server failures.
 - SEC submissions are mandatory. Company Facts may legitimately be absent, especially for funds;
@@ -64,6 +68,7 @@ back to the relevant SEC filing and labels unavailable evidence instead of fabri
 | Company Facts | 8 years | Up to 24 periods per whitelisted metric and ticker |
 | 13F summaries | 8 quarters | One aggregate row per ticker and report date |
 | 13F positions | 8 quarters | At most 150 high-value/high-change managers per ticker/quarter |
+| FINRA short-sale volume | 120 days | Matched symbols only; no raw daily file retention |
 | Raw SEC payloads | None | Temporary only |
 | RAG chunks | Current source projection | Stale filing, fact, and 13F chunks are pruned |
 
@@ -72,6 +77,10 @@ because only confidently mapped positions in the top-value/top-change set surviv
 a cohort, record table row counts, total relation size, unmatched-CUSIP rate, symbols covered, and
 refresh duration. Partitioning is unnecessary at launch; consider report-date partitioning only
 after measured table/index growth justifies the operational complexity.
+
+The first FINRA run backfills 25 completed sessions so the per-ticker baseline is useful at launch.
+Later runs fetch only missing sessions using both database dates and source checkpoints; rows older
+than 120 days are pruned because the product reads at most 60 sessions.
 
 ## Production acceptance
 

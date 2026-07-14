@@ -1,6 +1,7 @@
 import { useSeo } from "../components/Seo";
 import { useLang } from "../lib/i18n";
 import { useTenantConfig } from "../lib/tenant";
+import { looksEuropean, openAnalyticsConsent } from "../lib/consent";
 
 function PolicyPage({ kind }: { kind: "privacy" | "terms" }) {
   const { lang } = useLang();
@@ -72,6 +73,15 @@ function PolicyPage({ kind }: { kind: "privacy" | "terms" }) {
           </section>
         ))}
       </div>
+      {privacy && looksEuropean() && (
+        <button
+          type="button"
+          onClick={openAnalyticsConsent}
+          className="mt-2 min-h-10 rounded-lg border border-border px-3 text-xs font-semibold"
+        >
+          {bn ? "অ্যানালিটিক্স পছন্দ পরিবর্তন করুন" : "Change analytics choice"}
+        </button>
+      )}
     </article>
   );
 }

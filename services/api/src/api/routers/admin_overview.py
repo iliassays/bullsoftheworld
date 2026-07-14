@@ -592,6 +592,7 @@ async def analytics(
         .where(
             ProductEvent.tenant_id == name,
             ProductEvent.name == "watchlist_activated",
+            ProductEvent.properties["activation_version"].as_string() == "watchlist-10-v1",
             ProductEvent.user_id.is_not(None),
             ProductEvent.created_at >= since_30d,
         ),

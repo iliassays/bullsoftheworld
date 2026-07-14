@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, RegulatoryDataState, Symbol, TickerAnalytics
+from bulls.market_data.calendar import is_trading_day, to_market_tz
 from ingestion.us_worker import most_recent_due_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s sec-watchdog %(levelname)s %(message)s")
@@ -29,6 +30,7 @@ COOLDOWN_SECONDS = 6 * 60 * 60
 COOLDOWN_KEY = "watchdog:bullsofwallst:sec:alerted"
 SEC_MAX_AGE = dt.timedelta(hours=36)
 THIRTEEN_F_MAX_AGE = dt.timedelta(days=8)
+FINRA_MAX_AGE = dt.timedelta(days=4)
 TARGET_13F_QUARTERS = 8
 
 
@@ -102,6 +104,25 @@ def _state_problems(
             problems.append(
                 f"SEC 13F maps {holdings.symbols_covered}/{ready_symbols} ready symbols"
             )
+
+    finra = states.get("finra_short_volume")
+    if finra is None:
+        problems.append("FINRA short-volume state is missing")
+    else:
+        age = now - finra.last_success_at
+        if age > FINRA_MAX_AGE:
+            problems.append(f"FINRA short-volume refresh is {age.days} days old")
+        local_now = to_market_tz(now, market=MARKET)
+        if (
+            is_trading_day(local_now.date(), market=MARKET)
+            and local_now.time() >= dt.time(20, 30)
+            and (finra.as_of_date is None or finra.as_of_date < local_now.date())
+        ):
+            problems.append(
+                f"FINRA short-volume latest {finra.as_of_date}; expected {local_now.date()}"
+            )
+        if finra.records <= 0 or finra.symbols_covered <= 0:
+            problems.append("FINRA short-volume checkpoint contains no matched symbol records")
     return problems
 
 

@@ -1,4 +1,5 @@
 import { currentLang } from "./i18n";
+import { analyticsAllowed } from "./consent";
 
 // Minimal typed API client. The short-lived access token is injected from memory.
 // Use 127.0.0.1 (not "localhost") so the browser doesn't try IPv6 ::1 first,
@@ -652,6 +653,28 @@ export interface InstitutionalActivity {
   disclosure_note: string;
   limitations: string[];
 }
+export interface ShortVolumeActivity {
+  code: string;
+  as_of_date: string | null;
+  status: "not_available" | "limited_history" | "elevated" | "below_normal" | "normal";
+  status_label: string;
+  short_share_pct: number | null;
+  average_20_pct: number | null;
+  deviation_pp: number | null;
+  percentile_60: number | null;
+  z_score: number | null;
+  activity_vs_20x: number | null;
+  baseline_sessions: number;
+  points: Array<{
+    date: string;
+    short_share_pct: number;
+    short_exempt_share_pct: number;
+    finra_reported_volume: number;
+  }>;
+  source_url: string | null;
+  interpretation: string;
+  limitations: string[];
+}
 export interface TrendingReason {
   kind: "volume" | "turnover" | "near_high" | "near_low" | "move" | "limit_up" | "limit_down";
   mult?: number;
@@ -930,7 +953,8 @@ export const api = {
     name: string,
     properties: Record<string, string | number | boolean | null | undefined> = {},
   ) =>
-    request<{ status: string }>("/product-events", {
+    analyticsAllowed()
+      ? request<{ status: string }>("/product-events", {
       method: "POST",
       body: JSON.stringify({
         name,
@@ -939,7 +963,8 @@ export const api = {
         path: typeof window === "undefined" ? null : window.location.pathname,
         properties,
       }),
-    }),
+        })
+      : Promise.resolve({ status: "consent_required" }),
   institutionalLead: (body: InstitutionalLeadInput) =>
     request<{ status: string }>("/institutional-leads", {
       method: "POST",
@@ -1064,13 +1089,17 @@ export const api = {
   company: (code: string) => request<Company>(`/symbols/${code}/company`),
   institutionalHoldings: (code: string) =>
     request<InstitutionalActivity>(`/symbols/${code}/institutional-holdings`),
+  shortVolume: (code: string) =>
+    request<ShortVolumeActivity>(`/symbols/${code}/short-volume`),
   pulse: (code: string) => request<Pulse>(`/symbols/${code}/pulse`),
   news: (code: string) => request<NewsItem[]>(`/symbols/${code}/news`),
   recordView: (code: string) =>
-    request<void>(`/symbols/${code}/view`, {
-      method: "POST",
-      body: JSON.stringify({ analytics_consent: true, session_id: clientId() }),
-    }),
+    analyticsAllowed()
+      ? request<void>(`/symbols/${code}/view`, {
+          method: "POST",
+          body: JSON.stringify({ analytics_consent: true, session_id: clientId() }),
+        })
+      : Promise.resolve(),
   trending: (days = 2, limit = 10) =>
     request<WatchItem[]>(`/trending?days=${days}&limit=${limit}`),
   trendingStocks: (limit = 15) =>

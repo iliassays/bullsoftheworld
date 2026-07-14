@@ -9,7 +9,6 @@ feed.
 from __future__ import annotations
 
 import datetime as dt
-import re
 from typing import Any
 
 import httpx
@@ -29,9 +28,8 @@ YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 _UA = "Mozilla/5.0 BullsOfTheWorld/0.1 us-eod-bars"
 
 # No US security-master field carries a company website (unlike DSE, which publishes one per
-# listing) — so ETF/fund issuers get their known domain here rather than guessing from a fund's
-# full name (which almost never matches a real site), and everything else falls through to
-# _guess_domain's best-effort slug of the security name. Matched case-insensitively as a substring.
+# listing), so only hand-reviewed ETF/fund issuer domains are returned. Inventing `companyname.com`
+# can successfully fetch an unrelated site and attach a false logo, which is worse than a monogram.
 _ISSUER_DOMAINS: dict[str, str] = {
     "ishares": "ishares.com",
     "vanguard": "vanguard.com",
@@ -51,24 +49,12 @@ _ISSUER_DOMAINS: dict[str, str] = {
     "pimco": "pimco.com",
     "blackrock": "blackrock.com",
 }
-# Legal-entity/share-class noise that never appears in a company's own domain name.
-_NAME_NOISE_RE = re.compile(
-    r"\b(incorporated|inc|corporation|corp|company|co|ltd|limited|llc|lp|l\.p\.|plc|holdings?|"
-    r"group|trust|fund|etf|the|class\s+[a-z]|common\s+stock|ordinary\s+shares?|depositary\s+"
-    r"shares?|american\s+depositary|adr|ads|units?|warrants?|new)\b",
-    re.IGNORECASE,
-)
-
-
 def _guess_domain(name: str) -> str | None:
-    """Best-effort `name.com` guess for a security with no published website. Wrong often — the
-    caller verifies by actually fetching it, so a bad guess just costs one failed request."""
+    """Return only an audited issuer domain; never synthesize a company domain."""
     for keyword, domain in _ISSUER_DOMAINS.items():
         if keyword in name.lower():
             return domain
-    stripped = _NAME_NOISE_RE.sub(" ", name)
-    slug = re.sub(r"[^a-z0-9]", "", stripped.lower())
-    return f"{slug}.com" if len(slug) >= 3 else None
+    return None
 
 
 def yahoo_symbol(code: str) -> str:
@@ -202,8 +188,7 @@ class YahooUsEodProvider:
         return None
 
     async def get_company_website(self, code: str) -> str | None:
-        """Best-effort guessed homepage domain (for logo fetching) — see `_guess_domain`; there is
-        no published website field for US securities, unlike DSE's own listing pages."""
+        """Audited issuer domain for logo fetching, when one is known."""
         if self._names_by_code is None:
             records = await fetch_us_security_master(_UA)
             self._names_by_code = {r.symbol: r.security_name for r in records}

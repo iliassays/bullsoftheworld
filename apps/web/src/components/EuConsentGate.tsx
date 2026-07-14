@@ -1,45 +1,36 @@
 import { useEffect, useState } from "react";
 import { useLang } from "../lib/i18n";
 import { Link } from "../lib/nav";
+import {
+  ANALYTICS_CONSENT_OPEN_EVENT,
+  applyAnalyticsConsent,
+  looksEuropean,
+  storedAnalyticsConsent,
+} from "../lib/consent";
 
 // Google Consent Mode (index.html) already defaults analytics/ad storage to "denied" for the
 // EEA + UK — decided by Google's own geo-IP, not by us. This banner is just the opt-in surface for
 // visitors in that region: skipped entirely everywhere else (including Bangladesh), matching the
 // zero-friction default for that audience. The timezone check is a best-effort proxy for "show the
 // banner" only; it never weakens the actual region-scoped default in index.html.
-const CONSENT_KEY = "bulls.euConsent.v1";
-
-function looksEuropean(): boolean {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone?.startsWith("Europe/") ?? false;
-  } catch {
-    return false;
-  }
-}
-
-function updateConsent(granted: boolean) {
-  const w = window as typeof window & { gtag?: (...args: unknown[]) => void };
-  w.gtag?.("consent", "update", {
-    ad_storage: granted ? "granted" : "denied",
-    analytics_storage: granted ? "granted" : "denied",
-  });
-}
-
 export function EuConsentGate() {
   const { lang } = useLang();
   const bn = lang === "bn";
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem(CONSENT_KEY)) return;
-    if (looksEuropean()) setVisible(true);
+    const stored = storedAnalyticsConsent();
+    if (stored) applyAnalyticsConsent(stored === "granted");
+    else if (looksEuropean()) setVisible(true);
+    const open = () => setVisible(true);
+    window.addEventListener(ANALYTICS_CONSENT_OPEN_EVENT, open);
+    return () => window.removeEventListener(ANALYTICS_CONSENT_OPEN_EVENT, open);
   }, []);
 
   if (!visible) return null;
 
   const decide = (granted: boolean) => {
-    localStorage.setItem(CONSENT_KEY, granted ? "granted" : "denied");
-    updateConsent(granted);
+    applyAnalyticsConsent(granted);
     setVisible(false);
   };
 

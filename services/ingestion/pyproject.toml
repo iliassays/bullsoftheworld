@@ -9,6 +9,7 @@ dependencies = [
     "bulls-analytics",
     "redis>=5.0",
     "arq>=0.26",
+    "pillow>=10",
 ]
 
 [build-system]

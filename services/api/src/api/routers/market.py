@@ -423,12 +423,16 @@ async def get_symbol_logo(code: str, tenant: CurrentTenant, session: DbSession) 
     """Cached company logo bytes (fetched from the company website at onboarding). 404 when we have
     none — the frontend then falls back to a monogram."""
     logo = await session.get(CompanyLogo, (tenant.market, code.upper()))
-    if logo is None or logo.image is None:
+    allowed_types = {"image/png", "image/jpeg", "image/webp", "image/gif", "image/x-icon"}
+    if logo is None or logo.image is None or logo.content_type not in allowed_types:
         raise HTTPException(status_code=404, detail="no logo")
     return Response(
         content=logo.image,
         media_type=logo.content_type or "image/png",
-        headers={"Cache-Control": "public, max-age=86400"},  # logos change rarely
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },  # logos change rarely
     )
 
 

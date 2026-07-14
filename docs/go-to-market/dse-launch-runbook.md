@@ -42,7 +42,7 @@ idea open. The admin cockpit calculates this from first-party events and ticker 
 | Reach | UTM-attributed visit | establish baseline, no vanity target |
 | Interest | `click_launch_signup` | improve copy by source/campaign |
 | Registration | `sign_up_completed` | >= 5% of qualified landing visits |
-| Activation | `watchlist_activated` | >= 35% of new accounts |
+| Activation | `watchlist_activated` with `activation_version=watchlist-10-v1` | >= 35% of new accounts |
 | Retention | WAR in following week | >= 25% of activated accounts |
 | Institution | persisted lead | 5 discovery calls, then 1 bounded pilot |
 
@@ -131,7 +131,7 @@ forms and decision-critical evidence panels. Never buy or encourage ad clicks.
 ## 10. Launch checklist
 
 - [ ] Production migration applied and API/web/admin health checks pass.
-- [ ] Registration to three-stock activation works in Bangla and English on mobile.
+- [ ] Registration to ten-stock activation works in Bangla and English on mobile.
 - [ ] Product events appear in the cockpit without raw PII.
 - [ ] Institutional form creates a lead and status can be updated.
 - [ ] `/trust`, `/privacy`, `/terms`, and `/institutions` render for humans and crawlers.

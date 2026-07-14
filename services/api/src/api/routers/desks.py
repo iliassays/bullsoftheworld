@@ -103,6 +103,24 @@ _FALLBACK_BIO = (
 )
 
 
+def _desk_bio(handle: str) -> tuple[str, str]:
+    if handle == "BullsOfWallStShorts":
+        return (
+            "Flags statistically unusual FINRA-reported short-sale activity without treating it as short interest or a directional call.",
+            "FINRA-তে রিপোর্ট হওয়া অস্বাভাবিক short-sale কার্যকলাপ চিহ্নিত করে; এটিকে short interest বা দিকনির্দেশক সংকেত ধরে না।",
+        )
+    if handle == "BullsOfWallStFilings":
+        return (
+            "Surfaces material official SEC filings with a direct source link.",
+            "সরাসরি উৎস লিংকসহ গুরুত্বপূর্ণ অফিসিয়াল SEC ফাইলিং তুলে ধরে।",
+        )
+    if handle.startswith("BullsOfWallSt"):
+        equivalent = handle.replace("BullsOfWallSt", "BullsOfDhaka", 1)
+        if equivalent in _DESK_BIOS:
+            return _DESK_BIOS[equivalent]
+    return _DESK_BIOS.get(handle, _FALLBACK_BIO)
+
+
 @dataclass(frozen=True)
 class DeskPolicy:
     cadence: tuple[str, str]
@@ -266,6 +284,38 @@ _US_POLICY_OVERRIDES = {
         ("Official SEC EDGAR filings.", "অফিসিয়াল SEC EDGAR ফাইলিং।"),
         "disclosure",
     ),
+    "filings": DeskPolicy(
+        ("SEC EDGAR is checked daily at 02:15 ET.", "SEC EDGAR প্রতিদিন ০২:১৫ ET-তে পরীক্ষা করা হয়।"),
+        (
+            "Publishes recent material company filings such as earnings reports, acquisitions, leadership changes and beneficial-ownership filings.",
+            "আয়, অধিগ্রহণ, নেতৃত্ব পরিবর্তন ও উল্লেখযোগ্য মালিকানা সম্পর্কিত সাম্প্রতিক গুরুত্বপূর্ণ কোম্পানি ফাইলিং প্রকাশ করে।",
+        ),
+        (
+            "Only a newly discovered qualifying filing is posted; historical onboarding data is never replayed into the feed.",
+            "শুধু নতুন যোগ্য ফাইলিং পোস্ট হয়; অনবোর্ডিংয়ের পুরোনো ইতিহাস ফিডে পুনরায় প্রকাশ করা হয় না।",
+        ),
+        ("Official SEC EDGAR metadata with a direct filing link.", "সরাসরি ফাইলিং লিংকসহ অফিসিয়াল SEC EDGAR মেটাডেটা।"),
+        "filings",
+    ),
+    "shorts": DeskPolicy(
+        (
+            "Evaluated nightly after FINRA publishes the completed-session file, around 19:55 ET.",
+            "FINRA সম্পূর্ণ সেশনের ফাইল প্রকাশের পর রাতে, প্রায় ১৯:৫৫ ET-তে মূল্যায়ন করা হয়।",
+        ),
+        (
+            "Compares each ticker's short-marked share with its own 20-session norm, requiring a liquidity floor, a 12-point deviation and statistical confirmation.",
+            "প্রতিটি টিকারের short-marked অংশ তার নিজস্ব ২০-সেশনের স্বাভাবিক মানের সঙ্গে তুলনা করে; ন্যূনতম লিকুইডিটি, ১২-পয়েন্ট পার্থক্য ও পরিসংখ্যানগত নিশ্চিতকরণ লাগে।",
+        ),
+        (
+            "At most five largest anomalies are posted per session. Every ticker still has its own history on the stock page.",
+            "প্রতি সেশনে সর্বোচ্চ পাঁচটি বড় অস্বাভাবিকতা পোস্ট হয়। প্রতিটি টিকারের নিজস্ব ইতিহাস স্টক পাতায় থাকে।",
+        ),
+        (
+            "FINRA-facility short-sale volume, not whole-market volume or short interest; market-making and hedging are included.",
+            "FINRA-facility short-sale volume; এটি পুরো বাজারের ভলিউম বা short interest নয় এবং market-making ও hedging অন্তর্ভুক্ত।",
+        ),
+        "shorts",
+    ),
 }
 
 _BEAT_BY_SUFFIX = {
@@ -285,6 +335,8 @@ _BEAT_BY_SUFFIX = {
     "Accumulation": "factor",
     "Circuit": "factor",
     "Breakout": "factor",
+    "Shorts": "shorts",
+    "Filings": "filings",
 }
 
 
@@ -346,6 +398,16 @@ def _next_evaluation(now: dt.datetime, market: str, policy: DeskPolicy) -> dt.da
                     return candidate.astimezone(get_market_profile(market).tz)
         if policy.schedule == "disclosure":
             candidate = dt.datetime.combine(now.date(), dt.time(6, 15), tzinfo=dt.UTC)
+            if candidate <= now:
+                candidate += dt.timedelta(days=1)
+            return candidate.astimezone(get_market_profile(market).tz)
+        if policy.schedule == "filings":
+            candidate = dt.datetime.combine(now.date(), dt.time(6, 15), tzinfo=dt.UTC)
+            if candidate <= now:
+                candidate += dt.timedelta(days=1)
+            return candidate.astimezone(get_market_profile(market).tz)
+        if policy.schedule == "shorts":
+            candidate = dt.datetime.combine(now.date(), dt.time(23, 55), tzinfo=dt.UTC)
             if candidate <= now:
                 candidate += dt.timedelta(days=1)
             return candidate.astimezone(get_market_profile(market).tz)
@@ -424,7 +486,7 @@ async def desk(
                 )
             )
         ) is not None
-    bio_en, bio_bn = _DESK_BIOS.get(u.handle, _FALLBACK_BIO)
+    bio_en, bio_bn = _desk_bio(u.handle)
     policy = _policy_for(u.handle, tenant.market)
     language_index = 1 if locale == "bn" else 0
     next_evaluation = _next_evaluation(dt.datetime.now(dt.UTC), tenant.market, policy)

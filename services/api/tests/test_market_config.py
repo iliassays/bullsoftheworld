@@ -128,8 +128,14 @@ def test_dse_analysis_schedule_distinguishes_processing_window_from_late_data() 
 
 
 def test_us_analysis_schedule_tracks_utc_cron_across_market_timezone() -> None:
-    before_publication = dt.datetime(2026, 7, 10, 0, 0, tzinfo=dt.UTC)
+    before_publication = dt.datetime(2026, 7, 9, 22, 0, tzinfo=dt.UTC)
     expected, next_run = analysis_schedule(before_publication, "US")
 
     assert expected == dt.date(2026, 7, 8)
-    assert next_run == dt.datetime(2026, 7, 10, 1, 30, tzinfo=dt.UTC)
+    assert next_run == dt.datetime(2026, 7, 9, 22, 45, tzinfo=dt.UTC)
+
+    after_publication = dt.datetime(2026, 7, 10, 0, 0, tzinfo=dt.UTC)
+    expected, next_run = analysis_schedule(after_publication, "US")
+
+    assert expected == dt.date(2026, 7, 9)
+    assert next_run == dt.datetime(2026, 7, 10, 22, 45, tzinfo=dt.UTC)
