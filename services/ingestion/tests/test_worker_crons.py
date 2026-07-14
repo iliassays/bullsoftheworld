@@ -12,6 +12,8 @@ from ingestion.research_worker import WorkerSettings as ResearchWorkerSettings
 from ingestion.sec_worker import WorkerSettings as SecWorkerSettings
 from ingestion.us_worker import WorkerSettings as UsWorkerSettings
 from ingestion.worker import (
+    FINAL_QUOTE_UTC_HOUR,
+    FINAL_QUOTE_UTC_MINUTE,
     WorkerSettings,
     _after_eod_window,
     _after_market_date_utc_time,
@@ -47,6 +49,15 @@ def test_eod_startup_recovery_is_time_guarded() -> None:
     assert _after_eod_window(dt.datetime(2026, 7, 8, 11, 0, tzinfo=dt.UTC))
     # 22:00 UTC is already the next Dhaka date, but that market date's EOD is still in the future.
     assert not _after_eod_window(dt.datetime(2026, 7, 8, 22, 0, tzinfo=dt.UTC))
+
+
+def test_final_delayed_quote_poll_recovers_on_startup() -> None:
+    jobs = {job.name: job for job in WorkerSettings.cron_jobs}
+    final_poll = jobs["cron:finalize_quotes"]
+
+    assert final_poll.run_at_startup
+    assert final_poll.hour == FINAL_QUOTE_UTC_HOUR
+    assert final_poll.minute == FINAL_QUOTE_UTC_MINUTE
 
 
 def test_market_date_utc_guard_handles_dhaka_rollover() -> None:

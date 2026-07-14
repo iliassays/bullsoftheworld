@@ -53,6 +53,8 @@ log = logging.getLogger(__name__)
 MARKET = "DSE"
 TENANT_ID = "bullsofdhaka"
 EOD_START_UTC_HOUR = 11
+FINAL_QUOTE_UTC_HOUR = 8
+FINAL_QUOTE_UTC_MINUTE = 45
 _EOD_CHAIN_VERSION = "v2"
 _EOD_COMPLETION_TTL_S = 400 * 24 * 60 * 60
 
@@ -87,6 +89,24 @@ async def poll_quotes(ctx) -> str:
         return "skipped: market closed"
     counts = await poll_market(MARKET)
     log.info("intraday poll: %s quotes", counts["quotes"])
+    return f"quotes={counts['quotes']}"
+
+
+async def finalize_quotes(ctx) -> str:
+    """Capture the final delayed snapshot after close, including startup recovery."""
+    now = dt.datetime.now(dt.UTC)
+    today = to_market_tz(now).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    if not _after_market_date_utc_time(
+        now,
+        today,
+        FINAL_QUOTE_UTC_HOUR,
+        FINAL_QUOTE_UTC_MINUTE,
+    ):
+        return "skipped: before final quote window"
+    counts = await poll_market(MARKET)
+    log.info("final delayed quote poll: %s quotes", counts["quotes"])
     return f"quotes={counts['quotes']}"
 
 
@@ -431,6 +451,7 @@ class WorkerSettings:
 
     functions: ClassVar = [
         poll_quotes,
+        finalize_quotes,
         run_agent_portfolios,
         pull_eod_bars,
         pull_eod_summary,
@@ -454,6 +475,14 @@ class WorkerSettings:
     cron_jobs: ClassVar = [
         # Intraday quote refresh: every 15 min across the DSE session (~04:00-08:45 UTC = 10:00-14:45 BDT).
         cron(poll_quotes, hour={4, 5, 6, 7, 8}, minute={0, 15, 30, 45}, run_at_startup=True),
+        # The provider is delayed, so the final close is not observable at 14:30 BDT. Capture it
+        # at 14:45 and recover it on a post-close restart without widening trading-hours guards.
+        cron(
+            finalize_quotes,
+            hour=FINAL_QUOTE_UTC_HOUR,
+            minute=FINAL_QUOTE_UTC_MINUTE,
+            run_at_startup=True,
+        ),
         # Agent model portfolios: 3 min after each quote poll (fresh snapshot, no race with it).
         cron(
             run_agent_portfolios, hour={4, 5, 6, 7, 8}, minute={3, 18, 33, 48}, run_at_startup=False
