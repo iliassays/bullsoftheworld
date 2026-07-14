@@ -85,6 +85,26 @@ def test_turnover_is_context_not_scored():
     assert any("1.3" in c for c in m.context)
 
 
+def test_intraday_metadata_and_prior_close_turnover_are_explicit():
+    m = build_mood(
+        as_of_date="2026-07-14",
+        as_of="2026-07-14T04:15:00+00:00",
+        data_status="intraday_delayed",
+        close_as_of_date="2026-07-13",
+        refresh_interval_minutes=15,
+        advancers=200,
+        decliners=100,
+        pct_above_200dma=0.6,
+        turnover_vs_20d=1.3,
+    )
+
+    assert m.data_status == "intraday_delayed"
+    assert m.as_of == "2026-07-14T04:15:00+00:00"
+    assert m.close_as_of_date == "2026-07-13"
+    assert m.refresh_interval_minutes == 15
+    assert any("Previous close turnover" in c for c in m.context)
+
+
 def test_bilingual_bn():
     m = build_mood(
         as_of_date="2026-06-30",

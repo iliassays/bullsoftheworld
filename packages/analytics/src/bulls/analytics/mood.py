@@ -17,6 +17,7 @@ participation context instead.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -32,6 +33,12 @@ class MoodComponent(BaseModel):
 
 class MoodIndex(BaseModel):
     as_of_date: str
+    as_of: str | None = None
+    data_status: Literal["intraday_delayed", "provisional_close", "official_close", "stale"] = (
+        "official_close"
+    )
+    close_as_of_date: str | None = None
+    refresh_interval_minutes: int | None = None
     score: int | None  # None when too few sub-indices are computable
     band: str  # extreme_fear | fear | neutral | greed | extreme_greed | unknown
     label: str  # localized band label
@@ -151,6 +158,12 @@ def _caption(band: str, top: MoodComponent | None, bn: bool) -> str:
 def build_mood(
     *,
     as_of_date: str,
+    as_of: str | None = None,
+    data_status: Literal[
+        "intraday_delayed", "provisional_close", "official_close", "stale"
+    ] = "official_close",
+    close_as_of_date: str | None = None,
+    refresh_interval_minutes: int | None = None,
     locale: str = "en",
     advancers: int = 0,
     decliners: int = 0,
@@ -193,13 +206,26 @@ def build_mood(
 
     context: list[str] = []
     if turnover_vs_20d is not None:
-        context.append(
-            f"টার্নওভার {turnover_vs_20d:.1f}x গড়" if bn else f"Turnover {turnover_vs_20d:.1f}x avg"
-        )
+        if data_status == "official_close":
+            context.append(
+                f"টার্নওভার {turnover_vs_20d:.1f}x গড়"
+                if bn
+                else f"Turnover {turnover_vs_20d:.1f}x avg"
+            )
+        else:
+            context.append(
+                f"আগের ক্লোজের টার্নওভার {turnover_vs_20d:.1f}x গড়"
+                if bn
+                else f"Previous close turnover {turnover_vs_20d:.1f}x avg"
+            )
 
     if len(components) < min_components:
         return MoodIndex(
             as_of_date=as_of_date,
+            as_of=as_of,
+            data_status=data_status,
+            close_as_of_date=close_as_of_date,
+            refresh_interval_minutes=refresh_interval_minutes,
             score=None,
             band="unknown",
             label="অজানা" if bn else "Unknown",
@@ -214,6 +240,10 @@ def build_mood(
     top = max(components, key=lambda c: abs(c.score - 50))
     return MoodIndex(
         as_of_date=as_of_date,
+        as_of=as_of,
+        data_status=data_status,
+        close_as_of_date=close_as_of_date,
+        refresh_interval_minutes=refresh_interval_minutes,
         score=score,
         band=band,
         label=label,

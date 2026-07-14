@@ -27,15 +27,27 @@ export function DhakaMood() {
   const { lang } = useLang();
   const [mood, setMood] = useState<MoodIndex | null>(null);
 
-  // Refetch when language flips — the server localizes the label/caption/components.
+  // The quote worker writes every 15 minutes. Match that cadence and refresh immediately when a
+  // user returns to the tab so an old close never remains on screen through an active session.
   useEffect(() => {
     let live = true;
-    api
-      .marketMood()
-      .then((m) => live && setMood(m))
-      .catch(() => live && setMood(null));
+    const load = () => {
+      api
+        .marketMood()
+        .then((m) => live && setMood(m))
+        .catch(() => live && setMood(null));
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+
+    load();
+    const timer = window.setInterval(load, 15 * 60 * 1000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       live = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [lang]);
 
@@ -47,10 +59,37 @@ export function DhakaMood() {
   const angle = ((180 - 1.8 * (score ?? 50)) * Math.PI) / 180;
   const nx = 200 + 112 * Math.cos(angle);
   const ny = 175 - 112 * Math.sin(angle);
+  const quoteTime = mood.as_of
+    ? new Intl.DateTimeFormat(bn ? "bn-BD" : "en-GB", {
+        timeZone: "Asia/Dhaka",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date(mood.as_of))
+    : mood.as_of_date;
+  const freshness =
+    mood.data_status === "stale"
+      ? bn
+        ? "ডেটা আপডেট দেরি হচ্ছে"
+        : "Data refresh is late"
+      : mood.data_status === "intraday_delayed"
+      ? bn
+        ? "ইন্ট্রাডে · ১৫ মিনিট বিলম্বিত"
+        : "Intraday · 15-min delayed"
+      : mood.data_status === "provisional_close"
+        ? bn
+          ? "ক্লোজ-পরবর্তী প্রাথমিক স্ন্যাপশট"
+          : "Provisional post-close snapshot"
+        : bn
+          ? "সর্বশেষ ক্লোজ"
+          : "Latest close";
+  const displayAsOf = mood.data_status === "official_close" ? mood.as_of_date : quoteTime;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div className="text-sm font-extrabold">
           {bn ? "ঢাকা মুড ইনডেক্স" : "Dhaka Mood Index"}
           <span className="ml-2 text-[10px] font-semibold text-muted">
@@ -58,8 +97,22 @@ export function DhakaMood() {
           </span>
         </div>
         {mood.as_of_date && (
-          <div className="text-[10px] text-muted">
-            {bn ? "তথ্য" : "as of"} {mood.as_of_date}
+          <div className="shrink-0 text-right text-[10px] leading-relaxed" aria-live="polite">
+            <div
+              className={
+                mood.data_status === "stale"
+                  ? "font-semibold text-down"
+                  : mood.data_status === "official_close"
+                    ? "text-muted"
+                    : "font-semibold text-accent"
+              }
+            >
+              {freshness}
+            </div>
+            <div className="text-muted">
+              {bn ? "আপডেট" : "Updated"} {displayAsOf}
+              {mood.data_status !== "official_close" && " BDT"}
+            </div>
           </div>
         )}
       </div>
@@ -130,6 +183,20 @@ export function DhakaMood() {
           </span>
         ))}
       </div>
+
+      {mood.data_status === "stale" ? (
+        <p className="mt-2 text-[10px] leading-snug text-down">
+          {bn
+            ? "সর্বশেষ কোট নির্ধারিত সময়ে আসেনি। এই স্কোরকে চলতি সেশনের অবস্থা হিসেবে ধরবেন না।"
+            : "The latest quote batch missed its expected time. Do not treat this score as the current session state."}
+        </p>
+      ) : mood.data_status !== "official_close" ? (
+        <p className="mt-2 text-[10px] leading-snug text-muted">
+          {bn
+            ? `ব্রেডথ, শক্তি ও ৫২-সপ্তাহের অবস্থান সর্বশেষ বিলম্বিত দামে; অস্থিরতা ${mood.close_as_of_date ?? "সর্বশেষ"} ক্লোজ পর্যন্ত।`
+            : `Breadth, strength and 52-week position use the latest delayed prices; volatility is through the ${mood.close_as_of_date ?? "latest"} close.`}
+        </p>
+      ) : null}
 
       <p className="mt-3 text-[13px] leading-relaxed">{mood.caption}</p>
       <p className="mt-2 border-t border-border pt-2 text-[10.5px] leading-snug text-muted">

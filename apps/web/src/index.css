@@ -31,6 +31,21 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Tailwind's reset intentionally leaves the native cursor unchanged. Make affordances explicit
+   across both portals so every interactive control behaves consistently on pointer devices. */
+a[href],
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary,
+label[for],
+select {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
 :lang(bn) {
   font-family: var(--font-bn);
 }

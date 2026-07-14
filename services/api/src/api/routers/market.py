@@ -50,7 +50,8 @@ from bulls.core.scheduling import analysis_schedule
 from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
 from bulls.market_data.calendar import is_trading_day, market_close_on, session_phase, to_market_tz
 
-_MOOD_TTL = 3600  # 1h — the mood is an EOD-stable, slow-changing read
+_MOOD_TTL = 180  # quote-driven intraday read; stay well inside the 15-minute poll cadence
+_MOOD_QUOTE_BATCH_WINDOW = dt.timedelta(minutes=30)
 
 router = APIRouter(tags=["market"])
 
@@ -723,45 +724,143 @@ async def get_analytics(
     return AnalyticsWithPatterns(**result.model_dump(), patterns=detect_patterns(adjusted))
 
 
+def _mood_data_status(
+    now: dt.datetime,
+    market: str,
+    quote_as_of: dt.datetime | None,
+    close_as_of_date: dt.date | None,
+) -> str:
+    """Describe exactly what the card represents; never call a prior close intraday data."""
+    if now.tzinfo is None:
+        raise ValueError("mood status requires a timezone-aware current time")
+    phase = str(session_phase(now, market=market))
+    if quote_as_of is None:
+        return "stale" if phase == "open" else "official_close"
+    if quote_as_of.tzinfo is None:
+        quote_as_of = quote_as_of.replace(tzinfo=dt.UTC)
+    local_now = to_market_tz(now, market=market)
+    local_quote = to_market_tz(quote_as_of, market=market)
+    local_today = local_now.date()
+    quote_date = local_quote.date()
+    if phase == "open" and (
+        quote_date != local_today or (now - quote_as_of).total_seconds() > 35 * 60
+    ):
+        return "stale"
+    quote_leads_close = close_as_of_date is None or quote_date > close_as_of_date
+    if quote_date == local_today and quote_leads_close:
+        if phase == "open":
+            return "intraday_delayed"
+        if phase == "post_close" and local_quote.time() < market_close_on(quote_date, market):
+            return "stale"
+        return "provisional_close"
+    return "official_close"
+
+
 async def _mood_inputs(session, market: str) -> dict[str, Any]:
-    """Gather the raw stats the Dhaka Mood Index is built from — all from persisted tables."""
+    """Gather a coherent mood snapshot, using delayed quotes only where price is sufficient."""
     codes = visible_codes(market)
+    now = dt.datetime.now(dt.UTC)
 
-    adv, dec = (
-        await session.execute(
-            select(
-                func.count().filter(QuoteSnapshot.change_pct > 0),
-                func.count().filter(QuoteSnapshot.change_pct < 0),
-            ).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(codes))
+    latest_quote_as_of = await session.scalar(
+        select(func.max(QuoteSnapshot.as_of)).where(
+            QuoteSnapshot.market == market,
+            QuoteSnapshot.code.in_(codes),
         )
-    ).one()
+    )
+    if latest_quote_as_of is not None and latest_quote_as_of.tzinfo is None:
+        latest_quote_as_of = latest_quote_as_of.replace(tzinfo=dt.UTC)
+    quote_date = (
+        to_market_tz(latest_quote_as_of, market=market).date() if latest_quote_as_of else None
+    )
+    batch_cutoff = latest_quote_as_of - _MOOD_QUOTE_BATCH_WINDOW if latest_quote_as_of else None
 
-    # % of the liquid universe above its 200-day average (only rows where the MA is defined).
-    above, total_ma = (
-        await session.execute(
-            select(
-                func.count().filter(TickerAnalytics.above_sma_200.is_(True)),
-                func.count(),
-            ).where(
-                TickerAnalytics.market == market,
-                TickerAnalytics.code.in_(codes),
-                TickerAnalytics.sma_200.isnot(None),
+    if batch_cutoff is not None:
+        adv, dec = (
+            await session.execute(
+                select(
+                    func.count().filter(QuoteSnapshot.change_pct > 0),
+                    func.count().filter(QuoteSnapshot.change_pct < 0),
+                ).where(
+                    QuoteSnapshot.market == market,
+                    QuoteSnapshot.code.in_(codes),
+                    QuoteSnapshot.as_of >= batch_cutoff,
+                )
             )
+        ).one()
+    else:
+        adv, dec = 0, 0
+
+    latest_analytics_date = await session.scalar(
+        select(func.max(TickerAnalytics.as_of_date)).where(
+            TickerAnalytics.market == market,
+            TickerAnalytics.code.in_(codes),
         )
-    ).one()
+    )
+    use_quote_levels = bool(
+        batch_cutoff is not None
+        and quote_date is not None
+        and (latest_analytics_date is None or quote_date > latest_analytics_date)
+    )
+
+    if use_quote_levels:
+        quote_analytics = (QuoteSnapshot.market == TickerAnalytics.market) & (
+            QuoteSnapshot.code == TickerAnalytics.code
+        )
+        above, total_ma = (
+            await session.execute(
+                select(
+                    func.count().filter(QuoteSnapshot.ltp > TickerAnalytics.sma_200),
+                    func.count(),
+                )
+                .join(TickerAnalytics, quote_analytics)
+                .where(
+                    QuoteSnapshot.market == market,
+                    QuoteSnapshot.code.in_(codes),
+                    QuoteSnapshot.as_of >= batch_cutoff,
+                    TickerAnalytics.sma_200.isnot(None),
+                )
+            )
+        ).one()
+        n_high, n_low = (
+            await session.execute(
+                select(
+                    func.count().filter(QuoteSnapshot.ltp >= TickerAnalytics.week52_high * 0.97),
+                    func.count().filter(QuoteSnapshot.ltp <= TickerAnalytics.week52_low * 1.03),
+                )
+                .join(TickerAnalytics, quote_analytics)
+                .where(
+                    QuoteSnapshot.market == market,
+                    QuoteSnapshot.code.in_(codes),
+                    QuoteSnapshot.as_of >= batch_cutoff,
+                )
+            )
+        ).one()
+    else:
+        # At/after EOD, use the canonical analytics snapshot rather than re-deriving it.
+        above, total_ma = (
+            await session.execute(
+                select(
+                    func.count().filter(TickerAnalytics.above_sma_200.is_(True)),
+                    func.count(),
+                ).where(
+                    TickerAnalytics.market == market,
+                    TickerAnalytics.code.in_(codes),
+                    TickerAnalytics.sma_200.isnot(None),
+                )
+            )
+        ).one()
+        n_high, n_low = (
+            await session.execute(
+                select(
+                    func.count().filter(TickerAnalytics.pct_from_52w_high >= -3),
+                    func.count().filter(TickerAnalytics.pct_from_52w_low <= 3),
+                ).where(TickerAnalytics.market == market, TickerAnalytics.code.in_(codes))
+            )
+        ).one()
     pct_above = (above / total_ma) if total_ma else None
 
-    # Shares pressed against their 52-week extremes (within 3%).
-    n_high, n_low = (
-        await session.execute(
-            select(
-                func.count().filter(TickerAnalytics.pct_from_52w_high >= -3),
-                func.count().filter(TickerAnalytics.pct_from_52w_low <= 3),
-            ).where(TickerAnalytics.market == market, TickerAnalytics.code.in_(codes))
-        )
-    ).one()
-
-    # DSEX history for the volatility read + latest date for the as-of stamp.
+    # DSEX history remains close-based. Intraday benchmark history is not available from the
+    # delayed quote source, so the API exposes this mixed freshness instead of hiding it.
     summaries = list(
         await session.scalars(
             select(MarketSummary)
@@ -771,7 +870,12 @@ async def _mood_inputs(session, market: str) -> dict[str, Any]:
         )
     )
     dsex_closes = [s.dsex for s in reversed(summaries) if s.dsex is not None]
-    as_of = str(summaries[0].date) if summaries else ""
+    close_as_of_date = summaries[0].date if summaries else None
+    data_status = _mood_data_status(now, market, latest_quote_as_of, close_as_of_date)
+    as_of_date = max(
+        (d for d in (quote_date, close_as_of_date, latest_analytics_date) if d is not None),
+        default=None,
+    )
 
     # Turnover vs its trailing 20-day average (context chip, not scored).
     values = [s.total_value_mn for s in summaries if s.total_value_mn is not None]
@@ -783,7 +887,11 @@ async def _mood_inputs(session, market: str) -> dict[str, Any]:
             turnover_vs_20d = round(values[0] / avg, 2)
 
     return {
-        "as_of_date": as_of,
+        "as_of_date": str(as_of_date) if as_of_date else "",
+        "as_of": latest_quote_as_of.isoformat() if latest_quote_as_of else None,
+        "data_status": data_status,
+        "close_as_of_date": str(close_as_of_date) if close_as_of_date else None,
+        "refresh_interval_minutes": 15,
         "advancers": int(adv or 0),
         "decliners": int(dec or 0),
         "pct_above_200dma": pct_above,
@@ -798,10 +906,9 @@ async def _mood_inputs(session, market: str) -> dict[str, Any]:
 async def market_mood(
     tenant: CurrentTenant, session: DbSession, locale: CurrentLocale
 ) -> MoodIndex:
-    """Dhaka Mood Index — a descriptive 0-100 fear/greed read built from breadth, strength,
-    52-week highs/lows and DSEX volatility. Deterministic and templated (no AI); cached per day."""
+    """Dhaka Mood Index — a deterministic delayed intraday/close fear-greed composite."""
     enforce_market_feature(tenant, "curated_screens")
-    cache_key = f"mood:v2:{tenant.name}:{tenant.market}:{locale}"
+    cache_key = f"mood:v3:{tenant.name}:{tenant.market}:{locale}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(cache_key)

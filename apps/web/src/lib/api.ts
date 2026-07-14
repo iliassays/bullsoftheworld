@@ -789,6 +789,10 @@ export interface MoodComponent {
 }
 export interface MoodIndex {
   as_of_date: string;
+  as_of: string | null;
+  data_status: "intraday_delayed" | "provisional_close" | "official_close" | "stale";
+  close_as_of_date: string | null;
+  refresh_interval_minutes: number | null;
   score: number | null;
   band:
     | "extreme_fear"
