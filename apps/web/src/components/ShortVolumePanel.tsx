@@ -1,4 +1,5 @@
 import type { ShortVolumeActivity } from "../lib/api";
+import { formatOrdinal } from "../lib/format";
 import { Sparkline } from "./Sparkline";
 
 const value = (input: number | null, suffix = "%") =>
@@ -65,7 +66,7 @@ export function ShortVolumePanel({ data }: { data: ShortVolumeActivity }) {
                 <div className="mt-0.5 text-[9px] text-muted">
                   {data.percentile_60 == null
                     ? `${data.baseline_sessions} baseline sessions`
-                    : `${data.percentile_60.toFixed(0)}th percentile of loaded history`}
+                    : `${formatOrdinal(data.percentile_60)} percentile of loaded history`}
                 </div>
               </div>
               <Sparkline data={data.points.map((point) => point.short_share_pct)} width={118} height={36} />
