@@ -28,6 +28,7 @@ const DSE_FALLBACK: MarketConfig = {
     { min_value_mn: 0, divisor_mn: 0.1, suffix: "L", decimals: 0 },
   ],
   market_cap_money_units: [{ min_value_mn: 0, divisor_mn: 10, suffix: " Cr", decimals: 0 }],
+  cap_tiers: ["large", "mid", "small", "micro"],
   research_beta: false,
   features: {
     intraday_quotes: true,
@@ -89,6 +90,7 @@ const US_FALLBACK: MarketConfig = {
     { min_value_mn: 1000, divisor_mn: 1000, suffix: "B", decimals: 1 },
     { min_value_mn: 0, divisor_mn: 1, suffix: "M", decimals: 0 },
   ],
+  cap_tiers: ["mega", "large", "mid", "small", "micro"],
   research_beta: true,
   features: {
     intraday_quotes: false,
@@ -131,12 +133,16 @@ function normalizeConfig(config: MarketConfig): MarketConfig {
   const priceAlertEvaluation =
     config.price_alert_evaluation ??
     (config.features.intraday_quotes ? "delayed_quote" : "session_close");
+  const capTiers = config.cap_tiers?.length
+    ? config.cap_tiers
+    : fallbackConfig().cap_tiers;
   if (config.supported_locales?.length) {
-    return { ...config, price_alert_evaluation: priceAlertEvaluation };
+    return { ...config, cap_tiers: capTiers, price_alert_evaluation: priceAlertEvaluation };
   }
   return {
     ...config,
     supported_locales: config.market === "DSE" ? ["bn", "en"] : [config.default_locale],
+    cap_tiers: capTiers,
     price_alert_evaluation: priceAlertEvaluation,
   };
 }

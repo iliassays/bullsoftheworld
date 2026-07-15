@@ -91,7 +91,7 @@ _MATERIAL_ANNOUNCEMENT_CATEGORIES = (
 )
 
 
-def _screenable_codes(market: str):
+def _screenable_codes(market: str, cap_tier: str | None = None):
     """Visible codes eligible for default Market screens.
 
     DSE Z-category names are left out of investable discovery boards. Other markets do not inherit
@@ -106,6 +106,8 @@ def _screenable_codes(market: str):
     if _screen_settings(market).dse_category_filter:
         conds.append(or_(Symbol.category.is_(None), Symbol.category != "Z"))
     fresh = aliased(TickerAnalytics)
+    if cap_tier is not None:
+        conds.append(fresh.cap_tier == cap_tier)
     latest_date = (
         select(func.max(TickerAnalytics.as_of_date))
         .where(TickerAnalytics.market == market)
@@ -133,10 +135,10 @@ def _liquid(market: str):
     )
 
 
-def _investable(market: str):
+def _investable(market: str, cap_tier: str | None = None):
     """Subquery of investable codes — visible AND liquid — for builders that don't query T."""
     return select(T.code).where(
-        T.market == market, T.code.in_(_screenable_codes(market)), _liquid(market)
+        T.market == market, T.code.in_(_screenable_codes(market, cap_tier)), _liquid(market)
     )
 
 
@@ -432,6 +434,7 @@ class ScreensResponse(BaseModel):
         None  # latest 15-min quote snapshot — prices / "today's move" freshness
     )
     methodology: MarketMethodology
+    cap_tier: str | None = None
     screens: list[ScreenOut]
 
 
@@ -461,14 +464,21 @@ class MarketPulseOut(BaseModel):
     risk_mode: str  # risk_on | mixed | defensive
 
 
-async def _movers(session, market: str, *, gainers: bool, limit: int = PER_SCREEN) -> ScreenOut:
+async def _movers(
+    session,
+    market: str,
+    *,
+    gainers: bool,
+    limit: int = PER_SCREEN,
+    cap_tier: str | None = None,
+) -> ScreenOut:
     order = QuoteSnapshot.change_pct.desc() if gainers else QuoteSnapshot.change_pct.asc()
     rows = (
         await session.execute(
             select(QuoteSnapshot.code, QuoteSnapshot.ltp, QuoteSnapshot.change_pct)
             .where(
                 QuoteSnapshot.market == market,
-                QuoteSnapshot.code.in_(_investable(market)),
+                QuoteSnapshot.code.in_(_investable(market, cap_tier)),
             )
             .order_by(order)
             .limit(limit)
@@ -500,7 +510,12 @@ def _vol_note(chg: float | None) -> str:
 
 
 async def _unusual_volume(
-    session, market: str, *, window: str = "1d", limit: int = PER_SCREEN
+    session,
+    market: str,
+    *,
+    window: str = "1d",
+    limit: int = PER_SCREEN,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Stocks trading above their normal pace — as a 1-day spike or sustained week/month interest —
     tagged by today's price direction (heavy buying vs heavy selling)."""
@@ -511,7 +526,7 @@ async def _unusual_volume(
             .where(
                 T.market == market,
                 field >= _RVOL_MIN[window],
-                T.code.in_(_screenable_codes(market)),
+                T.code.in_(_screenable_codes(market, cap_tier)),
                 _liquid(market),
             )
             .order_by(field.desc())
@@ -532,14 +547,19 @@ async def _unusual_volume(
     )
 
 
-async def _most_active(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _most_active(
+    session, market: str, limit: int = PER_SCREEN, *, cap_tier: str | None = None
+) -> ScreenOut:
     """Most heavily traded by value today — DSE's classic 'top turnover' board. Surfaces where the
     money actually is, including the cheap, heavily-churned names retail follows."""
     turnover = QuoteSnapshot.volume * QuoteSnapshot.ltp
     rows = (
         await session.execute(
             select(QuoteSnapshot.code, QuoteSnapshot.ltp, turnover.label("t"))
-            .where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(_investable(market)))
+            .where(
+                QuoteSnapshot.market == market,
+                QuoteSnapshot.code.in_(_investable(market, cap_tier)),
+            )
             .order_by(turnover.desc())
             .limit(limit)
         )
@@ -555,7 +575,12 @@ async def _most_active(session, market: str, limit: int = PER_SCREEN) -> ScreenO
 
 
 async def _institutional_13f(
-    session, market: str, *, accumulation: bool, limit: int = PER_SCREEN
+    session,
+    market: str,
+    *,
+    accumulation: bool,
+    limit: int = PER_SCREEN,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     latest_period = (
         select(
@@ -583,6 +608,7 @@ async def _institutional_13f(
             .join(T, (T.market == market) & (T.code == InstitutionalHoldingSummary.code))
             .where(
                 InstitutionalHoldingSummary.market == market,
+                T.code.in_(_screenable_codes(market, cap_tier)),
                 change.isnot(None),
                 change > 0 if accumulation else change < 0,
                 _liquid(market),
@@ -629,7 +655,12 @@ async def _last_closes(session, market: str, codes: list[str]) -> dict[str, floa
 
 
 async def _most_discussed(
-    session, market: str, tenant_id: str, limit: int = PER_SCREEN
+    session,
+    market: str,
+    tenant_id: str,
+    limit: int = PER_SCREEN,
+    *,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Symbols with the most posts in the last couple of days (live, descriptive)."""
     since = dt.datetime.now(dt.UTC) - dt.timedelta(days=_DISCUSSED_DAYS)
@@ -643,7 +674,11 @@ async def _most_discussed(
                 Post.tenant_id == tenant_id,
                 Post.created_at >= since,
                 Post.moderation_status == "published",
-                Cashtag.code.in_(visible_codes(market)),
+                Cashtag.code.in_(
+                    _screenable_codes(market, cap_tier)
+                    if cap_tier is not None
+                    else visible_codes(market)
+                ),
             )
             .group_by(Cashtag.code)
             .order_by(posts.desc())
@@ -661,14 +696,28 @@ async def _most_discussed(
     )
 
 
-async def _most_watched(session, market: str, tenant_id: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _most_watched(
+    session,
+    market: str,
+    tenant_id: str,
+    limit: int = PER_SCREEN,
+    *,
+    cap_tier: str | None = None,
+) -> ScreenOut:
     """Most-followed names — the community's 'Watchers' leaderboard."""
     cnt = func.count()
     rows = (
         await session.execute(
             select(WatchlistItem.code, cnt)
             .join(User, WatchlistItem.user_id == User.id)
-            .where(WatchlistItem.market == market, WatchlistItem.code.in_(visible_codes(market)))
+            .where(
+                WatchlistItem.market == market,
+                WatchlistItem.code.in_(
+                    _screenable_codes(market, cap_tier)
+                    if cap_tier is not None
+                    else visible_codes(market)
+                ),
+            )
             .where(User.tenant_id == tenant_id)
             .group_by(WatchlistItem.code)
             .order_by(cnt.desc())
@@ -687,7 +736,12 @@ async def _most_watched(session, market: str, tenant_id: str, limit: int = PER_S
 
 
 async def _attention_rising(
-    session, market: str, tenant_id: str, limit: int = PER_SCREEN
+    session,
+    market: str,
+    tenant_id: str,
+    limit: int = PER_SCREEN,
+    *,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Symbols whose chatter is well above their own usual pace, from the buzz snapshots."""
     today = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
@@ -697,7 +751,11 @@ async def _attention_rising(
                 TickerBuzzDaily.market == market,
                 TickerBuzzDaily.tenant_id == tenant_id,
                 TickerBuzzDaily.date >= today - dt.timedelta(days=_BUZZ_HISTORY),
-                TickerBuzzDaily.code.in_(visible_codes(market)),
+                TickerBuzzDaily.code.in_(
+                    _screenable_codes(market, cap_tier)
+                    if cap_tier is not None
+                    else visible_codes(market)
+                ),
             )
         )
     ).all()
@@ -746,7 +804,12 @@ def _mom_note(mom: float, vol: float | None, mcap: float | None) -> str:
 
 
 async def _momentum(
-    session, market: str, *, window: str = "12m", limit: int = PER_SCREEN
+    session,
+    market: str,
+    *,
+    window: str = "12m",
+    limit: int = PER_SCREEN,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Volatility-scaled momentum over 3/6/12 months: rank by trend-per-unit-of-risk, show the return,
     and tag each row (steady / volatile / possible pump)."""
@@ -772,7 +835,7 @@ async def _momentum(
                 T.market == market,
                 mom > 0,
                 T.volatility > 0,
-                T.code.in_(_screenable_codes(market)),
+                T.code.in_(_screenable_codes(market, cap_tier)),
                 _liquid(market),
             )
             .order_by(is_pump.asc(), (mom / T.volatility).desc())
@@ -805,14 +868,21 @@ async def _momentum(
     )
 
 
-async def _build_spec(session, market: str, spec: ScreenSpec, limit: int) -> ScreenOut:
+async def _build_spec(
+    session,
+    market: str,
+    spec: ScreenSpec,
+    limit: int,
+    *,
+    cap_tier: str | None = None,
+) -> ScreenOut:
     rows = (
         await session.execute(
             select(T.code, T.last_close, spec.value)
             .where(
                 T.market == market,
                 spec.where,
-                T.code.in_(_screenable_codes(market)),
+                T.code.in_(_screenable_codes(market, cap_tier)),
                 _liquid(market),
             )
             .order_by(spec.order)
@@ -1212,7 +1282,13 @@ async def _period_sparks(
 
 
 async def _ownership(
-    session, market: str, *, kind: str, direction: str = "buy", limit: int = PER_SCREEN
+    session,
+    market: str,
+    *,
+    kind: str,
+    direction: str = "buy",
+    limit: int = PER_SCREEN,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Institutions / foreign investors who moved their stake at the latest disclosure.
     direction='buy' → accumulation (stake up); 'sell' → distribution (stake down)."""
@@ -1223,7 +1299,12 @@ async def _ownership(
     rows = (
         await session.execute(
             select(T.code, T.last_close, delta_col)
-            .where(T.market == market, cond, T.code.in_(_screenable_codes(market)), _liquid(market))
+            .where(
+                T.market == market,
+                cond,
+                T.code.in_(_screenable_codes(market, cap_tier)),
+                _liquid(market),
+            )
             .order_by(order)
             .limit(limit)
         )
@@ -1274,12 +1355,14 @@ async def _ownership(
 _MIN_SPONSOR_DROP = 0.5
 
 
-async def _sponsor_selling(session, market: str, limit: int = PER_SCREEN) -> ScreenOut:
+async def _sponsor_selling(
+    session, market: str, limit: int = PER_SCREEN, *, cap_tier: str | None = None
+) -> ScreenOut:
     """Insiders reducing their own stake — the disclosure-synthesis red-flag board.
 
     No sponsor delta lives in ticker_analytics, so the deltas come straight from the last two
     shareholding disclosures per code (the whole table is ~3 rows/stock — this is cheap)."""
-    codes = list(await session.scalars(_screenable_codes(market)))
+    codes = list(await session.scalars(_screenable_codes(market, cap_tier)))
     flows = await _ownership_flow(session, market, codes, "sponsor_director")
     drops: list[tuple[str, float, _Flow]] = []
     for code, f in flows.items():
@@ -1359,7 +1442,12 @@ _CHART_PATTERN_PREFIX = "chart_pattern_"  # e.g. "chart_pattern_ascending_triang
 
 
 async def _chart_pattern_board(
-    session, market: str, pattern_type: str, limit: int = PER_SCREEN
+    session,
+    market: str,
+    pattern_type: str,
+    limit: int = PER_SCREEN,
+    *,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Stocks currently showing ONE specific classic chart pattern (Finviz-style: e.g. just
     ascending triangles, or just double tops), precomputed nightly alongside ticker_analytics —
@@ -1385,7 +1473,7 @@ async def _chart_pattern_board(
                 TickerPattern.market == market,
                 TickerPattern.pattern_type == pattern_type,
                 TickerPattern.status != "invalidated",
-                T.code.in_(_screenable_codes(market)),
+                T.code.in_(_screenable_codes(market, cap_tier)),
                 _liquid(market),
             )
             .order_by(TickerPattern.strength_score.desc())
@@ -1499,48 +1587,123 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
             it.why = it.why or _why_text(s, it, market)
 
 
+def _filter_screens_by_cap_tier(
+    screens_list: list[ScreenOut], *, cap_tier: str, limit: int
+) -> None:
+    """Narrow enriched, ranked screens without changing score or row order."""
+
+    for screen in screens_list:
+        screen.items = [item for item in screen.items if item.cap_tier == cap_tier][:limit]
+        screen.total_count = len(screen.items)
+
+
+def _validated_cap_tier(market: str, value: str | None) -> str | None:
+    """Reject a tier that belongs to another market instead of returning a misleading empty list."""
+
+    if value is None:
+        return None
+    valid_tiers = {tier for tier, _ in get_market_profile(market).cap_tiers}
+    if value not in valid_tiers:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown size tier {value!r} for {market}; "
+            f"expected one of {sorted(valid_tiers)}",
+        )
+    return value
+
+
 _SPEC_BY_KEY = {s.key: s for s in _SCREENS}
 
 
 async def build_screen(
-    session, market: str, key: str, limit: int, *, tenant_id: str, direction: str = "buy"
+    session,
+    market: str,
+    key: str,
+    limit: int,
+    *,
+    tenant_id: str,
+    direction: str = "buy",
+    cap_tier: str | None = None,
 ) -> ScreenOut | None:
     """Build a single screen by key (used by the detail/explore page)."""
     if key in ("top_gainers", "top_losers"):
-        return await _movers(session, market, gainers=key == "top_gainers", limit=limit)
+        return await _movers(
+            session,
+            market,
+            gainers=key == "top_gainers",
+            limit=limit,
+            cap_tier=cap_tier,
+        )
     if key == "most_active":
-        return await _most_active(session, market, limit=limit)
+        return await _most_active(session, market, limit=limit, cap_tier=cap_tier)
     if key == "momentum_12_1":
-        return await _momentum(session, market, limit=limit)
+        return await _momentum(session, market, limit=limit, cap_tier=cap_tier)
     if key == "unusual_volume":
-        return await _unusual_volume(session, market, limit=limit)
+        return await _unusual_volume(session, market, limit=limit, cap_tier=cap_tier)
     if key == "beating_market":
-        return await _beating_market(session, market, limit=limit)
+        return await _beating_market(session, market, limit=limit, cap_tier=cap_tier)
     if key == "foreign_buying":
-        return await _ownership(session, market, kind="foreign", direction=direction, limit=limit)
+        return await _ownership(
+            session,
+            market,
+            kind="foreign",
+            direction=direction,
+            limit=limit,
+            cap_tier=cap_tier,
+        )
     if key == "institutional_buying":
-        return await _ownership(session, market, kind="institute", direction=direction, limit=limit)
+        return await _ownership(
+            session,
+            market,
+            kind="institute",
+            direction=direction,
+            limit=limit,
+            cap_tier=cap_tier,
+        )
     if key == "institutional_selling":
         # Its own headline board, not a toggle state — always distribution, mirroring sponsor_selling.
-        return await _ownership(session, market, kind="institute", direction="sell", limit=limit)
+        return await _ownership(
+            session,
+            market,
+            kind="institute",
+            direction="sell",
+            limit=limit,
+            cap_tier=cap_tier,
+        )
     if key == "institutional_13f_accumulation":
-        return await _institutional_13f(session, market, accumulation=True, limit=limit)
+        return await _institutional_13f(
+            session, market, accumulation=True, limit=limit, cap_tier=cap_tier
+        )
     if key == "institutional_13f_distribution":
-        return await _institutional_13f(session, market, accumulation=False, limit=limit)
+        return await _institutional_13f(
+            session, market, accumulation=False, limit=limit, cap_tier=cap_tier
+        )
     if key == "sponsor_selling":
-        return await _sponsor_selling(session, market, limit=limit)
+        return await _sponsor_selling(session, market, limit=limit, cap_tier=cap_tier)
     if key.startswith(_CHART_PATTERN_PREFIX):
         return await _chart_pattern_board(
-            session, market, pattern_type=key.removeprefix(_CHART_PATTERN_PREFIX), limit=limit
+            session,
+            market,
+            pattern_type=key.removeprefix(_CHART_PATTERN_PREFIX),
+            limit=limit,
+            cap_tier=cap_tier,
         )
     if key == "most_watched":
-        return await _most_watched(session, market, tenant_id=tenant_id, limit=limit)
+        return await _most_watched(
+            session, market, tenant_id=tenant_id, limit=limit, cap_tier=cap_tier
+        )
     if key == "most_discussed":
-        return await _most_discussed(session, market, tenant_id=tenant_id, limit=limit)
+        return await _most_discussed(
+            session, market, tenant_id=tenant_id, limit=limit, cap_tier=cap_tier
+        )
     if key == "attention_rising":
-        return await _attention_rising(session, market, tenant_id=tenant_id, limit=limit)
+        return await _attention_rising(
+            session, market, tenant_id=tenant_id, limit=limit, cap_tier=cap_tier
+        )
     spec = _SPEC_BY_KEY.get(key)
-    return await _build_spec(session, market, spec, limit) if spec else None
+    return (
+        await _build_spec(session, market, spec, limit, cap_tier=cap_tier) if spec else None
+    )
 
 
 # Cache safety-sweep TTL. Real invalidation is the data-fingerprinted key (quote + analytics
@@ -1549,7 +1712,11 @@ _SCREENS_TTL = 6 * 60 * 60
 
 
 @router.get("/screens")
-async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
+async def screens(
+    tenant: CurrentTenant,
+    session: DbSession,
+    size: str | None = Query(None, description="cap tier: mega | large | mid | small | micro"),
+) -> ScreensResponse:
     """Cached, but keyed on data freshness so it's never staler than the data itself.
 
     The key folds in BOTH the latest quote snapshot (changes every 15-min poll → intraday prices /
@@ -1559,20 +1726,21 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     """
     enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
+    size = _validated_cap_tier(market, size)
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    # v14: ScreenItem gained cap_tier — bump so cached pre-tier JSON never serves under the new schema.
-    key = f"screens:v14:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
+    # v15 adds the canonical cap-tier scope to the cache identity.
+    key = f"screens:v15:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
         if cached:
             # Serve the cached JSON bytes verbatim — skip the pydantic parse + re-serialize of ~65KB.
             return Response(content=cached, media_type="application/json")
-        resp = await _build_screens(tenant, session, quote_ts)
+        resp = await _build_screens(tenant, session, quote_ts, cap_tier=size)
         await redis.set(key, resp.model_dump_json(), ex=_SCREENS_TTL)
         return resp
     finally:
@@ -1580,34 +1748,140 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
 
 
 async def _build_screens(
-    tenant: CurrentTenant, session: DbSession, quote_ts: dt.datetime | None
+    tenant: CurrentTenant,
+    session: DbSession,
+    quote_ts: dt.datetime | None,
+    *,
+    cap_tier: str | None = None,
 ) -> ScreensResponse:
     profile = get_market_profile(tenant.market)
     out: list[ScreenOut] = [
-        await _build_spec(session, tenant.market, spec, PER_SCREEN) for spec in _SCREENS
+        await _build_spec(
+            session,
+            tenant.market,
+            spec,
+            PER_SCREEN,
+            cap_tier=cap_tier,
+        )
+        for spec in _SCREENS
     ]
-    out.append(await _movers(session, tenant.market, gainers=True))
-    out.append(await _movers(session, tenant.market, gainers=False))
-    out.append(await _most_active(session, tenant.market))
-    out.append(await _momentum(session, tenant.market))
-    out.append(await _unusual_volume(session, tenant.market))
-    out.append(await _beating_market(session, tenant.market))
+    out.append(
+        await _movers(
+            session, tenant.market, gainers=True, limit=PER_SCREEN, cap_tier=cap_tier
+        )
+    )
+    out.append(
+        await _movers(
+            session, tenant.market, gainers=False, limit=PER_SCREEN, cap_tier=cap_tier
+        )
+    )
+    out.append(
+        await _most_active(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
+    )
+    out.append(
+        await _momentum(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
+    )
+    out.append(
+        await _unusual_volume(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
+    )
+    out.append(
+        await _beating_market(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
+    )
     if profile.features.shareholding_breakdown:
-        out.append(await _ownership(session, tenant.market, kind="foreign"))
-        out.append(await _ownership(session, tenant.market, kind="institute"))
-        out.append(await _ownership(session, tenant.market, kind="institute", direction="sell"))
+        out.append(
+            await _ownership(
+                session,
+                tenant.market,
+                kind="foreign",
+                limit=PER_SCREEN,
+                cap_tier=cap_tier,
+            )
+        )
+        out.append(
+            await _ownership(
+                session,
+                tenant.market,
+                kind="institute",
+                limit=PER_SCREEN,
+                cap_tier=cap_tier,
+            )
+        )
+        out.append(
+            await _ownership(
+                session,
+                tenant.market,
+                kind="institute",
+                direction="sell",
+                limit=PER_SCREEN,
+                cap_tier=cap_tier,
+            )
+        )
     if profile.features.sponsor_director_disclosures:
-        out.append(await _sponsor_selling(session, tenant.market))
+        out.append(
+            await _sponsor_selling(
+                session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier
+            )
+        )
     if profile.features.institutional_holdings:
-        out.append(await _institutional_13f(session, tenant.market, accumulation=True))
-        out.append(await _institutional_13f(session, tenant.market, accumulation=False))
+        out.append(
+            await _institutional_13f(
+                session,
+                tenant.market,
+                accumulation=True,
+                limit=PER_SCREEN,
+                cap_tier=cap_tier,
+            )
+        )
+        out.append(
+            await _institutional_13f(
+                session,
+                tenant.market,
+                accumulation=False,
+                limit=PER_SCREEN,
+                cap_tier=cap_tier,
+            )
+        )
     for pattern_type in _PATTERN_TITLE:
-        out.append(await _chart_pattern_board(session, tenant.market, pattern_type=pattern_type))
-    out.append(await _most_watched(session, tenant.market, tenant_id=tenant.name))
-    out.append(await _most_discussed(session, tenant.market, tenant_id=tenant.name))
-    out.append(await _attention_rising(session, tenant.market, tenant.name))
+        out.append(
+            await _chart_pattern_board(
+                session,
+                tenant.market,
+                pattern_type=pattern_type,
+                limit=PER_SCREEN,
+                cap_tier=cap_tier,
+            )
+        )
+    out.append(
+        await _most_watched(
+            session,
+            tenant.market,
+            tenant_id=tenant.name,
+            limit=PER_SCREEN,
+            cap_tier=cap_tier,
+        )
+    )
+    out.append(
+        await _most_discussed(
+            session,
+            tenant.market,
+            tenant_id=tenant.name,
+            limit=PER_SCREEN,
+            cap_tier=cap_tier,
+        )
+    )
+    out.append(
+        await _attention_rising(
+            session,
+            tenant.market,
+            tenant.name,
+            limit=PER_SCREEN,
+            cap_tier=cap_tier,
+        )
+    )
 
     await _enrich(session, tenant.market, out)
+    if cap_tier is not None:
+        _filter_screens_by_cap_tier(out, cap_tier=cap_tier, limit=PER_SCREEN)
     # Page-level freshness must describe the newest analytics batch. A bare LIMIT 1 is unordered
     # and can label the whole page with any older ticker's date.
     as_of = await session.scalar(
@@ -1633,6 +1907,7 @@ async def _build_screens(
         as_of=str(as_of) if as_of else None,
         quote_as_of=quote_ts.isoformat() if quote_ts else None,
         methodology=methodology,
+        cap_tier=cap_tier,
         screens=out,
     )
 
@@ -1830,7 +2105,13 @@ _PERIOD_DAYS = {"1d": 1, "5d": 5, "7d": 7, "15d": 15, "1m": 22}  # trading-days 
 
 
 async def _movers_period(
-    session, market: str, *, gainers: bool, days: int, limit: int
+    session,
+    market: str,
+    *,
+    gainers: bool,
+    days: int,
+    limit: int,
+    cap_tier: str | None = None,
 ) -> ScreenOut:
     """Top gainers/losers over a trailing window, from the daily bars (EOD-consistent)."""
     rn = (
@@ -1840,7 +2121,7 @@ async def _movers_period(
     )
     ranked = (
         select(DailyBar.code, DailyBar.close, rn)
-        .where(DailyBar.market == market, DailyBar.code.in_(_investable(market)))
+        .where(DailyBar.market == market, DailyBar.code.in_(_investable(market, cap_tier)))
         .subquery()
     )
     cur = select(ranked.c.code, ranked.c.close.label("cur")).where(ranked.c.rn == 1).subquery()
@@ -1886,7 +2167,9 @@ async def _index_return(session, market: str, days: int) -> float | None:
     return (levels[0] - levels[days]) / levels[days] * 100
 
 
-async def _beating_market(session, market: str, *, limit: int = PER_SCREEN) -> ScreenOut:
+async def _beating_market(
+    session, market: str, *, limit: int = PER_SCREEN, cap_tier: str | None = None
+) -> ScreenOut:
     """Stocks outperforming the market benchmark over ~1 month — relative strength, the institutional tell for
     genuine strength (up while, or more than, the market). Value = excess return vs the index."""
     idx = await _index_return(session, market, _RS_DAYS)
@@ -1909,7 +2192,7 @@ async def _beating_market(session, market: str, *, limit: int = PER_SCREEN) -> S
     )
     ranked = (
         select(DailyBar.code, DailyBar.close, rn)
-        .where(DailyBar.market == market, DailyBar.code.in_(_investable(market)))
+        .where(DailyBar.market == market, DailyBar.code.in_(_investable(market, cap_tier)))
         .subquery()
     )
     cur = select(ranked.c.code, ranked.c.close.label("cur")).where(ranked.c.rn == 1).subquery()
@@ -1945,57 +2228,50 @@ async def screen_detail(
 ) -> ScreenOut:
     """One screen's full list — for the explore page's tab view.
 
-    `size` is a per-request refinement (URL-scoped, never persisted app-wide): it narrows the
-    ranked list to one canonical cap tier. Ranking is unchanged — rows are filtered, not
-    re-scored — and the response's total_count keeps meaning "rows shown".
+    `size` narrows the database candidate universe to one canonical cap tier before ranking.
+    The frontend also keeps this choice tenant-local, so a DSE preference cannot affect US.
+    Ranking rules are unchanged, and total_count keeps meaning "rows shown".
     """
     enforce_market_feature(tenant, "curated_screens")
-    if size is not None:
-        valid_tiers = {tier for tier, _ in get_market_profile(tenant.market).cap_tiers}
-        if size not in valid_tiers:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unknown size tier {size!r} for {tenant.market}; "
-                f"expected one of {sorted(valid_tiers)}",
-            )
-    # A tier holds a fraction of any board, so fetch deep before filtering — otherwise a
-    # "small" filter on a top-50 list of mostly large caps would starve to a couple of rows.
-    build_limit = 200 if size is not None else limit
+    size = _validated_cap_tier(tenant.market, size)
     if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
         screen = await _movers_period(
             session,
             tenant.market,
             gainers=key == "top_gainers",
             days=_PERIOD_DAYS[period],
-            limit=build_limit,
+            limit=limit,
+            cap_tier=size,
         )
     elif key == "momentum_12_1":
         screen = await _momentum(
             session,
             tenant.market,
             window=window if window in _MOM_FIELD else "12m",
-            limit=build_limit,
+            limit=limit,
+            cap_tier=size,
         )
     elif key == "unusual_volume":
         screen = await _unusual_volume(
             session,
             tenant.market,
             window=period if period in _RVOL_FIELD else "1d",
-            limit=build_limit,
+            limit=limit,
+            cap_tier=size,
         )
     else:
         screen = await build_screen(
             session,
             tenant.market,
             key,
-            build_limit,
+            limit,
             tenant_id=tenant.name,
             direction="sell" if direction == "sell" else "buy",
+            cap_tier=size,
         )
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")
     await _enrich(session, tenant.market, [screen])
     if size is not None:
-        screen.items = [it for it in screen.items if it.cap_tier == size][:limit]
-        screen.total_count = len(screen.items)
+        _filter_screens_by_cap_tier([screen], cap_tier=size, limit=limit)
     return screen

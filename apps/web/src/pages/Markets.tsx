@@ -23,6 +23,8 @@ import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
 import { PATTERN_ORDER, PATTERN_STATUS_LABEL } from "../lib/patterns";
 import { formatCurrencyMillions } from "../lib/market";
 import { useTenantConfig } from "../lib/tenant";
+import { useUniverse } from "../lib/universe";
+import { ALL_UNIVERSE } from "../lib/universe-policy";
 
 // Plain-language explanation per screen, with a worked example — descriptive, never advice.
 export const SCREEN_HELP: Record<string, string> = {
@@ -1355,8 +1357,9 @@ function LiquidityGuide() {
 }
 
 export function Markets() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { config } = useTenantConfig();
+  const { tier } = useUniverse();
   useSeo({
     title: {
       bn: `মার্কেট স্ক্রিন — ${config.exchange_code} গেইনার, লুজার, ভলিউম, ভ্যালু | ${config.brand_name}`,
@@ -1373,11 +1376,13 @@ export function Markets() {
   const [lens, setLens] = useState("focus");
 
   useEffect(() => {
+    setData(null);
+    setFailed(false);
     api
-      .screens()
+      .screens(tier === ALL_UNIVERSE ? undefined : tier)
       .then(setData)
       .catch(() => setFailed(true));
-  }, []);
+  }, [tier]);
 
   if (failed) return <Empty>{t("markets.unavailable")}</Empty>;
   if (data === null) return <Spinner />;
@@ -1421,6 +1426,18 @@ export function Markets() {
           {t("tier.browseTitle")} →
         </Link>
       </div>
+      {tier !== ALL_UNIVERSE && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-accent/35 bg-accent/8 px-3 py-2 text-[10px]">
+          <span className="font-semibold text-accent">
+            {lang === "bn"
+              ? `স্ক্রিন তালিকা: ${t(`tier.${tier}`)}`
+              : `Screen universe: ${t(`tier.${tier}`)}`}
+          </span>
+          <span className="text-right text-muted">
+            {lang === "bn" ? "বাজারের সারাংশ: সব শেয়ার" : "Market overview: all stocks"}
+          </span>
+        </div>
+      )}
       <FreshnessTag
         asOf={data.as_of}
         quoteAsOf={data.quote_as_of}

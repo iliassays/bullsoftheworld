@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, OptionalUser, enforce_market_feature
@@ -23,8 +23,10 @@ from api.routers.screener import (
     ScreenOut,
     _beating_market,
     _enrich,
+    _filter_screens_by_cap_tier,
     _institutional_13f,
     _unusual_volume,
+    _validated_cap_tier,
 )
 from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
 from bulls.core.models import (
@@ -84,6 +86,12 @@ _EVIDENCE: dict[str, str] = {
 _REGIME_SENSITIVE = frozenset({"quality_reversal", "oversold_quality"})
 _REGIME_WINDOW = 200
 _REGIME_MIN_OBS = 120  # under this, say nothing (omit over mislead)
+
+
+def _cap_tier_condition(cap_tier: str | None):
+    """SQL predicate that keeps each market's size universe inside the ranked query."""
+
+    return TickerAnalytics.cap_tier == cap_tier if cap_tier is not None else true()
 
 
 def regime_from(latest: float, avg: float) -> str:
@@ -173,6 +181,7 @@ class ScannerResponse(BaseModel):
     quote_as_of: str | None = None
     tab: str
     strategy_pack: str
+    cap_tier: str | None = None
     tabs: list[ScannerTabOut]
     # DSEX vs its 200-day average ("above_200dma" | "below_200dma"); None when history is too
     # short to say. The frontend shows a louder caution on reversal boards when below.
@@ -266,7 +275,9 @@ def scanner_pack_for(market: str) -> ScannerPack:
         raise ValueError(f"No scanner strategy pack for market {market!r}") from None
 
 
-async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | None:
+async def _quality_reversal(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut | None:
     """Deep-washout x quality x a 5-day-high break — the backtested flagship (Scheme-3).
 
     Washed-out (>=40% off the high, still near the low) BUT profitable and reasonably priced, that just
@@ -278,6 +289,7 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 T.pct_from_52w_high <= _WASHOUT_FROM_HIGH,
                 T.pct_from_52w_low <= _NEAR_LOW,
@@ -373,7 +385,9 @@ async def _quality_reversal(session, market: str, limit: int) -> ScreenOut | Non
     )
 
 
-async def _oversold_quality(session, market: str, limit: int) -> ScreenOut:
+async def _oversold_quality(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     """Oversold RSI x profitability — the strongest single signal in our DSE factor study.
 
     Low RSI positively predicted 60-day returns on 82% of rebalances (IC +0.094) — the zone,
@@ -385,6 +399,7 @@ async def _oversold_quality(session, market: str, limit: int) -> ScreenOut:
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 T.rsi_14.isnot(None),
                 T.rsi_14 <= _OVERSOLD_RSI,
@@ -422,11 +437,14 @@ async def _oversold_quality(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _trending_board(session, market: str, limit: int) -> ScreenOut:
+async def _trending_board(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     """Latest-session self-normalised volume and turnover surge (trending_scores)."""
     T = TickerAnalytics
     investable = select(T.code).where(
         T.market == market,
+        _cap_tier_condition(cap_tier),
         T.code.in_(_clean_codes(market)),
         _adtv_mn(T) >= _MIN_ADTV_MN,
         T.market_cap_mn >= _MIN_MCAP_MN,
@@ -479,13 +497,16 @@ async def _trending_board(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _value_quality(session, market: str, limit: int) -> ScreenOut:
+async def _value_quality(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     T = TickerAnalytics
     rows = (
         await session.execute(
             select(T.code, T.last_close, T.pe_vs_sector, T.roe, T.pe_ratio)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 T.pe_vs_sector.isnot(None),
                 T.pe_vs_sector < 0.8,
@@ -518,13 +539,16 @@ async def _value_quality(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _dividend_quality(session, market: str, limit: int) -> ScreenOut:
+async def _dividend_quality(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     T = TickerAnalytics
     rows = (
         await session.execute(
             select(T.code, T.last_close, T.dividend_yield, T.roe, T.pe_ratio)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 T.dividend_yield.isnot(None),
                 T.dividend_yield > 0,
@@ -570,7 +594,9 @@ def _quality_score(row: TickerAnalytics) -> int:
     )
 
 
-async def _lens_buffett_quality(session, market: str, limit: int) -> ScreenOut:
+async def _lens_buffett_quality(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     """Buffett/Munger-style quality screen.
 
     This is stricter than the one-symbol Investor Lens card: scanner rows must be liquid, profitable,
@@ -582,6 +608,7 @@ async def _lens_buffett_quality(session, market: str, limit: int) -> ScreenOut:
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 T.pe_ratio > 0,
                 T.roe >= 15,
@@ -636,13 +663,16 @@ def _graham_score(row: TickerAnalytics) -> int:
     )
 
 
-async def _lens_graham_value(session, market: str, limit: int) -> ScreenOut:
+async def _lens_graham_value(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     T = TickerAnalytics
     rows = list(
         await session.scalars(
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 T.pe_vs_sector.isnot(None),
                 T.pe_vs_sector <= 0.8,
@@ -724,7 +754,9 @@ def _technical_score(row: TickerAnalytics) -> int | None:
     return _clamp10(score)
 
 
-async def _lens_smart_money(session, market: str, limit: int) -> ScreenOut:
+async def _lens_smart_money(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     T = TickerAnalytics
     ownership_delta = func.coalesce(T.institute_delta, 0) + func.coalesce(T.foreign_delta, 0)
     rows = list(
@@ -732,6 +764,7 @@ async def _lens_smart_money(session, market: str, limit: int) -> ScreenOut:
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 ownership_delta >= 1.0,
                 _adtv_mn(T) >= _MIN_ADTV_MN,
@@ -794,7 +827,9 @@ def _lens_status(score: int | None) -> str:
     return "Weak"
 
 
-async def _lens_agreement(session, market: str, limit: int) -> ScreenOut:
+async def _lens_agreement(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     """Stocks where several independent lenses line up.
 
     This is not a strict 5/5 gate. Requiring every style to pass would hide useful candidates: quality
@@ -807,6 +842,7 @@ async def _lens_agreement(session, market: str, limit: int) -> ScreenOut:
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 _adtv_mn(T) >= _MIN_ADTV_MN,
                 T.market_cap_mn >= _MIN_MCAP_MN,
@@ -872,13 +908,16 @@ async def _lens_agreement(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _lens_risk_control(session, market: str, limit: int) -> ScreenOut:
+async def _lens_risk_control(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     T = TickerAnalytics
     rows = list(
         await session.scalars(
             select(T)
             .where(
                 T.market == market,
+                _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 _adtv_mn(T) >= 10.0,
                 T.market_cap_mn >= _MIN_MCAP_MN,
@@ -921,8 +960,10 @@ async def _lens_risk_control(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _us_relative_strength(session, market: str, limit: int) -> ScreenOut:
-    board = await _beating_market(session, market, limit=limit)
+async def _us_relative_strength(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    board = await _beating_market(session, market, limit=limit, cap_tier=cap_tier)
     board.key = "us_relative_strength"
     board.title = "Leading SPY"
     board.description = (
@@ -941,8 +982,10 @@ async def _us_relative_strength(session, market: str, limit: int) -> ScreenOut:
     return board
 
 
-async def _us_unusual_volume(session, market: str, limit: int) -> ScreenOut:
-    board = await _unusual_volume(session, market, limit=limit)
+async def _us_unusual_volume(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    board = await _unusual_volume(session, market, limit=limit, cap_tier=cap_tier)
     board.key = "us_unusual_volume"
     board.title = "Unusual Session Volume"
     board.description = (
@@ -958,7 +1001,9 @@ async def _us_unusual_volume(session, market: str, limit: int) -> ScreenOut:
     return board
 
 
-async def _us_recent_filings(session, market: str, limit: int) -> ScreenOut:
+async def _us_recent_filings(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
     cutoff = dt.date.today() - dt.timedelta(days=45)
     rows = (
         await session.execute(
@@ -970,6 +1015,7 @@ async def _us_recent_filings(session, market: str, limit: int) -> ScreenOut:
             )
             .where(
                 SecFiling.market == market,
+                _cap_tier_condition(cap_tier),
                 SecFiling.code.in_(_clean_codes(market)),
                 SecFiling.filing_date >= cutoff,
                 SecFiling.form.in_(("8-K", "10-Q", "10-K", "6-K", "20-F", "DEF 14A")),
@@ -1017,8 +1063,10 @@ async def _us_recent_filings(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _us_financial_health(session, market: str) -> dict[str, FinancialHealth]:
-    cache_key = f"scanner:financial-health:{market}"
+async def _us_financial_health(
+    session, market: str, cap_tier: str | None = None
+) -> dict[str, FinancialHealth]:
+    cache_key = f"scanner:financial-health:{market}:{cap_tier or 'all'}"
     cached = session.sync_session.info.get(cache_key)
     if cached is not None:
         return cached
@@ -1026,6 +1074,12 @@ async def _us_financial_health(session, market: str) -> dict[str, FinancialHealt
         await session.scalars(
             select(SecFinancialFact).where(
                 SecFinancialFact.market == market,
+                SecFinancialFact.code.in_(
+                    select(TickerAnalytics.code).where(
+                        TickerAnalytics.market == market,
+                        _cap_tier_condition(cap_tier),
+                    )
+                ),
                 SecFinancialFact.code.in_(_clean_codes(market)),
                 SecFinancialFact.metric.in_(
                     (
@@ -1077,8 +1131,10 @@ def _financial_risk_flags(health: FinancialHealth, sector: str | None) -> list[s
     return flags
 
 
-async def _us_cashflow_quality(session, market: str, limit: int) -> ScreenOut:
-    health = await _us_financial_health(session, market)
+async def _us_cashflow_quality(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    health = await _us_financial_health(session, market, cap_tier)
     prices = {
         row.code: row.last_close
         for row in await session.scalars(
@@ -1131,8 +1187,10 @@ async def _us_cashflow_quality(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _us_financial_risk(session, market: str, limit: int) -> ScreenOut:
-    health = await _us_financial_health(session, market)
+async def _us_financial_risk(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    health = await _us_financial_health(session, market, cap_tier)
     context = {
         row.code: row
         for row in await session.scalars(
@@ -1196,12 +1254,20 @@ async def _us_financial_risk(session, market: str, limit: int) -> ScreenOut:
     )
 
 
-async def _us_13f_accumulation(session, market: str, limit: int) -> ScreenOut:
-    return await _institutional_13f(session, market, accumulation=True, limit=limit)
+async def _us_13f_accumulation(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    return await _institutional_13f(
+        session, market, accumulation=True, limit=limit, cap_tier=cap_tier
+    )
 
 
-async def _us_13f_distribution(session, market: str, limit: int) -> ScreenOut:
-    return await _institutional_13f(session, market, accumulation=False, limit=limit)
+async def _us_13f_distribution(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    return await _institutional_13f(
+        session, market, accumulation=False, limit=limit, cap_tier=cap_tier
+    )
 
 
 def _apply_dse_scanner_context(boards: list[ScreenOut]) -> None:
@@ -1481,12 +1547,23 @@ _CONTEXT_APPLIERS = {
 
 
 async def _build_scanner_boards(
-    session, market: str, tab: ScannerTabSpec, limit: int
+    session,
+    market: str,
+    tab: ScannerTabSpec,
+    limit: int,
+    cap_tier: str | None = None,
 ) -> list[ScreenOut]:
-    boards = [await _BOARD_BUILDERS[key](session, market, limit) for key in tab.boards]
+    # Tier membership is applied inside each database query before ranking/limit. Post-filtering
+    # below is a defensive assertion after enrichment, not an approximate top-N workaround.
+    boards = [
+        await _BOARD_BUILDERS[key](session, market, limit, cap_tier)
+        for key in tab.boards
+    ]
     await _enrich(session, market, boards)
     pack = scanner_pack_for(market)
     _CONTEXT_APPLIERS[pack.key](boards)
+    if cap_tier is not None:
+        _filter_screens_by_cap_tier(boards, cap_tier=cap_tier, limit=limit)
     return boards
 
 
@@ -1535,12 +1612,20 @@ async def radar(
     tab: str = Query("today"),
     watched: bool = Query(False),
     limit: int = Query(10, ge=1, le=25),
+    size: str | None = Query(None, description="cap tier: mega | large | mid | small | micro"),
 ) -> ScannerResponse:
     enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
+    size = _validated_cap_tier(market, size)
     pack = scanner_pack_for(market)
     selected_tab = pack.tab(tab)
-    boards = await _build_scanner_boards(session, market, selected_tab, limit)
+    boards = await _build_scanner_boards(
+        session,
+        market,
+        selected_tab,
+        limit,
+        cap_tier=size,
+    )
 
     if watched and viewer is not None:
         watched_codes = set(
@@ -1572,6 +1657,7 @@ async def radar(
         quote_as_of=quote_ts.isoformat() if quote_ts else None,
         tab=selected_tab.key,
         strategy_pack=pack.key,
+        cap_tier=size,
         tabs=[
             ScannerTabOut(key=item.key, title=item.title, description=item.description)
             for item in pack.tabs

@@ -236,6 +236,7 @@ const STRINGS: Record<string, Entry> = {
   "tier.small": { en: "Small cap", bn: "স্মল ক্যাপ" },
   "tier.micro": { en: "Micro cap", bn: "মাইক্রো ক্যাপ" },
   "tier.all": { en: "All sizes", bn: "সব আকার" },
+  "tier.universe": { en: "Universe", bn: "শেয়ারের আকার" },
   "tier.size": { en: "Company size", bn: "কোম্পানির আকার" },
   "tier.unclassified": { en: "Unclassified", bn: "অশ্রেণীবদ্ধ" },
   "tier.browseTitle": { en: "Browse by size", bn: "আকার অনুযায়ী দেখুন" },

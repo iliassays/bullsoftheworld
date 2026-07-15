@@ -13,7 +13,9 @@ import os
 import uuid
 
 import pytest
+from fastapi import HTTPException
 
+from api.routers.screener import _screenable_codes, _validated_cap_tier
 from bulls.core.markets import get_market_profile
 
 
@@ -22,6 +24,21 @@ def test_size_param_vocabulary_is_market_scoped() -> None:
     us = {tier for tier, _ in get_market_profile("US").cap_tiers}
     assert "mega" not in dse and "mega" in us
     assert {"large", "mid", "small", "micro"} <= dse <= us
+
+
+def test_screenable_universe_applies_cap_tier_before_ranking_limit() -> None:
+    query = _screenable_codes("US", "micro")
+    compiled = query.compile()
+
+    assert "cap_tier" in str(compiled)
+    assert "micro" in compiled.params.values()
+
+
+def test_cross_market_cap_tier_is_rejected() -> None:
+    assert _validated_cap_tier("US", "mega") == "mega"
+    with pytest.raises(HTTPException) as exc:
+        _validated_cap_tier("DSE", "mega")
+    assert exc.value.status_code == 422
 
 
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres")

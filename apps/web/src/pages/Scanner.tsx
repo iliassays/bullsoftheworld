@@ -10,6 +10,8 @@ import { type Lang, useLang } from "../lib/i18n";
 import { formatCurrencyMillions, formatMoney } from "../lib/market";
 import { trackProductEvent } from "../lib/analytics";
 import { Watchlist } from "./Watchlist";
+import { useUniverse } from "../lib/universe";
+import { ALL_UNIVERSE } from "../lib/universe-policy";
 
 type ResearchTab = ScannerResponse["tabs"][number];
 type Picked = { board: Screen; item: ScreenItem };
@@ -556,11 +558,13 @@ function ScannerGuide({ tabs }: { tabs: ResearchTab[] }) {
 function Boards({
   tab,
   watched,
+  size,
   onPick,
   onMeta,
 }: {
   tab: string;
   watched: boolean;
+  size?: string;
   onPick: (picked: Picked) => void;
   onMeta: (data: ScannerResponse) => void;
 }) {
@@ -570,7 +574,7 @@ function Boards({
     setData(undefined);
     let live = true;
     api
-      .scannerRadar(tab, watched, tab === "lens" ? 25 : undefined)
+      .scannerRadar(tab, watched, tab === "lens" ? 25 : undefined, size)
       .then((d) => {
         if (!live) return;
         setData(d);
@@ -580,7 +584,7 @@ function Boards({
     return () => {
       live = false;
     };
-  }, [onMeta, tab, watched]);
+  }, [onMeta, size, tab, watched]);
 
   if (data === undefined) return <Spinner />;
   if (data === null) return <Empty>{t("scanner.unavailable")}</Empty>;
@@ -603,6 +607,7 @@ function Boards({
 export function Scanner() {
   const { t, lang } = useLang();
   const { user } = useAuth();
+  const { tier } = useUniverse();
   const [tab, setTab] = useState("today");
   const [researchTabs, setResearchTabs] = useState<ResearchTab[]>([
     { key: "today", title: "Today", description: "Latest research conditions." },
@@ -663,6 +668,13 @@ export function Scanner() {
             : "Each list is a rule-based research shortlist calculated after a completed session. Green/red percentages are that session's price move, not a forecast."}
         </p>
       </div>
+      {tier !== ALL_UNIVERSE && (
+        <div className="rounded-lg border border-accent/35 bg-accent/8 px-3 py-2 text-[10px] font-semibold text-accent">
+          {lang === "bn"
+            ? `আইডিয়া ইউনিভার্স: ${t(`tier.${tier}`)}`
+            : `Ideas universe: ${t(`tier.${tier}`)}`}
+        </div>
+      )}
 
       {/* Pinned below the app header while boards scroll — switching tabs never needs a
           scroll back to the top. -mx-3/px-3 stretches the backdrop across the page gutter. */}
@@ -680,7 +692,12 @@ export function Scanner() {
         <div className="flex flex-col gap-3">
           {user ? (
             <>
-              <Boards tab={researchTabs[0]?.key ?? "today"} watched onPick={onPick} onMeta={onMeta} />
+              <Boards
+                tab={researchTabs[0]?.key ?? "today"}
+                watched
+                onPick={onPick}
+                onMeta={onMeta}
+              />
               <details className="rounded-2xl border border-border bg-surface p-3">
                 <summary className="cursor-pointer text-sm font-semibold text-accent">
                   {lang === "bn" ? "ওয়াচলিস্ট দেখুন" : "View watchlist"}
@@ -713,7 +730,13 @@ export function Scanner() {
               </button>
             </div>
           )}
-          <Boards tab={tab} watched={watched && !!user} onPick={onPick} onMeta={onMeta} />
+          <Boards
+            tab={tab}
+            watched={watched && !!user}
+            size={tier === ALL_UNIVERSE ? undefined : tier}
+            onPick={onPick}
+            onMeta={onMeta}
+          />
         </>
       )}
 

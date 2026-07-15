@@ -8,6 +8,12 @@ import { useSeo } from "../components/Seo";
 import { useLang } from "../lib/i18n";
 import { SCREEN_LESSON } from "../lib/lessons";
 import { useTenantConfig } from "../lib/tenant";
+import { useUniverse } from "../lib/universe";
+import {
+  ALL_UNIVERSE,
+  normalizeUniverseTier,
+  type UniverseTier,
+} from "../lib/universe-policy";
 import { ScreenRow, metricHeader, screenDesc, screenHelp, screenTitle } from "./Markets";
 
 const GROUP_KEY: Record<string, string> = {
@@ -39,10 +45,6 @@ const DIRECTIONS = [
   { id: "buy", label: "Buying" },
   { id: "sell", label: "Selling" },
 ];
-// Canonical size tiers (must match bulls.core.markets cap_tiers). Mega exists on US only.
-const SIZE_TIERS_DSE = ["large", "mid", "small", "micro"];
-const SIZE_TIERS_US = ["mega", ...SIZE_TIERS_DSE];
-
 // Explore page scoped to ONE category: tabs are that category's screens; the active screen shows
 // its full list, with its own timeframe filter attached to the card. "How to read this" lives
 // behind the (i) icon, so the data stays front-and-centre.
@@ -50,6 +52,7 @@ export function ScreenExplore() {
   const { t, lang } = useLang();
   const { key = "" } = useParams();
   const { config } = useTenantConfig();
+  const { tier: universeTier, setTier: setUniverseTier } = useUniverse();
   const [all, setAll] = useState<Screen[]>([]);
   const [active, setActive] = useState(key);
   const [period, setPeriod] = useState("1d");
@@ -57,13 +60,16 @@ export function ScreenExplore() {
   const [direction, setDirection] = useState("buy");
   const [screen, setScreen] = useState<Screen | null>(null);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
-  // Size is a URL-scoped refinement (?size=large): shareable, resets on navigation, and never
-  // persisted app-wide — whole-market surfaces (Mood, Wrap, Trending) are structurally exempt.
+  // The persisted research universe supplies the default. An explicit URL value remains
+  // shareable and takes precedence for this screen.
   const [params, setParams] = useSearchParams();
-  const sizeTiers = config.market === "US" ? SIZE_TIERS_US : SIZE_TIERS_DSE;
+  const sizeTiers = config.cap_tiers;
   const rawSize = params.get("size");
-  const size = rawSize && sizeTiers.includes(rawSize) ? rawSize : null;
-  const chooseSize = (tier: string | null) => {
+  const normalizedUrlSize = normalizeUniverseTier(rawSize, sizeTiers);
+  const urlSize = rawSize && normalizedUrlSize !== ALL_UNIVERSE ? normalizedUrlSize : null;
+  const size = urlSize ?? (universeTier === ALL_UNIVERSE ? null : universeTier);
+  const chooseSize = (tier: UniverseTier | null) => {
+    setUniverseTier(tier ?? ALL_UNIVERSE);
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -74,6 +80,10 @@ export function ScreenExplore() {
       { replace: true },
     );
   };
+
+  useEffect(() => {
+    if (urlSize && urlSize !== universeTier) setUniverseTier(urlSize);
+  }, [setUniverseTier, universeTier, urlSize]);
 
   useEffect(() => {
     api
@@ -192,7 +202,13 @@ export function ScreenExplore() {
             <select
               aria-label={t("tier.size")}
               value={size ?? ""}
-              onChange={(e) => chooseSize(e.target.value || null)}
+              onChange={(e) =>
+                chooseSize(
+                  e.target.value
+                    ? normalizeUniverseTier(e.target.value, sizeTiers)
+                    : null,
+                )
+              }
               className={`ml-auto shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-transparent ${
                 size ? "text-accent border-accent bg-accent/10" : "text-muted border-border"
               }`}

@@ -8,6 +8,8 @@ import { useLang } from "../lib/i18n";
 import { formatCurrencyMillions } from "../lib/market";
 import { Link, useNavigate } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
+import { useUniverse } from "../lib/universe";
+import { ALL_UNIVERSE, normalizeUniverseTier } from "../lib/universe-policy";
 
 // Browse-by-size: the canonical cap tiers as a segmented, URL-addressed page (/size/large).
 // Descriptive browse only — ranked by market cap, never by any score. The "Unclassified" bucket
@@ -17,9 +19,15 @@ export function SizeBrowse() {
   const { tier = "large" } = useParams();
   const { t, lang } = useLang();
   const { config } = useTenantConfig();
+  const { setTier: setUniverseTier } = useUniverse();
   const navigate = useNavigate();
   const [data, setData] = useState<BrowseSize | null | undefined>(undefined);
   const bn = lang === "bn";
+
+  useEffect(() => {
+    const selected = normalizeUniverseTier(tier, config.cap_tiers);
+    if (selected !== ALL_UNIVERSE) setUniverseTier(selected);
+  }, [config.cap_tiers, setUniverseTier, tier]);
 
   useEffect(() => {
     setData(undefined);

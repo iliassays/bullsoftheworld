@@ -403,6 +403,7 @@ export interface ScannerResponse {
   quote_as_of: string | null;
   tab: string;
   strategy_pack: string;
+  cap_tier?: string | null;
   tabs: Array<{ key: string; title: string; description: string }>;
   market_regime?: "above_200dma" | "below_200dma" | null;
   boards: Screen[];
@@ -411,6 +412,7 @@ export interface ScreensResponse {
   as_of: string | null; // EOD analytics date — screen rankings are as-of this close
   quote_as_of?: string | null; // latest 15-min quote snapshot — price/"today's move" freshness
   methodology?: MarketMethodology;
+  cap_tier?: string | null;
   screens: Screen[];
 }
 export interface Sector {
@@ -798,6 +800,7 @@ export interface MarketConfig {
     suffix: string;
     decimals: number;
   }>;
+  cap_tiers: Array<"mega" | "large" | "mid" | "small" | "micro">;
   features: Record<string, boolean>;
   tenant_name: string;
   brand_name: string;
@@ -1061,17 +1064,21 @@ export const api = {
     if (query) params.set("q", query);
     return request<SymbolOut[]>(`/symbols?${params.toString()}`);
   },
-  screens: () => request<ScreensResponse>("/screens"),
+  screens: (size?: string) =>
+    request<ScreensResponse>(`/screens${size ? `?size=${encodeURIComponent(size)}` : ""}`),
   browseSize: (tier: string, limit = 50, offset = 0) =>
     request<BrowseSize>(`/browse/size/${tier}?limit=${limit}&offset=${offset}`),
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketConfig: () => request<MarketConfig>("/market/config"),
   marketStatus: () => request<MarketStatus>("/market/status"),
-  scannerRadar: (tab: string, watched: boolean, limit?: number) =>
-    request<ScannerResponse>(
-      `/scanner/radar?tab=${tab}${watched ? "&watched=true" : ""}${limit ? `&limit=${limit}` : ""}`,
-    ),
+  scannerRadar: (tab: string, watched: boolean, limit?: number, size?: string) => {
+    const params = new URLSearchParams({ tab });
+    if (watched) params.set("watched", "true");
+    if (limit) params.set("limit", String(limit));
+    if (size) params.set("size", size);
+    return request<ScannerResponse>(`/scanner/radar?${params.toString()}`);
+  },
   sectors: () => request<Sector[]>("/sectors"),
   screen: (
     key: string,

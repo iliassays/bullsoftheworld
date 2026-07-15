@@ -12,6 +12,7 @@ from api.routers.scanner import (
     regime_from,
     scanner_pack_for,
 )
+from api.routers.screener import ScreenItem, ScreenOut, _filter_screens_by_cap_tier
 
 
 def test_scanner_universe_is_pinned_to_latest_analytics_date() -> None:
@@ -52,6 +53,26 @@ def test_regime_from() -> None:
     assert regime_from(5800.0, 5600.0) == "above_200dma"
     assert regime_from(5400.0, 5600.0) == "below_200dma"
     assert regime_from(5600.0, 5600.0) == "above_200dma"  # touching counts as above
+
+
+def test_scanner_cap_tier_filter_preserves_rank_and_limit() -> None:
+    board = ScreenOut(
+        key="ranked",
+        title="Ranked",
+        description="Ranked candidates",
+        value_label="score",
+        items=[
+            ScreenItem(code="LARGE", last_close=100, value=10, cap_tier="large"),
+            ScreenItem(code="SMALL1", last_close=90, value=9, cap_tier="small"),
+            ScreenItem(code="SMALL2", last_close=80, value=8, cap_tier="small"),
+            ScreenItem(code="SMALL3", last_close=70, value=7, cap_tier="small"),
+        ],
+    )
+
+    _filter_screens_by_cap_tier([board], cap_tier="small", limit=2)
+
+    assert [item.code for item in board.items] == ["SMALL1", "SMALL2"]
+    assert board.total_count == 2
 
 
 def test_oversold_board_is_on_today_tab_after_the_flagship() -> None:
