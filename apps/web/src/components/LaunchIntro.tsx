@@ -6,8 +6,6 @@ import { useLang } from "../lib/i18n";
 import { Link } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
 
-const ACTIVATION_TARGET = 10;
-
 export function LaunchIntro() {
   const { user } = useAuth();
   const { lang } = useLang();
@@ -26,21 +24,22 @@ export function LaunchIntro() {
       .catch(() => setWatchCount(null));
   }, [user]);
 
-  if (user && (watchCount == null || watchCount >= ACTIVATION_TARGET)) return null;
+  // No fixed target: the nudge is just "you haven't started a watchlist yet" — it disappears the
+  // moment there's at least one, rather than gating on reaching some count.
+  if (user && (watchCount == null || watchCount > 0)) return null;
 
   if (user) {
-    const currentWatchCount = watchCount ?? 0;
     return (
       <section className="border-y border-border bg-surface/60 px-4 py-3" aria-label={bn ? "ওয়াচলিস্ট সেটআপ" : "Watchlist setup"}>
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm font-bold">
-              {bn ? "১০টি শেয়ার ট্র্যাক করে শুরু করুন" : "Start by tracking 10 stocks"}
+              {bn ? "আপনার ওয়াচলিস্ট শুরু করুন" : "Start your watchlist"}
             </div>
             <div className="mt-0.5 text-[11px] leading-relaxed text-muted">
               {bn
-                ? `${currentWatchCount}/${ACTIVATION_TARGET} যোগ হয়েছে। গুরুত্বপূর্ণ ঘোষণা, মালিকানা ও দামের পরিবর্তন এক জায়গায় দেখুন।`
-                : `${currentWatchCount}/${ACTIVATION_TARGET} added. Bring material disclosures, ownership and price changes into one place.`}
+                ? "গুরুত্বপূর্ণ ঘোষণা, মালিকানা ও দামের পরিবর্তন এক জায়গায় দেখুন।"
+                : "Bring material disclosures, ownership and price changes into one place."}
             </div>
           </div>
           <Link
@@ -48,19 +47,13 @@ export function LaunchIntro() {
             onClick={() =>
               trackProductEvent("onboarding_started", {
                 source: "home_activation",
-                watch_count: currentWatchCount,
+                watch_count: 0,
               })
             }
             className="shrink-0 rounded-lg bg-accent px-3 py-2 text-xs font-bold text-bg"
           >
             {bn ? "সেটআপ" : "Set up"}
           </Link>
-        </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-border">
-          <div
-            className="h-full bg-accent"
-            style={{ width: `${Math.min(100, (currentWatchCount / ACTIVATION_TARGET) * 100)}%` }}
-          />
         </div>
       </section>
     );
@@ -121,7 +114,7 @@ export function LaunchIntro() {
           }
           className="rounded-lg bg-accent px-4 py-2.5 text-center text-sm font-bold text-bg"
         >
-          {bn ? "বিনামূল্যে ১০টি শেয়ার ট্র্যাক করুন" : "Track 10 stocks for free"}
+          {bn ? "বিনামূল্যে শেয়ার ট্র্যাক করুন" : "Track your stocks for free"}
         </Link>
         <Link
           to="/ideas"

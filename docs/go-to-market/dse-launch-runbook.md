@@ -24,7 +24,7 @@ advice. Use “research”, “evidence”, “descriptive”, “as of”, and 
 
 | Segment | Daily job | Lead surface | Activation |
 |---|---|---|---|
-| Active retail | Explain a move and assess entry risk quickly | close wrap, unusual volume, disclosure investigation | watch 10 stocks |
+| Active retail | Explain a move and assess entry risk quickly | close wrap, unusual volume, disclosure investigation | start a watchlist |
 | Long-term retail | Monitor holdings, earnings, dividends and ownership | earnings week, ownership change, portfolio alert | add portfolio + alerts |
 | New investor | Understand DSE evidence without jargon | Bangla explainers and worked examples | complete watchlist setup |
 | Institution | Reduce repetitive monitoring and improve client research | direct outreach and `/institutions` | qualified 30-day pilot |

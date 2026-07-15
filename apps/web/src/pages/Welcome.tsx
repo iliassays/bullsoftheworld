@@ -8,8 +8,11 @@ import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/i18n";
 import { useNavigate } from "../lib/nav";
 
-const ACTIVATION_TARGET = 10;
-const ACTIVATION_VERSION = "watchlist-10-v1";
+// No fixed pick-count target: withdrawn 2026-07-15 (was 10) after user feedback that it read as
+// a requirement rather than a nudge. "Activated" now just means "added at least one stock" —
+// see finish() below. Keep this version string bumped if that definition changes again, so past
+// and future watchlist_activated events stay distinguishable in analytics.
+const ACTIVATION_VERSION = "watchlist-open-v1";
 const STOCKS_SHOWN = 24;
 
 const SECTOR_ICONS: Record<string, string> = {
@@ -118,18 +121,17 @@ export function Welcome() {
     const results = await Promise.allSettled(additions.map((code) => api.watchAdd(code)));
     const added = results.filter((result) => result.status === "fulfilled").length;
     const finalCount = existingStocks.size + added;
-    if (finalCount >= ACTIVATION_TARGET) {
+    // No fixed target: any real watchlist (>=1 stock) counts as activated.
+    if (finalCount >= 1) {
       await trackProductEvent("watchlist_activated", {
         source: "onboarding",
         watch_count: finalCount,
-        activation_target: ACTIVATION_TARGET,
         activation_version: ACTIVATION_VERSION,
       });
     }
     navigate("/watchlist", { replace: true });
   };
 
-  const remaining = Math.max(0, ACTIVATION_TARGET - pickedStocks.size);
   const title = step === 0
     ? bn ? "যে খাতগুলো আপনি অনুসরণ করেন" : "Choose the sectors you follow"
     : step === 1
@@ -186,8 +188,10 @@ export function Welcome() {
               placeholder={bn ? "টিকার বা কোম্পানি খুঁজুন" : "Search ticker or company"}
               className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
             />
-            <span className={`min-w-16 text-center text-xs font-bold ${remaining ? "text-muted" : "text-up"}`}>
-              {pickedStocks.size} / {ACTIVATION_TARGET}
+            {/* Plain running count, no target denominator — picking any number (including
+                none, via Skip below) is a complete choice, not partial progress toward a goal. */}
+            <span className={`min-w-16 text-center text-xs font-bold ${pickedStocks.size ? "text-up" : "text-muted"}`}>
+              {bn ? `${pickedStocks.size}টি বাছাই করা হয়েছে` : `${pickedStocks.size} selected`}
             </span>
           </div>
           <div className="divide-y divide-border border-y border-border">

@@ -34,9 +34,9 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
    technical, liquidity/flow, ownership, disclosure, and crowd lenses when data exists. Keep it
    descriptive and evidence-backed; never collapse it into unsupported buy/sell language.
 10. **Go-to-market contract.** Optimize for weekly activated researchers, not feature count,
-    account count or impressions. Retail activation is ten watched stocks plus a later research
-    action. Institutional enquiries are a separate consented, tenant-scoped funnel. Never market
-    returns.
+    account count or impressions. Retail activation is starting a watchlist (any number of
+    stocks — no fixed pick-count target as of 2026-07-15) plus a later research action.
+    Institutional enquiries are a separate consented, tenant-scoped funnel. Never market returns.
 
 ## Stack
 

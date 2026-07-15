@@ -247,7 +247,7 @@ export function App() {
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-5">
                 <Kpi label="Consented visitors" value={k.consented_visitors_30d} sub="distinct first-party visitors in 30d" />
                 <Kpi label="Ticker researchers" value={k.ticker_viewers_30d} sub="distinct ticker viewers in 30d" />
-                <Kpi label="Watchlist activated" value={k.watchlist_activations_30d} sub="10+ stocks completed in 30d" tone="text-up" />
+                <Kpi label="Watchlist activated" value={k.watchlist_activations_30d} sub="1+ stock added in 30d (no fixed target since 2026-07-15)" tone="text-up" />
                 <Kpi label="Activated researchers" value={k.weekly_activated_researchers} sub="3+ tickers plus a research action in 7d" tone="text-up" />
                 <Kpi label="Interview volunteers" value={k.institutional_leads_open} sub="research conversations, not sales" tone={k.institutional_leads_open ? "text-accent" : "text-text"} />
                 <Kpi label="Beta feedback" value={ov?.beta_feedback_open ?? 0} sub="new or under review" tone={(ov?.beta_feedback_open ?? 0) ? "text-accent" : "text-text"} />
