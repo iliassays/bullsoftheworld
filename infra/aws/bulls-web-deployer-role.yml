@@ -29,6 +29,7 @@ Resources:
 
   WebDeployerRole:
     Type: AWS::IAM::Role
+    DependsOn: ReleaseOperator
     Properties:
       RoleName: !Ref RoleName
       Description: Deploys Bulls static sites and the tenant-isolated Atlas infrastructure.
