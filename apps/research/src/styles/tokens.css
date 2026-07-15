@@ -1,0 +1,82 @@
+@layer tokens {
+  :root {
+    color-scheme: light;
+    --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+    --canvas: #f3f4f1;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-subtle: #eceeea;
+    --surface-inset: #e6e8e4;
+    --sidebar: #101214;
+    --sidebar-raised: #191c1f;
+    --sidebar-border: #2d3135;
+    --sidebar-text: #f3f4f1;
+    --sidebar-muted: #9ba1a6;
+    --text: #171a1c;
+    --text-muted: #62696e;
+    --text-faint: #858c91;
+    --border: #d5d8d2;
+    --border-strong: #b9beb7;
+    --accent: #b47d0b;
+    --accent-strong: #8c5f00;
+    --accent-soft: #f3e7c3;
+    --positive: #087a52;
+    --positive-soft: #dcefe7;
+    --negative: #c33c32;
+    --negative-soft: #f6dfdc;
+    --warning: #9a6500;
+    --warning-soft: #f7e9c6;
+    --info: #166b8f;
+    --info-soft: #dcecf3;
+    --violet: #7355a4;
+    --violet-soft: #ece5f6;
+    --focus: #2e78c7;
+    --overlay: rgb(10 12 14 / 0.52);
+
+    --radius-xs: 3px;
+    --radius-sm: 5px;
+    --radius-md: 8px;
+    --shadow-popover: 0 14px 40px rgb(20 24 26 / 0.16), 0 2px 8px rgb(20 24 26 / 0.08);
+    --shadow-panel: 0 1px 2px rgb(20 24 26 / 0.04);
+    --sidebar-width: 236px;
+    --topbar-height: 58px;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --canvas: #141617;
+    --surface: #1b1e20;
+    --surface-raised: #202426;
+    --surface-subtle: #25292b;
+    --surface-inset: #111315;
+    --sidebar: #0b0d0e;
+    --sidebar-raised: #16191b;
+    --sidebar-border: #2c3134;
+    --sidebar-text: #f1f2ee;
+    --sidebar-muted: #9aa0a4;
+    --text: #eceee9;
+    --text-muted: #aab0b2;
+    --text-faint: #7f878a;
+    --border: #34393b;
+    --border-strong: #4a5154;
+    --accent: #d9a62a;
+    --accent-strong: #f0bd40;
+    --accent-soft: #3a3018;
+    --positive: #3ecf91;
+    --positive-soft: #14372b;
+    --negative: #f06a60;
+    --negative-soft: #402321;
+    --warning: #e3b648;
+    --warning-soft: #3b3019;
+    --info: #5bb6db;
+    --info-soft: #183440;
+    --violet: #b399dc;
+    --violet-soft: #302740;
+    --focus: #74b9ff;
+    --overlay: rgb(0 0 0 / 0.72);
+    --shadow-popover: 0 18px 52px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.25);
+    --shadow-panel: none;
+  }
+}

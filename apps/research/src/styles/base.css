@@ -1,0 +1,149 @@
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    letter-spacing: 0;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+    margin: 0;
+  }
+
+  html {
+    background: var(--canvas);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-width: 320px;
+    background: var(--canvas);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    color: inherit;
+    font: inherit;
+  }
+
+  button,
+  a[href],
+  [role="button"]:not([aria-disabled="true"]),
+  select {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  button,
+  a,
+  input,
+  textarea {
+    outline: none;
+  }
+
+  :focus-visible,
+  [data-focus-visible] {
+    box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .value-up {
+    color: var(--positive);
+  }
+
+  .value-down {
+    color: var(--negative);
+  }
+
+  .research-fatal-error {
+    display: flex;
+    min-height: 100dvh;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    background: var(--canvas);
+    color: var(--text);
+    padding: 24px;
+    text-align: center;
+  }
+
+  .research-fatal-error img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+  }
+
+  .research-fatal-error h1 {
+    margin-top: 14px;
+    font-size: 20px;
+  }
+
+  .research-fatal-error p {
+    max-width: 520px;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .research-fatal-error > span {
+    display: flex;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .research-fatal-error button,
+  .research-fatal-error a {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 10px;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+
+  * {
+    scrollbar-color: var(--border-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+}

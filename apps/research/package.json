@@ -1,0 +1,29 @@
+{
+  "name": "bulls-atlas",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.2",
+    "@tanstack/react-table": "^8.21.3",
+    "lucide-react": "^1.24.0",
+    "react": "^18.3.1",
+    "react-aria-components": "^1.19.0",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitest": "^4.1.0"
+  }
+}

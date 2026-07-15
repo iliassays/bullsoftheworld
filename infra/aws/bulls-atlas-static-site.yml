@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Private S3 and CloudFront static hosting for Bulls Atlas.
+
+Parameters:
+  DomainName:
+    Type: String
+  AliasDomainName:
+    Type: String
+    Default: ""
+  HostedZoneId:
+    Type: String
+  CertificateArn:
+    Type: String
+    Default: ""
+  SiteBucketName:
+    Type: String
+  ResearchApiUrl:
+    Type: String
+
+Conditions:
+  HasAliasDomain: !Not [!Equals [!Ref AliasDomainName, ""]]
+  HasProvidedCertificate: !Not [!Equals [!Ref CertificateArn, ""]]
+  CreateManagedCertificate: !Equals [!Ref CertificateArn, ""]
+
+Resources:
+  SiteCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: CreateManagedCertificate
+    Properties:
+      DomainName: !Ref DomainName
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+        - !If
+          - HasAliasDomain
+          - DomainName: !Ref AliasDomainName
+            HostedZoneId: !Ref HostedZoneId
+          - !Ref "AWS::NoValue"
+      SubjectAlternativeNames:
+        - !If [HasAliasDomain, !Ref AliasDomainName, !Ref "AWS::NoValue"]
+      ValidationMethod: DNS
+
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref SiteBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        Description: Signed CloudFront access to the private Bulls Atlas bucket.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-static-v1
+        Comment: Honor static object cache metadata without forwarding viewer state.
+        DefaultTTL: 300
+        MaxTTL: 31536000
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-security-v1
+        Comment: Browser security policy for the private Bulls Atlas shell.
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: camera=(), microphone=(), geolocation=()
+              Override: true
+        SecurityHeadersConfig:
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: !Sub >-
+              default-src 'self'; script-src 'self'; connect-src 'self' ${ResearchApiUrl};
+              img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;
+              object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 63072000
+            IncludeSubdomains: true
+            Preload: true
+            Override: true
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+          - !Ref DomainName
+          - !If [HasAliasDomain, !Ref AliasDomainName, !Ref "AWS::NoValue"]
+        Comment: Bulls Atlas tenant-bound research workspace
+        CustomErrorResponses:
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCachingMinTTL: 0
+            ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: !Ref CachePolicy
+          Compress: true
+          ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
+          TargetOriginId: atlas-s3
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Origins:
+          - DomainName: !GetAtt SiteBucket.RegionalDomainName
+            Id: atlas-s3
+            OriginAccessControlId: !Ref OriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          AcmCertificateArn: !If
+            - HasProvidedCertificate
+            - !Ref CertificateArn
+            - !Ref SiteCertificate
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+  AtlasAliasA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+
+  AtlasAliasAAAA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+
+  BrandedAtlasAliasA:
+    Type: AWS::Route53::RecordSet
+    Condition: HasAliasDomain
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref AliasDomainName
+      Type: A
+
+  BrandedAtlasAliasAAAA:
+    Type: AWS::Route53::RecordSet
+    Condition: HasAliasDomain
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        EvaluateTargetHealth: false
+        HostedZoneId: Z2FDTNDATAQYW2
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref AliasDomainName
+      Type: AAAA
+
+Outputs:
+  SiteUrl:
+    Value: !Sub https://${DomainName}
+  AliasSiteUrl:
+    Condition: HasAliasDomain
+    Value: !Sub https://${AliasDomainName}
+  SiteBucketName:
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref Distribution
+  DistributionDomainName:
+    Value: !GetAtt Distribution.DomainName
