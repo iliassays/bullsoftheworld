@@ -27,6 +27,7 @@ from api.institutional_research.workflow import (
     _add_step,
     _existing_run,
     _new_run,
+    _persist_run_parent,
     _stable_hash,
     execute_backtest,
     execute_company_research,
@@ -212,8 +213,7 @@ async def execute_research_lifecycle(
         code_version=LIFECYCLE_VERSION,
         model="deterministic-coordinator",
     )
-    session.add(run)
-    await session.flush()
+    await _persist_run_parent(session, run)
 
     queue = await build_research_queue(
         session,

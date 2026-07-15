@@ -376,6 +376,13 @@ def _new_run(
     )
 
 
+async def _persist_run_parent(session: AsyncSession, run: ResearchRun) -> None:
+    """Make the parent visible before forced-RLS lineage policies validate child rows."""
+
+    session.add(run)
+    await session.flush()
+
+
 def _add_step(
     session: AsyncSession,
     *,
@@ -442,7 +449,7 @@ async def execute_company_research(
         model="finance-reasoner-v2",
     )
     run.evidence_snapshot_hash = result.evidence_fingerprint
-    session.add(run)
+    await _persist_run_parent(session, run)
     facts_by_key = {fact.key: fact for fact in payload.facts}
     for stage in result.stages:
         _add_step(
@@ -631,7 +638,7 @@ async def execute_backtest(
             for security in securities
         }
     )
-    session.add(run)
+    await _persist_run_parent(session, run)
     _add_step(
         session,
         run=run,

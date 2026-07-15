@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import uuid
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
@@ -102,8 +104,15 @@ async def test_authenticated_research_api_isolates_dse_and_us_accounts() -> None
     from httpx import ASGITransport, AsyncClient
     from sqlalchemy import delete
 
+    from api.institutional_research.workflow import _new_run, _persist_run_parent
     from api.main import app, lifespan
-    from bulls.core.models import RefreshSession, ResearchOrganization, User
+    from bulls.core.models import (
+        RefreshSession,
+        ResearchClaim,
+        ResearchOrganization,
+        ResearchWorkspace,
+        User,
+    )
 
     await dispose_engine()
     created_users: list[int] = []
@@ -179,6 +188,53 @@ async def test_authenticated_research_api_isolates_dse_and_us_accounts() -> None
                 assert payload["tenantId"] == tenant_id
                 assert payload["market"] == market
                 assert all(candidate["market"] == market for candidate in payload["candidates"])
+
+                # Forced lineage policies query the parent run. Persist it before adding claims;
+                # this catches ORM flush-order regressions with the restricted runtime role.
+                async with get_sessionmaker()() as lineage_session:
+                    await bind_research_tenant_context(
+                        lineage_session,
+                        tenant_id=tenant_id,
+                        market=market,
+                        user_id=user_id,
+                    )
+                    workspace_model = await lineage_session.get(
+                        ResearchWorkspace, uuid.UUID(workspace["id"])
+                    )
+                    assert workspace_model is not None
+                    now = dt.datetime.now(dt.UTC)
+                    run = _new_run(
+                        workspace=workspace_model,
+                        user_id=user_id,
+                        run_kind="deep_research",
+                        question="Verify forced-RLS lineage insertion.",
+                        code=None,
+                        parameters={},
+                        idempotency_key=f"rls-lineage-{uuid.uuid4()}",
+                        cutoff=now,
+                        code_version="rls-lineage-v1",
+                        model="deterministic-test",
+                    )
+                    await _persist_run_parent(lineage_session, run)
+                    lineage_session.add(
+                        ResearchClaim(
+                            id=uuid.uuid4(),
+                            organization_id=run.organization_id,
+                            tenant_id=run.tenant_id,
+                            market=run.market,
+                            run_id=run.id,
+                            ordinal=0,
+                            claim_type="supporting",
+                            statement="The parent run is visible to its lineage policy.",
+                            verdict="supported",
+                            confidence=Decimal("1"),
+                            as_of_at=now,
+                            values={},
+                            verification={"kind": "rls_regression"},
+                        )
+                    )
+                    await lineage_session.flush()
+                    await lineage_session.rollback()
 
             replay = await client.get(
                 "/institutional-research/workspaces",
