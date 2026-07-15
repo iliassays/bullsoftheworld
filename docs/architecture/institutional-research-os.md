@@ -265,6 +265,13 @@ Multi-user onboarding remains gated on a privileged, audited membership-administ
 MFA/passkeys, session/device controls, document encryption, export controls, and later SSO/SCIM.
 Current membership RLS deliberately lets normal users read only their own membership rows.
 
+During the open-access phase, `research_access = "authenticated"` is an explicit tenant product
+policy. It is unrelated to the PostgreSQL `bulls_app` runtime role: database credentials are never
+granted to product users. Existing non-official accounts are backfilled with tenant-bound private
+workspaces, while new accounts receive the same workspace through an idempotent first-Atlas-session
+`POST`. Retail registration remains independent of Atlas provisioning, and official automated desk
+accounts are excluded unless deliberately included by an administrator.
+
 ## Production data readiness found on 2026-07-15
 
 - DSE: 396 ready symbols, 191,984 bars across 401 symbols from 2024-06-27 to 2026-07-14,
@@ -307,6 +314,27 @@ and cost.
 - transaction costs, market impact, capacity, delistings, and regime breakdown;
 - probability-of-backtest-overfitting/deflated-performance checks and complete trial registry;
 - paper/forward monitoring before any model receives a validated label.
+
+### Performance contract
+
+Atlas performance is measured at three levels that must not be conflated:
+
+1. **Research workflow value**: analyst time to a defensible dossier, queue-to-dossier conversion,
+   time to reject a weak idea, material-event miss rate, unresolved data-quality reports, and
+   qualified-account activation/retention.
+2. **Research-queue quality**: forward 1/5/20/60-session returns, drawdown, volatility, evidence
+   changes, and confidence calibration by rank bucket, market, cap tier, and regime. These diagnose
+   whether ranking deserves analyst attention; they do not turn the queue into a trade signal.
+3. **Strategy performance**: only a versioned Hypothesis Lab specification may produce return,
+   Sharpe, drawdown, turnover, hit rate, exposure, transaction-cost, market-impact, and capacity
+   claims. Entry, exit, holding period, sizing, benchmark, and invalidation rules are mandatory.
+
+The release sequence is point-in-time backtest, untouched/walk-forward evaluation, then a shadow
+portfolio using the next observable eligible price. Paper execution records intended orders, fills,
+rejects, costs, exposure, capacity, and daily NAV without sending orders to a broker. DSE and US
+share the research contract but use separate market-policy adapters for calendars, settlement,
+corporate actions, lot/price rules, and costs. The existing public agent portfolios are not reused
+as Atlas portfolios because they encode platform-strategy and DSE settlement assumptions.
 
 ### Security and reliability
 

@@ -18,6 +18,7 @@ site_url = "https://bullsofwallst.com"
 research_site_url = "https://research.bullsofwallst.com"
 research_alias_urls = ["https://atlas.bullsofwallst.com"]
 research_api_url = "https://api.bullsofwallst.com"
+research_access = "authenticated"
 support_email = "hello@bullsofwallst.com"
 email_from = "Bulls of Wall Street <no-reply@bullsofwallst.com>"
 logo_url = "https://bullsofwallst.com/logo-mark-v2.png"

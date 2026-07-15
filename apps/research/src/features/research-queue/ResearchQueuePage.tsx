@@ -22,7 +22,6 @@ import { QueueSummaryStrip } from "./QueueSummaryStrip";
 import { ResearchInspector } from "./ResearchInspector";
 import { ResearchQueueTable } from "./ResearchQueueTable";
 import {
-  useBootstrapResearchWorkspace,
   useResearchQueue,
   useResearchWorkspaces,
 } from "./useResearchQueue";
@@ -58,7 +57,6 @@ function formatCutoff(timestamp: string): string {
 
 export function ResearchQueuePage() {
   const workspaces = useResearchWorkspaces();
-  const bootstrap = useBootstrapResearchWorkspace();
   const workspace = workspaces.data?.[0];
   const [status, setStatus] = useState<QueueStatusFilter>("all");
   const [capTier, setCapTier] = useState<CapTierFilter>("all");
@@ -114,14 +112,11 @@ export function ResearchQueuePage() {
     return (
       <section className="research-unavailable">
         <CircleAlert aria-hidden="true" size={26} />
-        <h1>No research workspace</h1>
-        <p>Create a private {researchDeployment.exchangeName} workspace for this account.</p>
-        <Button
-          isDisabled={bootstrap.isPending}
-          onPress={() => bootstrap.mutate()}
-          variant="primary"
-        >
-          {bootstrap.isPending ? "Creating…" : "Create private workspace"}
+        <h1>Research workspace unavailable</h1>
+        <p>No workspace was returned for this {researchDeployment.exchangeName} account.</p>
+        <Button onPress={() => workspaces.refetch()} variant="primary">
+          <RefreshCw aria-hidden="true" size={15} />
+          Retry provisioning
         </Button>
       </section>
     );

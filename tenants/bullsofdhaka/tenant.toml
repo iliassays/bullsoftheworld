@@ -17,6 +17,7 @@ site_url = "https://bullsofdhaka.com"
 research_site_url = "https://research.bullsofdhaka.com"
 research_alias_urls = ["https://atlas.bullsofdhaka.com"]
 research_api_url = "https://api.bullsofdhaka.com"
+research_access = "authenticated"
 support_email = "hello@bullsofdhaka.com"
 email_from = "Bulls of Dhaka <no-reply@bullsofdhaka.com>"
 logo_url = "https://bullsofdhaka.com/logo-mark-v2.png"

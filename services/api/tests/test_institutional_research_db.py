@@ -150,6 +150,13 @@ async def test_authenticated_research_api_isolates_dse_and_us_accounts() -> None
                 workspace = bootstrap.json()
                 assert workspace["tenantId"] == tenant_id
                 assert workspace["market"] == market
+
+                second_bootstrap = await client.post(
+                    "/institutional-research/workspaces/bootstrap",
+                    headers=authorized,
+                )
+                assert second_bootstrap.status_code == 201, second_bootstrap.text
+                assert second_bootstrap.json()["id"] == workspace["id"]
                 created_organizations.append(
                     (
                         tenant_id,

@@ -27,8 +27,14 @@ from api.research_access import (
     bind_research_tenant_context,
 )
 from bulls.core.research_access import ResearchPermission
+from bulls.core.tenancy import Tenant
 
 router = APIRouter(prefix="/institutional-research", tags=["institutional-research"])
+
+
+def _require_research_access(tenant: Tenant) -> None:
+    if tenant.research_access != "authenticated":
+        raise HTTPException(status_code=403, detail="Research access is not enabled")
 
 
 @router.get("/workspaces")
@@ -37,6 +43,7 @@ async def workspaces(
     user: CurrentUser,
     session: DbSession,
 ) -> list[WorkspaceOut]:
+    _require_research_access(tenant)
     await bind_research_tenant_context(
         session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
     )
@@ -49,6 +56,7 @@ async def bootstrap_workspace(
     user: CurrentUser,
     session: DbSession,
 ) -> WorkspaceOut:
+    _require_research_access(tenant)
     await bind_research_tenant_context(
         session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
     )
@@ -68,6 +76,7 @@ async def research_queue(
     ),
     query: str | None = Query(None, min_length=1, max_length=64),
 ) -> ResearchQueueSnapshotOut:
+    _require_research_access(tenant)
     await bind_research_tenant_context(
         session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
     )
@@ -105,6 +114,7 @@ async def company_dossier(
     user: CurrentUser,
     session: DbSession,
 ) -> CompanyDossierOut:
+    _require_research_access(tenant)
     await bind_research_tenant_context(
         session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
     )

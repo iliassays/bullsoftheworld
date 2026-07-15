@@ -1,21 +1,20 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { researchQueueGateway, type ResearchQueueRequest } from "./gateway";
+
+export async function loadProvisionedResearchWorkspaces() {
+  const workspaces = await researchQueueGateway.loadWorkspaces();
+  if (workspaces.length > 0) return workspaces;
+
+  // Open-access tenants provision a private workspace at first Atlas use. The POST is idempotent
+  // and serialized server-side, so retries and concurrent tabs remain safe.
+  return [await researchQueueGateway.bootstrapWorkspace()];
+}
 
 export function useResearchWorkspaces() {
   return useQuery({
     queryKey: ["research", "workspaces"],
-    queryFn: () => researchQueueGateway.loadWorkspaces(),
-  });
-}
-
-export function useBootstrapResearchWorkspace() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => researchQueueGateway.bootstrapWorkspace(),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["research", "workspaces"] });
-    },
+    queryFn: loadProvisionedResearchWorkspaces,
   });
 }
 

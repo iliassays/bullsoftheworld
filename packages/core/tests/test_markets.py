@@ -112,11 +112,13 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
         "https://atlas.bullsofdhaka.com"
     ]
     assert registry.get("bullsofdhaka").research_api_url == "https://api.bullsofdhaka.com"
+    assert registry.get("bullsofdhaka").research_access == "authenticated"
     assert registry.get("bullsofwallst").research_site_url == "https://research.bullsofwallst.com"
     assert registry.get("bullsofwallst").research_alias_urls == [
         "https://atlas.bullsofwallst.com"
     ]
     assert registry.get("bullsofwallst").research_api_url == "https://api.bullsofwallst.com"
+    assert registry.get("bullsofwallst").research_access == "authenticated"
 
 
 def test_tenant_locale_must_be_enabled_and_known() -> None:

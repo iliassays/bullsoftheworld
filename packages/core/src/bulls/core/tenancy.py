@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator
@@ -36,6 +37,9 @@ class Tenant(BaseModel):
     research_site_url: str = ""
     research_alias_urls: list[str] = Field(default_factory=list)
     research_api_url: str = ""
+    # Product access policy, independent of PostgreSQL's ``bulls_app`` runtime identity.
+    # ``authenticated`` is the temporary open-beta policy; ``closed`` fails every Atlas route.
+    research_access: Literal["closed", "authenticated"] = "closed"
     support_email: str
     email_from: str
     logo_url: str
