@@ -24,6 +24,7 @@ from api.deps import (
     enforce_market_feature,
     visible_codes,
 )
+from api.market_freshness import quote_data_status
 from bulls.analytics import (
     AnalyticsResult,
     MoodIndex,
@@ -752,30 +753,9 @@ def _mood_data_status(
     quote_as_of: dt.datetime | None,
     close_as_of_date: dt.date | None,
 ) -> str:
-    """Describe exactly what the card represents; never call a prior close intraday data."""
-    if now.tzinfo is None:
-        raise ValueError("mood status requires a timezone-aware current time")
-    phase = str(session_phase(now, market=market))
-    if quote_as_of is None:
-        return "stale" if phase == "open" else "official_close"
-    if quote_as_of.tzinfo is None:
-        quote_as_of = quote_as_of.replace(tzinfo=dt.UTC)
-    local_now = to_market_tz(now, market=market)
-    local_quote = to_market_tz(quote_as_of, market=market)
-    local_today = local_now.date()
-    quote_date = local_quote.date()
-    if phase == "open" and (
-        quote_date != local_today or (now - quote_as_of).total_seconds() > 35 * 60
-    ):
-        return "stale"
-    quote_leads_close = close_as_of_date is None or quote_date > close_as_of_date
-    if quote_date == local_today and quote_leads_close:
-        if phase == "open":
-            return "intraday_delayed"
-        if phase == "post_close" and local_quote.time() < market_close_on(quote_date, market):
-            return "stale"
-        return "provisional_close"
-    return "official_close"
+    """Backwards-compatible name retained for focused mood tests and callers."""
+
+    return quote_data_status(now, market, quote_as_of, close_as_of_date)
 
 
 async def _mood_inputs(session, market: str) -> dict[str, Any]:

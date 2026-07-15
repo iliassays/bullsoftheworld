@@ -29,6 +29,7 @@ class QuoteSnapshot(Base):
     prev_close: Mapped[float | None] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(BigInteger)
     trades: Mapped[int] = mapped_column(Integer)
+    turnover_mn: Mapped[float | None] = mapped_column(Float, default=None)
     as_of: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
     is_delayed: Mapped[bool] = mapped_column(Boolean, default=True)
 

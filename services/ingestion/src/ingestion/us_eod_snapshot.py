@@ -80,6 +80,7 @@ async def publish_quotes(*, codes: Sequence[str] | None = None) -> int:
                     "prev_close": prev_close,
                     "volume": latest.volume,
                     "trades": 0,
+                    "turnover_mn": latest.close * latest.volume / 1_000_000,
                     "as_of": _as_of(latest.date),
                     "is_delayed": True,
                 }

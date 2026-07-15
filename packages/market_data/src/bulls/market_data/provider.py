@@ -40,6 +40,7 @@ class Quote(BaseModel):
     prev_close: float | None = None  # YCP — yesterday's close
     volume: int
     trades: int
+    turnover_mn: float | None = None  # provider-reported traded value, in currency millions
     as_of: dt.datetime  # when we read it; pair with is_delayed
     is_delayed: bool  # surfaced in the UI — never lie about freshness
 

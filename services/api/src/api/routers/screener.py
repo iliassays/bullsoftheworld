@@ -17,6 +17,7 @@ from sqlalchemy import ColumnElement, and_, case, func, or_, select
 from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature, visible_codes
+from api.market_freshness import quote_data_status
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
@@ -454,6 +455,12 @@ class ScreensResponse(BaseModel):
 class MarketPulseOut(BaseModel):
     as_of: str | None
     quote_as_of: str | None = None
+    close_as_of: str | None = None
+    data_status: str
+    refresh_interval_minutes: int = 15
+    benchmark_is_live: bool = False
+    turnover_is_partial: bool = False
+    turnover_is_estimated: bool = False
     dsex: float | None = None
     dsex_change_pct: float | None = None
     turnover_cr: float | None = None
@@ -1938,7 +1945,15 @@ def _index_pct_from_points(level: float | None, points: float | None) -> float |
     return round(pct, 2) if pct is not None else None
 
 
-async def _breadth(session, market: str) -> tuple[int, int, int, int]:
+async def _breadth(
+    session, market: str, quote_cutoff: dt.datetime | None = None
+) -> tuple[int, int, int, int]:
+    conditions = [
+        QuoteSnapshot.market == market,
+        QuoteSnapshot.code.in_(visible_codes(market)),
+    ]
+    if quote_cutoff is not None:
+        conditions.append(QuoteSnapshot.as_of >= quote_cutoff)
     adv, dec, flat, total = (
         await session.execute(
             select(
@@ -1946,7 +1961,7 @@ async def _breadth(session, market: str) -> tuple[int, int, int, int]:
                 func.count().filter(QuoteSnapshot.change_pct < 0),
                 func.count().filter(QuoteSnapshot.change_pct == 0),
                 func.count(),
-            ).where(QuoteSnapshot.market == market, QuoteSnapshot.code.in_(visible_codes(market)))
+            ).where(*conditions)
         )
     ).one()
     return int(adv or 0), int(dec or 0), int(flat or 0), int(total or 0)
@@ -1981,10 +1996,19 @@ async def _universe_coverage(session, market: str) -> tuple[int, int, float, boo
     return _coverage_from_counts(published or 0, eligible or 0)
 
 
-async def _sector_rows(session, market: str) -> list[SectorRow]:
+async def _sector_rows(
+    session, market: str, quote_cutoff: dt.datetime | None = None
+) -> list[SectorRow]:
     avg_chg = func.avg(QuoteSnapshot.change_pct)
     adv = func.count().filter(QuoteSnapshot.change_pct > 0)
     dec = func.count().filter(QuoteSnapshot.change_pct < 0)
+    conditions = [
+        Symbol.market == market,
+        Symbol.code.in_(visible_codes(market)),
+        Symbol.sector.isnot(None),
+    ]
+    if quote_cutoff is not None:
+        conditions.append(QuoteSnapshot.as_of >= quote_cutoff)
     rows = (
         await session.execute(
             select(Symbol.sector, avg_chg, adv, dec, func.count())
@@ -1995,11 +2019,7 @@ async def _sector_rows(session, market: str) -> list[SectorRow]:
                     QuoteSnapshot.code == Symbol.code,
                 ),
             )
-            .where(
-                Symbol.market == market,
-                Symbol.code.in_(visible_codes(market)),
-                Symbol.sector.isnot(None),
-            )
+            .where(*conditions)
             .group_by(Symbol.sector)
             .having(func.count() >= 3)  # ignore tiny one-off "sectors"
             .order_by(avg_chg.desc())
@@ -2029,6 +2049,44 @@ def _risk_mode(dsex_pct: float | None, turnover_vs_20d: float | None, adv: int, 
     return "mixed"
 
 
+def _intraday_risk_mode(adv: int, dec: int) -> str:
+    """Quote-only intraday regime when the official benchmark is still yesterday's close."""
+
+    decided = adv + dec
+    breadth = adv / decided if decided else 0.5
+    if breadth >= 0.58:
+        return "risk_on"
+    if breadth <= 0.42:
+        return "defensive"
+    return "mixed"
+
+
+def _turnover_ratio(
+    current_turnover: float | None, completed_turnovers: list[float]
+) -> float | None:
+    """Compare one turnover reading with up to 20 completed sessions."""
+
+    baseline = completed_turnovers[:20]
+    average = sum(baseline) / len(baseline) if baseline else None
+    if current_turnover is None or not average:
+        return None
+    return round(current_turnover / average, 2)
+
+
+def _select_live_turnover(
+    reported_turnover: float | None,
+    reported_count: int,
+    total_count: int,
+    estimated_turnover: float | None,
+) -> tuple[float | None, bool]:
+    """Prefer provider-reported value when it covers at least 95% of the quote batch."""
+
+    reported_coverage = reported_count / total_count if total_count else 0.0
+    if reported_turnover is not None and reported_coverage >= 0.95:
+        return float(reported_turnover), False
+    return (float(estimated_turnover) if estimated_turnover is not None else None), True
+
+
 @router.get("/market-pulse")
 async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulseOut:
     """One institutional-style market regime read before drilling into individual screens."""
@@ -2040,30 +2098,68 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
         .order_by(MarketSummary.date.desc())
         .limit(1)
     )
-    values = (
-        await session.scalars(
-            select(MarketSummary.total_value_mn)
-            .where(MarketSummary.market == market, MarketSummary.total_value_mn.isnot(None))
-            .order_by(MarketSummary.date.desc())
-            .limit(21)
-        )
-    ).all()
-    latest_turnover = values[0] if values else None
-    prior_values = values[1:] if len(values) > 1 else values
-    avg_turnover = sum(prior_values) / len(prior_values) if prior_values else None
-    turnover_vs_20d = (
-        round(latest_turnover / avg_turnover, 2)
-        if latest_turnover is not None and avg_turnover
-        else None
+    completed_turnovers = list(
+        (
+            await session.scalars(
+                select(MarketSummary.total_value_mn)
+                .where(MarketSummary.market == market, MarketSummary.total_value_mn.isnot(None))
+                .order_by(MarketSummary.date.desc())
+                .limit(21)
+            )
+        ).all()
     )
-    adv, dec, flat, total = await _breadth(session, market)
-    published, eligible, coverage_ratio, coverage_complete = await _universe_coverage(
-        session, market
-    )
-    sectors = await _sector_rows(session, market)
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
+    if quote_ts is not None and quote_ts.tzinfo is None:
+        quote_ts = quote_ts.replace(tzinfo=dt.UTC)
+    close_as_of = summary.date if summary else None
+    data_status = quote_data_status(dt.datetime.now(dt.UTC), market, quote_ts, close_as_of)
+    quote_date = to_market_tz(quote_ts, market=market).date() if quote_ts else None
+    quotes_lead_close = bool(
+        quote_date is not None and (close_as_of is None or quote_date > close_as_of)
+    )
+    quote_cutoff = quote_ts - dt.timedelta(minutes=30) if quote_ts else None
+
+    adv, dec, flat, total = await _breadth(session, market, quote_cutoff)
+    _, eligible, _, _ = await _universe_coverage(session, market)
+    published, eligible, coverage_ratio, coverage_complete = _coverage_from_counts(total, eligible)
+    sectors = await _sector_rows(session, market, quote_cutoff)
+
+    live_turnover = None
+    turnover_is_estimated = False
+    if quotes_lead_close and quote_cutoff is not None:
+        reported_turnover, reported_count, estimated_turnover = (
+            await session.execute(
+                select(
+                    func.sum(QuoteSnapshot.turnover_mn),
+                    func.count().filter(QuoteSnapshot.turnover_mn.isnot(None)),
+                    func.sum(QuoteSnapshot.volume * QuoteSnapshot.ltp) / 1_000_000,
+                ).where(
+                    QuoteSnapshot.market == market,
+                    QuoteSnapshot.code.in_(visible_codes(market)),
+                    QuoteSnapshot.as_of >= quote_cutoff,
+                )
+            )
+        ).one()
+        live_turnover, turnover_is_estimated = _select_live_turnover(
+            reported_turnover,
+            int(reported_count or 0),
+            total,
+            estimated_turnover,
+        )
+
+    if quotes_lead_close:
+        turnover_mn = float(live_turnover) if live_turnover is not None else None
+        turnover_vs_20d = _turnover_ratio(turnover_mn, completed_turnovers)
+    else:
+        turnover_mn = (
+            float(summary.total_value_mn)
+            if summary and summary.total_value_mn is not None
+            else None
+        )
+        turnover_vs_20d = _turnover_ratio(turnover_mn, completed_turnovers[1:])
+
     benchmark_close = summary.benchmark_close or summary.dsex if summary else None
     benchmark_change = (
         summary.benchmark_change
@@ -2076,19 +2172,20 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
     top = sectors[0] if sectors else None
     weak = sectors[-1] if sectors else None
     return MarketPulseOut(
-        as_of=str(summary.date) if summary else None,
+        as_of=str(quote_date or close_as_of) if (quote_date or close_as_of) else None,
         quote_as_of=quote_ts.isoformat() if quote_ts else None,
+        close_as_of=str(close_as_of) if close_as_of else None,
+        data_status=data_status,
+        benchmark_is_live=False,
+        turnover_is_partial=quotes_lead_close and data_status != "official_close",
+        turnover_is_estimated=quotes_lead_close and turnover_is_estimated,
         dsex=round(summary.dsex, 2) if summary and summary.dsex is not None else None,
         dsex_change_pct=dsex_pct,
-        turnover_cr=round(summary.total_value_mn / 10, 1)
-        if summary and summary.total_value_mn is not None
-        else None,
+        turnover_cr=round(turnover_mn / 10, 1) if turnover_mn is not None else None,
         benchmark_label=get_market_profile(market).benchmark_label,
         benchmark_close=round(benchmark_close, 2) if benchmark_close is not None else None,
         benchmark_change_pct=dsex_pct,
-        turnover_mn=round(summary.total_value_mn, 1)
-        if summary and summary.total_value_mn is not None
-        else None,
+        turnover_mn=round(turnover_mn, 1) if turnover_mn is not None else None,
         turnover_vs_20d=turnover_vs_20d,
         advancers=adv,
         decliners=dec,
@@ -2102,7 +2199,13 @@ async def market_pulse(tenant: CurrentTenant, session: DbSession) -> MarketPulse
         top_sector_change=top.avg_change if top else None,
         weak_sector=weak.sector if weak else None,
         weak_sector_change=weak.avg_change if weak else None,
-        risk_mode=_risk_mode(dsex_pct, turnover_vs_20d, adv, dec),
+        risk_mode=(
+            "mixed"
+            if data_status == "stale"
+            else _intraday_risk_mode(adv, dec)
+            if quotes_lead_close
+            else _risk_mode(dsex_pct, turnover_vs_20d, adv, dec)
+        ),
     )
 
 

@@ -40,6 +40,7 @@ def test_parse_quotes_maps_columns_by_header():
     assert gp.prev_close == 291.4
     assert gp.open is None  # not published on the latest page
     assert gp.volume == 66928 and gp.trades == 925
+    assert gp.turnover_mn == 19.844
     assert gp.is_delayed is True
     # change_pct computed from change/ycp
     assert gp.change == 2.8

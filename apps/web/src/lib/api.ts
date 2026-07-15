@@ -425,6 +425,12 @@ export interface Sector {
 export interface MarketPulse {
   as_of: string | null;
   quote_as_of?: string | null;
+  close_as_of?: string | null;
+  data_status: "intraday_delayed" | "provisional_close" | "official_close" | "stale";
+  refresh_interval_minutes: number;
+  benchmark_is_live: boolean;
+  turnover_is_partial: boolean;
+  turnover_is_estimated: boolean;
   dsex: number | null;
   dsex_change_pct: number | null;
   turnover_cr: number | null;

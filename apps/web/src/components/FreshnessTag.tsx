@@ -92,7 +92,7 @@ export function FreshnessTag({
         ? `ডেটা দেরিতে · সর্বশেষ ${sourceDate}, প্রত্যাশিত ${expectedDate}`
         : `Data delayed · latest ${sourceDate}, expected ${expectedDate}`
       : delayedQuoteActive
-        ? `${bn ? "বিশ্লেষণ" : "Analysis"}: ${sourceDate} ${bn ? "ক্লোজ" : "close"} · ${priceBasis} · ${bn ? "পরবর্তী" : "next"} ${nextRefresh}`
+        ? `${bn ? "র‍্যাঙ্কিং" : "Rankings"}: ${sourceDate} ${bn ? "ক্লোজ" : "close"} · ${priceBasis} · ${bn ? "পরবর্তী র‍্যাঙ্কিং" : "next ranking"} ${nextRefresh}`
         : `${bn ? "ডেটা" : "Data through"} ${sourceDate} ${bn ? "ক্লোজ পর্যন্ত" : "close"} · ${bn ? "পরবর্তী রিফ্রেশ" : "next refresh"} ${nextRefresh}`;
     return (
       <div className={`text-[10px] ${late || status?.quote_is_stale ? "text-down" : "text-muted"} ${className}`}>
@@ -113,8 +113,8 @@ export function FreshnessTag({
             : "Data refresh is delayed"
           : delayedQuoteActive
             ? bn
-              ? "র‍্যাঙ্কিং ও দাম আলাদা সময়ের ডেটা"
-              : "Rankings and prices use different clocks"
+              ? "র‍্যাঙ্কিং গত ক্লোজের; দাম আজকের"
+              : "Rankings use the last close; prices are today"
             : bn
               ? "সম্পূর্ণ হওয়া সেশনের গবেষণা"
               : "Completed-session research"}
@@ -137,7 +137,16 @@ export function FreshnessTag({
           <b className="text-text">{bn ? "দাম:" : "Prices:"}</b> {priceBasis}
         </div>
         <div>
-          <b className="text-text">{bn ? "পরবর্তী রিফ্রেশ:" : "Next refresh:"}</b> {nextRefresh}
+          <b className="text-text">
+            {delayedQuoteActive
+              ? bn
+                ? "পরবর্তী র‍্যাঙ্কিং হিসাব:"
+                : "Next ranking calculation:"
+              : bn
+                ? "পরবর্তী রিফ্রেশ:"
+                : "Next refresh:"}
+          </b>{" "}
+          {nextRefresh}
         </div>
       </div>
     </section>

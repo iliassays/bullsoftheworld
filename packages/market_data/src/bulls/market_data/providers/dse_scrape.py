@@ -113,6 +113,7 @@ def parse_quotes(html: str, *, as_of: dt.datetime) -> list[Quote]:
                 prev_close=ycp,
                 volume=int(_num(_col(row, headers, "VOLUME")) or 0),
                 trades=int(_num(_col(row, headers, "TRADE")) or 0),
+                turnover_mn=_num(_col(row, headers, "VALUE (MN)")),
                 as_of=as_of,
                 is_delayed=True,
             )
