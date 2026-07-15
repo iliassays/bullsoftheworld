@@ -8,17 +8,24 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
+from contextlib import suppress
 from dataclasses import dataclass
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
+from redis.exceptions import RedisError
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
 from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature, visible_codes
 from api.market_freshness import quote_data_status
 from api.routers.buzz import _MIN_BASELINE_DAYS, attention_label
+from api.screen_membership import (
+    apply_stored_screen_memberships,
+    screen_membership_key,
+    update_screen_memberships,
+)
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
 from bulls.core.markets import format_money_millions, get_market_profile
@@ -397,6 +404,8 @@ class ScreenItem(BaseModel):
     horizons: MomHorizons | None = None  # momentum screen only: 3M/6M/12M returns for the cue
     flow: list[float] = []  # ownership screens: stake % over last disclosures (oldest→newest)
     flow_dates: list[str] = []  # ISO date of each flow point, aligned with `flow`
+    comparison_as_of: str | None = None  # prior disclosure/report date for the displayed change
+    data_as_of: str | None = None  # latest disclosure/report date for the displayed change
     period_spark: list[float] = []  # ownership: price over the disclosure window (oldest→newest)
     category: str | None = None  # DSE category (A/B/G/N/Z), for execution context
     adtv_mn: float | None = None  # 20D average daily traded value, ৳ millions
@@ -417,6 +426,9 @@ class ScreenItem(BaseModel):
     check_next: list[str] = []  # Scanner: concrete verification checklist
     pattern_status: str | None = None
     pattern_metrics: dict[str, float] | None = None
+    # Set only while this ticker is a recent entrant to this exact tenant/market/universe board.
+    # NULL means either long-standing membership or that no trustworthy prior baseline exists.
+    new_since: str | None = None
 
 
 class ScreenOut(BaseModel):
@@ -619,6 +631,7 @@ async def _institutional_13f(
                 T.last_close,
                 change,
                 InstitutionalHoldingSummary.report_date,
+                InstitutionalHoldingSummary.prior_report_date,
             )
             .join(
                 latest_period,
@@ -654,9 +667,10 @@ async def _institutional_13f(
                 code=code,
                 last_close=last_close,
                 value=round(net_change, 2),
-                note=f"13F quarter ended {report_date}",
+                comparison_as_of=prior_report_date.isoformat() if prior_report_date else None,
+                data_as_of=report_date.isoformat(),
             )
-            for code, last_close, net_change, report_date in rows
+            for code, last_close, net_change, report_date, prior_report_date in rows
         ],
     )
 
@@ -1351,6 +1365,8 @@ async def _ownership(
                 note=_persistence_note(f.series, direction) or _flow_tag(f.prev_delta, direction),
                 flow=f.series,
                 flow_dates=f.dates,
+                comparison_as_of=f.dates[-2] if len(f.dates) >= 2 else None,
+                data_as_of=f.dates[-1] if f.dates else None,
                 period_spark=psparks.get(c, []),
             )
         )
@@ -1424,6 +1440,8 @@ async def _sponsor_selling(
             ),
             flow=f.series,
             flow_dates=f.dates,
+            comparison_as_of=f.dates[-2] if len(f.dates) >= 2 else None,
+            data_as_of=f.dates[-1] if f.dates else None,
             period_spark=psparks.get(c, []),
         )
         for c, delta, f in drops
@@ -1752,8 +1770,9 @@ async def screens(
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    # v16 applies tier-aware liquidity floors (micro cannot inherit a non-micro cap floor).
-    key = f"screens:v16:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
+    # v17 includes board-entry timestamps and explicit membership-baseline semantics.
+    key = f"screens:v17:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
+    membership_key = screen_membership_key(tenant.name, market, size)
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1761,6 +1780,7 @@ async def screens(
             # Serve the cached JSON bytes verbatim — skip the pydantic parse + re-serialize of ~65KB.
             return Response(content=cached, media_type="application/json")
         resp = await _build_screens(tenant, session, quote_ts, cap_tier=size)
+        await update_screen_memberships(redis, membership_key, resp.screens)
         await redis.set(key, resp.model_dump_json(), ex=_SCREENS_TTL)
         return resp
     finally:
@@ -2390,4 +2410,14 @@ async def screen_detail(
     await _enrich(session, tenant.market, [screen])
     if size is not None:
         _filter_screens_by_cap_tier([screen], cap_tier=size, limit=limit)
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        with suppress(RedisError):
+            await apply_stored_screen_memberships(
+                redis,
+                screen_membership_key(tenant.name, tenant.market, size),
+                [screen],
+            )
+    finally:
+        await redis.aclose()
     return screen

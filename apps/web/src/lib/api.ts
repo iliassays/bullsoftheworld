@@ -358,6 +358,8 @@ export interface ScreenItem {
   horizons?: MomHorizons | null; // momentum screen only: 3M/6M/12M returns for the consistency cue
   flow?: number[]; // ownership screens: stake % over last disclosures (oldest→newest)
   flow_dates?: string[]; // ISO date of each flow point, aligned with `flow`
+  comparison_as_of?: string | null; // prior ownership/13F report date for this change
+  data_as_of?: string | null; // latest ownership/13F report date for this change
   period_spark?: number[]; // ownership: price over the disclosure window (oldest→newest)
   category?: string | null;
   adtv_mn?: number | null;
@@ -378,6 +380,7 @@ export interface ScreenItem {
   check_next?: string[];
   pattern_status?: PatternStatus | null;
   pattern_metrics?: Record<string, number> | null;
+  new_since?: string | null; // entered this tenant/market/size board within the API's recent window
 }
 export interface Screen {
   key: string;

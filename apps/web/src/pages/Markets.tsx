@@ -162,9 +162,30 @@ export function screenHelp(key: string, lang: Lang): string | undefined {
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_BN = ["জানু", "ফেব", "মার্চ", "এপ্রি", "মে", "জুন", "জুল", "আগ", "সেপ্ট", "অক্টো", "নভে", "ডিসে"];
 const monthIdx = (iso: string) => Number(iso.split("-")[1]) - 1; // parse directly, no timezone shift
-const shortMonth = (iso: string) => MONTHS[monthIdx(iso)] ?? "?";
-const monthYy = (iso: string) => `${shortMonth(iso)},${iso.slice(2, 4)}`; // "2026-04-30" → "Apr,26"
+const bnDigits = (value: string) => value.replace(/\d/g, (digit) => "০১২৩৪৫৬৭৮৯"[Number(digit)]);
+const shortMonth = (iso: string, lang: Lang = "en") =>
+  (lang === "bn" ? MONTHS_BN : MONTHS)[monthIdx(iso)] ?? "?";
+const monthYy = (iso: string, lang: Lang = "en") => {
+  const year = iso.slice(2, 4);
+  return `${shortMonth(iso, lang)},${lang === "bn" ? bnDigits(year) : year}`;
+};
+const disclosurePeriod = (dates: string[], lang: Lang): string | null => {
+  if (dates.length < 2) return null;
+  const previous = dates[dates.length - 2];
+  const latest = dates[dates.length - 1];
+  const latestYear = latest.slice(2, 4);
+  const year = lang === "bn" ? bnDigits(latestYear) : latestYear;
+  return `${shortMonth(previous, lang)}→${shortMonth(latest, lang)} ’${year}`;
+};
+const fullDisclosureDate = (iso: string, lang: Lang): string =>
+  new Intl.DateTimeFormat(lang === "bn" ? "bn-BD" : "en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${iso}T12:00:00Z`));
 
 // Format a screen's metric for display, based on its value_label.
 export function fmtValue(label: string, v: number): string {
@@ -262,6 +283,9 @@ export function metricChip(label: string, v: number, t: Tr): Chip | null {
     if (v < 0) return w("mc.reducing", "down"); // sponsor selling / distribution rows
     return w(v >= 3 ? "mc.accumulating" : "mc.buying", "up");
   }
+  if (label === "% reported shares") {
+    return w(v >= 0 ? "mc.reportedIncrease" : "mc.reportedDecrease", v >= 0 ? "up" : "down");
+  }
   if (label === "ROE") return w(v >= 20 ? "mc.highlyProfitable" : "mc.profitable", "neutral");
   if (label === "volatility") return w(v < 25 ? "mc.verySteady" : "mc.steady", "neutral");
   if (label === "vs market") return w("mc.outperforming", "up");
@@ -355,9 +379,9 @@ function ownDotColor(curr: number, prev: number | undefined): string {
   if (prev === undefined || curr === prev) return "var(--color-muted)";
   return curr > prev ? "var(--color-up)" : "var(--color-down)";
 }
-function OwnershipDots({ flow, dates }: { flow: number[]; dates: string[] }) {
+function OwnershipDots({ flow, dates, lang }: { flow: number[]; dates: string[]; lang: Lang }) {
   const title = flow
-    .map((v, i) => `${dates[i] ? shortMonth(dates[i]) : "?"}: ${v}%`)
+    .map((v, i) => `${dates[i] ? shortMonth(dates[i], lang) : "?"}: ${v}%`)
     .join("  ·  ");
   return (
     <span
@@ -414,7 +438,7 @@ function priceMoveOverPeriod(item: ScreenItem, lang: Lang): string | null {
 
 function stakeContextChip(flow: number[], dates: string[], idx: number, lang: Lang): string | null {
   if (flow[idx] == null) return null;
-  const when = dates[idx] ? monthYy(dates[idx]) : "";
+  const when = dates[idx] ? monthYy(dates[idx], lang) : "";
   const label = idx === flow.length - 1 ? (lang === "bn" ? "সর্বশেষ" : "Latest") : (lang === "bn" ? "আগে" : "Previous");
   return `${label}${when ? ` ${when}` : ""} ${flow[idx].toFixed(2)}%`;
 }
@@ -943,10 +967,14 @@ export function ScreenRow({
       ? null
       : metricChip(screen.value_label, item.value, t);
   const showName = item.name && item.name !== item.code;
-  // Ownership screens: show the stake trend as dots + the comparison month (no year — short label).
+  // Ownership screens show both ends of the disclosure comparison. A bare "since May" hid the
+  // fact that most rows already contained June data and made lagging company filings look current.
   const fdates = item.flow_dates ?? [];
   const isOwnership = !!(item.flow && item.flow.length);
-  const sinceMonth = fdates.length >= 2 ? monthYy(fdates[fdates.length - 2]) : null;
+  const comparisonDates = item.comparison_as_of && item.data_as_of
+    ? [item.comparison_as_of, item.data_as_of]
+    : fdates;
+  const period = disclosurePeriod(comparisonDates, lang);
   const setup = setupLabel(item.setup_quality, t);
   const setupChip = setup ? { word: setup, tone: setupTone(item.setup_quality) } : null;
   const liquidity = liquidityLabel(item.liquidity, t);
@@ -954,9 +982,13 @@ export function ScreenRow({
   // Tooltip explaining the price line on ownership rows: what period + how price moved over it.
   const ps = item.period_spark ?? [];
   let priceTitle: string | undefined;
-  if (isOwnership && ps.length >= 2 && sinceMonth) {
+  if (isOwnership && ps.length >= 2 && period) {
     const move = ps[0] ? Math.round((ps[ps.length - 1] / ps[0] - 1) * 100) : 0;
-    priceTitle = `Price since ${sinceMonth}: ${taka(ps[0])} → ${taka(ps[ps.length - 1])} (${move >= 0 ? "+" : ""}${move}%)`;
+    const from = fullDisclosureDate(fdates[fdates.length - 2], lang);
+    const to = fullDisclosureDate(fdates[fdates.length - 1], lang);
+    priceTitle = lang === "bn"
+      ? `${from} থেকে ${to} পর্যন্ত দাম: ${taka(ps[0])} → ${taka(ps[ps.length - 1])} (${move >= 0 ? "+" : ""}${move}%)`
+      : `Price from ${from} to ${to}: ${taka(ps[0])} → ${taka(ps[ps.length - 1])} (${move >= 0 ? "+" : ""}${move}%)`;
   }
   return (
     <>
@@ -973,6 +1005,14 @@ export function ScreenRow({
           <span className="flex flex-col min-w-0 gap-0.5">
             <span className="flex items-center gap-1.5 min-w-0">
               <span className="font-bold text-[13px]">${item.code}</span>
+              {item.new_since && (
+                <span
+                  title={t("screen.newToListHelp")}
+                  className="shrink-0 rounded-full border border-up/40 bg-up/10 px-1.5 py-0.5 text-[9px] font-semibold text-up"
+                >
+                  {t("screen.newToList")}
+                </span>
+              )}
               {setupChip && (
                 <span
                   className={`text-[9px] font-semibold rounded-full px-1.5 py-0.5 ${toneCls(setupChip.tone)} bg-card border border-border shrink-0`}
@@ -1027,9 +1067,9 @@ export function ScreenRow({
                 <span className={`text-xs font-semibold ${toneCls(chip.tone)}`}>{chip.word}</span>
                 <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[10px] text-muted">
                   <span className="tnum">{fmtValue(screen.value_label, item.value)}</span>
-                  {sinceMonth && <span>· since {sinceMonth}</span>}
+                  {period && <span>· {period}</span>}
                 </span>
-                {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} />}
+                {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} lang={lang} />}
                 {item.horizons && <MomentumDots h={item.horizons} />}
               </>
             ) : (
@@ -1208,6 +1248,10 @@ function ScreenCard({ s }: { s: Screen }) {
   const { t, lang } = useLang();
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? s.items : s.items.slice(0, 5);
+  const newCount = s.items.filter((item) => item.new_since).length;
+  const isDisclosureBoard = s.items.some(
+    (item) => (item.flow?.length ?? 0) > 0 || Boolean(item.data_as_of),
+  );
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -1217,8 +1261,19 @@ function ScreenCard({ s }: { s: Screen }) {
           evidence={s.evidence}
           extra={MOMENTUM_CAUTION_KEYS.has(s.key) ? momentumCaution(lang) : undefined}
         />
+        {newCount > 0 && (
+          <span
+            title={t("screen.newToListHelp")}
+            className="rounded-full border border-up/40 bg-up/10 px-2 py-0.5 text-[10px] font-semibold text-up"
+          >
+            {lang === "bn" ? `${bnDigits(String(newCount))}টি নতুন` : `${newCount} new`}
+          </span>
+        )}
       </div>
       <div className="text-[11px] text-muted">{screenDesc(s, lang)}</div>
+      {isDisclosureBoard && (
+        <div className="mt-1 text-[10px] text-accent/90">{t("screen.disclosurePeriodHelp")}</div>
+      )}
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
         <span>{t("col.symbol")}</span>
         <span className="flex gap-3">
