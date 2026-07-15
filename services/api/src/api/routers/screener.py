@@ -1745,8 +1745,8 @@ async def screens(
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    # v15 adds the canonical cap-tier scope to the cache identity.
-    key = f"screens:v15:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
+    # v16 applies tier-aware liquidity floors (micro cannot inherit a non-micro cap floor).
+    key = f"screens:v16:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
