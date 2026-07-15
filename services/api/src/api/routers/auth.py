@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -56,8 +57,11 @@ _RESET_TTL_MIN = 30
 _VERIFY_TTL_MIN = 60 * 24
 
 
-def _link(tenant: Tenant, path: str, token: str) -> str:
-    return f"{tenant.site_url.rstrip('/')}{path}?token={token}"
+def _link(tenant: Tenant, path: str, token: str, locale: str | None = None) -> str:
+    """Return a canonical, tenant-localized account-action URL."""
+    language = locale if locale in tenant.supported_locales else tenant.locale
+    query = urlencode({"token": token})
+    return f"{tenant.site_url.rstrip('/')}/{language}{path}?{query}"
 
 
 async def _issue_tokens(
@@ -260,7 +264,10 @@ async def register(
                 email=email,
             )
             subject, html, text = verify_welcome(
-                user.name, _link(tenant, "/verify", token), user.locale, tenant
+                user.name,
+                _link(tenant, "/verify", token, user.locale),
+                user.locale,
+                tenant,
             )
             await send_email(email, subject, html, text, tenant=tenant)
         except Exception:
@@ -321,7 +328,10 @@ async def forgot_password(
                 email=user.email,
             )
             subject, html, text = password_reset(
-                user.name, _link(tenant, "/reset", token), user.locale, tenant
+                user.name,
+                _link(tenant, "/reset", token, user.locale),
+                user.locale,
+                tenant,
             )
             await send_email(email, subject, html, text, tenant=tenant)
         except Exception:
@@ -396,7 +406,10 @@ async def _send_verify(user: User, tenant: Tenant) -> None:
             email=user.email,
         )
         subject, html, text = verify_welcome(
-            user.name, _link(tenant, "/verify", token), user.locale, tenant
+            user.name,
+            _link(tenant, "/verify", token, user.locale),
+            user.locale,
+            tenant,
         )
         await send_email(user.email, subject, html, text, tenant=tenant)
     except Exception:
@@ -454,7 +467,7 @@ async def resend_verify(
     user: CurrentUser, request: Request, tenant: CurrentTenant
 ) -> dict[str, str]:
     """Re-send the email verification link to the user's current (unverified) email."""
-    await throttle(f"verify:{client_ip(request)}", limit=5, window_s=900)
+    await throttle(f"verify:{tenant.name}:{client_ip(request)}", limit=5, window_s=900)
     if user.email and not user.email_verified:
         await _send_verify(user, tenant)
     return {"status": "sent"}

@@ -23,6 +23,7 @@ import { Watchlist } from "./pages/Watchlist";
 import { Trust } from "./pages/Trust";
 import { Welcome } from "./pages/Welcome";
 import { type Lang, SUPPORTED, currentLang, useLang } from "./lib/i18n";
+import { invalidLocaleRedirectTarget } from "./lib/locale-route";
 import { useTenantConfig } from "./lib/tenant";
 
 // Language layout: every canonical URL is prefixed with /bn or /en (for SEO + hreflang). This
@@ -42,8 +43,18 @@ function LangLayout() {
     if (valid) setLang(lang as Lang);
   }, [valid, lang, setLang]);
   if (!valid) {
-    const rest = loc.pathname.replace(/^\/[^/]+(?=\/|$)/, "");
-    return <Navigate to={`/${config.default_locale}${rest}${loc.search}`} replace />;
+    return (
+      <Navigate
+        to={invalidLocaleRedirectTarget(
+          loc.pathname,
+          loc.search,
+          lang,
+          config.default_locale,
+          SUPPORTED,
+        )}
+        replace
+      />
+    );
   }
   return <Outlet />;
 }
