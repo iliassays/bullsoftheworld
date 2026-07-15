@@ -472,7 +472,7 @@
 
 .research-login input {
   width: 100%;
-  height: 42px;
+  height: 44px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -488,10 +488,14 @@
 }
 
 .research-login__recovery {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
   justify-self: end;
   color: var(--accent-strong);
   font-size: 12px;
   font-weight: 650;
+  line-height: 1.4;
   text-decoration: none;
 }
 
@@ -499,7 +503,7 @@
   text-decoration: underline;
 }
 
-.research-login form .ds-button { margin-top: 14px; width: 100%; }
+.research-login form .ds-button { min-height: 44px; margin-top: 14px; width: 100%; }
 .research-login__error { color: var(--negative) !important; font-size: 13px; }
 
 .research-login footer {
