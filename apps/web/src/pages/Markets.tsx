@@ -868,6 +868,59 @@ function ScreenRowSheet({
             <p className="mt-1 text-[14px] leading-snug text-text">{why}</p>
           </section>
 
+          {/* Evidence trail: the row's headline pp change, unrolled into the dated disclosure
+              prints it was computed from. This data used to live only in a hover tooltip
+              (OwnershipDots title) that touch users could never open — citation-forward UIs
+              (Perplexity Finance et al.) made "every claim expands into its sources" the bar
+              for research products, and it matches our own evidence-first contract. */}
+          {(item.flow?.length ?? 0) >= 2 && (
+            <section className="mt-3 rounded-xl bg-card/60 border border-border p-3">
+              <div className="text-[11px] uppercase tracking-wide text-muted">
+                {t("rowDetails.trail")}
+              </div>
+              <div className="mt-2.5 flex flex-col">
+                {item.flow!.map((stake, i) => {
+                  const flow = item.flow!;
+                  const dates = item.flow_dates ?? [];
+                  const delta = i > 0 ? stake - flow[i - 1] : null;
+                  const last = i === flow.length - 1;
+                  return (
+                    <div key={`${dates[i] ?? i}-${stake}`} className="flex gap-2.5">
+                      <div className="flex flex-col items-center">
+                        <span
+                          className="mt-1 h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: ownDotColor(stake, i > 0 ? flow[i - 1] : undefined) }}
+                        />
+                        {!last && <span className="w-px flex-1 bg-border my-0.5" />}
+                      </div>
+                      <div className={`min-w-0 ${last ? "" : "pb-2.5"}`}>
+                        <div className="text-[12px] font-semibold tnum">
+                          {stake}%
+                          {delta != null && (
+                            <span className={`ml-1.5 ${delta >= 0 ? "text-up" : "text-down"}`}>
+                              {delta >= 0 ? "+" : ""}
+                              {delta.toFixed(1)} pp
+                            </span>
+                          )}
+                          {last && (
+                            <span className="ml-1.5 font-normal text-accent">
+                              · {t("rowDetails.trailLatest")}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted mt-0.5">
+                          {dates[i] ? fullDisclosureDate(dates[i], lang) : "—"} ·{" "}
+                          {t("rowDetails.trailSource")}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[10px] leading-snug text-muted">{t("rowDetails.trailNote")}</p>
+            </section>
+          )}
+
           <section className="mt-3 rounded-xl bg-card/60 border border-border p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="text-[11px] uppercase tracking-wide text-muted">
@@ -1001,7 +1054,7 @@ export function ScreenRow({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`w-full text-left flex items-center gap-3 py-2 pl-2 border-t border-border/60 first:border-t-0 border-l-[3px] ${ruleCls}`}
+        className={`w-full text-left flex items-center gap-3 py-2 pl-2 border-t border-border/60 first:border-t-0 border-l-[3px] motion-safe:transition-transform motion-safe:active:scale-[0.99] ${ruleCls}`}
       >
         <span className="flex items-center gap-2 min-w-0 flex-1">
           {rank != null && (
@@ -1135,6 +1188,33 @@ const FOCUS_KEYS = [
   "most_discussed", // the community pulse
   "beating_market", // relative strength vs the DSEX — context only, demoted
 ];
+
+// On-device personalization of the Focus order — and nothing else. A tap inside a board's row
+// list bumps a localStorage counter for that board; on the NEXT visit, boards the user actually
+// opens sort ahead of the default merit order (Array.sort is stable, so untouched boards keep
+// their curated relative order). Deliberate constraints: the signal never leaves the device
+// (no tracking event), the reorder is explained inline with a one-tap reset, order never
+// changes mid-session (jarring), and the whole-market aggregates above the boards (Pulse,
+// sectors, Watch) NEVER reorder or filter — only the board list below them adapts.
+const ENGAGEMENT_STORE = "bulls.boardEngagement";
+function readBoardEngagement(): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(ENGAGEMENT_STORE) ?? "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+function bumpBoardEngagement(key: string) {
+  try {
+    const counts = readBoardEngagement();
+    // Cap per board so one obsessive week can't lock the order in forever.
+    counts[key] = Math.min((counts[key] ?? 0) + 1, 99);
+    localStorage.setItem(ENGAGEMENT_STORE, JSON.stringify(counts));
+  } catch {
+    // Storage full/blocked (private mode) — personalization is a nicety, never an error.
+  }
+}
 
 // "What are you looking for?" — curate the screens down to a goal, so a beginner sees relevant
 // boards instead of twenty. Orientation, not deletion ("All boards" still shows everything, grouped).
@@ -1334,7 +1414,8 @@ function ScreenCard({ s }: { s: Screen }) {
           <span className="w-20 text-right">{metricHeader(s.value_label, t)}</span>
         </span>
       </div>
-      <div className="flex flex-col">
+      {/* Any tap in the row list = engagement with this board (feeds next visit's Focus order). */}
+      <div className="flex flex-col" onClickCapture={() => bumpBoardEngagement(s.key)}>
         {visible.map((it) => (
           <ScreenRow key={it.code} item={it} screen={s} />
         ))}
@@ -1482,6 +1563,8 @@ export function Markets() {
   const [failed, setFailed] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lens, setLens] = useState("focus");
+  // Read once per mount (not per render/tap) so the order stays stable within a session.
+  const [engagement, setEngagement] = useState<Record<string, number>>(readBoardEngagement);
 
   useEffect(() => {
     setData(null);
@@ -1499,7 +1582,20 @@ export function Markets() {
   const activeLens = LENSES.find((l) => l.id === lens);
   const isFocus = lens === "focus";
   const isAllBoards = lens === "all";
-  const focusScreens = FOCUS_KEYS.map((k) => byKey.get(k)).filter((s): s is Screen => Boolean(s));
+  const defaultFocus = FOCUS_KEYS.map((k) => byKey.get(k)).filter((s): s is Screen => Boolean(s));
+  // Stable sort: engaged boards float up, everything untouched keeps the curated merit order.
+  const focusScreens = [...defaultFocus].sort(
+    (a, b) => (engagement[b.key] ?? 0) - (engagement[a.key] ?? 0),
+  );
+  const focusAdapted = focusScreens.some((s, i) => s.key !== defaultFocus[i].key);
+  const resetFocusOrder = () => {
+    try {
+      localStorage.removeItem(ENGAGEMENT_STORE);
+    } catch {
+      // Storage blocked — clearing state below still restores the default order this session.
+    }
+    setEngagement({});
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -1560,6 +1656,15 @@ export function Markets() {
       {isFocus && <WatchToday asOf={data.as_of} />}
       {isFocus && <EarningsWeek />}
       {(isFocus || isAllBoards) && <SectorHeat />}
+
+      {isFocus && focusAdapted && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface/60 px-3 py-2 text-[10px] text-muted">
+          <span>{t("focus.adaptedNote")}</span>
+          <button type="button" onClick={resetFocusOrder} className="shrink-0 font-semibold text-accent">
+            {t("focus.reset")}
+          </button>
+        </div>
+      )}
 
       {isFocus
         ? focusScreens.map((s) => <ScreenCard key={s.key} s={s} />)

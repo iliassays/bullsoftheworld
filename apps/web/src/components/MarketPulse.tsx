@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api, type MarketPulse as MarketPulseData } from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { formatCurrencyMillions, marketUiFromConfig } from "../lib/market";
@@ -16,14 +16,67 @@ function signed(n: number | null | undefined) {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-function Cell({ label, value, sub }: { label: string; value: string; sub?: string }) {
+// Bento tile: each stat gets its own bounded card so tile size (not reading order) carries
+// priority — the hero index tile spans the full row, satellites sit two-up beneath it.
+function Tile({
+  label,
+  value,
+  sub,
+  valueClass = "",
+  span2 = false,
+  children,
+}: {
+  label: string;
+  value?: string;
+  sub?: string;
+  valueClass?: string;
+  span2?: boolean;
+  children?: ReactNode;
+}) {
   return (
-    <div className="min-w-0">
+    <div className={`min-w-0 rounded-xl bg-card border border-border p-2.5 ${span2 ? "col-span-2" : ""}`}>
       <div className="text-[10px] uppercase tracking-wide text-muted leading-snug">{label}</div>
-      <div className="text-sm font-bold tnum truncate">{value}</div>
-      {sub && <div className="text-[10px] leading-snug text-muted">{sub}</div>}
+      {value != null && (
+        <div className={`text-sm font-bold tnum truncate mt-0.5 ${valueClass}`}>{value}</div>
+      )}
+      {children}
+      {sub && <div className="text-[10px] leading-snug text-muted mt-0.5">{sub}</div>}
     </div>
   );
+}
+
+// Rolls the hero number to its new value when the pulse refreshes. Deliberately NOT a count-up
+// from zero on first paint — the first render shows the real number immediately (never animate
+// fake states into data), and the roll only plays on a subsequent refresh, where motion carries
+// real information ("this just updated"). Skipped entirely under prefers-reduced-motion.
+function useRollingNumber(target: number | null, duration = 600): number | null {
+  const [value, setValue] = useState(target);
+  const fromRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (target == null) {
+      fromRef.current = null;
+      setValue(null);
+      return;
+    }
+    const from = fromRef.current;
+    fromRef.current = target;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || from == null || from === target) {
+      setValue(target);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      setValue(from + (target - from) * eased);
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
 }
 
 function sessionDate(value: string | null | undefined, lang: "en" | "bn") {
@@ -62,6 +115,9 @@ export function MarketPulse() {
     };
   }, []);
 
+  // Hook must run unconditionally (before the null return); it receives null until data lands.
+  const rolledIndex = useRollingNumber(pulse ? (pulse.benchmark_close ?? pulse.dsex) : null);
+
   if (!pulse) return null;
   const bn = lang === "bn";
   const marketUi = marketUiFromConfig(config);
@@ -87,10 +143,6 @@ export function MarketPulse() {
   const totalBreadth = pulse.advancers + pulse.decliners || 1;
   const breadthPct = (pulse.advancers / totalBreadth) * 100;
   const benchmarkChange = pulse.benchmark_change_pct ?? pulse.dsex_change_pct;
-  const sectorSub =
-    pulse.weak_sector && pulse.weak_sector_change != null
-      ? `${t("marketPulse.weak")} ${pulse.weak_sector} ${signed(pulse.weak_sector_change)}`
-      : undefined;
   const coverageText = pulse.coverage_complete
     ? lang === "bn"
       ? `${pulse.published_symbols.toLocaleString()}টি ${config.exchange_code} সিকিউরিটি`
@@ -118,31 +170,49 @@ export function MarketPulse() {
         {statusText}
       </div>
 
-      {/* The index level is the one number a reader orients on before anything else on this
-          card — promoted to its own hero line instead of sitting the same size as turnover
-          or breadth in the stat grid below. */}
-      <div className="mt-3 flex items-baseline gap-2.5">
-        <span className="text-[26px] font-extrabold tnum leading-none">
-          {(pulse.benchmark_close ?? pulse.dsex) == null
-            ? "—"
-            : (pulse.benchmark_close ?? pulse.dsex)!.toLocaleString(undefined, {
-                maximumFractionDigits: 2,
-              })}
-        </span>
-        {benchmarkChange != null && (
-          <span className={`text-sm font-bold tnum ${benchmarkChange >= 0 ? "text-up" : "text-down"}`}>
-            {signed(benchmarkChange)}
-          </span>
-        )}
-      </div>
-      <div className="text-[10px] text-muted mt-0.5">
-        {liveContext
-          ? `${pulse.benchmark_label ?? config.benchmark_label} · ${t("marketPulse.previousClose")} (${closeDate})${benchmarkChange != null ? ` · ${t("marketPulse.previousSession")}` : ""}`
-          : (pulse.benchmark_label ?? config.benchmark_label)}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mt-3">
-        <Cell
+      {/* Bento deck: the index is the biggest tile because it's the first question; breadth,
+          turnover and sector leadership are satellites. Tile size — not stacking order —
+          carries priority. */}
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <div className="col-span-2 min-w-0 rounded-xl bg-card border border-border p-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted leading-snug">
+            {liveContext
+              ? `${pulse.benchmark_label ?? config.benchmark_label} · ${t("marketPulse.previousClose")} (${closeDate})`
+              : (pulse.benchmark_label ?? config.benchmark_label)}
+          </div>
+          <div className="mt-1 flex items-baseline gap-2.5">
+            <span className="text-[28px] font-extrabold tnum leading-none">
+              {rolledIndex == null
+                ? "—"
+                : rolledIndex.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
+            {benchmarkChange != null && (
+              <span
+                className={`text-sm font-bold tnum ${benchmarkChange >= 0 ? "text-up" : "text-down"}`}
+              >
+                {signed(benchmarkChange)}
+                {liveContext && (
+                  <span className="ml-1.5 font-normal text-[10px] text-muted">
+                    {t("marketPulse.previousSession")}
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        </div>
+        <Tile label={pulse.coverage_complete ? t("marketPulse.breadth") : t("marketPulse.trackedBreadth")}>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-sm font-bold text-up tnum">{pulse.advancers}▲</span>
+            <span className="text-sm font-bold text-down tnum">{pulse.decliners}▼</span>
+          </div>
+          <div className="mt-1.5 h-1.5 rounded-full overflow-hidden bg-border">
+            <div className="h-full bg-up" style={{ width: `${breadthPct}%` }} />
+          </div>
+          <div className="text-[10px] leading-snug text-muted mt-1">
+            {pulse.unchanged} {t("marketPulse.unchanged")}
+          </div>
+        </Tile>
+        <Tile
           label={
             pulse.turnover_is_partial
               ? pulse.turnover_is_estimated
@@ -159,32 +229,24 @@ export function MarketPulse() {
                 : `${pulse.turnover_vs_20d.toFixed(1)}x ${t("marketPulse.vs20d")}`
           }
         />
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wide text-muted">
-            {pulse.coverage_complete ? t("marketPulse.breadth") : t("marketPulse.trackedBreadth")}
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-sm font-bold text-up tnum">{pulse.advancers}▲</span>
-            <span className="text-sm font-bold text-down tnum">{pulse.decliners}▼</span>
-            <span className="text-xs text-muted tnum">
-              {pulse.unchanged} {t("marketPulse.unchanged")}
-            </span>
-          </div>
-          <div className="mt-1.5 h-1.5 rounded-full overflow-hidden bg-border">
-            <div className="h-full bg-up" style={{ width: `${breadthPct}%` }} />
-          </div>
-        </div>
-        <div className="col-span-2">
-          <Cell
-            label={t("marketPulse.sectors")}
-            value={
-              pulse.top_sector && pulse.top_sector_change != null
-                ? `${pulse.top_sector} ${signed(pulse.top_sector_change)}`
-                : "—"
-            }
-            sub={sectorSub}
+        {pulse.top_sector && pulse.top_sector_change != null && (
+          <Tile
+            label={t("marketPulse.leading")}
+            value={pulse.top_sector}
+            valueClass="text-up"
+            sub={signed(pulse.top_sector_change)}
+            span2={!(pulse.weak_sector && pulse.weak_sector_change != null)}
           />
-        </div>
+        )}
+        {pulse.weak_sector && pulse.weak_sector_change != null && (
+          <Tile
+            label={t("marketPulse.lagging")}
+            value={pulse.weak_sector}
+            valueClass="text-down"
+            sub={signed(pulse.weak_sector_change)}
+            span2={!(pulse.top_sector && pulse.top_sector_change != null)}
+          />
+        )}
       </div>
 
       <p className="mt-3 text-[10px] text-muted">

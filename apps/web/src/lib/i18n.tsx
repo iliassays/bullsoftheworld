@@ -402,6 +402,8 @@ const STRINGS: Record<string, Entry> = {
   },
   "marketPulse.sectors": { en: "Sectors", bn: "খাত" },
   "marketPulse.weak": { en: "Weak", bn: "দুর্বল" },
+  "marketPulse.leading": { en: "Leading sector", bn: "শীর্ষ খাত" },
+  "marketPulse.lagging": { en: "Lagging sector", bn: "দুর্বল খাত" },
   "marketPulse.footer": {
     en: "Market context, not a signal by itself.",
     bn: "বাজারের প্রেক্ষাপট, একা কোনো সংকেত নয়।",
@@ -563,6 +565,24 @@ const STRINGS: Record<string, Entry> = {
   "rowDetails.value": { en: "Board metric", bn: "বোর্ড মেট্রিক" },
   "rowDetails.price": { en: "Price", bn: "দাম" },
   "rowDetails.catalyst": { en: "Latest catalyst", bn: "সাম্প্রতিক কারণ" },
+  // Evidence trail — the disclosure-by-disclosure stake timeline on ownership rows. Source label
+  // stays tenant-agnostic ("shareholding disclosure", not "DSE disclosure") per the core principle.
+  "rowDetails.trail": {
+    en: "Evidence trail — stake by disclosure",
+    bn: "প্রমাণের ধারা — প্রতিটি প্রকাশে অংশ",
+  },
+  "rowDetails.trailLatest": { en: "latest", bn: "সর্বশেষ" },
+  "rowDetails.trailSource": { en: "shareholding disclosure", bn: "শেয়ারহোল্ডিং প্রকাশ" },
+  "rowDetails.trailNote": {
+    en: "Disclosed history — a few prints per year, not a live feed, not a forecast.",
+    bn: "প্রকাশিত ইতিহাস — বছরে কয়েকবার আসে, লাইভ ফিড নয়, পূর্বাভাসও নয়।",
+  },
+  // On-device adaptive Focus order — explainer + reset (nothing leaves the device).
+  "focus.adaptedNote": {
+    en: "Boards you open most now lead this list — saved only on this device.",
+    bn: "যে বোর্ডগুলো আপনি বেশি খোলেন সেগুলো এখন আগে দেখানো হচ্ছে — শুধু এই ডিভাইসে সংরক্ষিত।",
+  },
+  "focus.reset": { en: "Reset order", bn: "ডিফল্ট ক্রমে ফিরুন" },
   "rowDetails.marketCap": { en: "Market cap", bn: "মার্কেট ক্যাপ" },
   "rowDetails.freeFloat": { en: "Free-float cap", bn: "ফ্রি-ফ্লোট ক্যাপ" },
   "rowDetails.turnover": { en: "Today turnover", bn: "আজকের টার্নওভার" },
