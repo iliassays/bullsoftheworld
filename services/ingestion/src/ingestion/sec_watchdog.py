@@ -32,6 +32,17 @@ SEC_MAX_AGE = dt.timedelta(hours=36)
 THIRTEEN_F_MAX_AGE = dt.timedelta(days=8)
 FINRA_MAX_AGE = dt.timedelta(days=4)
 TARGET_13F_QUARTERS = 8
+# most_recent_due_session() flips to "today" 90 minutes after close (see us_worker.py) — that
+# delay is tuned so the primary EOD cron, fixed at 22:45 UTC, sees the due session already as
+# today when IT runs. Reusing that same flip for "should the watchdog complain yet" was the
+# 2026-07-15 false-positive bug: the due session flips at close+90min (21:30 UTC on a regular
+# EDT day), a full ~75 minutes before the 22:45 UTC cron has even attempted the pull, so every
+# watchdog run in that window reported 0 coverage on a fully healthy pipeline. Bumping the shared
+# delay would fix the watchdog but break the cron (it would stop seeing today as due at its own
+# 22:45 UTC runtime). Instead, gate the alert separately on whether the cron has actually had a
+# chance to run for the due session.
+_EOD_CRON_ATTEMPT_UTC = dt.time(22, 45)
+_EOD_CRON_GRACE = dt.timedelta(minutes=10)
 
 
 def _unit_active(unit: str) -> bool:
@@ -126,7 +137,21 @@ def _state_problems(
     return problems
 
 
+def _eod_cron_has_run(now: dt.datetime, due_session: dt.date) -> bool:
+    """True once the primary EOD cron has had a chance to complete for `due_session`.
+
+    A prior calendar day has had the 22:45/23:30/01:30/13:30 UTC cycles to fill in; only "is
+    due_session still today" needs the explicit clock check.
+    """
+    local_today = to_market_tz(now, market=MARKET).date()
+    if due_session < local_today:
+        return True
+    attempt = dt.datetime.combine(due_session, _EOD_CRON_ATTEMPT_UTC, tzinfo=dt.UTC) + _EOD_CRON_GRACE
+    return now >= attempt
+
+
 def _eod_state_problems(
+    now: dt.datetime,
     due_session: dt.date,
     ready_symbols: int,
     latest_bar_date: dt.date | None,
@@ -136,6 +161,8 @@ def _eod_state_problems(
 ) -> list[str]:
     if ready_symbols <= 0:
         return ["no retail-ready US symbols are configured"]
+    if not _eod_cron_has_run(now, due_session):
+        return []
     required = math.ceil(ready_symbols * min_coverage)
     problems = []
     if latest_bar_date is None or latest_bar_date < due_session:
@@ -208,6 +235,7 @@ async def _database_problems(now: dt.datetime) -> list[str]:
     return [
         *_state_problems(now, ready_symbols, {row.source: row for row in rows}),
         *_eod_state_problems(
+            now,
             due_session,
             ready_symbols,
             latest_bar_date,

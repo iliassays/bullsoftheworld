@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from types import SimpleNamespace
 
-from ingestion.sec_watchdog import _eod_state_problems, _state_problems
+from ingestion.sec_watchdog import _eod_cron_has_run, _eod_state_problems, _state_problems
 
 
 def _state(
@@ -84,9 +84,11 @@ def test_regulatory_state_reports_staleness_depth_coverage_and_failures() -> Non
 
 def test_eod_state_requires_due_session_coverage_and_analytics() -> None:
     due = dt.date(2026, 7, 10)
-    assert _eod_state_problems(due, 60, due, 60, due, 0.9) == []
+    next_day = dt.datetime(2026, 7, 11, 12, tzinfo=dt.UTC)  # well past the cron's own runtime
+    assert _eod_state_problems(next_day, due, 60, due, 60, due, 0.9) == []
 
     problems = _eod_state_problems(
+        next_day,
         due,
         60,
         dt.date(2026, 7, 9),
@@ -100,5 +102,34 @@ def test_eod_state_requires_due_session_coverage_and_analytics() -> None:
 
 def test_eod_state_enforces_configured_coverage_threshold() -> None:
     due = dt.date(2026, 7, 10)
-    problems = _eod_state_problems(due, 60, due, 53, due, 0.9)
+    next_day = dt.datetime(2026, 7, 11, 12, tzinfo=dt.UTC)
+    problems = _eod_state_problems(next_day, due, 60, due, 53, due, 0.9)
     assert problems == ["US EOD bars cover 53/60 symbols for 2026-07-10; required 54"]
+
+
+def test_eod_cron_has_run_true_for_a_prior_day_regardless_of_clock() -> None:
+    # A due_session from an earlier calendar day has had 22:45/23:30/01:30/13:30 UTC cycles
+    # to fill in — never gated on the clock.
+    assert _eod_cron_has_run(dt.datetime(2026, 7, 11, 0, 1, tzinfo=dt.UTC), dt.date(2026, 7, 10))
+
+
+def test_eod_cron_has_not_run_yet_for_todays_due_session_before_2245_utc() -> None:
+    # 2026-07-10 closes at 20:00 UTC (EDT); most_recent_due_session() already calls it "due" at
+    # 21:30 UTC (close + 90min), a full hour before the 22:45 UTC cron has even attempted the
+    # pull. This is exactly the 2026-07-15 false-positive: due-but-not-yet-attempted.
+    due = dt.date(2026, 7, 10)
+    assert not _eod_cron_has_run(dt.datetime(2026, 7, 10, 21, 30, tzinfo=dt.UTC), due)
+    assert not _eod_cron_has_run(dt.datetime(2026, 7, 10, 22, 54, tzinfo=dt.UTC), due)
+
+
+def test_eod_cron_has_run_for_todays_due_session_after_grace_window() -> None:
+    due = dt.date(2026, 7, 10)
+    assert _eod_cron_has_run(dt.datetime(2026, 7, 10, 22, 56, tzinfo=dt.UTC), due)
+
+
+def test_eod_state_suppresses_coverage_alert_before_cron_has_attempted_the_pull() -> None:
+    # The actual incident: due_session flips to today at 21:30 UTC, zero bars exist yet because
+    # the 22:45 UTC cron hasn't run, and the old code alerted anyway.
+    due = dt.date(2026, 7, 10)
+    now = dt.datetime(2026, 7, 10, 21, 31, tzinfo=dt.UTC)
+    assert _eod_state_problems(now, due, 60, dt.date(2026, 7, 9), 0, dt.date(2026, 7, 9), 0.9) == []
