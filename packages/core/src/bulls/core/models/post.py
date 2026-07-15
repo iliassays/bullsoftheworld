@@ -8,7 +8,18 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -17,7 +28,10 @@ from bulls.core.db import Base
 class Post(Base):
     __tablename__ = "posts"
     __table_args__ = (
-        CheckConstraint("sentiment IS NULL OR sentiment IN ('bull', 'bear')", name="ck_posts_sentiment"),
+        UniqueConstraint("id", "tenant_id", name="uq_posts_id_tenant"),
+        CheckConstraint(
+            "sentiment IS NULL OR sentiment IN ('bull', 'bear')", name="ck_posts_sentiment"
+        ),
         CheckConstraint("kind IN ('user', 'note')", name="ck_posts_kind"),
         CheckConstraint(
             "moderation_status IN ('published', 'pending', 'held', 'blocked', 'deleted')",
@@ -70,10 +84,23 @@ class PostReaction(Base):
     __tablename__ = "post_reactions"
     __table_args__ = (
         CheckConstraint("kind IN ('agree', 'disagree')", name="ck_post_reactions_kind"),
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_post_reactions_user_tenant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["post_id", "tenant_id"],
+            ["posts.id", "posts.tenant_id"],
+            name="fk_post_reactions_post_tenant",
+            ondelete="CASCADE",
+        ),
     )
 
-    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    post_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     kind: Mapped[str] = mapped_column(String(8))  # 'agree' | 'disagree'
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

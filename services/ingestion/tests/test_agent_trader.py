@@ -114,7 +114,7 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
 
     try:
         # --- Sunday 06-21, mid-session: the value setup gets bought -------------------------
-        counts = await run_agents(MARKET, now=_utc(2026, 6, 21, 5, 0))
+        counts = await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 21, 5, 0))
         assert counts["buys"] == 1 and counts["sells"] == 0
 
         async with sm() as session:
@@ -135,19 +135,19 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
             assert "sector" in buy.reason  # the descriptive audit trail exists
 
         # Same tick again: already held -> no double buy.
-        counts = await run_agents(MARKET, now=_utc(2026, 6, 21, 5, 15))
+        counts = await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 21, 5, 15))
         assert counts["buys"] == 0
 
         # --- Monday 06-22: price craters -15%, stop fires, but the lot is UNSETTLED ---------
         async with sm() as session:
             await set_quote(session, 85.0, -2.0, _utc(2026, 6, 22, 5, 0))
-        counts = await run_agents(MARKET, now=_utc(2026, 6, 22, 5, 10))
+        counts = await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 22, 5, 10))
         assert counts["sells"] == 0  # T+2: you cannot sell what hasn't been credited
 
         # --- Tuesday 06-23: lot matured -> the stop-loss sell executes -----------------------
         async with sm() as session:
             await set_quote(session, 85.0, -1.0, _utc(2026, 6, 23, 5, 0))
-        counts = await run_agents(MARKET, now=_utc(2026, 6, 23, 5, 10))
+        counts = await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 23, 5, 10))
         assert counts["sells"] == 1
         async with sm() as session:
             agent = await session.get(AgentPortfolio, user_id)
@@ -177,7 +177,7 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
         # --- Wednesday 06-24: proceeds still pending ----------------------------------------
         async with sm() as session:
             await set_quote(session, 85.0, 0.0, _utc(2026, 6, 24, 5, 0))
-        await run_agents(MARKET, now=_utc(2026, 6, 24, 5, 10))
+        await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 24, 5, 10))
         async with sm() as session:
             agent = await session.get(AgentPortfolio, user_id)
             assert agent.cash_settled == pytest.approx(cash_after_buy)
@@ -185,7 +185,7 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
         # --- Thursday 06-25: the sell settles, cash is finally spendable --------------------
         async with sm() as session:
             await set_quote(session, 85.0, 0.0, _utc(2026, 6, 25, 5, 0))
-        counts = await run_agents(MARKET, now=_utc(2026, 6, 25, 5, 10))
+        counts = await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 25, 5, 10))
         assert counts["settled"] == 1
         async with sm() as session:
             agent = await session.get(AgentPortfolio, user_id)
@@ -195,10 +195,14 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
             assert agent.cash_settled < 100_000
 
         # --- Outside trading hours: a tick is a no-op ----------------------------------------
-        assert await run_agents(MARKET, now=_utc(2026, 6, 26, 5, 0)) == {"skipped": 1}  # Friday
+        assert await run_agents(MARKET, tenant_id="test", now=_utc(2026, 6, 26, 5, 0)) == {
+            "skipped": 1
+        }  # Friday
 
         # --- Stale feed: quotes >45 min old mean the engine refuses to act -------------------
-        counts = await run_agents(MARKET, now=_utc(2026, 6, 28, 7, 0))  # quote still from 06-25
+        counts = await run_agents(
+            MARKET, tenant_id="test", now=_utc(2026, 6, 28, 7, 0)
+        )  # quote still from 06-25
         assert counts == {"agents": 0, "buys": 0, "sells": 0, "settled": 0}
     finally:
         async with sm() as session:

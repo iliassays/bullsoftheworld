@@ -9,7 +9,19 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Float, ForeignKey, Index, String, func, text
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -20,7 +32,7 @@ class AlertEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
     market: Mapped[str] = mapped_column(String(8))
     code: Mapped[str | None] = mapped_column(String(16), default=None)  # None = market-wide
     kind: Mapped[str] = mapped_column(String(24))  # signal | price_cross | ownership | earnings
@@ -35,6 +47,12 @@ class AlertEvent(Base):
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_alert_events_user_tenant",
+            ondelete="CASCADE",
+        ),
         Index("ix_alert_events_user_created", "user_id", "created_at"),
         Index(
             "uq_alert_events_user_source",
@@ -50,13 +68,19 @@ class AlertEvent(Base):
 class PriceAlert(Base):
     __tablename__ = "price_alerts"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_price_alerts_user_tenant",
+            ondelete="CASCADE",
+        ),
         CheckConstraint("direction IN ('above', 'below')", name="ck_price_alerts_direction"),
         CheckConstraint("level > 0", name="ck_price_alerts_level_positive"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
     market: Mapped[str] = mapped_column(String(8))
     code: Mapped[str] = mapped_column(String(16), index=True)
     level: Mapped[float] = mapped_column(Float)

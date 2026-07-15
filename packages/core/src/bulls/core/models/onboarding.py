@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -156,6 +157,12 @@ class OnDemandResearchRequest(Base):
             "user_id",
             "request_date",
         ),
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_on_demand_research_requests_user_tenant",
+            ondelete="CASCADE",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -165,7 +172,7 @@ class OnDemandResearchRequest(Base):
         index=True,
     )
     tenant_id: Mapped[str] = mapped_column(String(64))
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(Integer)
     market: Mapped[str] = mapped_column(String(8))
     code: Mapped[str] = mapped_column(String(16))
     request_date: Mapped[dt.date] = mapped_column(Date)

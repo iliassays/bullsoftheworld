@@ -14,7 +14,7 @@ import re
 
 from sqlalchemy import delete, select
 
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import Cashtag, Post, Symbol, User, WatchlistItem
 from bulls.core.security import hash_password
 
@@ -66,6 +66,7 @@ def parse_cashtags(body: str) -> list[str]:
 async def main() -> None:
     sm = get_sessionmaker()
     async with sm() as s:
+        await bind_tenant_context(s, TENANT)
         # upsert demo users
         users: dict[str, User] = {}
         for handle, name, locale in DEMO_USERS:
@@ -121,7 +122,14 @@ async def main() -> None:
         for handle, codes in DEMO_WATCHLIST.items():
             for code in codes:
                 if code in valid:
-                    s.add(WatchlistItem(user_id=users[handle].id, market=MARKET, code=code))
+                    s.add(
+                        WatchlistItem(
+                            user_id=users[handle].id,
+                            tenant_id=TENANT,
+                            market=MARKET,
+                            code=code,
+                        )
+                    )
 
         await s.commit()
         print(

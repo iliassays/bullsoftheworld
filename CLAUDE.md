@@ -86,11 +86,12 @@ uv run granian --interface asgi api.main:app --host 0.0.0.0 --port 8000   # run 
 - **Deploy:** `./deploy.sh` = push → server `git pull` + `uv sync` + `alembic upgrade head` + restart
   `bullsofdhaka-{api,hedge,worker,ai-worker}` (backend, shared by prod+staging). `./deploy-prod.sh`
   (env `PROD_S3_BUCKET=bullsofdhaka-web PROD_CLOUDFRONT_ID=EPJ7LAHUJDDMK`) = build FE → S3 →
-  CloudFront invalidate (bullsofdhaka.com). Server: `ssh bullstreetai`, app `/home/ubuntu/bullsofdhaka`,
+  CloudFront invalidate (bullsofdhaka.com). Server access is supplied through
+  `DEPLOY_SSH_HOST=<ssh-config-alias>`, app `/home/ubuntu/bullsofdhaka`,
   Postgres in docker (`docker compose -f infra/docker-compose.yml exec -T postgres psql -U bulls -d bulls -p 5432`).
 - **US frontend:** `WEB_S3_BUCKET=bullsofwallst-web WEB_CLOUDFRONT_ID=E3DLOEKLM3136G
   WEB_SITE_URL=https://bullsofwallst.com WEB_TENANT_HOST=bullsofwallst.com
-  WEB_BRAND_NAME="Bulls of Wall Street" WEB_DEFAULT_LANG=en WEB_API_URL=https://api.bullsofdhaka.com
+  WEB_BRAND_NAME="Bulls of Wall Street" WEB_DEFAULT_LANG=en WEB_API_URL=https://api.bullsofwallst.com
   ./deploy-web.sh` deploys the BullsofWallst static frontend. Distribution:
   `d2jnx1yh0pmbv8.cloudfront.net`; ACM cert:
   `arn:aws:acm:us-east-1:982534375924:certificate/0c63d9f6-5148-45f0-bd2f-ec60ec8a6d31`.

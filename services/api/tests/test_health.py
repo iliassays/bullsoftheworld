@@ -27,6 +27,25 @@ def test_shared_api_can_resolve_wall_street_from_frontend_host():
         assert via_origin["tenant"] == "bullsofwallst"
 
 
+def test_contradictory_tenant_signals_fail_closed():
+    cases = (
+        ("https://api.bullsofwallst.com", "research.bullsofdhaka.com"),
+        ("https://api.bullsofdhaka.com", "research.bullsofwallst.com"),
+    )
+    with TestClient(app) as client:
+        responses = [
+            client.get(
+                f"{api_host}/whoami",
+                headers={"X-Tenant-Host": tenant_host},
+            )
+            for api_host, tenant_host in cases
+        ]
+
+    for response in responses:
+        assert response.status_code == 421
+        assert response.json()["detail"] == "Request tenant does not match the API host"
+
+
 def test_tenant_sensitive_api_responses_are_not_http_cached():
     with TestClient(app) as client:
         res = client.get("/whoami", headers={"X-Tenant-Host": "bullsofwallst.com"})

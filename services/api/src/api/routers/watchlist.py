@@ -24,7 +24,14 @@ async def add(
     if symbol is None or not symbol.is_public_research:
         raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r}")
     if await session.get(WatchlistItem, (user.id, tenant.market, code)) is None:
-        session.add(WatchlistItem(user_id=user.id, market=tenant.market, code=code))
+        session.add(
+            WatchlistItem(
+                user_id=user.id,
+                tenant_id=tenant.name,
+                market=tenant.market,
+                code=code,
+            )
+        )
     return {"status": "ok", "code": code}
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -36,7 +37,11 @@ def _run(connection):
 
 
 async def run_online():
-    engine = create_async_engine(get_settings().database_url)
+    settings = get_settings()
+    # MIGRATION_DATABASE_URL is injected only into the deploy command. It must not be present in
+    # the API/worker environment, otherwise a runtime compromise could recover owner credentials.
+    url = os.environ.get("MIGRATION_DATABASE_URL") or settings.database_url
+    engine = create_async_engine(url)
     async with engine.connect() as connection:
         await connection.run_sync(_run)
     await engine.dispose()

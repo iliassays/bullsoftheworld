@@ -33,6 +33,9 @@ class Tenant(BaseModel):
     timezone: str = "Asia/Dhaka"  # IANA tz for the market's clock (sessions, daily rhythm)
     domains: list[str] = Field(default_factory=list)
     site_url: str
+    research_site_url: str = ""
+    research_alias_urls: list[str] = Field(default_factory=list)
+    research_api_url: str = ""
     support_email: str
     email_from: str
     logo_url: str
@@ -56,7 +59,30 @@ class Tenant(BaseModel):
         self.supported_locales = normalized
         if self.locale not in normalized:
             raise ValueError("tenant locale must be included in supported_locales")
+        configured_research_site = bool(self.research_site_url)
+        configured_research_api = bool(self.research_api_url)
+        self.research_site_url = self.research_site_url or self.site_url
+        self.research_api_url = self.research_api_url or self.site_url
+        allowed_hosts = {self._hostname(domain) for domain in self.domains}
+        research_host = self._hostname(self.research_site_url)
+        if configured_research_site and research_host not in allowed_hosts:
+            raise ValueError("research_site_url host must be listed in tenant domains")
+        research_api_host = self._hostname(self.research_api_url)
+        if configured_research_api and research_api_host not in allowed_hosts:
+            raise ValueError("research_api_url host must be listed in tenant domains")
+        alias_hosts = [self._hostname(url) for url in self.research_alias_urls]
+        if any(host is None or host not in allowed_hosts for host in alias_hosts):
+            raise ValueError("research alias hosts must be listed in tenant domains")
+        if len(alias_hosts) != len(set(alias_hosts)):
+            raise ValueError("research aliases must not contain duplicate hosts")
+        if research_host in alias_hosts:
+            raise ValueError("research aliases must not duplicate research_site_url")
         return self
+
+    @staticmethod
+    def _hostname(value: str) -> str | None:
+        parsed = urlparse(value if "://" in value else f"//{value}")
+        return parsed.hostname
 
 
 class TenantRegistry:
@@ -71,14 +97,12 @@ class TenantRegistry:
                 if claimed_by is not None and claimed_by.name != tenant.name:
                     # A domain claimed by two tenants makes host-based resolution ambiguous: the
                     # last one loaded would silently win and shadow the other tenant's traffic
-                    # (the 2026-07-13 leak: api.bullsofdhaka.com, the shared backend every
-                    # tenant's frontend calls, was listed under bullsofdhaka — so its Host header
-                    # always resolved to DSE before X-Tenant-Host ever got checked). Fail loudly
-                    # at startup instead of shipping that silently.
+                    # A shared hostname cannot identify a tenant. Fail at startup instead of
+                    # letting load order decide which tenant receives the request.
                     raise ValueError(
                         f"domain {domain!r} is claimed by both tenants "
                         f"{claimed_by.name!r} and {tenant.name!r} — a domain used by more than "
-                        "one tenant's frontend (e.g. a shared API host) must not appear in any "
+                        "one tenant's frontend (for example, a shared API host) must not appear in any "
                         "tenant's `domains` list; rely on X-Tenant-Host/origin/referer instead"
                     )
                 self._by_domain[domain] = tenant

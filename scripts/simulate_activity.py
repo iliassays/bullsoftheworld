@@ -338,11 +338,12 @@ async def clean() -> None:
     """Remove every sim_ user and all data they produced (FK-safe order)."""
     from sqlalchemy import delete, select
 
-    from bulls.core.db import get_sessionmaker
+    from bulls.core.db import bind_tenant_context, get_sessionmaker
     from bulls.core.models import Cashtag, Post, PostReaction, User, WatchlistItem
 
     sm = get_sessionmaker()
     async with sm() as s:
+        await bind_tenant_context(s, "bullsofdhaka")
         ids = list(await s.scalars(select(User.id).where(User.handle.like(f"{HANDLE_PREFIX}%"))))
         if not ids:
             print("no sim_ users to clean")

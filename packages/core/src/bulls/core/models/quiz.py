@@ -8,7 +8,17 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -34,8 +44,17 @@ class QuizAnswer(Base):
     """One row per user per day — answering is the daily ritual the streak counts."""
 
     __tablename__ = "quiz_answers"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_quiz_answers_user_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     answered_on: Mapped[dt.date] = mapped_column(Date, primary_key=True)
     question_id: Mapped[int] = mapped_column(ForeignKey("quiz_questions.id"))
     choice_idx: Mapped[int] = mapped_column(Integer)

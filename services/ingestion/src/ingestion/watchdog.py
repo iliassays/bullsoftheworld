@@ -43,7 +43,7 @@ import redis.asyncio as aioredis
 from sqlalchemy import text
 
 from bulls.core.config import get_settings
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s watchdog %(levelname)s %(message)s")
@@ -326,6 +326,7 @@ async def _agent_problems(
     problems: list[str] = []
     today = to_market_tz(now).date()
     async with get_sessionmaker()() as session:
+        await bind_tenant_context(session, tenant_id)
         # 1. Settled cash can never go negative: buys are capped by the budget check.
         neg = (
             await session.execute(

@@ -76,13 +76,13 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     registry = TenantRegistry.from_dir(tenants_dir, default="bullsofdhaka")
 
     assert registry.resolve("localhost").name == "bullsofdhaka"
-    # api.bullsofdhaka.com is the shared backend, not a registered domain: with no other
-    # signal it falls through to the default tenant, but it must never win outright over
-    # X-Tenant-Host (see the regression case below).
     assert registry.resolve("api.bullsofdhaka.com").name == "bullsofdhaka"
-    assert registry.resolve("bullsofdhaka-api.bullstreetai.com").name == "bullsofdhaka"
+    assert registry.resolve("research.bullsofdhaka.com").name == "bullsofdhaka"
+    assert registry.resolve("atlas.bullsofdhaka.com").name == "bullsofdhaka"
     assert registry.resolve("bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("www.bullsofwallst.com").name == "bullsofwallst"
+    assert registry.resolve("research.bullsofwallst.com").name == "bullsofwallst"
+    assert registry.resolve("atlas.bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("api.bullsofwallst.com").name == "bullsofwallst"
     assert registry.resolve("wallst.localhost").name == "bullsofwallst"
     assert registry.resolve("wallst.localhost").display_name == "Bulls of Wall Street"
@@ -101,14 +101,22 @@ def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:
     assert registry.resolve("bullsofdhaka.com", tenant_host="bullsofwallst.com").name == (
         "bullsofdhaka"
     )
-    # Regression: api.bullsofdhaka.com is the real shared backend host every tenant's frontend
-    # calls. It must defer to X-Tenant-Host, not win outright the way a genuine per-tenant
-    # frontend domain does above — otherwise every bullsofwallst.com request silently resolves
-    # to DSE (the 2026-07-13 cross-tenant data leak).
+    # Registry resolution remains host-first. The API middleware rejects this contradiction
+    # before calling a tenant-sensitive route, rather than silently accepting either claim.
     assert registry.resolve("api.bullsofdhaka.com", tenant_host="bullsofwallst.com").name == (
-        "bullsofwallst"
+        "bullsofdhaka"
     )
     assert registry.resolve_known("unknown.example") is None
+    assert registry.get("bullsofdhaka").research_site_url == "https://research.bullsofdhaka.com"
+    assert registry.get("bullsofdhaka").research_alias_urls == [
+        "https://atlas.bullsofdhaka.com"
+    ]
+    assert registry.get("bullsofdhaka").research_api_url == "https://api.bullsofdhaka.com"
+    assert registry.get("bullsofwallst").research_site_url == "https://research.bullsofwallst.com"
+    assert registry.get("bullsofwallst").research_alias_urls == [
+        "https://atlas.bullsofwallst.com"
+    ]
+    assert registry.get("bullsofwallst").research_api_url == "https://api.bullsofwallst.com"
 
 
 def test_tenant_locale_must_be_enabled_and_known() -> None:
@@ -128,6 +136,22 @@ def test_tenant_locale_must_be_enabled_and_known() -> None:
         Tenant(**base, locale="bn", supported_locales=["en"])
     with pytest.raises(ValidationError, match="unsupported portal locales"):
         Tenant(**base, locale="en", supported_locales=["en", "de"])
+    with pytest.raises(ValidationError, match="research_api_url host"):
+        Tenant(
+            **base,
+            locale="en",
+            supported_locales=["en"],
+            domains=["example.com"],
+            research_api_url="https://api.other.example",
+        )
+    with pytest.raises(ValidationError, match="research alias hosts"):
+        Tenant(
+            **base,
+            locale="en",
+            supported_locales=["en"],
+            domains=["example.com"],
+            research_alias_urls=["https://atlas.other.example"],
+        )
 
 
 def test_cap_tier_dse_boundaries_are_inclusive_lower_bounds() -> None:

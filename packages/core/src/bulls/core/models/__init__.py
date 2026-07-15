@@ -29,6 +29,20 @@ from bulls.core.models.post import Cashtag, Post, PostReaction
 from bulls.core.models.quiz import QuizAnswer, QuizQuestion
 from bulls.core.models.quote import DailyBar, QuoteSnapshot
 from bulls.core.models.refresh_session import RefreshSession
+from bulls.core.models.research import (
+    EvidenceDocument,
+    EvidenceSpan,
+    ResearchAuditEvent,
+    ResearchClaim,
+    ResearchClaimCitation,
+    ResearchOrganization,
+    ResearchOrganizationMembership,
+    ResearchRun,
+    ResearchRunEvidence,
+    ResearchRunStep,
+    ResearchWorkspace,
+    ResearchWorkspaceMembership,
+)
 from bulls.core.models.sec import (
     InstitutionalHoldingSummary,
     InstitutionalManager,
@@ -63,6 +77,8 @@ __all__ = [
     "CompanyProfile",
     "DailyBar",
     "DividendRecord",
+    "EvidenceDocument",
+    "EvidenceSpan",
     "Follow",
     "InstitutionalHoldingSummary",
     "InstitutionalLead",
@@ -85,6 +101,16 @@ __all__ = [
     "QuoteSnapshot",
     "RefreshSession",
     "RegulatoryDataState",
+    "ResearchAuditEvent",
+    "ResearchClaim",
+    "ResearchClaimCitation",
+    "ResearchOrganization",
+    "ResearchOrganizationMembership",
+    "ResearchRun",
+    "ResearchRunEvidence",
+    "ResearchRunStep",
+    "ResearchWorkspace",
+    "ResearchWorkspaceMembership",
     "SecFiling",
     "SecFinancialFact",
     "SectorPE",

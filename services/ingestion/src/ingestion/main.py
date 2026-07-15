@@ -16,7 +16,8 @@ from ingestion.scheduler import poll_market
 
 
 async def _run(market: str) -> None:
-    counts = await poll_market(market)
+    tenant_id = sys.argv[2] if len(sys.argv) > 2 else "bullsofdhaka"
+    counts = await poll_market(market, tenant_id=tenant_id)
     print(
         f"[ingestion] {market}: persisted {counts['symbols']} symbols, "
         f"{counts['quotes']} quotes; ticks published"

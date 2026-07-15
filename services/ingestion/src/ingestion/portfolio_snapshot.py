@@ -17,15 +17,16 @@ import datetime as dt
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import DailyBar, PortfolioHolding, PortfolioSnapshot, QuoteSnapshot
 from bulls.market_data.calendar import to_market_tz
 
 
-async def run(market: str = "DSE") -> dict[str, int]:
+async def run(market: str = "DSE", *, tenant_id: str = "bullsofdhaka") -> dict[str, int]:
     today = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     sm = get_sessionmaker()
     async with sm() as session:
+        await bind_tenant_context(session, tenant_id)
         holdings = (
             await session.scalars(select(PortfolioHolding).where(PortfolioHolding.market == market))
         ).all()
@@ -64,6 +65,7 @@ async def run(market: str = "DSE") -> dict[str, int]:
             rows.append(
                 {
                     "user_id": user_id,
+                    "tenant_id": tenant_id,
                     "market": market,
                     "date": today,
                     "total_value": total_value,

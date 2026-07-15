@@ -72,6 +72,7 @@ async def _issue_tokens(
     session.add(
         RefreshSession(
             user_id=user.id,
+            tenant_id=user.tenant_id,
             token_hash=hash_refresh(raw),
             family=family or uuid.uuid4().hex,
             expires_at=dt.datetime.now(dt.UTC)
@@ -82,18 +83,20 @@ async def _issue_tokens(
     )
     await session.flush()
     return TokenOut(
-        access_token=create_access_token(
-            str(user.id), user.tenant_id, version=user.auth_version
-        ),
+        access_token=create_access_token(str(user.id), user.tenant_id, version=user.auth_version),
         refresh_token=raw,
     )
 
 
-async def _revoke_all_sessions(session, user_id: int) -> None:
+async def _revoke_all_sessions(session, user_id: int, tenant_id: str) -> None:
     """Kill every live refresh session — used on password reset (and available for 'log out everywhere')."""
     await session.execute(
         update(RefreshSession)
-        .where(RefreshSession.user_id == user_id, RefreshSession.revoked_at.is_(None))
+        .where(
+            RefreshSession.user_id == user_id,
+            RefreshSession.tenant_id == tenant_id,
+            RefreshSession.revoked_at.is_(None),
+        )
         .values(revoked_at=func.now())
     )
 
@@ -102,18 +105,28 @@ class RefreshIn(BaseModel):
     refresh_token: str | None = None
 
 
-def _refresh_value(body: RefreshIn, request: Request) -> str | None:
+def _refresh_cookie_name(tenant: Tenant) -> str:
+    return f"{get_settings().refresh_cookie_name}_{tenant.name}"
+
+
+def _refresh_value(body: RefreshIn, request: Request, tenant: Tenant) -> str | None:
     settings = get_settings()
-    return body.refresh_token or request.cookies.get(settings.refresh_cookie_name)
+    # Accept the legacy host-only cookie during rollout. A successful rotation immediately writes
+    # the tenant-specific name; separate API hosts keep even this compatibility path isolated.
+    return (
+        body.refresh_token
+        or request.cookies.get(_refresh_cookie_name(tenant))
+        or request.cookies.get(settings.refresh_cookie_name)
+    )
 
 
-def _browser_tokens(response: Response, tokens: TokenOut) -> TokenOut:
+def _browser_tokens(response: Response, tokens: TokenOut, tenant: Tenant) -> TokenOut:
     """Store refresh credentials outside JavaScript in production; retain a dev fallback."""
     if not tokens.refresh_token:
         return tokens
     settings = get_settings()
     response.set_cookie(
-        key=settings.refresh_cookie_name,
+        key=_refresh_cookie_name(tenant),
         value=tokens.refresh_token,
         max_age=settings.refresh_token_ttl_days * 24 * 60 * 60,
         httponly=True,
@@ -132,7 +145,9 @@ async def _flush_identity(session) -> None:
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(status_code=409, detail="That account identifier is already in use") from exc
+        raise HTTPException(
+            status_code=409, detail="That account identifier is already in use"
+        ) from exc
 
 
 @router.post("/refresh")
@@ -147,14 +162,17 @@ async def refresh(
 
     Reuse detection: a token that was already rotated (or revoked) coming back means replay —
     the entire family dies, forcing a real re-login on every device that shared the chain."""
-    await throttle(f"refresh:{client_ip(request)}", limit=60, window_s=300)
+    await throttle(f"refresh:{tenant.name}:{client_ip(request)}", limit=60, window_s=300)
     now = dt.datetime.now(dt.UTC)
-    raw_refresh = _refresh_value(body, request)
+    raw_refresh = _refresh_value(body, request, tenant)
     if not raw_refresh:
         raise HTTPException(status_code=401, detail="Session expired — please log in again.")
     row = await session.scalar(
         select(RefreshSession)
-        .where(RefreshSession.token_hash == hash_refresh(raw_refresh))
+        .where(
+            RefreshSession.tenant_id == tenant.name,
+            RefreshSession.token_hash == hash_refresh(raw_refresh),
+        )
         .with_for_update()
     )
     if row is None:
@@ -162,7 +180,11 @@ async def refresh(
     if row.revoked_at is not None or row.replaced_by_id is not None:
         await session.execute(
             update(RefreshSession)
-            .where(RefreshSession.family == row.family, RefreshSession.revoked_at.is_(None))
+            .where(
+                RefreshSession.tenant_id == tenant.name,
+                RefreshSession.family == row.family,
+                RefreshSession.revoked_at.is_(None),
+            )
             .values(revoked_at=func.now())
         )
         # Commit BEFORE raising — the error response would otherwise roll back the family
@@ -178,12 +200,15 @@ async def refresh(
         raise HTTPException(status_code=401, detail="Session expired — please log in again.")
     out = await _issue_tokens(session, user, request, family=row.family)
     new_row = await session.scalar(
-        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(out.refresh_token))
+        select(RefreshSession).where(
+            RefreshSession.tenant_id == tenant.name,
+            RefreshSession.token_hash == hash_refresh(out.refresh_token),
+        )
     )
     row.revoked_at = now
     row.replaced_by_id = new_row.id if new_row else None
     row.last_used_at = now
-    return _browser_tokens(response, out)
+    return _browser_tokens(response, out, tenant)
 
 
 @router.post("/logout")
@@ -195,14 +220,22 @@ async def logout(
     session: DbSession,
 ) -> dict[str, str]:
     """Revoke this device's refresh session (the client drops the access token itself)."""
-    raw_refresh = _refresh_value(body, request)
-    row = await session.scalar(
-        select(RefreshSession).where(RefreshSession.token_hash == hash_refresh(raw_refresh))
-    ) if raw_refresh else None
+    raw_refresh = _refresh_value(body, request, tenant)
+    row = (
+        await session.scalar(
+            select(RefreshSession).where(
+                RefreshSession.tenant_id == tenant.name,
+                RefreshSession.token_hash == hash_refresh(raw_refresh),
+            )
+        )
+        if raw_refresh
+        else None
+    )
     if row is not None and row.revoked_at is None:
         user = await session.get(User, row.user_id)
         if user is not None and user.tenant_id == tenant.name:
             row.revoked_at = dt.datetime.now(dt.UTC)
+    response.delete_cookie(_refresh_cookie_name(tenant), path="/auth")
     response.delete_cookie(get_settings().refresh_cookie_name, path="/auth")
     return {"status": "ok"}
 
@@ -216,7 +249,7 @@ async def register(
     session: DbSession,
 ) -> TokenOut:
     # Cap account creation from a single source (stops scripted signup floods).
-    await throttle(f"register:{client_ip(request)}", limit=10, window_s=3600)
+    await throttle(f"register:{tenant.name}:{client_ip(request)}", limit=10, window_s=3600)
 
     # One contact field: email OR phone. Handle is generated from the name.
     contact = body.contact.strip()
@@ -273,7 +306,7 @@ async def register(
         except Exception:
             log.exception("welcome/verify email failed for %s", email)
 
-    return _browser_tokens(response, await _issue_tokens(session, user, request))
+    return _browser_tokens(response, await _issue_tokens(session, user, request), tenant)
 
 
 @router.post("/login")
@@ -285,7 +318,7 @@ async def login(
     session: DbSession,
 ) -> TokenOut:
     # Layer 1: throttle by source IP. Layer 2: lock the specific identifier after repeated failures.
-    await throttle(f"login:{client_ip(request)}", limit=20, window_s=300)
+    await throttle(f"login:{tenant.name}:{client_ip(request)}", limit=20, window_s=300)
     ident = body.identifier.strip()
     key = f"{tenant.name}:{ident.lower()}"
     await assert_not_locked(key)
@@ -304,7 +337,7 @@ async def login(
         # Generic message — never reveal whether the account exists or the password was wrong.
         raise HTTPException(status_code=401, detail="Invalid login or password")
     await reset_failures(key)
-    return _browser_tokens(response, await _issue_tokens(session, user, request))
+    return _browser_tokens(response, await _issue_tokens(session, user, request), tenant)
 
 
 @router.post("/forgot", status_code=202)
@@ -312,7 +345,7 @@ async def forgot_password(
     body: ForgotIn, request: Request, tenant: CurrentTenant, session: DbSession
 ) -> dict[str, str]:
     """Email a time-limited reset link. Always returns 202 (never reveals whether the email exists)."""
-    await throttle(f"forgot:{client_ip(request)}", limit=5, window_s=900)
+    await throttle(f"forgot:{tenant.name}:{client_ip(request)}", limit=5, window_s=900)
     email = body.email.strip().lower()
     user = await session.scalar(
         select(User).where(User.email == email, User.tenant_id == tenant.name)
@@ -351,9 +384,7 @@ async def reset_password(
     claims = decode_purpose_token_claims(body.token, "reset", tenant_id=tenant.name)
     uid = claims.get("sub") if claims else None
     user = (
-        await session.get(User, int(uid), with_for_update=True)
-        if uid and uid.isdigit()
-        else None
+        await session.get(User, int(uid), with_for_update=True) if uid and uid.isdigit() else None
     )
     token_version = claims.get("ver", 0) if claims else None
     if (
@@ -367,23 +398,17 @@ async def reset_password(
     user.email_verified = True  # using the emailed link also proves the address
     user.auth_version += 1
     # A password reset means the old credentials can't be trusted — every session dies.
-    await _revoke_all_sessions(session, user.id)
+    await _revoke_all_sessions(session, user.id, tenant.name)
     await session.flush()
-    return _browser_tokens(response, await _issue_tokens(session, user, request))
+    return _browser_tokens(response, await _issue_tokens(session, user, request), tenant)
 
 
 @router.post("/verify")
-async def verify_email(
-    body: VerifyIn, tenant: CurrentTenant, session: DbSession
-) -> dict[str, str]:
+async def verify_email(body: VerifyIn, tenant: CurrentTenant, session: DbSession) -> dict[str, str]:
     claims = decode_purpose_token_claims(body.token, "verify", tenant_id=tenant.name)
     uid = claims.get("sub") if claims else None
     user = await session.get(User, int(uid)) if uid and uid.isdigit() else None
-    if (
-        user is None
-        or user.tenant_id != tenant.name
-        or claims.get("email") != user.email
-    ):
+    if user is None or user.tenant_id != tenant.name or claims.get("email") != user.email:
         raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
     user.email_verified = True
     await session.flush()

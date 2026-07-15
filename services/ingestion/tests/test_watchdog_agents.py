@@ -97,7 +97,12 @@ async def test_agent_invariant_checks_fire_on_planted_violations() -> None:
         async with sm() as session:
             session.add(
                 PortfolioHolding(
-                    user_id=user_id, market="TST", code="WDTEST", quantity=10, avg_cost=100.0
+                    user_id=user_id,
+                    tenant_id="test",
+                    market="TST",
+                    code="WDTEST",
+                    quantity=10,
+                    avg_cost=100.0,
                 )
             )
             await session.commit()

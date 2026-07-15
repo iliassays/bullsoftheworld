@@ -33,8 +33,14 @@ export const tokenStore = {
   },
 };
 
-// The long-lived half of the pair: rotated by the server on every /auth/refresh.
-const REFRESH_KEY = "bulls.refresh";
+function tenantStorageKey(name: string): string {
+  const host = tenantHost()?.toLowerCase() || "local";
+  return `bulls.${host}.${name}`;
+}
+
+// Local development can receive a body refresh token; production uses the tenant-specific
+// HttpOnly cookie. Namespace the fallback anyway so one host can never reuse another login.
+const REFRESH_KEY = tenantStorageKey("refresh");
 export const refreshStore = {
   get: () => localStorage.getItem(REFRESH_KEY),
   set: (t: string) => localStorage.setItem(REFRESH_KEY, t),
@@ -43,7 +49,7 @@ export const refreshStore = {
 
 
 // Stable anonymous client id so page views can be de-duped without a login.
-const CID_KEY = "bulls.cid";
+const CID_KEY = tenantStorageKey("cid");
 function clientId(): string {
   let id = localStorage.getItem(CID_KEY);
   if (!id) {

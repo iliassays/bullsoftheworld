@@ -39,6 +39,7 @@ from bulls.moderation import Action, parse_cashtags
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
+
 async def _valid_codes(session, market: str, codes: list[str]) -> list[str]:
     """Keep only retail-visible codes in this market."""
     if not codes:
@@ -97,8 +98,7 @@ async def _decorate(
         for code, chg in (
             await session.execute(
                 select(QuoteSnapshot.code, QuoteSnapshot.change_pct).where(
-                    QuoteSnapshot.market == market,
-                    QuoteSnapshot.code.in_(all_codes)
+                    QuoteSnapshot.market == market, QuoteSnapshot.code.in_(all_codes)
                 )
             )
         ).all():
@@ -442,7 +442,14 @@ async def react(
         raise HTTPException(status_code=404, detail="Post not found")
     existing = await session.get(PostReaction, (post_id, user.id))
     if existing is None:
-        session.add(PostReaction(post_id=post_id, user_id=user.id, kind=body.kind))
+        session.add(
+            PostReaction(
+                post_id=post_id,
+                user_id=user.id,
+                tenant_id=tenant.name,
+                kind=body.kind,
+            )
+        )
     else:
         existing.kind = body.kind  # switching stance is an upsert
     return {"status": "ok", "kind": body.kind}

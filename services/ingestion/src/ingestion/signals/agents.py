@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from bulls.core.db import bind_tenant_context
 from bulls.core.models import User
 from bulls.core.security import hash_password
 
@@ -75,6 +76,7 @@ _LOCKED = hash_password("agent-no-login-" + "x" * 16)
 
 async def ensure_agents(session, tenant_id: str) -> dict[str, int]:
     """Create any missing agent accounts; return {beat: user_id}."""
+    await bind_tenant_context(session, tenant_id)
     supported = _TENANT_BEATS[tenant_id]
     all_identities = {beat: agent_identity(tenant_id, beat) for beat in _AGENT_DEFS}
     identities = {beat: all_identities[beat] for beat in sorted(supported)}

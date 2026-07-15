@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command deploy to bullstreetai (bullsofdhaka.bullstreetai.com).
+# One-command backend release for the Bulls of the World production host.
 #
 #   ./deploy.sh
 #
@@ -9,10 +9,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-REMOTE=bullstreetai
+: "${DEPLOY_SSH_HOST:?set DEPLOY_SSH_HOST to your production SSH host or config alias}"
+REMOTE="$DEPLOY_SSH_HOST"
 APP=/home/ubuntu/bullsofdhaka
-API_URL=https://bullsofdhaka-api.bullstreetai.com
-SITE_URL=https://bullsofdhaka.bullstreetai.com
+API_URL=https://api.bullsofdhaka.com
+SITE_URL=https://bullsofdhaka.com
 
 echo "→ pushing code to origin/main"
 # Port 22 to github.com is often blocked on this network; fall back to the 443 SSH endpoint.
@@ -45,7 +46,14 @@ echo "→ updating backend on $REMOTE"
 ssh "$REMOTE" "cd $APP \
   && git pull -q origin main \
   && ~/.local/bin/uv sync -q \
+  && ( test -r /home/ubuntu/.config/bulls/migration.env \
+       || ~/.local/bin/uv run python scripts/bootstrap_runtime_db_credentials.py ) \
+  && test -r /home/ubuntu/.config/bulls/migration.env \
+  && set -a \
+  && . /home/ubuntu/.config/bulls/migration.env \
+  && set +a \
   && ( cd services/api && ~/.local/bin/uv run alembic upgrade head ) \
+  && ~/.local/bin/uv run python scripts/provision_runtime_db_role.py \
   && sudo cp infra/systemd/bulls-ai-worker.service \
        /etc/systemd/system/bullsofdhaka-ai-worker.service \
   && sudo cp infra/systemd/bullsofwallst-worker.service \
@@ -61,4 +69,4 @@ ssh "$REMOTE" "cd $APP \
        bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bullsofwallst-sec-watchdog.timer"
 
-echo "✓ deployed → https://bullsofdhaka.bullstreetai.com"
+echo "✓ released backend and server assets for $SITE_URL"

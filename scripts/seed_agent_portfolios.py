@@ -17,7 +17,7 @@ import secrets
 from sqlalchemy import select
 
 from bulls.analytics import STRATEGIES
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import AgentPortfolio, User
 from bulls.core.security import hash_password
 
@@ -29,6 +29,7 @@ INITIAL_CAPITAL = 100_000.0  # ৳1 lac per portfolio
 async def main() -> None:
     sm = get_sessionmaker()
     async with sm() as session:
+        await bind_tenant_context(session, TENANT)
         created = 0
         for spec in STRATEGIES.values():
             user = (

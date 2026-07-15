@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -18,9 +18,18 @@ from bulls.core.db import Base
 
 class RefreshSession(Base):
     __tablename__ = "refresh_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_refresh_sessions_user_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     family: Mapped[str] = mapped_column(String(32), index=True)  # rotation chain id
     created_at: Mapped[dt.datetime] = mapped_column(

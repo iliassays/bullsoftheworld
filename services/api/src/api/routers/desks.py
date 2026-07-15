@@ -294,7 +294,10 @@ _US_POLICY_OVERRIDES = {
             "Only a newly discovered qualifying filing is posted; historical onboarding data is never replayed into the feed.",
             "শুধু নতুন যোগ্য ফাইলিং পোস্ট হয়; অনবোর্ডিংয়ের পুরোনো ইতিহাস ফিডে পুনরায় প্রকাশ করা হয় না।",
         ),
-        ("Official SEC EDGAR metadata with a direct filing link.", "সরাসরি ফাইলিং লিংকসহ অফিসিয়াল SEC EDGAR মেটাডেটা।"),
+        (
+            "Official SEC EDGAR metadata with a direct filing link.",
+            "সরাসরি ফাইলিং লিংকসহ অফিসিয়াল SEC EDGAR মেটাডেটা।",
+        ),
         "filings",
     ),
     "shorts": DeskPolicy(
@@ -514,7 +517,9 @@ async def follow_desk(
     u = await _resolve_desk(session, tenant, handle)
     # Idempotent — following twice is a no-op, not an error.
     await session.execute(
-        pg_insert(Follow).values(follower_id=user.id, followee_id=u.id).on_conflict_do_nothing()
+        pg_insert(Follow)
+        .values(follower_id=user.id, followee_id=u.id, tenant_id=tenant.name)
+        .on_conflict_do_nothing()
     )
     await session.commit()
     return {"status": "following"}

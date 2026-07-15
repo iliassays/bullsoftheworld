@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Query, Request
@@ -11,7 +12,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bulls.core.config import get_settings
-from bulls.core.db import get_session
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.markets import get_market_profile
 from bulls.core.models import Symbol, User
 from bulls.core.security import decode_access_token_claims
@@ -74,7 +75,22 @@ def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None
 CurrentTenant = Annotated[Tenant, Depends(current_tenant)]
 SelectedAdminTenant = Annotated[Tenant, Depends(selected_admin_tenant)]
 CurrentLocale = Annotated[str, Depends(current_locale)]
-DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def tenant_db_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """One transaction scoped to the tenant resolved from the trusted request host."""
+    tenant = current_tenant(request)
+    async with get_sessionmaker()() as session:
+        try:
+            await bind_tenant_context(session, tenant.name)
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+DbSession = Annotated[AsyncSession, Depends(tenant_db_session)]
 
 _bearer = HTTPBearer(auto_error=True)
 

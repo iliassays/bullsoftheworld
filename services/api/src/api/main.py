@@ -36,6 +36,7 @@ from api.routers import (
     explainer,
     growth,
     health,
+    institutional_research,
     investor_lens,
     levels,
     market,
@@ -59,7 +60,7 @@ from api.routers import (
 )
 from api.seo.router import router as seo_router
 from bulls.core.config import get_settings
-from bulls.core.db import dispose_engine
+from bulls.core.db import dispose_engine, verify_runtime_database_role
 from bulls.core.tenancy import TenantRegistry
 
 # tenants/ lives at the repo root: services/api/src/api/main.py -> up 5 -> repo root
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
     await dispose_engine()
     settings = get_settings()
     app.state.tenants = TenantRegistry.from_dir(_TENANTS_DIR, default=settings.default_tenant)
+    await verify_runtime_database_role()
     yield
     for name, closer in (("queue", close_pool), ("database", dispose_engine)):
         try:
@@ -133,20 +135,21 @@ async def resolve_tenant(request: Request, call_next):
         origin=request.headers.get("origin"),
         referer=request.headers.get("referer"),
     )
-    # Tripwire for the 2026-07-13 cross-tenant leak's failure mode: a caller explicitly named a
-    # tenant via X-Tenant-Host, but the resolved tenant is a different one — meaning some other
-    # signal (almost always a Host header on a domain shared by more than one tenant's frontend,
-    # e.g. this API's own hostname) outranked it. That should never happen; log loudly if it does
-    # instead of silently serving the wrong tenant's content again.
+    # Reject contradictory tenant signals. Logging alone is insufficient: accepting the request
+    # could return one market's data to another branded application.
     if x_tenant_host:
         claimed = registry.resolve_known(None, tenant_host=x_tenant_host)
         if claimed is not None and tenant is not None and claimed.name != tenant.name:
-            log.warning(
+            log.error(
                 "tenant_resolution_mismatch host=%s x_tenant_host=%s resolved=%s claimed=%s",
                 request.headers.get("host"),
                 x_tenant_host,
                 tenant.name,
                 claimed.name,
+            )
+            return JSONResponse(
+                status_code=421,
+                content={"detail": "Request tenant does not match the API host"},
             )
     settings = get_settings()
     local_env = settings.env.lower() in {"local", "dev", "development", "test"}
@@ -187,6 +190,7 @@ app.mount("/cards", StaticFiles(directory=_card_dir), name="cards")
 app.include_router(alerts.router)
 app.include_router(browse.router)
 app.include_router(health.router)
+app.include_router(institutional_research.router)
 app.include_router(investor_lens.router)
 app.include_router(portfolio.router)
 app.include_router(quiz.router)

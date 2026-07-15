@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, Float, ForeignKeyConstraint, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -16,8 +16,17 @@ from bulls.core.db import Base
 
 class PortfolioHolding(Base):
     __tablename__ = "portfolio_holdings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_portfolio_holdings_user_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
     quantity: Mapped[int] = mapped_column(Integer)
@@ -39,8 +48,17 @@ class PortfolioSnapshot(Base):
     """
 
     __tablename__ = "portfolio_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_portfolio_snapshots_user_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
     total_value: Mapped[float | None] = mapped_column(Float)  # None if nothing could be priced

@@ -43,6 +43,7 @@ def test_account_action_links_are_tenant_localized_and_query_encoded() -> None:
     assert _link(dhaka, "/verify", "token", "en") == (
         "https://bullsofdhaka.com/en/verify?token=token"
     )
+    # An unsupported account locale must never create a broken tenant URL.
     assert _link(wall_street, "/reset", "token", "bn") == (
         "https://bullsofwallst.com/en/reset?token=token"
     )

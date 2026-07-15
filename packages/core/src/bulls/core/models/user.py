@@ -16,6 +16,7 @@ class User(Base):
         UniqueConstraint("tenant_id", "handle", name="uq_users_tenant_handle"),
         UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
         UniqueConstraint("tenant_id", "phone", name="uq_users_tenant_phone"),
+        UniqueConstraint("id", "tenant_id", name="uq_users_id_tenant"),
         CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
         CheckConstraint("locale IN ('en', 'bn')", name="ck_users_locale"),
         CheckConstraint("auth_version >= 0", name="ck_users_auth_version"),

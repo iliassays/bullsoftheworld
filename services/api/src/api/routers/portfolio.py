@@ -343,6 +343,7 @@ async def upsert_holding(
     session.add(
         PortfolioHolding(
             user_id=user.id,
+            tenant_id=tenant.name,
             market=tenant.market,
             code=code,
             quantity=body.quantity,

@@ -17,7 +17,7 @@ import sys
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     Cashtag,
     PageViewEvent,
@@ -40,6 +40,7 @@ async def snapshot_all(market: str, *, tenant_id: str) -> dict[str, int]:
     sm = get_sessionmaker()
 
     async with sm() as session:
+        await bind_tenant_context(session, tenant_id)
         # posts tagging each code in the window (roots + tagged replies)
         posts = dict(
             (

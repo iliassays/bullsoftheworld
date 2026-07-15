@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import Date, String, case, cast, desc, distinct, func, select
 
 from api.deps import DbSession, require_admin
+from bulls.core.db import bind_tenant_context
 from bulls.core.models import (
     BetaFeedback,
     Cashtag,
@@ -176,6 +177,7 @@ async def overview(
     if t is None:
         raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
     name, market = t.name, t.market
+    await bind_tenant_context(session, name)
     now = dt.datetime.now(dt.UTC)
     # "today" in the tenant's own market timezone (Dhaka is UTC+6), not UTC — so the day boundary
     # matches what the operator experiences locally.
@@ -433,6 +435,7 @@ async def analytics(
     if t is None:
         raise HTTPException(status_code=404, detail=f"Unknown tenant: {tenant}")
     name, market, tz = t.name, t.market, t.timezone
+    await bind_tenant_context(session, name)
     try:
         zone = ZoneInfo(tz)
     except Exception:

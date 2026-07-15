@@ -135,6 +135,7 @@ async def answer(
     session.add(
         QuizAnswer(
             user_id=user.id,
+            tenant_id=tenant.name,
             answered_on=day,
             question_id=q.id,
             choice_idx=body.choice_idx,

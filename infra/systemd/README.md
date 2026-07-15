@@ -1,8 +1,25 @@
 # systemd units (production server)
 
-These run on the bullstreetai server and live here so their configuration is version-controlled.
+These run on the production application host and live here so their configuration is version-controlled.
 `deploy.sh` refreshes the active U.S. worker units on every release; the commands below remain the
 server-bootstrap procedure and cover the independent DSE watchdog units too.
+
+## Database roles and tenant RLS
+
+Production services must connect with the restricted `bulls_app` role. The database owner is only
+for Alembic and role provisioning; never put its URL in the application `.env` or a systemd unit.
+
+1. On the first RLS-aware release, `deploy.sh` runs `scripts/bootstrap_runtime_db_credentials.py`.
+   It generates a random runtime password, atomically changes the repository `.env` to `bulls_app`,
+   and moves the existing owner URL into `/home/ubuntu/.config/bulls/migration.env` with mode 0600.
+   The script refuses to overwrite an existing secret file and never prints credentials.
+2. Subsequent releases reuse that deployment-only file. You may instead prepare it manually from
+   `.env.migration.example`; keep `MIGRATION_DATABASE_URL` out of the application `.env`.
+3. The deploy then runs Alembic as owner, reapplies least-privilege grants, validates the runtime
+   credential by connecting as `bulls_app`, and only then restarts services.
+
+API and worker startup checks reject any production role with `SUPERUSER` or `BYPASSRLS`. Tenant
+context is transaction-local, so pooled connections cannot retain the preceding request's tenant.
 
 ## Health watchdog
 

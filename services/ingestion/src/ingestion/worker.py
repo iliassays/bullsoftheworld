@@ -24,7 +24,7 @@ from arq.connections import RedisSettings
 from sqlalchemy import func, select
 
 from bulls.core.config import get_settings
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import get_sessionmaker, verify_runtime_database_role
 from bulls.core.models import DailyBar, MarketSummary
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
 from ingestion import news
@@ -59,6 +59,10 @@ _EOD_CHAIN_VERSION = "v2"
 _EOD_COMPLETION_TTL_S = 400 * 24 * 60 * 60
 
 
+async def startup(ctx) -> None:
+    await verify_runtime_database_role()
+
+
 def _eod_completion_key(market_date: dt.date) -> str:
     return f"ingestion:{TENANT_ID}:eod-complete:{_EOD_CHAIN_VERSION}:{market_date}"
 
@@ -87,7 +91,7 @@ async def poll_quotes(ctx) -> str:
     """Refresh the delayed quote snapshot - only while the market is open."""
     if not is_trading_hours(dt.datetime.now(dt.UTC)):
         return "skipped: market closed"
-    counts = await poll_market(MARKET)
+    counts = await poll_market(MARKET, tenant_id=TENANT_ID)
     log.info("intraday poll: %s quotes", counts["quotes"])
     return f"quotes={counts['quotes']}"
 
@@ -105,7 +109,7 @@ async def finalize_quotes(ctx) -> str:
         FINAL_QUOTE_UTC_MINUTE,
     ):
         return "skipped: before final quote window"
-    counts = await poll_market(MARKET)
+    counts = await poll_market(MARKET, tenant_id=TENANT_ID)
     log.info("final delayed quote poll: %s quotes", counts["quotes"])
     return f"quotes={counts['quotes']}"
 
@@ -114,7 +118,7 @@ async def run_agent_portfolios(ctx) -> str:
     """One trading tick for the five agent model portfolios — settle, exits, entries. Runs 3 min
     after each intraday quote poll so it always sees the freshest snapshot; the engine itself
     no-ops outside trading hours and refuses stale quotes, so a mistimed run does nothing."""
-    counts = await run_agents(MARKET)
+    counts = await run_agents(MARKET, tenant_id=TENANT_ID)
     if counts.get("skipped"):
         return "skipped: market closed"
     log.info("agent portfolios: %s", counts)
@@ -177,7 +181,7 @@ async def snapshot_portfolios(ctx) -> str:
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
-    stats = await snapshot_portfolios_run(MARKET)
+    stats = await snapshot_portfolios_run(MARKET, tenant_id=TENANT_ID)
     log.info("portfolio snapshot: %s users", stats["users"])
     return f"users={stats['users']}"
 
@@ -218,7 +222,7 @@ async def recover_eod_chain(ctx) -> str:
         )
 
     analytics = await compute_all(MARKET)
-    portfolios = await snapshot_portfolios_run(MARKET)
+    portfolios = await snapshot_portfolios_run(MARKET, tenant_id=TENANT_ID)
     trending = await compute_trending(MARKET)
     buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
     levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
@@ -447,6 +451,7 @@ async def prune_growth_analytics(ctx) -> str:
 
 
 class WorkerSettings:
+    on_startup: ClassVar = startup
     """arq entry point for the ingestion scheduler."""
 
     functions: ClassVar = [

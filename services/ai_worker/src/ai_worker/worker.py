@@ -25,7 +25,7 @@ from bulls.ai.retrieval import (
 from bulls.ai.tasks.moderation import screen_post
 from bulls.ai.tasks.sentiment import classify_sentiment
 from bulls.core.config import get_settings
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import get_sessionmaker, verify_runtime_database_role
 from bulls.core.models import ModerationEvent, Post
 
 # Confidence floor before an L4 flag is acted on — keeps marginal calls from crowding the queue.
@@ -163,6 +163,7 @@ async def embed_institutional_summary(ctx, market: str, code: str, report_date: 
 
 
 async def startup(ctx) -> None:
+    await verify_runtime_database_role()
     ctx["redis_pub"] = aioredis.from_url(get_settings().redis_url)
 
 

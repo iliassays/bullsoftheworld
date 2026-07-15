@@ -8,11 +8,16 @@ timezone = "America/New_York"
 domains = [
   "bullsofwallst.com",
   "www.bullsofwallst.com",
+  "research.bullsofwallst.com",
+  "atlas.bullsofwallst.com",
   "api.bullsofwallst.com",
   "wallst.localhost",
   "bullsofwallst.localhost",
 ]
 site_url = "https://bullsofwallst.com"
+research_site_url = "https://research.bullsofwallst.com"
+research_alias_urls = ["https://atlas.bullsofwallst.com"]
+research_api_url = "https://api.bullsofwallst.com"
 support_email = "hello@bullsofwallst.com"
 email_from = "Bulls of Wall Street <no-reply@bullsofwallst.com>"
 logo_url = "https://bullsofwallst.com/logo-mark-v2.png"

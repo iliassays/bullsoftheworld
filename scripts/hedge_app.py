@@ -25,7 +25,7 @@ from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
 from sqlalchemy import desc, select
 
 from bulls.analytics import STRATEGIES
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     AgentLot,
     AgentPortfolio,
@@ -235,6 +235,7 @@ async def _agent_book() -> list[dict]:
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     out: list[dict] = []
     async with get_sessionmaker()() as session:
+        await bind_tenant_context(session, "bullsofdhaka")
         rows = (
             await session.execute(
                 select(AgentPortfolio, User).join(User, User.id == AgentPortfolio.user_id)

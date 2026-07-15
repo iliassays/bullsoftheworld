@@ -17,7 +17,14 @@ from bulls.core.models import PortfolioHolding
 
 
 def _h(code: str, qty: int, cost: float) -> PortfolioHolding:
-    return PortfolioHolding(user_id=1, market="DSE", code=code, quantity=qty, avg_cost=cost)
+    return PortfolioHolding(
+        user_id=1,
+        tenant_id="bullsofdhaka",
+        market="DSE",
+        code=code,
+        quantity=qty,
+        avg_cost=cost,
+    )
 
 
 def test_compute_portfolio_math() -> None:
@@ -166,7 +173,7 @@ async def test_portfolio_history_period_filtering() -> None:
     from sqlalchemy import delete, select
 
     from api.main import app, lifespan
-    from bulls.core.db import dispose_engine, get_sessionmaker
+    from bulls.core.db import bind_tenant_context, dispose_engine, get_sessionmaker
     from bulls.core.models import PortfolioSnapshot, User
 
     # ASGITransport (unlike TestClient) doesn't drive the app's lifespan automatically — without
@@ -197,6 +204,7 @@ async def test_portfolio_history_period_filtering() -> None:
 
         sm = get_sessionmaker()
         async with sm() as session:
+            await bind_tenant_context(session, "bullsofdhaka")
             # Handle is server-generated from the name, not the value we sent — look the
             # user up by the email we actually control instead.
             uid = (
@@ -206,6 +214,7 @@ async def test_portfolio_history_period_filtering() -> None:
                 [
                     PortfolioSnapshot(
                         user_id=uid,
+                        tenant_id="bullsofdhaka",
                         market="DSE",
                         date=dt.date(2025, 1, 1),
                         total_value=20000.0,
@@ -213,6 +222,7 @@ async def test_portfolio_history_period_filtering() -> None:
                     ),
                     PortfolioSnapshot(
                         user_id=uid,
+                        tenant_id="bullsofdhaka",
                         market="DSE",
                         date=dt.date.today(),
                         total_value=25830.0,

@@ -15,6 +15,7 @@ from __future__ import annotations
 from sqlalchemy import func, select, union
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from bulls.core.db import bind_tenant_context
 from bulls.core.markets import get_market_profile
 from bulls.core.models import AlertEvent, PortfolioHolding, PriceAlert, User, WatchlistItem
 
@@ -138,6 +139,7 @@ def should_trigger(direction: str, level: float, ltp: float) -> bool:
 
 async def _interested_user_ids(session, tenant_id: str, market: str, code: str) -> list[int]:
     """Watchers plus holders — the audience for a stock's data events."""
+    await bind_tenant_context(session, tenant_id)
     watchers = (
         select(WatchlistItem.user_id)
         .join(User, User.id == WatchlistItem.user_id)
@@ -288,13 +290,15 @@ def _price_cross_texts(
     return title, body
 
 
-async def check_price_alerts(session, market: str, prices: dict[str, float]) -> int:
+async def check_price_alerts(session, tenant_id: str, market: str, prices: dict[str, float]) -> int:
     """Fire untriggered price alerts against the latest poll. One-shot per alert row."""
     if not prices:
         return 0
+    await bind_tenant_context(session, tenant_id)
     pending = (
         await session.scalars(
             select(PriceAlert).where(
+                PriceAlert.tenant_id == tenant_id,
                 PriceAlert.market == market,
                 PriceAlert.triggered_at.is_(None),
                 PriceAlert.code.in_(prices.keys()),

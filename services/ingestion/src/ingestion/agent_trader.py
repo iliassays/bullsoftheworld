@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bulls.analytics import STRATEGIES, Snapshot, exit_reason, rank_entries
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     AgentLot,
     AgentPortfolio,
@@ -195,6 +195,7 @@ async def _sell(
 async def _buy(
     session: AsyncSession,
     agent: AgentPortfolio,
+    tenant_id: str,
     holdings: dict[str, PortfolioHolding],
     snap: Snapshot,
     today: dt.date,
@@ -246,6 +247,7 @@ async def _buy(
         session.add(
             PortfolioHolding(
                 user_id=agent.user_id,
+                tenant_id=tenant_id,
                 market=agent.market,
                 code=snap.code,
                 quantity=qty,
@@ -260,7 +262,12 @@ async def _buy(
     return cost
 
 
-async def run_agents(market: str = "DSE", *, now: dt.datetime | None = None) -> dict[str, int]:
+async def run_agents(
+    market: str = "DSE",
+    *,
+    tenant_id: str = "bullsofdhaka",
+    now: dt.datetime | None = None,
+) -> dict[str, int]:
     """One engine tick. Safe to call any time: outside trading hours it's a no-op, and inside
     the session it only acts on quotes fresh enough to trust."""
     now = now or dt.datetime.now(dt.UTC)
@@ -271,6 +278,7 @@ async def run_agents(market: str = "DSE", *, now: dt.datetime | None = None) -> 
     counts = {"agents": 0, "buys": 0, "sells": 0, "settled": 0}
     sm = get_sessionmaker()
     async with sm() as session:
+        await bind_tenant_context(session, tenant_id)
         agents = (
             await session.scalars(
                 select(AgentPortfolio).where(
@@ -352,6 +360,7 @@ async def run_agents(market: str = "DSE", *, now: dt.datetime | None = None) -> 
                 spent = await _buy(
                     session,
                     agent,
+                    tenant_id,
                     holdings,
                     snap,
                     today,

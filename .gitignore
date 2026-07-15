@@ -11,10 +11,12 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.migration.example
 
 # Node / web
 node_modules/
 apps/web/dist/
+apps/research/dist/
 
 # Data / local
 *.db

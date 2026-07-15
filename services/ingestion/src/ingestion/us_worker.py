@@ -21,7 +21,7 @@ from arq.connections import RedisSettings
 from sqlalchemy import func, select
 
 from bulls.core.config import get_settings
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker, verify_runtime_database_role
 from bulls.core.markets import US_VERIFIED_CALENDAR_YEARS
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
 from bulls.market_data.calendar import (
@@ -55,6 +55,10 @@ _COMPLETION_TTL_S = 400 * 24 * 60 * 60
 _CHAIN_VERSION = "v2"
 
 
+async def startup(ctx) -> None:
+    await verify_runtime_database_role()
+
+
 def _completion_key(session_date: dt.date) -> str:
     return f"ingestion:{TENANT_ID}:eod-complete:{_CHAIN_VERSION}:{session_date.isoformat()}"
 
@@ -83,6 +87,7 @@ def most_recent_due_session(now: dt.datetime) -> dt.date:
 async def _coverage(session_date: dt.date) -> tuple[int, int]:
     sm = get_sessionmaker()
     async with sm() as session:
+        await bind_tenant_context(session, TENANT_ID)
         ready = (
             await session.scalar(
                 select(func.count())
@@ -126,7 +131,7 @@ async def _evaluate_eod_price_alerts() -> int:
                 )
             ).all()
         )
-        fired = await check_price_alerts(session, MARKET, prices)
+        fired = await check_price_alerts(session, TENANT_ID, MARKET, prices)
         await session.commit()
     return fired
 
@@ -163,7 +168,7 @@ async def run_us_eod_chain(ctx) -> str:
     factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
     market_note = await run_market_update(MARKET, tenant_id=TENANT_ID)
     price_alerts = await _evaluate_eod_price_alerts()
-    portfolios = await snapshot_portfolios(MARKET)
+    portfolios = await snapshot_portfolios(MARKET, tenant_id=TENANT_ID)
     buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
     if redis is not None:
         await redis.set(completion_key, "1", ex=_COMPLETION_TTL_S)
@@ -235,6 +240,7 @@ async def refresh_restricted_research(ctx) -> str:
 
 
 class WorkerSettings:
+    on_startup: ClassVar = startup
     functions: ClassVar = [
         run_us_eod_chain,
         refresh_us_security_master,
