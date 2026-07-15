@@ -32,6 +32,8 @@ cleanup() {
   if [[ "$CONFIGURED" != "yes" && -n "$ACCESS_KEY_ID" ]]; then
     "${AWS[@]}" iam delete-access-key \
       --user-name "$OPERATOR_USER" --access-key-id "$ACCESS_KEY_ID" >/dev/null || true
+    aws configure unset aws_access_key_id --profile "$SOURCE_PROFILE" || true
+    aws configure unset aws_secret_access_key --profile "$SOURCE_PROFILE" || true
   fi
   unset ACCESS_KEY_ID SECRET_ACCESS_KEY
 }
@@ -49,6 +51,16 @@ aws configure set source_profile "$SOURCE_PROFILE" --profile "$DEPLOY_PROFILE"
 aws configure set region "${BULLS_AWS_REGION:-us-east-1}" --profile "$DEPLOY_PROFILE"
 chmod 600 "$HOME/.aws/credentials" "$HOME/.aws/config"
 
-CONFIGURED=yes
-aws --profile "$DEPLOY_PROFILE" sts get-caller-identity \
-  --query '{Account:Account,Arn:Arn}' --output json
+IDENTITY=""
+for _attempt in 1 2 3 4 5 6; do
+  if IDENTITY="$(aws --profile "$DEPLOY_PROFILE" sts get-caller-identity \
+    --query '{Account:Account,Arn:Arn}' --output json 2>/dev/null)"; then
+    CONFIGURED=yes
+    printf '%s\n' "$IDENTITY"
+    exit 0
+  fi
+  sleep 5
+done
+
+echo "The release operator did not become usable before the propagation timeout." >&2
+exit 1
