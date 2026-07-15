@@ -979,6 +979,12 @@ export function ScreenRow({
   const setupChip = setup ? { word: setup, tone: setupTone(item.setup_quality) } : null;
   const liquidity = liquidityLabel(item.liquidity, t);
   const [open, setOpen] = useState(false);
+  // A colored left edge only when the board reports a real direction (a disclosed ownership
+  // change, a price move) — chip.tone is already "neutral" for facts that aren't directional
+  // (yield level, cheapness, RSI zone), so this reuses that signal rather than adding new logic.
+  const directionTone = isMover ? (item.value >= 0 ? "up" : "down") : chip?.tone;
+  const ruleCls =
+    directionTone === "up" ? "border-l-up" : directionTone === "down" ? "border-l-down" : "border-l-transparent";
   // Tooltip explaining the price line on ownership rows: what period + how price moved over it.
   const ps = item.period_spark ?? [];
   let priceTitle: string | undefined;
@@ -995,7 +1001,7 @@ export function ScreenRow({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full text-left flex items-center gap-3 py-2 border-t border-border/60 first:border-t-0"
+        className={`w-full text-left flex items-center gap-3 py-2 pl-2 border-t border-border/60 first:border-t-0 border-l-[3px] ${ruleCls}`}
       >
         <span className="flex items-center gap-2 min-w-0 flex-1">
           {rank != null && (
@@ -1053,27 +1059,32 @@ export function ScreenRow({
               </span>
             )}
           </span>
+          {/* The one number a reader decides from (yield, pp change, ×) is the hero here —
+              promoted to bold and full size — while the descriptive word ("High yield",
+              "Started selling") that used to carry that weight is now its demoted caption. */}
           <span
-            className={`flex flex-col items-end justify-center ${isOwnership ? "min-w-[92px]" : "w-20"}`}
+            className={`flex flex-col items-end justify-center ${isOwnership ? "min-w-[96px]" : "w-20"}`}
           >
             {isMover ? (
               <span
-                className={`text-xs font-semibold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
+                className={`text-base font-extrabold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
               >
                 {fmtValue(screen.value_label, item.value)}
               </span>
             ) : chip ? (
               <>
-                <span className={`text-xs font-semibold ${toneCls(chip.tone)}`}>{chip.word}</span>
+                <span className={`text-base font-extrabold tnum ${toneCls(chip.tone)}`}>
+                  {fmtValue(screen.value_label, item.value)}
+                </span>
                 <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[10px] text-muted">
-                  <span className="tnum">{fmtValue(screen.value_label, item.value)}</span>
+                  <span>{chip.word}</span>
                   {period && <span>· {period}</span>}
                 </span>
                 {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} lang={lang} />}
                 {item.horizons && <MomentumDots h={item.horizons} />}
               </>
             ) : (
-              <span className="text-xs font-semibold text-accent tnum">
+              <span className="text-base font-extrabold text-accent tnum">
                 {fmtValue(screen.value_label, item.value)}
               </span>
             )}
@@ -1200,6 +1211,41 @@ const LENSES: { id: string; icon: string; labelKey: string; blurbKey: string; ke
 // the "why" (the RANKINGS on /screens boards are EOD-anchored regardless of the current session
 // state; a user asked why a bare '1D' tag on the Ideas page didn't say when it was calculated).
 
+const LENS_BY_ID = new Map(LENSES.map((l) => [l.id, l]));
+// A handful of keys sit in more than one LENS.keys list (e.g. dividend_yield is also "value").
+// The eyebrow needs one deterministic answer per key, so it's resolved here explicitly rather
+// than by scanning LENSES — scanning would pick whichever lens happens to come first in the
+// array, which is "value" for dividend_yield, not the more specific "dividend".
+const EYEBROW_LENS: Record<string, string> = {
+  dividend_yield: "dividend",
+  quality_roe: "value",
+  eps_growth: "value",
+  low_volatility: "value",
+  value_vs_sector: "value",
+  institutional_13f_accumulation: "smart",
+  institutional_13f_distribution: "smart",
+  institutional_buying: "smart",
+  institutional_selling: "smart",
+  foreign_buying: "smart",
+  quiet_accumulation: "smart",
+};
+const EYEBROW_COMMUNITY_KEYS = new Set(["most_discussed", "most_watched", "attention_rising"]);
+
+// A short topic label above each board's title, so a tab holding eight-plus cards sorts by
+// subject before a single row gets read. Reuses the same icon/label already shown on the lens
+// chips (no new copy) except sponsor_selling, which earns its own line — folding it into
+// "Smart money" would blur the one board that's specifically about insiders, not funds.
+function screenEyebrow(key: string, t: Tr): string {
+  if (key === "sponsor_selling") return t("screen.eyebrow.insider");
+  if (EYEBROW_COMMUNITY_KEYS.has(key)) return t("group.community");
+  if (key.startsWith("chart_pattern_")) {
+    const lens = LENS_BY_ID.get("patterns")!;
+    return `${lens.icon} ${t(lens.labelKey)}`;
+  }
+  const lens = LENS_BY_ID.get(EYEBROW_LENS[key] ?? "momentum")!;
+  return `${lens.icon} ${t(lens.labelKey)}`;
+}
+
 // First-run framing: sets the mental model (descriptive, not tips) and teaches the ⓘ gesture, once.
 function MarketIntro() {
   const { t } = useLang();
@@ -1254,23 +1300,30 @@ function ScreenCard({ s }: { s: Screen }) {
   );
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <div className="font-semibold text-sm">{screenTitle(s, lang)}</div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-muted mb-0.5">
+            {screenEyebrow(s.key, t)}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="font-semibold text-sm">{screenTitle(s, lang)}</div>
+            <EvidenceNote
+              evidence={s.evidence}
+              extra={MOMENTUM_CAUTION_KEYS.has(s.key) ? momentumCaution(lang) : undefined}
+            />
+            {newCount > 0 && (
+              <span
+                title={t("screen.newCountHelp")}
+                className="rounded-full border border-up/40 bg-up/10 px-2 py-0.5 text-[10px] font-semibold text-up"
+              >
+                {lang === "bn" ? `${bnDigits(String(newCount))}টি নতুন` : `${newCount} new`}
+              </span>
+            )}
+          </div>
+        </div>
         <InfoTip text={screenHelp(s.key, lang) ?? screenDesc(s, lang)} lessonId={SCREEN_LESSON[s.key]} />
-        <EvidenceNote
-          evidence={s.evidence}
-          extra={MOMENTUM_CAUTION_KEYS.has(s.key) ? momentumCaution(lang) : undefined}
-        />
-        {newCount > 0 && (
-          <span
-            title={t("screen.newCountHelp")}
-            className="rounded-full border border-up/40 bg-up/10 px-2 py-0.5 text-[10px] font-semibold text-up"
-          >
-            {lang === "bn" ? `${bnDigits(String(newCount))}টি নতুন` : `${newCount} new`}
-          </span>
-        )}
       </div>
-      <div className="text-[11px] text-muted">{screenDesc(s, lang)}</div>
+      <div className="text-[11px] text-muted mt-1">{screenDesc(s, lang)}</div>
       {isDisclosureBoard && (
         <div className="mt-1 text-[10px] text-accent/90">{t("screen.disclosurePeriodHelp")}</div>
       )}

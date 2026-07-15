@@ -118,26 +118,30 @@ export function MarketPulse() {
         {statusText}
       </div>
 
+      {/* The index level is the one number a reader orients on before anything else on this
+          card — promoted to its own hero line instead of sitting the same size as turnover
+          or breadth in the stat grid below. */}
+      <div className="mt-3 flex items-baseline gap-2.5">
+        <span className="text-[26px] font-extrabold tnum leading-none">
+          {(pulse.benchmark_close ?? pulse.dsex) == null
+            ? "—"
+            : (pulse.benchmark_close ?? pulse.dsex)!.toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })}
+        </span>
+        {benchmarkChange != null && (
+          <span className={`text-sm font-bold tnum ${benchmarkChange >= 0 ? "text-up" : "text-down"}`}>
+            {signed(benchmarkChange)}
+          </span>
+        )}
+      </div>
+      <div className="text-[10px] text-muted mt-0.5">
+        {liveContext
+          ? `${pulse.benchmark_label ?? config.benchmark_label} · ${t("marketPulse.previousClose")} (${closeDate})${benchmarkChange != null ? ` · ${t("marketPulse.previousSession")}` : ""}`
+          : (pulse.benchmark_label ?? config.benchmark_label)}
+      </div>
+
       <div className="grid grid-cols-2 gap-3 mt-3">
-        <Cell
-          label={
-            liveContext
-              ? `${pulse.benchmark_label ?? config.benchmark_label} · ${t("marketPulse.previousClose")} (${closeDate})`
-              : (pulse.benchmark_label ?? config.benchmark_label)
-          }
-          value={
-            (pulse.benchmark_close ?? pulse.dsex) == null
-              ? "—"
-              : (pulse.benchmark_close ?? pulse.dsex)!.toLocaleString(undefined, {
-                  maximumFractionDigits: 2,
-                })
-          }
-          sub={
-            benchmarkChange == null
-              ? undefined
-              : `${liveContext ? `${t("marketPulse.previousSession")} ` : ""}${signed(benchmarkChange)}`
-          }
-        />
         <Cell
           label={
             pulse.turnover_is_partial
@@ -170,15 +174,17 @@ export function MarketPulse() {
             <div className="h-full bg-up" style={{ width: `${breadthPct}%` }} />
           </div>
         </div>
-        <Cell
-          label={t("marketPulse.sectors")}
-          value={
-            pulse.top_sector && pulse.top_sector_change != null
-              ? `${pulse.top_sector} ${signed(pulse.top_sector_change)}`
-              : "—"
-          }
-          sub={sectorSub}
-        />
+        <div className="col-span-2">
+          <Cell
+            label={t("marketPulse.sectors")}
+            value={
+              pulse.top_sector && pulse.top_sector_change != null
+                ? `${pulse.top_sector} ${signed(pulse.top_sector_change)}`
+                : "—"
+            }
+            sub={sectorSub}
+          />
+        </div>
       </div>
 
       <p className="mt-3 text-[10px] text-muted">

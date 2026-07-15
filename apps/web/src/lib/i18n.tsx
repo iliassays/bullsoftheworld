@@ -634,6 +634,9 @@ const STRINGS: Record<string, Entry> = {
   "lens.dividend": { en: "Dividend", bn: "লভ্যাংশ" },
   "lens.steady": { en: "Steady", bn: "স্থির" },
   "lens.patterns": { en: "Chart patterns", bn: "চার্ট প্যাটার্ন" },
+  // Card eyebrow — sponsor/director disclosures get their own label (not lumped into
+  // "Smart money") since insiders exiting their own company is a distinct kind of fact.
+  "screen.eyebrow.insider": { en: "Insider disclosure", bn: "ইনসাইডার প্রকাশ" },
   "lens.momentum.blurb": {
     en: "Stocks moving and trending — for traders who want strength.",
     bn: "যেসব শেয়ার নড়ছে ও প্রবণতায় আছে — শক্তি খোঁজা ট্রেডারদের জন্য।",
