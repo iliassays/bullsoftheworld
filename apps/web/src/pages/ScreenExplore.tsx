@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Link } from "../lib/nav";
 import { api, type Screen } from "../lib/api";
 import { Spinner } from "../components/ui";
@@ -7,6 +7,7 @@ import { InfoTip } from "../components/InfoTip";
 import { useSeo } from "../components/Seo";
 import { useLang } from "../lib/i18n";
 import { SCREEN_LESSON } from "../lib/lessons";
+import { useTenantConfig } from "../lib/tenant";
 import { ScreenRow, metricHeader, screenDesc, screenHelp, screenTitle } from "./Markets";
 
 const GROUP_KEY: Record<string, string> = {
@@ -38,6 +39,9 @@ const DIRECTIONS = [
   { id: "buy", label: "Buying" },
   { id: "sell", label: "Selling" },
 ];
+// Canonical size tiers (must match bulls.core.markets cap_tiers). Mega exists on US only.
+const SIZE_TIERS_DSE = ["large", "mid", "small", "micro"];
+const SIZE_TIERS_US = ["mega", ...SIZE_TIERS_DSE];
 
 // Explore page scoped to ONE category: tabs are that category's screens; the active screen shows
 // its full list, with its own timeframe filter attached to the card. "How to read this" lives
@@ -45,6 +49,7 @@ const DIRECTIONS = [
 export function ScreenExplore() {
   const { t, lang } = useLang();
   const { key = "" } = useParams();
+  const { config } = useTenantConfig();
   const [all, setAll] = useState<Screen[]>([]);
   const [active, setActive] = useState(key);
   const [period, setPeriod] = useState("1d");
@@ -52,6 +57,23 @@ export function ScreenExplore() {
   const [direction, setDirection] = useState("buy");
   const [screen, setScreen] = useState<Screen | null>(null);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
+  // Size is a URL-scoped refinement (?size=large): shareable, resets on navigation, and never
+  // persisted app-wide — whole-market surfaces (Mood, Wrap, Trending) are structurally exempt.
+  const [params, setParams] = useSearchParams();
+  const sizeTiers = config.market === "US" ? SIZE_TIERS_US : SIZE_TIERS_DSE;
+  const rawSize = params.get("size");
+  const size = rawSize && sizeTiers.includes(rawSize) ? rawSize : null;
+  const chooseSize = (tier: string | null) => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tier) next.set("size", tier);
+        else next.delete("size");
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   useEffect(() => {
     api
@@ -85,10 +107,11 @@ export function ScreenExplore() {
         usesPeriod ? period : undefined,
         isMomentum ? window : undefined,
         isOwnership ? direction : undefined,
+        size ?? undefined,
       )
       .then(setScreen)
       .catch(() => setScreen(null));
-  }, [active, period, window, direction, usesPeriod, isMomentum, isOwnership]);
+  }, [active, period, window, direction, usesPeriod, isMomentum, isOwnership, size]);
 
   const tf = isMomentum
     ? { set: WINDOWS, sel: window, choose: setWindow }
@@ -150,9 +173,12 @@ export function ScreenExplore() {
           </div>
           <div className="text-[11px] text-muted">{screenDesc(screen, lang)}</div>
 
-          {tf && (
-            <div className="flex gap-2 mt-2">
-              {tf.set.map((p) => (
+          {/* One control row: timeframe chips (when the screen has one) + a compact size select
+              pushed right. Size is a secondary refinement, so it gets a dropdown, not a second
+              chip row — but an APPLIED filter must stay visible, hence the accent styling. */}
+          <div className="flex items-center gap-2 mt-2">
+            {tf &&
+              tf.set.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => tf.choose(p.id)}
@@ -163,8 +189,22 @@ export function ScreenExplore() {
                   {p.label}
                 </button>
               ))}
-            </div>
-          )}
+            <select
+              aria-label={t("tier.size")}
+              value={size ?? ""}
+              onChange={(e) => chooseSize(e.target.value || null)}
+              className={`ml-auto shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-transparent ${
+                size ? "text-accent border-accent bg-accent/10" : "text-muted border-border"
+              }`}
+            >
+              <option value="">{t("tier.all")}</option>
+              {sizeTiers.map((tier) => (
+                <option key={tier} value={tier}>
+                  {t(`tier.${tier}`)}
+                </option>
+              ))}
+            </select>
+          </div>
           {isMover && period === "1m" && (
             <p className="text-[10px] text-muted mt-1">{t("explore.moverReversal")}</p>
           )}

@@ -28,6 +28,7 @@ from api.routers import (
     agents_admin,
     alerts,
     auth,
+    browse,
     buzz,
     company,
     desks,
@@ -184,6 +185,7 @@ app.mount("/cards", StaticFiles(directory=_card_dir), name="cards")
 
 
 app.include_router(alerts.router)
+app.include_router(browse.router)
 app.include_router(health.router)
 app.include_router(investor_lens.router)
 app.include_router(portfolio.router)

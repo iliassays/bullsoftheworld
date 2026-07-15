@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics import adjust_bars, compute, compute_valuation, detect_patterns
 from bulls.core.db import get_sessionmaker
+from bulls.core.markets import cap_tier
 from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
@@ -292,6 +293,8 @@ async def _persist_symbol_analytics(
     # Indicators use split/distribution-adjusted bars; valuation must use the listed security's
     # unadjusted current close against its current per-share fundamentals.
     row.update(_valuation_row(bars[-1].close, profile, cash_dividends.get(code)))
+    # Canonical size tier follows the freshly computed cap — NULL (unclassified) when unknown.
+    row["cap_tier"] = cap_tier(row["market_cap_mn"], market)
     row.update(
         _extra_row(
             code,

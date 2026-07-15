@@ -1409,7 +1409,7 @@ export function Markets() {
         ))}
       </div>
 
-      <div className="px-1">
+      <div className="px-1 flex items-baseline justify-between gap-2">
         <div className="text-[11px] text-muted">
           {isFocus
             ? t(config.market === "US" ? "markets.focusBlurb.us" : "markets.focusBlurb")
@@ -1417,6 +1417,9 @@ export function Markets() {
               ? t(activeLens.blurbKey)
               : t("markets.browseAll")}
         </div>
+        <Link to="/size/large" className="text-[11px] text-accent whitespace-nowrap shrink-0">
+          {t("tier.browseTitle")} →
+        </Link>
       </div>
       <FreshnessTag
         asOf={data.as_of}

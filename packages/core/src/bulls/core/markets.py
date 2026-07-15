@@ -8,6 +8,7 @@ current product behavior is unchanged; US is intentionally a profile only until 
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
@@ -69,6 +70,12 @@ class MarketProfile:
     price_decimals: int = 2
     compact_money_units: tuple[MoneyUnit, ...] = field(default_factory=tuple)
     market_cap_money_units: tuple[MoneyUnit, ...] = field(default_factory=tuple)
+    # Ordered (tier, inclusive lower bound in currency-millions), largest first. The single
+    # source of truth for size classification — plain-read prose, screener filters, browse pages
+    # and onboarding bands must all derive from this, never restate thresholds locally.
+    # Calibrated against the live market_cap_mn distribution (2026-07); boundaries are
+    # market-specific because a "large" Dhaka company is a micro-cap in dollars.
+    cap_tiers: tuple[tuple[str, float], ...] = field(default_factory=tuple)
     features: MarketFeatures = field(default_factory=MarketFeatures)
 
     @property
@@ -153,6 +160,14 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         market_cap_money_units=(
             MoneyUnit(min_value_mn=0, divisor_mn=10, suffix=" Cr", decimals=0),
         ),
+        # ৳ millions. Live distribution (395 names, 2026-07): large 69 / mid 165 / small 137 /
+        # micro 24. No mega tier — DSE's largest is ~৳35k Cr.
+        cap_tiers=(
+            ("large", 10_000.0),  # ≥ ৳1,000 Cr
+            ("mid", 2_000.0),  # ৳200-1,000 Cr
+            ("small", 500.0),  # ৳50-200 Cr
+            ("micro", 0.0),  # < ৳50 Cr
+        ),
         features=MarketFeatures(
             intraday_quotes=True,
             curated_screens=True,
@@ -205,6 +220,15 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
             MoneyUnit(min_value_mn=1000, divisor_mn=1000, suffix="B", decimals=1),
             MoneyUnit(min_value_mn=0, divisor_mn=1, suffix="M", decimals=0),
         ),
+        # $ millions. Standard US buckets; small/mid bounds intentionally match the onboarding
+        # DiscoveryPolicy bands so a stock's browse tier and its onboarding band never disagree.
+        cap_tiers=(
+            ("mega", 200_000.0),  # ≥ $200B
+            ("large", 10_000.0),  # $10-200B
+            ("mid", 2_000.0),  # $2-10B
+            ("small", 300.0),  # $300M-2B
+            ("micro", 0.0),  # < $300M
+        ),
         features=MarketFeatures(
             curated_screens=True,
             strategy_scanner=True,
@@ -228,6 +252,21 @@ def get_market_profile(market: str | None) -> MarketProfile:
         return MARKET_PROFILES[key]
     except KeyError:
         raise ValueError(f"Unknown market profile {market!r}") from None
+
+
+def cap_tier(market_cap_mn: float | None, market: str | None) -> str | None:
+    """Canonical size tier for a market cap, or None when it can't be classified honestly.
+
+    Boundaries are inclusive lower bounds: a cap exactly on a boundary belongs to the tier above
+    (৳1,000 Cr is large, not mid). None/zero/negative/non-finite caps return None — the caller
+    must present that as "unclassified", never guess a tier (omit-over-mislead).
+    """
+    if market_cap_mn is None or not math.isfinite(market_cap_mn) or market_cap_mn <= 0:
+        return None
+    for tier, lower_bound_mn in get_market_profile(market).cap_tiers:
+        if market_cap_mn >= lower_bound_mn:
+            return tier
+    return None
 
 
 def format_price(value: float | None, market: str | None = "DSE") -> str:

@@ -152,7 +152,9 @@ async def test_seo_renderer_stock_home_pattern_and_noindex() -> None:
         assert "$51.00" in us_html
         assert "Latest EOD close" in us_html
         assert "15-min" not in us_html
-        assert "fundamentals" not in us_html
+        # US gained real fundamentals coverage (company_fundamentals=True, SEC-backed) — the
+        # description may now claim it. The claim that must never appear is intraday pricing.
+        assert "intraday" not in us_html.lower()
 
         # Bangla uses the Bangla name
         html_bn, _ = await render_path(session, "DSE", f"bn/s/{code}")

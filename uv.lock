@@ -248,11 +248,15 @@ name = "bulls-analytics"
 version = "0.0.0"
 source = { editable = "packages/analytics" }
 dependencies = [
+    { name = "bulls-core" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
+requires-dist = [
+    { name = "bulls-core", editable = "packages/core" },
+    { name = "pydantic", specifier = ">=2.7" },
+]
 
 [[package]]
 name = "bulls-api"

@@ -229,6 +229,16 @@ const STRINGS: Record<string, Entry> = {
   "tab.earnings": { en: "Earnings", bn: "আয়" },
   // Symbol page — quick stats + tags
   "stat.mktCap": { en: "Mkt Cap", bn: "বাজার মূলধন" },
+  // Canonical size tiers (bulls.core.markets cap_tiers). Descriptive size only, never a rating.
+  "tier.mega": { en: "Mega cap", bn: "মেগা ক্যাপ" },
+  "tier.large": { en: "Large cap", bn: "লার্জ ক্যাপ" },
+  "tier.mid": { en: "Mid cap", bn: "মিড ক্যাপ" },
+  "tier.small": { en: "Small cap", bn: "স্মল ক্যাপ" },
+  "tier.micro": { en: "Micro cap", bn: "মাইক্রো ক্যাপ" },
+  "tier.all": { en: "All sizes", bn: "সব আকার" },
+  "tier.size": { en: "Company size", bn: "কোম্পানির আকার" },
+  "tier.unclassified": { en: "Unclassified", bn: "অশ্রেণীবদ্ধ" },
+  "tier.browseTitle": { en: "Browse by size", bn: "আকার অনুযায়ী দেখুন" },
   "stat.vol": { en: "Vol", bn: "ভলিউম" },
   "stat.pe": { en: "P/E", bn: "পি/ই" },
   "stat.eps": { en: "EPS", bn: "ইপিএস" },

@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
+from bulls.core.markets import get_market_profile
 from bulls.core.models import SecurityMaster
 from bulls.market_data.providers.us_universe_discovery import (
     PriceLiquidityObservation,
@@ -35,6 +36,11 @@ from ingestion.security_master import collect as refresh_security_master
 MARKET = "US"
 DEFAULT_COHORT_SIZE = 100
 _SPAC_NAME = re.compile(r"\b(?:blank check|acquisition (?:corp(?:oration)?|company|co\.?))\b", re.I)
+
+# Onboarding bands align with the canonical browse tiers (bulls.core.markets cap_tiers) so a
+# stock's onboarding band and its user-facing size tier can never disagree. Discovery keeps its
+# own finer nano/ultra-nano sub-buckets below "micro" purely for liquidity-floor policy.
+_US_TIER_LOWER_BOUNDS = dict(get_market_profile(MARKET).cap_tiers)
 
 
 class DiscoveryPolicy(BaseModel):
@@ -52,9 +58,9 @@ class DiscoveryPolicy(BaseModel):
     min_market_cap_mn: float = Field(default=1.0, gt=0)
     ultra_nano_cap_upper_mn: float = Field(default=10.0, gt=0)
     nano_cap_upper_mn: float = Field(default=50.0, gt=0)
-    micro_cap_upper_mn: float = Field(default=300.0, gt=0)
-    small_cap_upper_mn: float = Field(default=2_000.0, gt=0)
-    max_market_cap_mn: float = Field(default=10_000.0, gt=0)
+    micro_cap_upper_mn: float = Field(default=_US_TIER_LOWER_BOUNDS["small"], gt=0)
+    small_cap_upper_mn: float = Field(default=_US_TIER_LOWER_BOUNDS["mid"], gt=0)
+    max_market_cap_mn: float = Field(default=_US_TIER_LOWER_BOUNDS["large"], gt=0)
     min_price: float = Field(default=0.10, gt=0)
     penny_price_ceiling: float = Field(default=5.0, gt=0)
     min_median_dollar_volume_mn_20d: float = Field(default=2.0, gt=0)
@@ -190,7 +196,9 @@ def evaluate_discovery_candidate(
             reasons.append("session_depth")
 
     market_cap_mn = (
-        price.latest_close * shares.shares / 1e6 if price is not None and shares is not None else None
+        price.latest_close * shares.shares / 1e6
+        if price is not None and shares is not None
+        else None
     )
     band = None
     if market_cap_mn is not None:
@@ -204,10 +212,7 @@ def evaluate_discovery_candidate(
 
     liquidity_floor = _liquidity_floor(band, policy)
     if price is not None and require_liquidity:
-        if (
-            price.median_dollar_volume_mn_20d is None
-            or price.nonzero_volume_ratio is None
-        ):
+        if price.median_dollar_volume_mn_20d is None or price.nonzero_volume_ratio is None:
             reasons.append("missing_liquidity")
         elif price.nonzero_volume_ratio < policy.min_nonzero_volume_ratio:
             reasons.append("zero_volume")
@@ -445,9 +450,7 @@ async def discover(
             policy=policy,
             as_of=as_of.date(),
             require_liquidity=False,
-            ambiguous_share_class=(
-                listing.cik is not None and listing.cik in ambiguous_ciks
-            ),
+            ambiguous_share_class=(listing.cik is not None and listing.cik in ambiguous_ciks),
         )
         for listing in listings
     ]
@@ -455,8 +458,7 @@ async def discover(
         row.code
         for row in preliminary
         if row.selected
-        and row.band
-        in {"ultra_nano_cap", "nano_cap", "micro_cap", "small_cap", "mid_cap"}
+        and row.band in {"ultra_nano_cap", "nano_cap", "micro_cap", "small_cap", "mid_cap"}
     ]
     chart_prices = await fetch_yahoo_chart_liquidity(liquidity_codes)
     prices_by_code = {**spark_prices, **chart_prices}
@@ -468,9 +470,7 @@ async def discover(
             policy=policy,
             as_of=as_of.date(),
             require_liquidity=listing.symbol in liquidity_codes,
-            ambiguous_share_class=(
-                listing.cik is not None and listing.cik in ambiguous_ciks
-            ),
+            ambiguous_share_class=(listing.cik is not None and listing.cik in ambiguous_ciks),
         )
         for listing in listings
     ]

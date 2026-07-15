@@ -82,3 +82,22 @@ def test_us_size_bucket_uses_us_market_cap_thresholds():
     size = next(point for point in r.points if point.tag == "size")
     assert "mid-sized" in size.text
     assert "spread and order size" in size.text
+
+
+def test_size_prose_derives_from_canonical_cap_tiers():
+    # DSE large-cap line is the calibrated ৳1,000 Cr (10,000 mn) — a deliberate move up from the
+    # old hardcoded 5,000: caps between the two now read "mid-sized", not "large".
+    large = build_plain_read(code="L", as_of_date="2026-07-14", market_cap_mn=12_000)
+    assert "a large company" in next(p for p in large.points if p.tag == "size").text
+    reclassified = build_plain_read(code="M", as_of_date="2026-07-14", market_cap_mn=6_000)
+    assert "a mid-sized company" in next(p for p in reclassified.points if p.tag == "size").text
+    micro = build_plain_read(code="S", as_of_date="2026-07-14", market_cap_mn=300)
+    assert "a small company" in next(p for p in micro.points if p.tag == "size").text
+    # US mega caps read as large companies in prose — "mega" is a browse tier, not a new word.
+    mega = build_plain_read(code="AAPL", as_of_date="2026-07-14", market="US", market_cap_mn=3e6)
+    assert "a large company" in next(p for p in mega.points if p.tag == "size").text
+
+
+def test_size_point_omitted_when_cap_unknown():
+    r = build_plain_read(code="X", as_of_date="2026-07-14", market_cap_mn=None, adtv_mn=5.0)
+    assert all(p.tag != "size" for p in r.points)

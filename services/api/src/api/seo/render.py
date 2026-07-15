@@ -302,6 +302,88 @@ async def _render_pattern_detail(
     )
 
 
+_TIER_LABEL: dict[str, dict[str, str]] = {
+    "mega": {"en": "Mega cap", "bn": "মেগা ক্যাপ"},
+    "large": {"en": "Large cap", "bn": "লার্জ ক্যাপ"},
+    "mid": {"en": "Mid cap", "bn": "মিড ক্যাপ"},
+    "small": {"en": "Small cap", "bn": "স্মল ক্যাপ"},
+    "micro": {"en": "Micro cap", "bn": "মাইক্রো ক্যাপ"},
+}
+
+
+async def _render_size_browse(
+    session: AsyncSession,
+    market: str,
+    lang: str,
+    tier: str,
+    *,
+    site: str = SITE,
+    brand: str = "Bulls of Dhaka",
+    default_lang: str | None = None,
+    languages: tuple[str, ...] = LANGS,
+) -> str | None:
+    """Indexable browse-by-size landing page: real ranked list, descriptive framing only.
+
+    Mirrors GET /browse/size/{tier}. Unknown tiers (including `unclassified` — real in the app,
+    but not an SEO target) return None so the caller serves the noindex fallback.
+    """
+    profile = get_market_profile(market)
+    if tier not in {name for name, _ in profile.cap_tiers} or tier not in _TIER_LABEL:
+        return None
+    rows = (
+        await session.execute(
+            select(Symbol.code, Symbol.name_en, Symbol.name_bn, TickerAnalytics.market_cap_mn)
+            .join(
+                TickerAnalytics,
+                (TickerAnalytics.market == Symbol.market) & (TickerAnalytics.code == Symbol.code),
+            )
+            .where(
+                Symbol.market == market,
+                Symbol.is_active.is_(True),
+                Symbol.is_hidden.is_(False),
+                Symbol.data_status == "ready",
+                TickerAnalytics.cap_tier == tier,
+            )
+            .order_by(TickerAnalytics.market_cap_mn.desc().nulls_last(), Symbol.code.asc())
+            .limit(50)
+        )
+    ).all()
+    label = _TIER_LABEL[tier][lang if lang in _TIER_LABEL[tier] else "en"]
+    exchange = profile.exchange_label(lang)
+    if lang == "bn":
+        title = f"{label} শেয়ার — {exchange} | {brand}"
+        desc = (
+            f"{exchange}-এর {label} কোম্পানিগুলোর তালিকা, বাজার মূলধন অনুযায়ী সাজানো। "
+            "আকার কোম্পানির বর্ণনা, কোনো সুপারিশ নয়।"
+        )
+        heading = f"{label} শেয়ার — {exchange}"
+    else:
+        title = f"{label} stocks — {profile.exchange_code} | {brand}"
+        desc = (
+            f"{profile.exchange_code} {label.lower()} companies ranked by market capitalisation. "
+            "Size describes the company, not a recommendation."
+        )
+        heading = f"{label} stocks — {profile.exchange_code}"
+    items = "".join(
+        f"<li><a href='{site}/{lang}/s/{_e(code)}'>{_e((name_bn if lang == 'bn' and name_bn else name_en) or code)}"
+        f" ({_e(code)})</a> — {_e(format_money_millions(cap_mn, market, style='market_cap'))}</li>"
+        for code, name_en, name_bn, cap_mn in rows
+        if cap_mn is not None
+    )
+    body = f"<h1>{_e(heading)}</h1><p>{_e(desc)}</p><ol>{items}</ol>"
+    return _doc(
+        lang=lang,
+        path=f"/size/{tier}",
+        title=title,
+        description=desc,
+        body=body,
+        site=site,
+        brand=brand,
+        default_lang=default_lang or profile.default_locale,
+        languages=languages,
+    )
+
+
 def _static_page(
     lang: str,
     path: str,
@@ -605,6 +687,32 @@ async def render_path(
                 200,
             )
         )
+    if len(rest) == 2 and rest[0] == "size":
+        page = await _render_size_browse(
+            session,
+            market,
+            lang,
+            rest[1],
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+        )
+        if page:
+            return page, 200
+        title = f"Not found — {brand}" if lang == "en" else f"পাওয়া যায়নি — {brand}"
+        return _doc(
+            lang=lang,
+            path="/",
+            title=title,
+            description=title,
+            body=f"<h1>{_e(title)}</h1>",
+            site=site,
+            brand=brand,
+            default_lang=default_lang,
+            languages=languages,
+            noindex=True,
+        ), 404
     if len(rest) == 2 and rest[0] == "s":
         page = await _render_stock(
             session,

@@ -102,6 +102,11 @@ async function staticPaths() {
         ...PATTERN_TYPES.map((t) => `/learn/patterns/${t}`),
       );
     }
+    // Browse-by-size landing pages — the tier vocabulary is market-specific (mega is US-only),
+    // so it comes from the server, never a hardcoded list that could drift.
+    if (Array.isArray(config.cap_tiers)) {
+      base.push(...config.cap_tiers.map((t) => `/size/${t}`));
+    }
   } catch (e) {
     handleFetchFailure("market capabilities", e);
   }

@@ -31,6 +31,8 @@ router = APIRouter(tags=["company"])
 class Fundamentals(BaseModel):
     valuation_as_of: str | None = None
     market_cap_mn: float | None = None
+    # Canonical size tier (mega|large|mid|small|micro); None = unclassified, shown as such.
+    cap_tier: str | None = None
     pe_ratio: float | None = None
     pb_ratio: float | None = None
     dividend_yield: float | None = None
@@ -367,6 +369,7 @@ async def get_company(code: str, tenant: CurrentTenant, session: DbSession) -> C
         fundamentals=Fundamentals(
             valuation_as_of=str(ta.as_of_date) if ta else None,
             market_cap_mn=ta.market_cap_mn if ta else None,
+            cap_tier=ta.cap_tier if ta else None,
             pe_ratio=ta.pe_ratio if ta else None,
             pb_ratio=ta.pb_ratio if ta else None,
             dividend_yield=ta.dividend_yield if ta else None,

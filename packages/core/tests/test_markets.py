@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from bulls.core.markets import format_money_millions, format_price, get_market_profile
+from bulls.core.markets import cap_tier, format_money_millions, format_price, get_market_profile
 from bulls.core.tenancy import Tenant, TenantRegistry
 
 
@@ -128,3 +128,46 @@ def test_tenant_locale_must_be_enabled_and_known() -> None:
         Tenant(**base, locale="bn", supported_locales=["en"])
     with pytest.raises(ValidationError, match="unsupported portal locales"):
         Tenant(**base, locale="en", supported_locales=["en", "de"])
+
+
+def test_cap_tier_dse_boundaries_are_inclusive_lower_bounds() -> None:
+    # ৳1,000 Cr (10,000 mn) is the calibrated large-cap line — exactly on it belongs above.
+    assert cap_tier(10_000.0, "DSE") == "large"
+    assert cap_tier(9_999.99, "DSE") == "mid"
+    assert cap_tier(2_000.0, "DSE") == "mid"
+    assert cap_tier(1_999.99, "DSE") == "small"
+    assert cap_tier(500.0, "DSE") == "small"
+    assert cap_tier(499.99, "DSE") == "micro"
+    assert cap_tier(0.01, "DSE") == "micro"
+    # DSE deliberately has no mega tier — its largest cap is still "large".
+    assert cap_tier(400_000.0, "DSE") == "large"
+
+
+def test_cap_tier_us_boundaries_include_mega() -> None:
+    assert cap_tier(200_000.0, "US") == "mega"
+    assert cap_tier(199_999.0, "US") == "large"
+    assert cap_tier(10_000.0, "US") == "large"
+    assert cap_tier(2_000.0, "US") == "mid"
+    assert cap_tier(300.0, "US") == "small"
+    assert cap_tier(299.0, "US") == "micro"
+
+
+def test_cap_tier_unclassifiable_caps_return_none_never_a_guess() -> None:
+    assert cap_tier(None, "DSE") is None
+    assert cap_tier(0.0, "DSE") is None
+    assert cap_tier(-15.0, "US") is None
+    assert cap_tier(float("nan"), "US") is None
+    assert cap_tier(float("inf"), "US") is None
+    with pytest.raises(ValueError, match="Unknown market profile"):
+        cap_tier(1_000.0, "LSE")
+
+
+def test_us_onboarding_bands_derive_from_canonical_tiers() -> None:
+    # Guard against the two threshold systems drifting apart again (the reason cap_tier exists).
+    from ingestion.universe_discovery import DiscoveryPolicy
+
+    us = dict(get_market_profile("US").cap_tiers)
+    policy = DiscoveryPolicy()
+    assert policy.micro_cap_upper_mn == us["small"]
+    assert policy.small_cap_upper_mn == us["mid"]
+    assert policy.max_market_cap_mn == us["large"]

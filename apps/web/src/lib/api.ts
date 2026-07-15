@@ -358,6 +358,7 @@ export interface ScreenItem {
   turnover_mn?: number | null;
   safe_order_mn?: number | null;
   market_cap_mn?: number | null;
+  cap_tier?: "mega" | "large" | "mid" | "small" | "micro" | null; // null/absent = unclassified
   free_float_cap_mn?: number | null;
   liquidity?: string | null;
   setup_quality?: string | null;
@@ -449,11 +450,31 @@ export interface Buzz {
   reactions_24h: number;
   replies_24h: number;
 }
+export interface BrowseSizeItem {
+  code: string;
+  name_en: string;
+  name_bn: string | null;
+  sector: string | null;
+  last_close: number | null;
+  change_pct: number | null;
+  market_cap_mn: number | null;
+  cap_tier: string | null; // null = unclassified
+}
+export interface BrowseSize {
+  market: string;
+  tier: string;
+  tiers: string[]; // market's tier vocabulary, largest first
+  as_of: string | null; // analytics freshness — always show it
+  counts: { tier: string; count: number }[];
+  total: number;
+  items: BrowseSizeItem[];
+}
 export interface Company {
   code: string;
   fundamentals: {
     valuation_as_of: string | null;
     market_cap_mn: number | null;
+    cap_tier: "mega" | "large" | "mid" | "small" | "micro" | null;
     pe_ratio: number | null;
     pb_ratio: number | null;
     dividend_yield: number | null;
@@ -1035,6 +1056,8 @@ export const api = {
     return request<SymbolOut[]>(`/symbols?${params.toString()}`);
   },
   screens: () => request<ScreensResponse>("/screens"),
+  browseSize: (tier: string, limit = 50, offset = 0) =>
+    request<BrowseSize>(`/browse/size/${tier}?limit=${limit}&offset=${offset}`),
   marketPulse: () => request<MarketPulse>("/market-pulse"),
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketConfig: () => request<MarketConfig>("/market/config"),
@@ -1050,9 +1073,10 @@ export const api = {
     period?: string,
     window?: string,
     direction?: string,
+    size?: string,
   ) =>
     request<Screen>(
-      `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}${direction ? `&direction=${direction}` : ""}`,
+      `/screens/${key}?limit=${limit}${period ? `&period=${period}` : ""}${window ? `&window=${window}` : ""}${direction ? `&direction=${direction}` : ""}${size ? `&size=${size}` : ""}`,
     ),
   symbol: (code: string) => request<SymbolDetail>(`/symbols/${code}`),
   researchPreparation: (code: string) =>

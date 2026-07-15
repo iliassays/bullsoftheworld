@@ -5,6 +5,9 @@ description = "Deterministic technical-analysis engine: computed facts (levels, 
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7",
+    # Market metadata only (cap tiers, currency, calendars) — the single source of size
+    # thresholds lives on bulls.core.markets.MarketProfile so prose and filters can't drift.
+    "bulls-core",
 ]
 
 [build-system]

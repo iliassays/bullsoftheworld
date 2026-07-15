@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, Date, DateTime, Float, String, func
+from sqlalchemy import Boolean, Date, DateTime, Float, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -18,6 +18,9 @@ from bulls.core.db import Base
 
 class TickerAnalytics(Base):
     __tablename__ = "ticker_analytics"
+    __table_args__ = (
+        Index("ix_ticker_analytics_market_cap_tier", "market", "cap_tier"),
+    )
 
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
@@ -58,6 +61,10 @@ class TickerAnalytics(Base):
 
     # Valuation — derived daily from last_close x fundamentals (weekly company scrape)
     market_cap_mn: Mapped[float | None] = mapped_column(Float)
+    # Canonical size tier (bulls.core.markets.cap_tier): mega|large|mid|small|micro, or NULL when
+    # market_cap_mn is unknown — presented as "unclassified", never guessed. Denormalized here so
+    # the screener and browse pages filter in SQL without restating thresholds.
+    cap_tier: Mapped[str | None] = mapped_column(String(16))
     free_float_cap_mn: Mapped[float | None] = mapped_column(Float)
     pe_ratio: Mapped[float | None] = mapped_column(Float)  # None when EPS <= 0
     pb_ratio: Mapped[float | None] = mapped_column(Float)

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from bulls.core.markets import cap_tier
+
 
 class ReadPoint(BaseModel):
     tag: str  # size | trend | steadiness | quality | value | income | shortterm | flow | smartmoney
@@ -43,24 +45,34 @@ _DISCLAIMER = {
 }
 
 
-# Market-cap and liquidity labels must use market-specific currency-million thresholds.
+# Size wording derives from the canonical cap tier (bulls.core.markets.cap_tiers) so the prose,
+# screener filters and browse pages can never disagree about what "large" means per market.
+_TIER_PROSE_EN = {
+    "mega": "a large company",
+    "large": "a large company",
+    "mid": "a mid-sized company",
+    "small": "a small company",
+    "micro": "a small company",
+}
+_TIER_PROSE_BN = {
+    "mega": "একটি বড় কোম্পানি",
+    "large": "একটি বড় কোম্পানি",
+    "mid": "একটি মাঝারি আকারের কোম্পানি",
+    "small": "একটি ছোট কোম্পানি",
+    "micro": "একটি ছোট কোম্পানি",
+}
+
+
 def _size_point(
     market_cap_mn: float | None, adtv_mn: float | None, bn: bool, market: str = "DSE"
 ) -> ReadPoint | None:
-    if market_cap_mn is None:
+    tier = cap_tier(market_cap_mn, market)
+    if tier is None:
         return None
-    large_cap = 10_000 if market == "US" else 5_000
-    small_cap = 2_000 if market == "US" else 1_000
     active_adtv = 10 if market == "US" else 20
     thin_adtv = 1 if market == "US" else 2
     if bn:
-        size = (
-            "একটি বড় কোম্পানি"
-            if market_cap_mn >= large_cap
-            else "একটি ছোট কোম্পানি"
-            if market_cap_mn < small_cap
-            else "একটি মাঝারি আকারের কোম্পানি"
-        )
+        size = _TIER_PROSE_BN[tier]
         liq = ""
         if adtv_mn is not None:
             liq = (
@@ -71,12 +83,7 @@ def _size_point(
                 else ", ঢোকা-বেরোনোর মতো যথেষ্ট লেনদেন হয়"
             )
         return ReadPoint(tag="size", text=f"এটি {size}{liq}।")
-    if market_cap_mn >= large_cap:
-        size = "a large company"
-    elif market_cap_mn < small_cap:
-        size = "a small company"
-    else:
-        size = "a mid-sized company"
+    size = _TIER_PROSE_EN[tier]
     liq = ""
     if adtv_mn is not None:
         if adtv_mn >= active_adtv:

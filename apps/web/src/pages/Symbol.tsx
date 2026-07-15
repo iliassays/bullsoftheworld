@@ -100,11 +100,13 @@ function QuickStrip({
     f.free_float_cap_mn != null && f.market_cap_mn
       ? `${((f.free_float_cap_mn / f.market_cap_mn) * 100).toFixed(0)}%`
       : "—";
+  // Canonical size tier from the API (ticker_analytics.cap_tier); absent = unclassified → no tag.
+  const tierTag = f.cap_tier ? t(`tier.${f.cap_tier}`) : undefined;
 
   return (
     <>
       <div className="flex justify-between mt-3 pt-3 border-t border-border overflow-x-auto">
-        {cell(t("stat.mktCap"), formatCurrencyMillions(f.market_cap_mn))}
+        {cell(t("stat.mktCap"), formatCurrencyMillions(f.market_cap_mn), tierTag)}
         {cell(t("stat.vol"), volume != null ? volume.toLocaleString() : "—", volTag)}
         {cell(t("stat.pe"), f.pe_ratio != null ? f.pe_ratio.toFixed(1) : "—", peTag)}
         {cell(t("stat.eps"), f.eps != null ? taka(f.eps) : "—")}

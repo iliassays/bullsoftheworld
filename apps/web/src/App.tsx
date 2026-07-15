@@ -17,6 +17,7 @@ import { Portfolio } from "./pages/Portfolio";
 import { Scanner } from "./pages/Scanner";
 import { Profile } from "./pages/Profile";
 import { ScreenExplore } from "./pages/ScreenExplore";
+import { SizeBrowse } from "./pages/SizeBrowse";
 import { SymbolPage } from "./pages/Symbol";
 import { UserProfile } from "./pages/UserProfile";
 import { Watchlist } from "./pages/Watchlist";
@@ -107,6 +108,8 @@ export function App() {
           <Route path="desk/:handle" element={<CapabilityRoute feature="automated_desks"><DeskProfile /></CapabilityRoute>} />
           <Route path="u/:handle" element={<UserProfile />} />
           <Route path="watchlist" element={<Watchlist />} />
+          <Route path="size" element={<LocaleRedirect to="/size/large" />} />
+          <Route path="size/:tier" element={<SizeBrowse />} />
           <Route path="s/:code" element={<SymbolPage />} />
           {/* Admin-only (token-gated in the page itself); deliberately not linked from any nav. */}
           <Route path="cockpit" element={<CapabilityRoute feature="automated_desks"><Cockpit /></CapabilityRoute>} />

@@ -98,6 +98,7 @@ class MarketConfigOut(BaseModel):
     price_decimals: int
     compact_money_units: list[dict[str, float | int | str]]
     market_cap_money_units: list[dict[str, float | int | str]]
+    cap_tiers: list[str]  # canonical size-tier vocabulary, largest first (market-specific)
     features: dict[str, bool]
     tenant_name: str
     brand_name: str
@@ -136,6 +137,7 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         price_decimals=profile.price_decimals,
         compact_money_units=[asdict(unit) for unit in profile.compact_money_units],
         market_cap_money_units=[asdict(unit) for unit in profile.market_cap_money_units],
+        cap_tiers=[name for name, _ in profile.cap_tiers],
         features=asdict(profile.features),
         tenant_name=tenant.name,
         brand_name=tenant.display_name,

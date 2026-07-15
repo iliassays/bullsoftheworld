@@ -387,6 +387,7 @@ class ScreenItem(BaseModel):
     turnover_mn: float | None = None  # latest quote turnover, ৳ millions
     safe_order_mn: float | None = None  # 5% ADTV proxy, ৳ millions
     market_cap_mn: float | None = None
+    cap_tier: str | None = None  # canonical size tier (mega|large|mid|small|micro); None = unclassified
     free_float_cap_mn: float | None = None
     liquidity: str | None = None  # Deep | Tradeable | Thin | Watch size
     setup_quality: str | None = None  # Clean setup | Mixed setup | High-risk setup
@@ -985,11 +986,16 @@ async def _execution_context(
     ta_rows = (
         await session.execute(
             select(
-                T.code, T.last_close, T.avg_volume_20, T.market_cap_mn, T.free_float_cap_mn
+                T.code,
+                T.last_close,
+                T.avg_volume_20,
+                T.market_cap_mn,
+                T.free_float_cap_mn,
+                T.cap_tier,
             ).where(T.market == market, T.code.in_(codes))
         )
     ).all()
-    for code, last_close, avg_vol_20, market_cap_mn, free_float_cap_mn in ta_rows:
+    for code, last_close, avg_vol_20, market_cap_mn, free_float_cap_mn, tier in ta_rows:
         adtv_mn = (avg_vol_20 * last_close / 1e6) if avg_vol_20 and last_close else None
         out.setdefault(code, {}).update(
             {
@@ -999,6 +1005,7 @@ async def _execution_context(
                 "free_float_cap_mn": round(free_float_cap_mn, 2)
                 if free_float_cap_mn is not None
                 else None,
+                "cap_tier": tier,
             }
         )
     q_rows = (
@@ -1474,6 +1481,7 @@ async def _enrich(session, market: str, screens_list: list[ScreenOut]) -> None:
             it.market_cap_mn = (
                 ctx.get("market_cap_mn") if isinstance(ctx.get("market_cap_mn"), float) else None
             )
+            it.cap_tier = ctx.get("cap_tier") if isinstance(ctx.get("cap_tier"), str) else None
             it.free_float_cap_mn = (
                 ctx.get("free_float_cap_mn")
                 if isinstance(ctx.get("free_float_cap_mn"), float)
@@ -1556,7 +1564,8 @@ async def screens(tenant: CurrentTenant, session: DbSession) -> ScreensResponse:
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    key = f"screens:v13:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
+    # v14: ScreenItem gained cap_tier — bump so cached pre-tier JSON never serves under the new schema.
+    key = f"screens:v14:{tenant.name}:{market}:{quote_ts}:{ana_ts}"
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
@@ -1932,35 +1941,61 @@ async def screen_detail(
     period: str | None = Query(None, description="movers only: 1d | 5d | 1m"),
     window: str | None = Query(None, description="momentum only: 3m | 6m | 12m"),
     direction: str | None = Query(None, description="ownership only: buy | sell"),
+    size: str | None = Query(None, description="cap tier: mega | large | mid | small | micro"),
 ) -> ScreenOut:
-    """One screen's full list — for the explore page's tab view."""
+    """One screen's full list — for the explore page's tab view.
+
+    `size` is a per-request refinement (URL-scoped, never persisted app-wide): it narrows the
+    ranked list to one canonical cap tier. Ranking is unchanged — rows are filtered, not
+    re-scored — and the response's total_count keeps meaning "rows shown".
+    """
     enforce_market_feature(tenant, "curated_screens")
+    if size is not None:
+        valid_tiers = {tier for tier, _ in get_market_profile(tenant.market).cap_tiers}
+        if size not in valid_tiers:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown size tier {size!r} for {tenant.market}; "
+                f"expected one of {sorted(valid_tiers)}",
+            )
+    # A tier holds a fraction of any board, so fetch deep before filtering — otherwise a
+    # "small" filter on a top-50 list of mostly large caps would starve to a couple of rows.
+    build_limit = 200 if size is not None else limit
     if key in ("top_gainers", "top_losers") and period in _PERIOD_DAYS:
         screen = await _movers_period(
             session,
             tenant.market,
             gainers=key == "top_gainers",
             days=_PERIOD_DAYS[period],
-            limit=limit,
+            limit=build_limit,
         )
     elif key == "momentum_12_1":
         screen = await _momentum(
-            session, tenant.market, window=window if window in _MOM_FIELD else "12m", limit=limit
+            session,
+            tenant.market,
+            window=window if window in _MOM_FIELD else "12m",
+            limit=build_limit,
         )
     elif key == "unusual_volume":
         screen = await _unusual_volume(
-            session, tenant.market, window=period if period in _RVOL_FIELD else "1d", limit=limit
+            session,
+            tenant.market,
+            window=period if period in _RVOL_FIELD else "1d",
+            limit=build_limit,
         )
     else:
         screen = await build_screen(
             session,
             tenant.market,
             key,
-            limit,
+            build_limit,
             tenant_id=tenant.name,
             direction="sell" if direction == "sell" else "buy",
         )
     if screen is None:
         raise HTTPException(status_code=404, detail=f"Unknown screen {key!r}")
     await _enrich(session, tenant.market, [screen])
+    if size is not None:
+        screen.items = [it for it in screen.items if it.cap_tier == size][:limit]
+        screen.total_count = len(screen.items)
     return screen
