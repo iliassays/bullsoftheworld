@@ -23,6 +23,17 @@ cd "$(dirname "$0")"
 : "${WEB_S3_BUCKET:?set WEB_S3_BUCKET (the S3 bucket name)}"
 : "${WEB_CLOUDFRONT_ID:?set WEB_CLOUDFRONT_ID (the CloudFront distribution id)}"
 
+AWS=(aws)
+if [[ -n "${WEB_AWS_PROFILE:-${BULLS_AWS_PROFILE:-}}" ]]; then
+  AWS+=(--profile "${WEB_AWS_PROFILE:-$BULLS_AWS_PROFILE}")
+fi
+
+CALLER_ARN="$("${AWS[@]}" sts get-caller-identity --query Arn --output text)"
+if [[ "$CALLER_ARN" == *":root" ]]; then
+  echo "Refusing to deploy with the AWS root principal. Use WEB_AWS_PROFILE or BULLS_AWS_PROFILE." >&2
+  exit 1
+fi
+
 SITE_URL="${WEB_SITE_URL:-https://bullsofdhaka.com}"
 SITE_URL="${SITE_URL%/}"
 API_URL="${WEB_API_URL:-https://api.bullsofdhaka.com}"
@@ -59,20 +70,20 @@ echo "→ generating sitemap.xml + robots.txt ($SITE_URL)"
 WEB_API_URL="$API_URL" WEB_SITE_URL="$SITE_URL" WEB_SITEMAP_STRICT=1 node scripts/gen_sitemap.mjs
 
 echo "→ syncing hashed assets to s3://$WEB_S3_BUCKET/assets (immutable)"
-aws s3 sync apps/web/dist/assets/ "s3://$WEB_S3_BUCKET/assets/" --delete \
+"${AWS[@]}" s3 sync apps/web/dist/assets/ "s3://$WEB_S3_BUCKET/assets/" --delete \
   --cache-control "public,max-age=31536000,immutable"
 
 echo "→ syncing root files (short cache, revalidate)"
-aws s3 sync apps/web/dist/ "s3://$WEB_S3_BUCKET/" --delete \
+"${AWS[@]}" s3 sync apps/web/dist/ "s3://$WEB_S3_BUCKET/" --delete \
   --exclude "assets/*" --exclude "index.html" \
   --cache-control "public,max-age=300,must-revalidate"
 
 echo "→ uploading index.html (no-store)"
-aws s3 cp apps/web/dist/index.html "s3://$WEB_S3_BUCKET/index.html" \
+"${AWS[@]}" s3 cp apps/web/dist/index.html "s3://$WEB_S3_BUCKET/index.html" \
   --cache-control "no-store" --content-type "text/html; charset=utf-8"
 
 echo "→ invalidating CloudFront cache"
-aws cloudfront create-invalidation \
+"${AWS[@]}" cloudfront create-invalidation \
   --distribution-id "$WEB_CLOUDFRONT_ID" --paths "/" "/index.html" "/sitemap.xml" "/robots.txt" >/dev/null
 
 echo "✓ deployed → $SITE_URL"
