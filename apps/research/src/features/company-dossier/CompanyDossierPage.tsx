@@ -1,12 +1,14 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  BrainCircuit,
   Building2,
   CalendarClock,
   CheckCircle2,
   ExternalLink,
   FileCheck2,
   Gauge,
+  Scale,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
@@ -15,6 +17,12 @@ import { Link, useParams } from "react-router-dom";
 import { researchDeployment } from "../../app/deployment";
 import { Button, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
+import {
+  useResearchRun,
+  useResearchRuns,
+  useStartCompanyResearch,
+} from "../autonomous-research/hooks";
+import { autonomousDecision } from "../autonomous-research/model";
 import { DossierChart } from "./DossierChart";
 import type { ResearchCompanyDossier } from "./model";
 import { useCompanyDossier } from "./useCompanyDossier";
@@ -196,6 +204,14 @@ export function CompanyDossierPage() {
   const workspaces = useResearchWorkspaces();
   const workspace = workspaces.data?.[0];
   const dossierQuery = useCompanyDossier(workspace?.id, ticker);
+  const runs = useResearchRuns(workspace?.id);
+  const latestSummary = runs.data?.find(
+    (run) => run.runKind === "deep_research" && run.code === ticker?.toUpperCase(),
+  );
+  const latestRun = useResearchRun(workspace?.id, latestSummary?.id);
+  const startResearch = useStartCompanyResearch(workspace?.id);
+  const analystRun = startResearch.data ?? latestRun.data;
+  const decision = autonomousDecision(analystRun);
 
   if (workspaces.isLoading || (workspace && dossierQuery.isLoading)) {
     return <div aria-label="Loading company dossier" className="dossier-loading" />;
@@ -248,6 +264,68 @@ export function CompanyDossierPage() {
           <span><strong>Research limitations</strong>{dossier.dataQualityNotes.join(" ")}</span>
         </section>
       )}
+
+      <section className="dossier-panel autonomous-analyst">
+        <header className="dossier-panel__header">
+          <span><BrainCircuit aria-hidden="true" size={15} /><strong>Autonomous analyst loop</strong></span>
+          <span className="autonomous-analyst__action">
+            {decision && <StatusBadge tone={decision.status === "qualified" ? "positive" : decision.status === "monitor" ? "warning" : "negative"} dot>{decision.status} · {(decision.confidence * 100).toFixed(0)}% claim support</StatusBadge>}
+            <Button isDisabled={startResearch.isPending} onPress={() => startResearch.mutate(candidate.ticker)} variant="primary">
+              <BrainCircuit aria-hidden="true" size={14} />{startResearch.isPending ? "Running analyst, skeptic, verifier…" : decision ? "Re-run with current evidence" : "Run autonomous analyst"}
+            </Button>
+          </span>
+        </header>
+        {decision ? (
+          <div className="autonomous-analyst__body">
+            <div className="autonomous-analyst__verdict"><span>Bounded verdict</span><h2>{decision.headline}</h2><p>{decision.thesis}</p></div>
+            <div className="autonomous-analyst__counter"><span><Scale size={13} /> Independent skeptic</span><p>{decision.counterThesis}</p></div>
+            {decision.lenses.length > 0 && (
+              <div className="autonomous-analyst__lenses">
+                <div className="autonomous-analyst__section-title"><strong>Financial reasoning</strong><small>Registered rules over the current fact ledger</small></div>
+                <div>
+                  {decision.lenses.map((lens) => (
+                    <article key={lens.key}>
+                      <span className={`reasoning-assessment reasoning-assessment--${lens.assessment}`}>{lens.assessment}</span>
+                      <strong>{lens.label}</strong>
+                      <p>{lens.summary}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
+            {decision.scenarios.length > 0 && (
+              <div className="autonomous-analyst__scenarios">
+                <div className="autonomous-analyst__section-title"><strong>Conditional scenario map</strong><small>No probability or target price is manufactured</small></div>
+                <div>
+                  {decision.scenarios.map((scenario) => (
+                    <article className={`research-scenario research-scenario--${scenario.key}`} key={scenario.key}>
+                      <span>{scenario.state}</span>
+                      <strong>{scenario.title}</strong>
+                      <p>{scenario.condition}</p>
+                      <small>{scenario.implication}</small>
+                      <ul>{scenario.watchItems.map((item) => <li key={item}>{item}</li>)}</ul>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="autonomous-analyst__columns">
+              <div><strong>Hard invalidation rules</strong>{decision.invalidationRules.map((rule) => <p key={rule}>{rule}</p>)}</div>
+              <div>
+                <strong>Next evidence to resolve</strong>
+                {decision.nextEvidence.length
+                  ? decision.nextEvidence.map((item) => <p key={item.question}><b>{item.priority}</b>{item.question}<small>{item.reason}</small></p>)
+                  : decision.missingEvidence.length
+                    ? decision.missingEvidence.map((item) => <p key={item}>{item}</p>)
+                    : <p>No declared evidence gap cleared the decision gate.</p>}
+              </div>
+            </div>
+            <footer><span>Plan</span><i /> <span>Collect</span><i /> <span>Analyst</span><i /> <span>Skeptic</span><i /> <span>Verify</span><i /> <span>Decision</span><small>{analystRun?.codeVersion}</small></footer>
+          </div>
+        ) : (
+          <div className="autonomous-analyst__empty"><p>No machine verdict exists for this evidence cutoff. Run the bounded loop to create an immutable thesis, counter-thesis, verification record, and 5/20/60-session outcome observations.</p>{startResearch.isError && <span className="atlas-error"><AlertTriangle size={13} />{startResearch.error.message}</span>}</div>
+        )}
+      </section>
 
       <div className="dossier-layout">
         <div className="dossier-main-column">

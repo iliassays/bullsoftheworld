@@ -16,6 +16,7 @@ from bulls.core.config import get_settings
 log = logging.getLogger(__name__)
 _pool: ArqRedis | None = None
 _us_pool: ArqRedis | None = None
+_research_lifecycle_pool: ArqRedis | None = None
 
 
 async def _get_pool() -> ArqRedis:
@@ -75,9 +76,46 @@ async def enqueue_us_research_preparation(job_id: str, code: str, attempt: int) 
         log.info("US research preparation already queued for %s", code)
 
 
+async def enqueue_research_lifecycle(
+    *,
+    policy_id: str,
+    workspace_id: str,
+    tenant_id: str,
+    market: str,
+    user_id: int,
+    trigger_key: str,
+    job_id: str,
+    scheduled: bool,
+    defer_until=None,
+) -> bool:
+    """Enqueue one exact RLS identity envelope on the dedicated lifecycle queue."""
+
+    global _research_lifecycle_pool
+    if _research_lifecycle_pool is None:
+        settings = get_settings()
+        _research_lifecycle_pool = await create_pool(
+            RedisSettings.from_dsn(settings.redis_url),
+            default_queue_name=settings.research_lifecycle_queue_name,
+        )
+    queued = await _research_lifecycle_pool.enqueue_job(
+        "run_research_lifecycle",
+        policy_id,
+        workspace_id,
+        tenant_id,
+        market,
+        user_id,
+        trigger_key,
+        scheduled,
+        _job_id=job_id,
+        _defer_until=defer_until,
+    )
+    return queued is not None
+
+
 async def close_pool() -> None:
-    global _pool, _us_pool
-    pools, _pool, _us_pool = (_pool, _us_pool), None, None
+    global _pool, _research_lifecycle_pool, _us_pool
+    pools = (_pool, _us_pool, _research_lifecycle_pool)
+    _pool, _us_pool, _research_lifecycle_pool = None, None, None
     for pool in pools:
         if pool is not None:
             await pool.aclose()

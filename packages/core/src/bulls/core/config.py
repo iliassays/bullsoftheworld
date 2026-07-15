@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     dse_ingestion_queue_name: str = "arq:ingestion:dse"
     us_ingestion_queue_name: str = "arq:ingestion:us"
     us_research_queue_name: str = "arq:research:us"
+    research_lifecycle_queue_name: str = "arq:research:lifecycle"
     sec_ingestion_queue_name: str = "arq:ingestion:sec"
     us_eod_min_coverage: float = Field(default=0.90, gt=0, le=1)
     us_universe_promotion_enabled: bool = False

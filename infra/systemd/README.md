@@ -71,6 +71,27 @@ sudo systemctl enable --now bullsofwallst-research-worker
 It has no cron schedule, processes one explicit authenticated request at a time, and never promotes
 a prepared symbol. Public visibility still requires the normal risk-review and market-data gates.
 
+Atlas lifecycle jobs use a separate worker and queue. Every job carries one exact
+tenant/market/user/workspace identity, binds the normal research RLS context, and schedules its own
+next verified post-close session only while that workspace policy remains enabled:
+
+```bash
+sudo cp infra/systemd/bulls-research-lifecycle-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bulls-research-lifecycle-worker
+```
+
+For an audited first production run, configure exactly one tenant account. The command requires
+the tenant, handle, market-registered strategy, paper capital, and an explicit mutation flag; it
+does not scan or configure other accounts:
+
+```bash
+uv run python scripts/configure_research_lifecycle.py \
+  --tenant bullsofdhaka --handle YOUR_HANDLE \
+  --strategy-key dse_reversal_v1 --initial-capital 10000000 \
+  --enable --dispatch-now --apply
+```
+
 The SEC watchdog has its own six-hour alert cooldown and checks worker/API liveness, daily EDGAR
 freshness, weekly 13F freshness, 8-quarter history depth, refresh failures, and ready-universe
 coverage. Set `WALLST_ALERT_EMAIL` to route these separately; otherwise it uses `ALERT_EMAIL` and

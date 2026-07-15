@@ -1,0 +1,25 @@
+[Unit]
+Description=Bulls Atlas tenant-bound research lifecycle worker
+After=network-online.target redis-server.service bullsofdhaka-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka/services/api
+EnvironmentFile=/home/ubuntu/bullsofdhaka/.env
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/arq api.institutional_research.worker.WorkerSettings
+Restart=always
+RestartSec=10
+TimeoutStopSec=90
+Nice=8
+CPUWeight=25
+IOWeight=25
+MemoryHigh=1536M
+MemoryMax=2048M
+OOMScoreAdjust=400
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

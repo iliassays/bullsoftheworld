@@ -5,6 +5,10 @@ import { CompanyDossierPage } from "../features/company-dossier/CompanyDossierPa
 import { CompanyDossierLibraryPage } from "../features/company-dossier/CompanyDossierLibraryPage";
 import { ResearchQueuePage } from "../features/research-queue/ResearchQueuePage";
 import { LoginPage } from "../features/auth/LoginPage";
+import { HypothesisLabPage } from "../features/autonomous-research/HypothesisLabPage";
+import { LifecycleControlPage } from "../features/autonomous-research/LifecycleControlPage";
+import { PortfolioIntelligencePage } from "../features/autonomous-research/PortfolioIntelligencePage";
+import { ResearchMemoryPage } from "../features/autonomous-research/ResearchMemoryPage";
 import { useResearchAuth } from "./auth";
 
 export function ResearchApp() {
@@ -21,6 +25,10 @@ export function ResearchApp() {
         <Route path="/queue" element={<ResearchQueuePage />} />
         <Route path="/companies" element={<CompanyDossierLibraryPage />} />
         <Route path="/companies/:ticker" element={<CompanyDossierPage />} />
+        <Route path="/hypotheses" element={<HypothesisLabPage />} />
+        <Route path="/lifecycle" element={<LifecycleControlPage />} />
+        <Route path="/portfolio" element={<PortfolioIntelligencePage />} />
+        <Route path="/memory" element={<ResearchMemoryPage />} />
         <Route path="*" element={<Navigate to="/queue" replace />} />
       </Route>
     </Routes>

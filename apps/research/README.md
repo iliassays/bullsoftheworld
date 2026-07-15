@@ -14,10 +14,12 @@ The research application is separate from the public retail portals because its 
 evidence, workflow, and audit requirements are different. A deployment is permanently bound to one
 tenant and one market; users cannot switch between DSE and US inside a workspace.
 
-Private V1 enables two complete surfaces: the server-ranked Research Queue and the evidence-first
-Company Dossier. Catalyst Calendar, Hypothesis Lab, Portfolio Intelligence, and Research Memory are
-deliberately disabled until their data contracts and workflows are implemented. The existing
-organization schema does not imply that team invitations or administration are already available.
+Private V1 enables the server-ranked Research Queue, evidence-first Company Dossier, bounded
+Autonomous Analyst, registered Hypothesis Lab, no-broker Portfolio Intelligence, and immutable
+Research Memory with forward calibration. Lifecycle Control coordinates these stages through an
+explicit workspace policy and dedicated tenant-bound worker. Catalyst Calendar remains disabled until its data
+contract and workflow are implemented. The existing organization schema does not imply that team
+invitations or administration are already available.
 
 ## Module boundaries
 
@@ -26,10 +28,24 @@ organization schema does not imply that team invitations or administration are a
 - `src/design-system`: accessible, domain-neutral UI primitives.
 - `src/features/<feature>`: feature model, gateway, query hook, components, styles, and tests.
 - `packages/core/.../models/research`: server-side research tenancy, runs, and evidence records.
+- `packages/analytics/.../financial_reasoning.py`: provider-free finance rules, diagnostic lenses,
+  conditional scenarios, disclosure semantics, and next-evidence requests.
+- `packages/analytics/.../research_loop.py`: analyst/skeptic/verifier state machine and evidence gate.
+- `packages/analytics/.../research_strategy.py`: registered signals, backtests, shadow execution,
+  deterministic market risk policies, and objective paper-promotion gates.
+- `services/api/.../institutional_research/worker.py`: exact-identity post-close lifecycle jobs;
+  stale EOD inputs are refused and retried rather than silently accepted.
 
 Feature components must not call `fetch` directly. Data access goes through a typed gateway and a
 TanStack Query hook. Domain calculations such as filtering and queue summaries belong in the
 feature model, where they can be unit tested independently of React.
+
+The autonomous analyst does not require a human approver or a paid model. Finance Reasoner V2 can
+qualify, monitor, reject, or abstain from the normalized fact ledger, but it cannot override
+evidence, liquidity, position, sector, gross-exposure, cost, stop, or drawdown gates. An optional
+future language model may explain or extract evidence through the same typed contract; it cannot
+become the calculation, verification, or risk authority. Shadow portfolios never send an order to
+a broker.
 
 ## Local development
 

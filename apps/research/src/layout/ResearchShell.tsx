@@ -11,6 +11,7 @@ import {
   Settings,
   Sun,
   X,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -31,10 +32,11 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Research queue", icon: BookOpenCheck, href: "/queue" },
   { label: "Company dossiers", icon: FileSearch, href: "/companies" },
+  { label: "Lifecycle control", icon: Workflow, href: "/lifecycle" },
   { label: "Catalyst calendar", icon: CalendarDays },
-  { label: "Hypothesis lab", icon: FlaskConical },
-  { label: "Portfolio intelligence", icon: ChartNoAxesCombined },
-  { label: "Research memory", icon: Library },
+  { label: "Hypothesis lab", icon: FlaskConical, href: "/hypotheses" },
+  { label: "Portfolio intelligence", icon: ChartNoAxesCombined, href: "/portfolio" },
+  { label: "Research memory", icon: Library, href: "/memory" },
 ];
 
 function initialTheme(): Theme {

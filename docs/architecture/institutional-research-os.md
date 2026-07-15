@@ -9,14 +9,23 @@ authorization policy, point-in-time research runs and steps, shared official evi
 tenant/market boundary, claim-to-source-span lineage, and composite database constraints that reject
 cross-tenant and cross-market references. The current API exposes authenticated workspace
 bootstrap/listing, a deterministic research-attention queue, and an evidence-first company dossier
-backed by current analytics and market-specific official evidence adapters. PostgreSQL row-level
-security, transaction-scoped tenant/market/user identity, and append-only audit events are active on
-research tables.
+backed by current analytics and market-specific official evidence adapters. It also exposes the
+bounded autonomous analyst loop, registered point-in-time backtests, forward shadow portfolios,
+and 5/20/60-session outcome calibration. PostgreSQL row-level security, transaction-scoped
+tenant/market/user identity, and append-only audit events are active on research tables.
+
+Atlas does not require a human analyst in its execution path. The autonomous analyst is a bounded,
+versioned software role: it plans a company review, builds an evidence and calculation pack, forms a
+thesis, attempts to disprove it, verifies each material claim, and may qualify or reject a hypothesis.
+Abstention is a normal outcome. Deterministic portfolio and risk code remains authoritative; neither
+an LLM nor a research-stage conclusion can override evidence, liquidity, exposure, cost, or drawdown
+gates. Human users can inspect and configure the system, but approval by a human analyst is not a
+runtime dependency.
 
 Private V1 intentionally supports one self-provisioned organization/workspace per account. It does
 not yet expose team invitations, member administration, SSO/SCIM, private document upload, billing,
-exports, or the remaining four research workspaces described below. Those are product capabilities,
-not implied by the existence of the underlying tenancy schema.
+exports, or Catalyst Calendar. Those are product capabilities, not implied by the existence of the
+underlying tenancy schema.
 
 ## Product thesis
 
@@ -174,6 +183,70 @@ flowchart LR
 - Uploaded documents are untrusted data, never instructions. Prompt injection cannot grant tools,
   cross workspace boundaries, or alter system policy.
 
+### Autonomous decision loop
+
+The production loop is an explicit state machine rather than an unbounded agent conversation:
+
+```mermaid
+flowchart LR
+  Plan["Plan bounded tasks"] --> Pack["Evidence and calculation pack"]
+  Pack --> Thesis["Autonomous analyst"]
+  Thesis --> Skeptic["Counter-thesis and missing evidence"]
+  Skeptic --> Verify["Claim and number verifier"]
+  Verify --> Gate{"Evidence and risk gate"}
+  Gate -->|reject or abstain| Memory["Versioned research memory"]
+  Gate -->|qualified| Spec["Versioned strategy specification"]
+  Spec --> Backtest["Point-in-time backtest"]
+  Backtest --> Shadow["Shadow portfolio"]
+  Shadow --> Calibrate["Outcome and confidence calibration"]
+  Calibrate --> Memory
+```
+
+The current Finance Reasoner V2 is provider-free and deterministic so it operates on the existing
+CPU server without OpenAI, Claude, or Ollama. It interprets normalized fundamentals, relative
+valuation, completed-session market structure, liquidity, DSE periodic ownership, US delayed 13F
+aggregates, and FINRA short-marked activity through registered finance rules. It produces diagnostic
+lenses, claim drafts, a skeptic view, conditional base/upside/downside scenarios, invalidations, and
+the next evidence questions. It is not marketed as a predictive AI model or a substitute for full
+document analysis.
+
+A future language model may improve evidence-differential extraction and synthesis after passing
+finance, citation, numerical, abstention, and prompt-injection evaluations. It must receive typed
+evidence and return typed claims through the same contract. It may not calculate authoritative
+metrics, change verification results, select position sizes, or override the deterministic risk
+engine. Provider failure always degrades to Finance Reasoner V2 rather than blocking research.
+
+Every autonomous conclusion records:
+
+- the market, security, organization, workspace, user and knowledge cutoff;
+- methodology, code, model and prompt versions, including `none` for provider-free stages;
+- the evidence fingerprint and exact calculation inputs;
+- bull case, counter-thesis, missing evidence, confidence and abstention reason;
+- claim-level support verdicts and machine-readable invalidation conditions;
+- whether the result is only research-qualified or also strategy-validated.
+
+### Strategy, backtest and shadow-book contract
+
+A strategy is immutable, versioned configuration over registered signals and risk policies. Natural
+language may compile into this contract later, but arbitrary generated Python is never executed.
+The same signal, portfolio-construction, cost and risk functions run in historical and shadow modes.
+
+- A signal formed with session `T` data cannot fill before the next observable eligible price.
+- Position sizing is deterministic and bounded by cash, gross exposure, single-name, sector,
+  volatility and average-daily-volume participation limits.
+- DSE and US share interfaces but use separate market-policy adapters for fees, slippage,
+  settlement constraints, liquidity floors, capitalization bands and verified calendars.
+- Missing prices, stale evidence, insufficient lookback, unknown liquidity, and unsupported shorting
+  fail closed. Long-only is the initial common execution contract.
+- Daily NAV, cash, exposure, turnover, intended orders, constrained orders, rejected orders, fees,
+  drawdowns and risk interventions are persisted. A shadow order never reaches a broker.
+- A backtest reports benchmark-relative and absolute results, temporal train/validation/test slices,
+  costs, capacity, data coverage, and known limitations. It cannot receive a `validated` label while
+  survivorship, delisting, corporate-action, point-in-time, sample-length, or holdout gates fail.
+
+Research priority, autonomous thesis confidence, strategy performance, and portfolio risk are four
+different quantities. The UI and API must not collapse them into one score.
+
 ### Model strategy
 
 - Use small local/open models for extraction, tagging, routing, and low-risk summaries only after
@@ -304,7 +377,9 @@ and cost.
   period/unit correctness, abstention quality, latency, and cost;
 - FinanceBench, FinMRAGBench-style multi-document tasks, adversarial questions, stale-source tests,
   conflicting-source tests, and document prompt-injection tests;
-- blind human review by an analyst before model promotion.
+- automated adversarial suites, frozen finance/citation sets, numerical reconciliation, and
+  challenger-versus-production promotion gates. No human analyst is required in the runtime or
+  promotion path; weak or uncalibrated challengers remain rejected.
 
 ### Quantitative research
 
@@ -353,28 +428,65 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   fundamentals, evidence coverage, DSE periodic ownership composition, US quarterly 13F aggregates,
   and FINRA daily short-marked activity. It explicitly distinguishes disclosures from live fund
   flows and FINRA short volume from short interest.
+- **Autonomous Analyst / Finance Reasoner V2** runs a fixed plan, evidence collection, finance-lens
+  interpretation, thesis, independent skeptic, claim-verification, scenario, and decision sequence.
+  It is provider-free, produces qualified, monitor, rejected, or abstained outcomes, and creates
+  immutable 5/20/60-session observations. FINRA activity is never treated as short interest, and
+  DSE/13F disclosure changes are never represented as observed live trades.
+- **Hypothesis Lab** executes only registered DSE/US strategy specifications. Its signal replay
+  uses completed session data without lookahead, next-session adjusted-open fills,
+  cash/ADV/name/sector/gross/volatility limits, market-specific costs, stops, drawdown brakes,
+  train/validation/test reporting, evidence/data fingerprints, and explicit diagnostic gates. The
+  current observable universe is not historically point-in-time and therefore cannot pass the
+  inactive/delisted-universe gate.
+- **Portfolio Intelligence** starts no-broker shadow books from completed backtests and persists
+  daily NAV, benchmark, cash, exposure, drawdown, holdings, targets, executions, costs, and risk
+  interventions. Reconciliation is an idempotent write operation; read endpoints remain
+  side-effect free, and missed days replay from their original completed bars and prior-close
+  targets.
+- **Lifecycle Control** persists one bounded automation policy per workspace and coordinates the
+  queue, evidence-changed research, registered backtest, forward shadow reconciliation, and outcome
+  calibration. Jobs carry an exact tenant/market/user/workspace envelope and bind the normal forced
+  RLS context; no worker scans private workspaces globally. DSE and US use verified calendars and
+  separate post-close slots. A freshness preflight refuses stale bars or analytics and retries in
+  30 minutes while enabled.
+- **Promotion policy** is deterministic and advisory only. A strategy needs a historically eligible
+  source backtest, at least 60 completed forward sessions, at least 10 executions, at least 2%
+  benchmark-relative return, and no more than 15% maximum drawdown. Diagnostic source data always
+  blocks promotion regardless of paper performance. `eligible` never sends an order, allocates
+  capital, or bypasses a later investment decision.
+- **Research Memory** keeps run versions and forward outcome observations separate. Future returns,
+  maximum adverse excursion, and maximum favorable excursion mature without rewriting the
+  original verdict or evidence cutoff.
 - **Isolation and audit** enforce tenant, market, organization, workspace, and user scope in API
   authorization, composite foreign keys, transaction context, frontend response checks, and forced
   RLS. DSE and US use separate fixed-host builds with no in-product market switch.
 
-Catalyst Calendar, Hypothesis Lab, Portfolio Intelligence, and Research Memory remain target
-modules. Their navigation is disabled until each has a complete data contract, permission model,
-workflow, and test suite.
+Catalyst Calendar remains a target module. Hypothesis Lab, Portfolio Intelligence, and Research
+Memory are enabled in Atlas. A backtest remains `diagnostic` until history length, breadth,
+inactive/delisted coverage, and execution-count gates pass; the UI does not relabel diagnostics as
+validated research.
 
 ## Delivery sequence
 
-1. **Foundation (partially implemented)**: organization tenancy, research run/claim/evidence schema,
-   RLS, audit ledger, point-in-time contracts, and data licensing decision. Object storage and a
-   complete source registry remain.
+1. **Foundation (implemented, licensing incomplete)**: organization tenancy, research
+   run/claim/evidence schema, RLS, audit ledger, point-in-time contracts, and fixed tenant builds.
+   Object storage, a complete source registry, and market-data licensing decisions remain.
 2. **Data depth**: full filing body/table evidence, insider and beneficial-owner filings, catalyst
    events, DSE publication timestamps, broader US onboarding, and longer DSE history.
-3. **Paid-alpha workflow**: Research Queue, Company Dossier, Catalyst Calendar, thesis creation, and
-   evidence-change monitoring. No open-ended autonomous agent yet.
-4. **Deep Research**: typed planner/tools, hybrid retrieval, synthesis, skeptic, verifier, reports,
-   and finance evaluation harness.
-5. **Hypothesis Lab**: point-in-time DSL, research warehouse, guarded backtesting, trial registry,
-   and forward monitoring.
-6. **Portfolio and enterprise**: portfolio risk, collaboration, private documents, exports,
+3. **Paid-alpha workflow (partially implemented)**: Research Queue, Company Dossier, bounded
+   autonomous thesis creation, and forward outcome memory are active. Catalyst Calendar and
+   evidence-change monitoring remain.
+4. **Deep Research (bounded V2 implemented)**: deterministic planner, finance-specific synthesis,
+   skeptic, verifier, conditional scenarios, evidence requests, claims, abstention, and reproducible
+   run ledger are active. Full-document evidence differentials, hybrid retrieval inside Atlas, and
+   the optional model-promotion evaluation harness remain.
+5. **Hypothesis Lab and lifecycle (registered V1 implemented)**: guarded backtesting, temporal splits, costs,
+   risk controls, diagnostic gates, and forward shadow monitoring are active. Point-in-time
+   fundamentals, delisted-inclusive history, walk-forward trial registry, sensitivity analysis,
+   multiple-testing controls, and a research warehouse remain.
+6. **Portfolio and enterprise (shadow V1 implemented)**: no-broker portfolio evaluation and risk
+   intervention ledgers are active. Collaboration, private documents, exports,
    entitlements, billing, SSO/SCIM, and institution-specific workflows.
 
 The first paid alpha should prove three outcomes: fewer analyst hours per defensible dossier, fewer

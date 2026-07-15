@@ -41,7 +41,8 @@ class ResearchRun(Base):
             name="uq_research_runs_workspace_idempotency_key",
         ),
         CheckConstraint(
-            "run_kind IN ('dossier', 'deep_research', 'hypothesis', 'monitor', 'portfolio')",
+            "run_kind IN "
+            "('dossier', 'deep_research', 'hypothesis', 'monitor', 'portfolio', 'lifecycle')",
             name="ck_research_runs_kind",
         ),
         CheckConstraint(

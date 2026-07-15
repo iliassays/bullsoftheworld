@@ -130,7 +130,7 @@ export function ResearchQueuePage() {
             {workspace.organizationName} · {researchDeployment.exchangeName}
           </span>
           <h1>Research queue</h1>
-          <p>Ranked for analyst attention from traceable evidence, factors, and implementation risk.</p>
+          <p>Ranked for research attention from traceable evidence, factors, and implementation risk.</p>
         </div>
         <div className="queue-page-header__actions">
           <span className="queue-page-header__cutoff">

@@ -199,7 +199,8 @@ def _candidate(
             "supported by the calculation and evidence ledger below."
         ),
         invalidation=(
-            "Not applicable until an analyst records a versioned thesis and explicit invalidation rules."
+            "Not applicable until the autonomous research loop records a versioned thesis and "
+            "explicit invalidation rules."
         ),
         factors=FactorsOut(
             quality=score.quality.value,

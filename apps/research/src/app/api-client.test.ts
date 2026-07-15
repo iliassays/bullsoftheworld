@@ -144,4 +144,108 @@ describe("research API tenant boundary", () => {
       }),
     );
   });
+
+  it("rejects autonomous runs crossing the workspace boundary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: "run-us",
+          workspaceId: "workspace-us",
+          tenantId: "bullsofwallst",
+          market: "US",
+        }),
+      ),
+    );
+
+    await expect(researchApi.startCompanyResearch("workspace-dse", "BSC")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
+  it("rejects a shadow portfolio crossing the market boundary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse([
+          {
+            id: "portfolio-us",
+            workspaceId: "workspace-dse",
+            tenantId: "bullsofdhaka",
+            market: "US",
+          },
+        ]),
+      ),
+    );
+
+    await expect(researchApi.reconcileShadowPortfolios("workspace-dse")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
+  it("rejects calibration observations without the requested tenant envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          workspaceId: "workspace-dse",
+          tenantId: "bullsofwallst",
+          market: "US",
+          pending: 0,
+          matured: 0,
+          buckets: [],
+          observations: [],
+        }),
+      ),
+    );
+
+    await expect(researchApi.calibration("workspace-dse")).rejects.toMatchObject({ status: 502 });
+  });
+
+  it("rejects an automation policy crossing the market boundary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          id: "policy-us",
+          workspaceId: "workspace-dse",
+          tenantId: "bullsofwallst",
+          market: "US",
+        }),
+      ),
+    );
+
+    await expect(researchApi.automationPolicy("workspace-dse")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
+  it("sends a complete bounded automation policy to the workspace endpoint", async () => {
+    const body = {
+      id: "policy-dse",
+      workspaceId: "workspace-dse",
+      tenantId: "bullsofdhaka",
+      market: "DSE",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(body));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await researchApi.configureAutomation("workspace-dse", {
+      enabled: true,
+      queue_limit: 20,
+      research_limit: 5,
+      cap_tier: "small",
+      strategy_key: "dse_reversal_v1",
+      universe_limit: 25,
+      initial_capital: 10_000_000,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/workspaces/workspace-dse/automation"),
+      expect.objectContaining({
+        method: "PUT",
+        body: expect.stringContaining('"strategy_key":"dse_reversal_v1"'),
+      }),
+    );
+  });
 });

@@ -43,14 +43,18 @@ async def test_research_tables_force_tenant_market_row_security() -> None:
             "research_workspace_memberships",
             "research_runs",
             "research_audit_events",
+            "research_automation_policies",
+            "research_shadow_portfolios",
+            "research_outcome_observations",
         }
         lineage_scope = {
             "research_run_steps": "research_runs",
             "research_run_evidence": "research_runs",
             "research_claims": "research_runs",
             "research_claim_citations": "research_claims",
+            "research_shadow_snapshots": "research_shadow_portfolios",
         }
-        assert len(rows) == 12
+        assert len(rows) == 16
         for table, enabled, forced, predicate in rows:
             assert enabled and forced, table
             assert "app.research_tenant_id" in predicate, table

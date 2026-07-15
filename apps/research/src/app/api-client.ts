@@ -20,6 +20,147 @@ export interface ResearchWorkspace {
   workspaceRole: string | null;
 }
 
+export interface ResearchRunStep {
+  ordinal: number;
+  kind: string;
+  status: string;
+  output: Record<string, unknown>;
+  metrics: Record<string, unknown>;
+}
+
+export interface ResearchClaim {
+  ordinal: number;
+  claimType: string;
+  statement: string;
+  verdict: string;
+  confidence: number;
+  values: Record<string, unknown>;
+  verification: Record<string, unknown>;
+}
+
+export interface ResearchRun {
+  id: string;
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  runKind: "deep_research" | "hypothesis" | string;
+  status: string;
+  question: string;
+  code: string | null;
+  parameters: Record<string, unknown>;
+  knowledgeCutoffAt: string;
+  provider: string | null;
+  model: string | null;
+  codeVersion: string;
+  evidenceSnapshotHash: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+  steps: ResearchRunStep[];
+  claims: ResearchClaim[];
+}
+
+export interface ShadowSnapshot {
+  id: string;
+  asOfDate: string;
+  sessionNumber: number;
+  nav: number;
+  cash: number;
+  benchmarkNav: number;
+  peakNav: number;
+  grossExposurePct: number;
+  drawdownPct: number;
+  cumulativeFees: number;
+  cumulativeTurnover: number;
+  positions: Record<string, { shares: number; average_cost: number }>;
+  targetWeights: Record<string, number>;
+  trades: Array<Record<string, unknown>>;
+  riskInterventions: Array<Record<string, unknown>>;
+}
+
+export interface ShadowPortfolio {
+  id: string;
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  sourceRunId: string;
+  name: string;
+  strategyKey: string;
+  status: "active" | "paused" | "archived";
+  initialCapital: number;
+  inceptionDate: string;
+  lastEvaluatedOn: string | null;
+  configuration: Record<string, unknown>;
+  snapshots: ShadowSnapshot[];
+}
+
+export interface CalibrationObservation {
+  id: string;
+  runId: string;
+  code: string;
+  signalStatus: string;
+  confidence: number;
+  referenceDate: string;
+  referencePrice: number;
+  horizonSessions: number;
+  status: string;
+  outcomeDate: string | null;
+  outcomePrice: number | null;
+  returnPct: number | null;
+  maxAdversePct: number | null;
+  maxFavorablePct: number | null;
+}
+
+export interface CalibrationSnapshot {
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  pending: number;
+  matured: number;
+  buckets: Array<{
+    signalStatus: string;
+    horizonSessions: number;
+    observations: number;
+    averageReturnPct: number;
+    positiveRatePct: number;
+  }>;
+  observations: CalibrationObservation[];
+}
+
+export interface AutomationPolicy {
+  id: string;
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  enabled: boolean;
+  queueLimit: number;
+  researchLimit: number;
+  capTier: string | null;
+  strategyKey: "dse_reversal_v1" | "us_breakout_v1";
+  universeLimit: number;
+  initialCapital: number;
+  nextRunAt: string | null;
+  lastStartedAt: string | null;
+  lastCompletedAt: string | null;
+  lastRunStatus: "queued" | "running" | "succeeded" | "failed" | null;
+  lastError: string | null;
+}
+
+export interface AutomationPolicyInput {
+  enabled: boolean;
+  queue_limit: number;
+  research_limit: number;
+  cap_tier: string | null;
+  strategy_key: "dse_reversal_v1" | "us_breakout_v1";
+  universe_limit: number;
+  initial_capital: number;
+}
+
+export interface LifecycleDispatch {
+  accepted: boolean;
+  jobId: string;
+  scheduledFor: string;
+}
+
 interface Tokens {
   access_token: string;
   refresh_token?: string | null;
@@ -143,6 +284,45 @@ function assertDossierBoundary(
   return dossier;
 }
 
+function assertRunBoundary(run: ResearchRun, workspaceId: string): ResearchRun {
+  if (
+    run.tenantId !== researchDeployment.tenant ||
+    run.market !== researchDeployment.market ||
+    run.workspaceId !== workspaceId
+  ) {
+    throw new ResearchApiError(502, "The API returned a research run outside this tenant boundary");
+  }
+  return run;
+}
+
+function assertPortfolioBoundary(
+  portfolio: ShadowPortfolio,
+  workspaceId: string,
+): ShadowPortfolio {
+  if (
+    portfolio.tenantId !== researchDeployment.tenant ||
+    portfolio.market !== researchDeployment.market ||
+    portfolio.workspaceId !== workspaceId
+  ) {
+    throw new ResearchApiError(502, "The API returned a shadow book outside this tenant boundary");
+  }
+  return portfolio;
+}
+
+function assertAutomationBoundary(
+  policy: AutomationPolicy,
+  workspaceId: string,
+): AutomationPolicy {
+  if (
+    policy.tenantId !== researchDeployment.tenant ||
+    policy.market !== researchDeployment.market ||
+    policy.workspaceId !== workspaceId
+  ) {
+    throw new ResearchApiError(502, "The API returned automation data outside this tenant boundary");
+  }
+  return policy;
+}
+
 export const researchApi = {
   async restore(): Promise<ResearchUser | null> {
     if (!(await refreshSession())) return null;
@@ -206,5 +386,114 @@ export const researchApi = {
       { signal },
     );
     return assertDossierBoundary(dossier, workspaceId, normalizedTicker);
+  },
+  async startCompanyResearch(workspaceId: string, ticker: string): Promise<ResearchRun> {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    const run = await request<ResearchRun>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/companies/${encodeURIComponent(normalizedTicker)}/research-runs`,
+      {
+        method: "POST",
+        body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
+      },
+    );
+    return assertRunBoundary(run, workspaceId);
+  },
+  async backtest(
+    workspaceId: string,
+    payload: {
+      strategy_key: "dse_reversal_v1" | "us_breakout_v1";
+      start_date?: string;
+      end_date?: string;
+      cap_tier?: string;
+      universe_limit: number;
+      initial_capital: number;
+    },
+  ): Promise<ResearchRun> {
+    const run = await request<ResearchRun>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/backtests`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ...payload, idempotency_key: crypto.randomUUID() }),
+      },
+    );
+    return assertRunBoundary(run, workspaceId);
+  },
+  async runs(workspaceId: string): Promise<ResearchRun[]> {
+    const runs = await request<ResearchRun[]>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/runs`,
+    );
+    return runs.map((run) => assertRunBoundary(run, workspaceId));
+  },
+  async run(workspaceId: string, runId: string): Promise<ResearchRun> {
+    return assertRunBoundary(
+      await request<ResearchRun>(
+        `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/runs/${encodeURIComponent(runId)}`,
+      ),
+      workspaceId,
+    );
+  },
+  async createShadowPortfolio(
+    workspaceId: string,
+    sourceRunId: string,
+    name: string,
+  ): Promise<ShadowPortfolio> {
+    const portfolio = await request<ShadowPortfolio>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/shadow-portfolios`,
+      {
+        method: "POST",
+        body: JSON.stringify({ source_run_id: sourceRunId, name }),
+      },
+    );
+    return assertPortfolioBoundary(portfolio, workspaceId);
+  },
+  async shadowPortfolios(workspaceId: string): Promise<ShadowPortfolio[]> {
+    const portfolios = await request<ShadowPortfolio[]>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/shadow-portfolios`,
+    );
+    return portfolios.map((portfolio) => assertPortfolioBoundary(portfolio, workspaceId));
+  },
+  async reconcileShadowPortfolios(workspaceId: string): Promise<ShadowPortfolio[]> {
+    const portfolios = await request<ShadowPortfolio[]>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/shadow-portfolios/reconcile`,
+      { method: "POST" },
+    );
+    return portfolios.map((portfolio) => assertPortfolioBoundary(portfolio, workspaceId));
+  },
+  async calibration(workspaceId: string): Promise<CalibrationSnapshot> {
+    const snapshot = await request<CalibrationSnapshot>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/calibration`,
+    );
+    if (
+      snapshot.workspaceId !== workspaceId ||
+      snapshot.tenantId !== researchDeployment.tenant ||
+      snapshot.market !== researchDeployment.market
+    ) {
+      throw new ResearchApiError(502, "The API returned calibration data outside this tenant boundary");
+    }
+    return snapshot;
+  },
+  async automationPolicy(workspaceId: string): Promise<AutomationPolicy | null> {
+    const policy = await request<AutomationPolicy | null>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/automation`,
+    );
+    return policy ? assertAutomationBoundary(policy, workspaceId) : null;
+  },
+  async configureAutomation(
+    workspaceId: string,
+    payload: AutomationPolicyInput,
+  ): Promise<AutomationPolicy> {
+    return assertAutomationBoundary(
+      await request<AutomationPolicy>(
+        `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/automation`,
+        { method: "PUT", body: JSON.stringify(payload) },
+      ),
+      workspaceId,
+    );
+  },
+  async runLifecycle(workspaceId: string): Promise<LifecycleDispatch> {
+    return request<LifecycleDispatch>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/automation/run`,
+      { method: "POST" },
+    );
   },
 };

@@ -6,10 +6,14 @@ from bulls.core.models import (
     EvidenceDocument,
     EvidenceSpan,
     ResearchAuditEvent,
+    ResearchAutomationPolicy,
     ResearchClaim,
     ResearchClaimCitation,
+    ResearchOutcomeObservation,
     ResearchRun,
     ResearchRunEvidence,
+    ResearchShadowPortfolio,
+    ResearchShadowSnapshot,
     ResearchWorkspace,
 )
 
@@ -29,10 +33,14 @@ def test_research_private_tables_have_non_nullable_full_security_scope() -> None
     for model in (
         ResearchWorkspace,
         ResearchAuditEvent,
+        ResearchAutomationPolicy,
         ResearchRun,
         ResearchRunEvidence,
         ResearchClaim,
         ResearchClaimCitation,
+        ResearchShadowPortfolio,
+        ResearchShadowSnapshot,
+        ResearchOutcomeObservation,
     ):
         for column_name in ("organization_id", "tenant_id", "market"):
             assert not model.__table__.c[column_name].nullable, model.__tablename__
@@ -147,6 +155,58 @@ def test_audit_events_are_bound_to_actor_organization_and_workspace() -> None:
     ) in constraints
     assert (
         ("organization_id", "actor_user_id", "tenant_id", "market"),
+        (
+            "research_organization_memberships.organization_id",
+            "research_organization_memberships.user_id",
+            "research_organization_memberships.tenant_id",
+            "research_organization_memberships.market",
+        ),
+    ) in constraints
+
+
+def test_shadow_books_and_outcomes_cannot_cross_market_or_organization() -> None:
+    assert (
+        ("source_run_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_runs.id",
+            "research_runs.organization_id",
+            "research_runs.tenant_id",
+            "research_runs.market",
+        ),
+    ) in _composite_foreign_keys(ResearchShadowPortfolio)
+    assert (
+        ("portfolio_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_shadow_portfolios.id",
+            "research_shadow_portfolios.organization_id",
+            "research_shadow_portfolios.tenant_id",
+            "research_shadow_portfolios.market",
+        ),
+    ) in _composite_foreign_keys(ResearchShadowSnapshot)
+    assert (
+        ("run_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_runs.id",
+            "research_runs.organization_id",
+            "research_runs.tenant_id",
+            "research_runs.market",
+        ),
+    ) in _composite_foreign_keys(ResearchOutcomeObservation)
+
+
+def test_automation_policy_is_bound_to_workspace_and_requester_scope() -> None:
+    constraints = _composite_foreign_keys(ResearchAutomationPolicy)
+    assert (
+        ("workspace_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_workspaces.id",
+            "research_workspaces.organization_id",
+            "research_workspaces.tenant_id",
+            "research_workspaces.market",
+        ),
+    ) in constraints
+    assert (
+        ("organization_id", "requested_by_user_id", "tenant_id", "market"),
         (
             "research_organization_memberships.organization_id",
             "research_organization_memberships.user_id",
