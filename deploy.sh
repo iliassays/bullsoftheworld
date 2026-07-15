@@ -17,7 +17,8 @@ SITE_URL=https://bullsofdhaka.com
 
 echo "→ pushing code to origin/main"
 # Port 22 to github.com is often blocked on this network; fall back to the 443 SSH endpoint.
-git push origin HEAD:main 2>/dev/null || git \
+GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=8" \
+  git push origin HEAD:main 2>/dev/null || git \
   -c core.sshCommand="ssh -i ~/.ssh/github_iliassays -p 443 -o HostName=ssh.github.com -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
   push origin HEAD:main
 
