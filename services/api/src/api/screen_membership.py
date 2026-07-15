@@ -23,6 +23,7 @@ _SCREEN_MEMBERSHIP_VERSION = 1
 class MembershipItem(Protocol):
     code: str
     new_since: str | None
+    new_reason: str | None
 
 
 class MembershipBoard(Protocol):
@@ -62,7 +63,10 @@ def apply_screen_membership_badges(
         if not isinstance(stored_members, dict):
             continue
         for item in board.items:
-            item.new_since = _recent_entry(stored_members.get(item.code), now)
+            recent_entry = _recent_entry(stored_members.get(item.code), now)
+            if recent_entry is not None and item.new_reason is None:
+                item.new_since = recent_entry
+                item.new_reason = "board_entry"
 
 
 def advance_screen_memberships(

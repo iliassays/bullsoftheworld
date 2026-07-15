@@ -590,6 +590,15 @@ const STRINGS: Record<string, Entry> = {
     en: "Entered this board within the last 24 hours. The first tracked snapshot is only a baseline and is never labeled new.",
     bn: "গত ২৪ ঘণ্টায় এই বোর্ডে নতুনভাবে এসেছে। প্রথম সংরক্ষিত তালিকাটি শুধু ভিত্তি; সেটিকে কখনো নতুন বলা হয় না।",
   },
+  "screen.newThisReport": { en: "New report", bn: "নতুন প্রকাশ" },
+  "screen.newThisReportHelp": {
+    en: "Did not qualify in the prior disclosure direction, but qualifies in the latest report.",
+    bn: "আগের প্রকাশে এই দিকের শর্ত পূরণ করেনি, কিন্তু সর্বশেষ প্রকাশে করেছে।",
+  },
+  "screen.newCountHelp": {
+    en: "New entries from either the latest board refresh or the latest comparable disclosure.",
+    bn: "সর্বশেষ বোর্ড রিফ্রেশ অথবা তুলনাযোগ্য সর্বশেষ প্রকাশ থেকে নতুন এন্ট্রি।",
+  },
   "screen.disclosurePeriodHelp": {
     en: "Each row shows its own previous → latest disclosure period; companies may publish in different months.",
     bn: "প্রতিটি সারিতে সেই কোম্পানির আগের → সর্বশেষ প্রকাশের সময় দেখানো হয়েছে; সব কোম্পানি একই মাসে প্রকাশ নাও করতে পারে।",

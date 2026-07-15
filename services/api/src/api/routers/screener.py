@@ -429,6 +429,7 @@ class ScreenItem(BaseModel):
     # Set only while this ticker is a recent entrant to this exact tenant/market/universe board.
     # NULL means either long-standing membership or that no trustworthy prior baseline exists.
     new_since: str | None = None
+    new_reason: str | None = None  # board_entry | new_disclosure
 
 
 class ScreenOut(BaseModel):
@@ -614,6 +615,7 @@ async def _institutional_13f(
     limit: int = PER_SCREEN,
     cap_tier: str | None = None,
 ) -> ScreenOut:
+    previous_summary = aliased(InstitutionalHoldingSummary)
     latest_period = (
         select(
             InstitutionalHoldingSummary.code,
@@ -632,6 +634,7 @@ async def _institutional_13f(
                 change,
                 InstitutionalHoldingSummary.report_date,
                 InstitutionalHoldingSummary.prior_report_date,
+                previous_summary.net_change_pct.label("prior_net_change_pct"),
             )
             .join(
                 latest_period,
@@ -639,6 +642,15 @@ async def _institutional_13f(
                 & (latest_period.c.report_date == InstitutionalHoldingSummary.report_date),
             )
             .join(T, (T.market == market) & (T.code == InstitutionalHoldingSummary.code))
+            .outerjoin(
+                previous_summary,
+                (previous_summary.market == InstitutionalHoldingSummary.market)
+                & (previous_summary.code == InstitutionalHoldingSummary.code)
+                & (
+                    previous_summary.report_date
+                    == InstitutionalHoldingSummary.prior_report_date
+                ),
+            )
             .where(
                 InstitutionalHoldingSummary.market == market,
                 T.code.in_(_screenable_codes(market, cap_tier)),
@@ -669,8 +681,13 @@ async def _institutional_13f(
                 value=round(net_change, 2),
                 comparison_as_of=prior_report_date.isoformat() if prior_report_date else None,
                 data_as_of=report_date.isoformat(),
+                **_new_disclosure_fields(
+                    prior_net_change,
+                    direction="buy" if accumulation else "sell",
+                    data_date=report_date.isoformat(),
+                ),
             )
-            for code, last_close, net_change, report_date, prior_report_date in rows
+            for code, last_close, net_change, report_date, prior_report_date, prior_net_change in rows
         ],
     )
 
@@ -1210,6 +1227,30 @@ _OWN_SELL_TITLE = {"foreign": "Foreign Selling", "institute": "Institutional Sel
 _MIN_STAKE_DELTA = 0.05
 
 
+def _new_directional_disclosure(
+    previous_delta: float | None, *, direction: str, threshold: float = 0.0
+) -> bool:
+    """True only when the preceding disclosure did not qualify for the current direction."""
+
+    if previous_delta is None:
+        return False
+    return previous_delta < threshold if direction == "buy" else previous_delta > -threshold
+
+
+def _new_disclosure_fields(
+    previous_delta: float | None,
+    *,
+    direction: str,
+    data_date: str | None,
+    threshold: float = 0.0,
+) -> dict[str, str]:
+    if data_date and _new_directional_disclosure(
+        previous_delta, direction=direction, threshold=threshold
+    ):
+        return {"new_since": data_date, "new_reason": "new_disclosure"}
+    return {}
+
+
 def _flow_tag(prev_delta: float | None, direction: str) -> str:
     """The latest disclosure already moved the filtered way. Distinguish sustained vs one-off,
     worded to avoid implying equal periods (our captured disclosures aren't evenly spaced)."""
@@ -1368,6 +1409,12 @@ async def _ownership(
                 comparison_as_of=f.dates[-2] if len(f.dates) >= 2 else None,
                 data_as_of=f.dates[-1] if f.dates else None,
                 period_spark=psparks.get(c, []),
+                **_new_disclosure_fields(
+                    f.prev_delta,
+                    direction=direction,
+                    threshold=_MIN_STAKE_DELTA,
+                    data_date=f.dates[-1] if f.dates else None,
+                ),
             )
         )
     verb = "trimmed" if selling else "raised"
@@ -1443,6 +1490,12 @@ async def _sponsor_selling(
             comparison_as_of=f.dates[-2] if len(f.dates) >= 2 else None,
             data_as_of=f.dates[-1] if f.dates else None,
             period_spark=psparks.get(c, []),
+            **_new_disclosure_fields(
+                f.prev_delta,
+                direction="sell",
+                threshold=_MIN_SPONSOR_DROP,
+                data_date=f.dates[-1] if f.dates else None,
+            ),
         )
         for c, delta, f in drops
         if c in closes
@@ -1770,8 +1823,8 @@ async def screens(
     )
     ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    # v17 includes board-entry timestamps and explicit membership-baseline semantics.
-    key = f"screens:v17:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
+    # v18 distinguishes refresh-to-refresh entries from source-derived disclosure entries.
+    key = f"screens:v18:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
     membership_key = screen_membership_key(tenant.name, market, size)
     redis = aioredis.from_url(get_settings().redis_url)
     try:

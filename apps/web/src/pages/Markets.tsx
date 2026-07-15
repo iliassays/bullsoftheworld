@@ -1003,14 +1003,14 @@ export function ScreenRow({
           )}
           <CompanyLogo code={item.code} size={26} />
           <span className="flex flex-col min-w-0 gap-0.5">
-            <span className="flex items-center gap-1.5 min-w-0">
+            <span className="flex flex-wrap items-center gap-1.5 min-w-0">
               <span className="font-bold text-[13px]">${item.code}</span>
               {item.new_since && (
                 <span
-                  title={t("screen.newToListHelp")}
+                  title={t(item.new_reason === "new_disclosure" ? "screen.newThisReportHelp" : "screen.newToListHelp")}
                   className="shrink-0 rounded-full border border-up/40 bg-up/10 px-1.5 py-0.5 text-[9px] font-semibold text-up"
                 >
-                  {t("screen.newToList")}
+                  {t(item.new_reason === "new_disclosure" ? "screen.newThisReport" : "screen.newToList")}
                 </span>
               )}
               {setupChip && (
@@ -1263,7 +1263,7 @@ function ScreenCard({ s }: { s: Screen }) {
         />
         {newCount > 0 && (
           <span
-            title={t("screen.newToListHelp")}
+            title={t("screen.newCountHelp")}
             className="rounded-full border border-up/40 bg-up/10 px-2 py-0.5 text-[10px] font-semibold text-up"
           >
             {lang === "bn" ? `${bnDigits(String(newCount))}টি নতুন` : `${newCount} new`}

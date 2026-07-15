@@ -381,6 +381,7 @@ export interface ScreenItem {
   pattern_status?: PatternStatus | null;
   pattern_metrics?: Record<string, number> | null;
   new_since?: string | null; // entered this tenant/market/size board within the API's recent window
+  new_reason?: "board_entry" | "new_disclosure" | null;
 }
 export interface Screen {
   key: string;

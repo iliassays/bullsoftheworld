@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from api.routers.screener import ScreenItem, ScreenOut
+from api.routers.screener import ScreenItem, ScreenOut, _new_directional_disclosure
 from api.screen_membership import (
     advance_screen_memberships,
     apply_screen_membership_badges,
@@ -67,3 +67,27 @@ def test_membership_storage_is_tenant_market_and_universe_isolated() -> None:
     assert screen_membership_key("bullsofdhaka", "DSE", "small") != screen_membership_key(
         "bullsofdhaka", "DSE", "large"
     )
+
+
+def test_source_derived_new_reason_is_not_overwritten_by_board_membership() -> None:
+    now = dt.datetime(2026, 7, 15, 10, tzinfo=dt.UTC)
+    board = _screen("A")
+    board.items[0].new_since = "2026-06-30"
+    board.items[0].new_reason = "new_disclosure"
+    state = {
+        "version": 1,
+        "screens": {"institutional_buying": {"A": "2026-07-15T09:00:00+00:00"}},
+    }
+
+    apply_screen_membership_badges([board], state, now)
+
+    assert board.items[0].new_since == "2026-06-30"
+    assert board.items[0].new_reason == "new_disclosure"
+
+
+def test_new_disclosure_requires_a_prior_comparison_and_a_direction_change() -> None:
+    assert _new_directional_disclosure(None, direction="buy", threshold=0.05) is False
+    assert _new_directional_disclosure(-0.5, direction="buy", threshold=0.05) is True
+    assert _new_directional_disclosure(0.2, direction="buy", threshold=0.05) is False
+    assert _new_directional_disclosure(0.4, direction="sell", threshold=0.05) is True
+    assert _new_directional_disclosure(-0.2, direction="sell", threshold=0.05) is False
