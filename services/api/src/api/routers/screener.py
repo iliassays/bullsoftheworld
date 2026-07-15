@@ -120,14 +120,25 @@ def _screenable_codes(market: str, cap_tier: str | None = None):
     )
 
 
-def _liquid(market: str):
+def _minimum_market_cap(market: str, cap_tier: str | None = None) -> float:
+    """Default discovery floor, except when the user explicitly researches micro caps.
+
+    The canonical micro tier is below the default floor by definition (DSE <500mn, US <300mn).
+    Keeping that floor in micro mode would make the universe structurally empty. Turnover and
+    free-float checks still protect basic tradability.
+    """
+
+    return 0.0 if cap_tier == "micro" else _screen_settings(market).min_mcap_mn
+
+
+def _liquid(market: str, cap_tier: str | None = None):
     settings = _screen_settings(market)
     return and_(
         T.last_close > 0,
         T.avg_volume_20.isnot(None),
         T.avg_volume_20 > 0,
         T.avg_volume_20 * T.last_close / 1e6 >= settings.min_adtv_mn,
-        func.coalesce(T.market_cap_mn, 0) >= settings.min_mcap_mn,
+        func.coalesce(T.market_cap_mn, 0) >= _minimum_market_cap(market, cap_tier),
         or_(
             T.free_float_cap_mn.is_(None),
             T.free_float_cap_mn >= settings.min_free_float_cap_mn,
@@ -138,7 +149,9 @@ def _liquid(market: str):
 def _investable(market: str, cap_tier: str | None = None):
     """Subquery of investable codes — visible AND liquid — for builders that don't query T."""
     return select(T.code).where(
-        T.market == market, T.code.in_(_screenable_codes(market, cap_tier)), _liquid(market)
+        T.market == market,
+        T.code.in_(_screenable_codes(market, cap_tier)),
+        _liquid(market, cap_tier),
     )
 
 
@@ -527,7 +540,7 @@ async def _unusual_volume(
                 T.market == market,
                 field >= _RVOL_MIN[window],
                 T.code.in_(_screenable_codes(market, cap_tier)),
-                _liquid(market),
+                _liquid(market, cap_tier),
             )
             .order_by(field.desc())
             .limit(limit)
@@ -611,7 +624,7 @@ async def _institutional_13f(
                 T.code.in_(_screenable_codes(market, cap_tier)),
                 change.isnot(None),
                 change > 0 if accumulation else change < 0,
-                _liquid(market),
+                _liquid(market, cap_tier),
             )
             .order_by(change.desc() if accumulation else change.asc())
             .limit(limit)
@@ -836,7 +849,7 @@ async def _momentum(
                 mom > 0,
                 T.volatility > 0,
                 T.code.in_(_screenable_codes(market, cap_tier)),
-                _liquid(market),
+                _liquid(market, cap_tier),
             )
             .order_by(is_pump.asc(), (mom / T.volatility).desc())
             .limit(limit)
@@ -883,7 +896,7 @@ async def _build_spec(
                 T.market == market,
                 spec.where,
                 T.code.in_(_screenable_codes(market, cap_tier)),
-                _liquid(market),
+                _liquid(market, cap_tier),
             )
             .order_by(spec.order)
             .limit(limit)
@@ -1303,7 +1316,7 @@ async def _ownership(
                 T.market == market,
                 cond,
                 T.code.in_(_screenable_codes(market, cap_tier)),
-                _liquid(market),
+                _liquid(market, cap_tier),
             )
             .order_by(order)
             .limit(limit)
@@ -1381,7 +1394,7 @@ async def _sponsor_selling(
                 select(T.code, T.last_close).where(
                     T.market == market,
                     T.code.in_([c for c, _, _ in drops]),
-                    _liquid(market),
+                    _liquid(market, cap_tier),
                 )
             )
         ).all()
@@ -1474,7 +1487,7 @@ async def _chart_pattern_board(
                 TickerPattern.pattern_type == pattern_type,
                 TickerPattern.status != "invalidated",
                 T.code.in_(_screenable_codes(market, cap_tier)),
-                _liquid(market),
+                _liquid(market, cap_tier),
             )
             .order_by(TickerPattern.strength_score.desc())
             .limit(limit)
@@ -1900,7 +1913,7 @@ async def _build_screens(
             "free-float cap floor is applied when available."
         ),
         min_adtv_mn=settings.min_adtv_mn,
-        min_mcap_mn=settings.min_mcap_mn,
+        min_mcap_mn=_minimum_market_cap(tenant.market, cap_tier),
         min_free_float_cap_mn=settings.min_free_float_cap_mn,
     )
     return ScreensResponse(

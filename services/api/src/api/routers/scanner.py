@@ -94,6 +94,12 @@ def _cap_tier_condition(cap_tier: str | None):
     return TickerAnalytics.cap_tier == cap_tier if cap_tier is not None else true()
 
 
+def _minimum_curated_mcap(cap_tier: str | None) -> float:
+    # Micro is below the default DSE 500mn floor by definition; explicit micro research keeps the
+    # liquidity gate but cannot also require a non-micro market cap.
+    return 0.0 if cap_tier == "micro" else _MIN_MCAP_MN
+
+
 def regime_from(latest: float, avg: float) -> str:
     return "above_200dma" if latest >= avg else "below_200dma"
 
@@ -297,7 +303,7 @@ async def _quality_reversal(
                 T.pe_ratio > 0,
                 T.pe_ratio <= _MAX_PE,
                 _adtv_mn(T) >= _MIN_ADTV_MN,  # liquidity
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(T.pct_from_52w_high.asc(), T.roe.desc())
             .limit(60)  # small candidate set; the 5d-high filter narrows it further
@@ -405,7 +411,7 @@ async def _oversold_quality(
                 T.rsi_14 <= _OVERSOLD_RSI,
                 T.roe > 0,  # profitable — skip the junk washouts
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(T.rsi_14.asc())
             .limit(limit)
@@ -447,7 +453,7 @@ async def _trending_board(
         _cap_tier_condition(cap_tier),
         T.code.in_(_clean_codes(market)),
         _adtv_mn(T) >= _MIN_ADTV_MN,
-        T.market_cap_mn >= _MIN_MCAP_MN,
+        T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
     )
     rows = list(
         await session.scalars(
@@ -513,7 +519,7 @@ async def _value_quality(
                 T.pe_ratio > 0,
                 T.roe >= 15,
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(T.pe_vs_sector.asc(), T.roe.desc())
             .limit(limit)
@@ -555,7 +561,7 @@ async def _dividend_quality(
                 T.dividend_yield <= _MAX_CURATED_DIVIDEND_YIELD,
                 T.pe_ratio > 0,  # positive EPS; avoids pure yield traps from lossmaking names
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(T.dividend_yield.desc())
             .limit(limit)
@@ -614,7 +620,7 @@ async def _lens_buffett_quality(
                 T.roe >= 15,
                 or_(T.eps_growth_yoy.is_(None), T.eps_growth_yoy >= 0),
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(T.roe.desc())
             .limit(120)
@@ -680,7 +686,7 @@ async def _lens_graham_value(
                 or_(T.pb_ratio.is_(None), T.pb_ratio <= 3),
                 T.roe > 0,
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(T.pe_vs_sector.asc())
             .limit(120)
@@ -768,7 +774,7 @@ async def _lens_smart_money(
                 T.code.in_(_clean_codes(market)),
                 ownership_delta >= 1.0,
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .order_by(ownership_delta.desc())
             .limit(120)
@@ -845,7 +851,7 @@ async def _lens_agreement(
                 _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 _adtv_mn(T) >= _MIN_ADTV_MN,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
             )
             .limit(500)
         )
@@ -920,7 +926,7 @@ async def _lens_risk_control(
                 _cap_tier_condition(cap_tier),
                 T.code.in_(_clean_codes(market)),
                 _adtv_mn(T) >= 10.0,
-                T.market_cap_mn >= _MIN_MCAP_MN,
+                T.market_cap_mn >= _minimum_curated_mcap(cap_tier),
                 or_(T.free_float_cap_mn.is_(None), T.free_float_cap_mn >= _MIN_FREE_FLOAT_CAP_MN),
                 or_(T.volatility.is_(None), T.volatility <= 60),
             )

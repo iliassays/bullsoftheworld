@@ -15,7 +15,11 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from api.routers.screener import _screenable_codes, _validated_cap_tier
+from api.routers.screener import (
+    _minimum_market_cap,
+    _screenable_codes,
+    _validated_cap_tier,
+)
 from bulls.core.markets import get_market_profile
 
 
@@ -39,6 +43,15 @@ def test_cross_market_cap_tier_is_rejected() -> None:
     with pytest.raises(HTTPException) as exc:
         _validated_cap_tier("DSE", "mega")
     assert exc.value.status_code == 422
+
+
+def test_explicit_micro_research_does_not_apply_a_non_micro_cap_floor() -> None:
+    assert _minimum_market_cap("DSE") == 500
+    assert _minimum_market_cap("US") == 300
+    assert _minimum_market_cap("DSE", "small") == 500
+    assert _minimum_market_cap("US", "small") == 300
+    assert _minimum_market_cap("DSE", "micro") == 0
+    assert _minimum_market_cap("US", "micro") == 0
 
 
 @pytest.mark.skipif(not os.getenv("DB_TESTS"), reason="set DB_TESTS=1 with Postgres")

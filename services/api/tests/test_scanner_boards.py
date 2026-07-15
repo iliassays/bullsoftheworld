@@ -9,6 +9,7 @@ from api.routers.scanner import (
     _TABS,
     _cashflow_quality_margin,
     _financial_risk_flags,
+    _minimum_curated_mcap,
     regime_from,
     scanner_pack_for,
 )
@@ -73,6 +74,12 @@ def test_scanner_cap_tier_filter_preserves_rank_and_limit() -> None:
 
     assert [item.code for item in board.items] == ["SMALL1", "SMALL2"]
     assert board.total_count == 2
+
+
+def test_scanner_micro_mode_keeps_liquidity_gate_without_contradictory_cap_floor() -> None:
+    assert _minimum_curated_mcap(None) == 500
+    assert _minimum_curated_mcap("small") == 500
+    assert _minimum_curated_mcap("micro") == 0
 
 
 def test_oversold_board_is_on_today_tab_after_the_flagship() -> None:
