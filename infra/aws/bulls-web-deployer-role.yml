@@ -5,12 +5,28 @@ Parameters:
   RoleName:
     Type: String
     Default: BullsWebDeployer
+  OperatorUserName:
+    Type: String
+    Default: BullsReleaseOperator
   DhakaHostedZoneId:
     Type: String
   WallStreetHostedZoneId:
     Type: String
 
 Resources:
+  ReleaseOperator:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Ref OperatorUserName
+      Policies:
+        - PolicyName: AssumeBullsWebDeployer
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${RoleName}
+
   WebDeployerRole:
     Type: AWS::IAM::Role
     Properties:
@@ -20,10 +36,10 @@ Resources:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: AccountAdministratorsOnly
+          - Sid: ReleaseOperatorOnly
             Effect: Allow
             Principal:
-              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/${OperatorUserName}
             Action: sts:AssumeRole
       Policies:
         - PolicyName: BullsStaticSiteRelease
@@ -140,6 +156,8 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:route53:::change/*
 
 Outputs:
+  OperatorUserName:
+    Value: !Ref ReleaseOperator
   RoleArn:
     Value: !GetAtt WebDeployerRole.Arn
   RoleName:

@@ -24,6 +24,7 @@ fi
   --no-fail-on-empty-changeset \
   --parameter-overrides \
     RoleName="${BULLS_DEPLOYER_ROLE_NAME:-BullsWebDeployer}" \
+    OperatorUserName="${BULLS_RELEASE_OPERATOR_NAME:-BullsReleaseOperator}" \
     DhakaHostedZoneId="$DHAKA_HOSTED_ZONE_ID" \
     WallStreetHostedZoneId="$WALLST_HOSTED_ZONE_ID"
 
