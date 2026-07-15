@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EarningsWeek } from "../components/EarningsWeek";
 import { useSeo } from "../components/Seo";
@@ -1370,6 +1370,98 @@ const momentumCaution = (lang: string) =>
     ? "সতর্কতা: আমাদের নিজস্ব DSE গবেষণায় (২০২৪–২৬) ট্রেন্ড-চেজিং ক্ষতি করেছে। এটি প্রেক্ষাপট, শিকারের তালিকা নয়।"
     : "Heads-up: our own DSE study (2024–26) found trend-chasing hurt returns. This is context, not a hunting list.";
 
+// "Today's read": one deterministic sentence of meaning above a disclosure board — what changed
+// this round and the most notable run. Every clause is a template filled from the board's own
+// payload (fresh-print counts, tail streaks in the flow arrays); no model generates investor-
+// facing text, per the descriptive-only rule. A "most new entries in N disclosure cycles"
+// comparator was considered and deferred: board membership state rebuilds every quote poll, so
+// there is no honest per-disclosure-round history to compare against yet.
+interface BoardReadFacts {
+  newPrints: number;
+  streak: { code: string; len: number; total: number; rising: boolean } | null;
+}
+
+function boardReadFacts(s: Screen): BoardReadFacts | null {
+  const isDisclosure = s.items.some(
+    (it) => it.new_reason === "new_disclosure" || (it.flow?.length ?? 0) >= 2,
+  );
+  if (!isDisclosure) return null;
+  const newPrints = s.items.filter((it) => it.new_reason === "new_disclosure").length;
+  let streak: BoardReadFacts["streak"] = null;
+  for (const it of s.items) {
+    const flow = it.flow ?? [];
+    if (flow.length < 2) continue;
+    const sign = Math.sign(flow[flow.length - 1] - flow[flow.length - 2]);
+    if (sign === 0) continue;
+    let len = 0;
+    let total = 0;
+    for (let i = flow.length - 1; i > 0; i--) {
+      const delta = flow[i] - flow[i - 1];
+      if (Math.sign(delta) !== sign) break;
+      len += 1;
+      total += delta;
+    }
+    // Two prints in a row is just "a change and its follow-up"; three is a run worth naming.
+    const better =
+      len >= 3 &&
+      (!streak || len > streak.len || (len === streak.len && Math.abs(total) > Math.abs(streak.total)));
+    if (better) streak = { code: it.code, len, total, rising: sign > 0 };
+  }
+  if (!newPrints && !streak) return null;
+  return { newPrints, streak };
+}
+
+function BoardRead({ s }: { s: Screen }) {
+  const { lang } = useLang();
+  const facts = useMemo(() => boardReadFacts(s), [s]);
+  if (!facts) return null;
+  const bn = lang === "bn";
+  const { newPrints, streak } = facts;
+  const pp = streak ? `${streak.total >= 0 ? "+" : ""}${streak.total.toFixed(1)} pp` : "";
+  return (
+    <div className="mt-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2">
+      <p className="text-[12px] leading-relaxed">
+        {newPrints > 0 && (
+          <>
+            {bn ? (
+              <>
+                <span className="font-bold text-accent">{bnDigits(String(newPrints))}টি</span>{" "}
+                কোম্পানি এই দফায় নতুন প্রকাশ দিয়েছে।
+              </>
+            ) : (
+              <>
+                <span className="font-bold text-accent">{newPrints}</span>{" "}
+                {newPrints === 1 ? "name" : "names"} posted a fresh disclosure this round.
+              </>
+            )}{" "}
+          </>
+        )}
+        {streak &&
+          (bn ? (
+            <>
+              দীর্ঘতম ধারা: <span className="font-bold">${streak.code}</span> — টানা{" "}
+              {bnDigits(String(streak.len))}টি প্রকাশে অংশ {streak.rising ? "বেড়েছে" : "কমেছে"} (
+              <span className={`font-bold tnum ${streak.rising ? "text-up" : "text-down"}`}>{pp}</span>
+              )।
+            </>
+          ) : (
+            <>
+              Longest run: <span className="font-bold">${streak.code}</span> — stake{" "}
+              {streak.rising ? "rose" : "fell"} across {streak.len} straight disclosures (
+              <span className={`font-bold tnum ${streak.rising ? "text-up" : "text-down"}`}>{pp}</span>
+              ).
+            </>
+          ))}
+      </p>
+      <p className="mt-0.5 text-[9px] text-muted">
+        {bn
+          ? "এই বোর্ডের প্রকাশ-তথ্য থেকে হিসাব করা — বর্ণনামূলক, পরামর্শ নয়।"
+          : "Computed from this board's disclosure data — descriptive, not advice."}
+      </p>
+    </div>
+  );
+}
+
 function ScreenCard({ s }: { s: Screen }) {
   const { t, lang } = useLang();
   const [showAll, setShowAll] = useState(false);
@@ -1407,6 +1499,7 @@ function ScreenCard({ s }: { s: Screen }) {
       {isDisclosureBoard && (
         <div className="mt-1 text-[10px] text-accent/90">{t("screen.disclosurePeriodHelp")}</div>
       )}
+      <BoardRead s={s} />
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
         <span>{t("col.symbol")}</span>
         <span className="flex gap-3">
