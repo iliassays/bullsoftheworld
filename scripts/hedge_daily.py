@@ -27,9 +27,10 @@ from bulls.core.models import CompanyProfile
 
 STOP, TARGET = -0.10, 0.25
 MAX_PE = 25  # quality gate: profitable and not expensive
+MAX_SNAPSHOT_SESSIONS = 63
 
 
-async def _profiles(market):
+async def load_profiles(market):
     sm = get_sessionmaker()
     async with sm() as session:
         profs = list(
@@ -50,14 +51,23 @@ def _qualifies(code, price, year, fin, div):
 TRACK_RECORD = {"total_2y": 73.6, "index_2y": 7.8, "win": 58, "maxdd": -12, "cagr": 31.7}
 
 
-async def scan(days: int = 5) -> dict:
-    """Compute today's Scheme-3 signals. Returns structured data for the CLI and the web app."""
-    by_code, _ = await _load()
-    fin, div = await _load_fundamentals("DSE")
-    profs = await _profiles("DSE")
+def build_scan_snapshot(
+    by_code,
+    fin,
+    div,
+    profs,
+    *,
+    max_sessions: int = MAX_SNAPSHOT_SESSIONS,
+) -> dict:
+    """Build the EOD read model used by the Hedge home and sizing pages.
+
+    Recent trigger dates are retained as session offsets. The web process can therefore serve
+    different look-back windows without loading bars or recomputing technical indicators.
+    """
+    max_sessions = max(1, int(max_sessions))
     latest = max(b.date for bars in by_code.values() for b in bars)
 
-    fired, watch = [], []
+    candidates = []
     for code, bars in by_code.items():
         if len(bars) < WARMUP + 5 or sum(x.volume for x in bars[-20:]) / 20 < MIN_AVG_VOL:
             continue
@@ -83,14 +93,14 @@ async def scan(days: int = 5) -> dict:
         cheap = max(0.0, (25 - min(pe, 25)) / 25)
         qual = min(max(roe, 0), 30) / 30
         score = round((washout + cheap + qual) / 3 * 100)
-        fired_on = next(
-            (
-                bars[j].date
-                for j in range(len(bars) - days, len(bars))
-                if j >= 5 and c[j] > max(h[j - 5 : j])
-            ),
-            None,
-        )
+        fires = [
+            {
+                "date": bars[j].date.isoformat(),
+                "sessions_ago": i - j,
+            }
+            for j in range(max(5, len(bars) - max_sessions), len(bars))
+            if c[j] > max(h[j - 5 : j])
+        ]
         item = {
             "code": code,
             "price": round(px, 2),
@@ -101,20 +111,58 @@ async def scan(days: int = 5) -> dict:
             "below_high": round(below),
             "score": score,
             "sector": (profs.get(code).sector if profs.get(code) else None) or "?",
-            "fired_on": fired_on.isoformat() if fired_on else None,
+            "fires": fires,
         }
+        candidates.append(item)
+    return {
+        "as_of": latest.isoformat(),
+        "max_sessions": max_sessions,
+        "candidates": candidates,
+        "track_record": TRACK_RECORD,
+    }
+
+
+def scan_from_snapshot(snapshot: dict, days: int = 5) -> dict:
+    """Materialize one look-back window from a persisted EOD scan snapshot."""
+    max_sessions = max(1, int(snapshot.get("max_sessions") or MAX_SNAPSHOT_SESSIONS))
+    days = min(max(int(days), 1), max_sessions)
+    fired, watch = [], []
+    for candidate in snapshot.get("candidates", []):
+        item = {key: value for key, value in candidate.items() if key != "fires"}
+        fired_on = next(
+            (
+                fire["date"]
+                for fire in candidate.get("fires", [])
+                if int(fire["sessions_ago"]) < days
+            ),
+            None,
+        )
+        item["fired_on"] = fired_on
         (fired if fired_on else watch).append(item)
+
     # Rank by conviction (strongest first) so the top of the list is what to fund when room is tight;
     # recency breaks ties. The watchlist stays ordered by how close each is to firing.
     fired.sort(key=lambda r: (r["score"], r["fired_on"]), reverse=True)
     watch.sort(key=lambda r: r["score"], reverse=True)
     return {
-        "as_of": latest.isoformat(),
+        "as_of": snapshot["as_of"],
         "days": days,
         "fired": fired,
         "watch": watch,
-        "track_record": TRACK_RECORD,
+        "track_record": snapshot.get("track_record", TRACK_RECORD),
+        "ready": True,
     }
+
+
+async def scan(days: int = 5) -> dict:
+    """Compute today's Scheme-3 signals for CLI/offline use.
+
+    HTTP requests use the persisted snapshot written by ``hedge_refresh.py`` instead.
+    """
+    by_code, _ = await _load()
+    fin, div = await _load_fundamentals("DSE")
+    profs = await load_profiles("DSE")
+    return scan_from_snapshot(build_scan_snapshot(by_code, fin, div, profs), days)
 
 
 async def _run(days):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 
+from hedge_daily import build_scan_snapshot, load_profiles
 from hedge_forward import build_rows, replace_rows
 from hedge_history import STRATEGY_KEY, backtest_from_inputs, serialize_history
 from portfolio_backtest import _load
@@ -33,6 +34,12 @@ async def refresh() -> dict:
     ledger = build_rows(by_code, signals)
     as_of = max(dsex)
     payload = serialize_history(history)
+    payload["daily_scan"] = build_scan_snapshot(
+        by_code,
+        fin,
+        div,
+        await load_profiles(MARKET),
+    )
 
     async with get_sessionmaker()() as session:
         await bind_tenant_context(session, TENANT_ID)

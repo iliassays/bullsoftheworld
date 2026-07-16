@@ -19,7 +19,7 @@ from collections import defaultdict
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from hedge_daily import scan
+from hedge_daily import MAX_SNAPSHOT_SESSIONS, TRACK_RECORD, scan_from_snapshot
 from hedge_forward import read_log, render_ledger
 from hedge_history import read_snapshot, render_history
 from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
@@ -40,13 +40,12 @@ from bulls.market_data.calendar import to_market_tz
 
 app = FastAPI(title="Hedge")
 
-# The market data only changes once a day (after EOD), but the scan + backtest are expensive
-# (~2s each: load every bar, recompute Scheme-3). Cache results in-process so navigating the app
-# is instant; a short TTL means it still picks up the day's new bars without a restart. Per-key
-# locks stop two concurrent loads from both doing the heavy work.
+# HTTP only reads persisted batch output and current portfolio state. The short cache avoids repeated
+# snapshot reads while still picking up a completed EOD refresh without restarting the web process.
+# Per-key locks stop concurrent cold requests from duplicating even that small database read.
 _CACHE: dict[object, tuple[float, object]] = {}
 _LOCKS: dict[object, asyncio.Lock] = {}
-_TTL = 600  # seconds
+_TTL = 60  # seconds
 
 
 async def _cached(key, factory):
@@ -125,6 +124,13 @@ def _shell(active: str, body: str) -> str:
 
 
 def _render(d: dict) -> str:
+    if not d.get("ready", True):
+        return f"""
+<div class="sub">Daily list · EOD {d["as_of"]} · delayed data · for your own use, not advice</div>
+<h2>Daily scan is preparing</h2>
+<div class="card"><div class="why">The scheduled EOD refresh has not published the buy-list snapshot
+yet. This page will not run the full-market scan inside your browser request. Try again after the
+next refresh.</div></div>"""
     tr = d["track_record"]
     buys = (
         "".join(
@@ -171,6 +177,13 @@ the stop is mandatory.</div>"""
 
 
 def render_sizing(d: dict, capital: float, risk: float, held: int) -> str:
+    if not d.get("ready", True):
+        return f"""
+<div class="sub">Risk / sizing · EOD {d["as_of"]} · delayed data</div>
+<h2>Position sizing is preparing</h2>
+<div class="card"><div class="why">Sizing uses the scheduled EOD buy-list snapshot, which has not
+completed yet. The web request deliberately does not run a full-universe scan. Try again after the
+next refresh.</div></div>"""
     r = size(capital, risk, d["fired"], held=held)
     rows, invested, heat, reserved = r["rows"], r["invested"], r["heat"], r["reserved"]
     pct = lambda x: x / capital * 100 if capital else 0  # noqa: E731
@@ -606,8 +619,29 @@ rest yet, whatever the price does. Every fill is at the delayed last-traded pric
 Paper trading · not advice.</div>"""
 
 
-async def _scan(days: int):  # shared by Today's-list and Sizing — computed once per TTL
-    return await _cached(("scan", days), lambda: scan(days))
+def _bounded_days(days: int) -> int:
+    return min(max(int(days), 1), MAX_SNAPSHOT_SESSIONS)
+
+
+async def _scan(days: int):
+    """Read the EOD scan snapshot; never load historical bars in an HTTP request."""
+    days = _bounded_days(days)
+
+    async def load():
+        snapshot = await read_snapshot()
+        daily_scan = snapshot.payload.get("daily_scan") if snapshot else None
+        if daily_scan:
+            return scan_from_snapshot(daily_scan, days)
+        return {
+            "as_of": snapshot.as_of_date.isoformat() if snapshot else "not available",
+            "days": days,
+            "fired": [],
+            "watch": [],
+            "track_record": TRACK_RECORD,
+            "ready": False,
+        }
+
+    return await _cached(("scan", days), load)
 
 
 async def _history_body() -> str:

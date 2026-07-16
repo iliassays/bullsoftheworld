@@ -3,19 +3,24 @@
 ## Runtime boundary
 
 The Hedge web process is a read-only presentation service. HTTP requests may read the latest quote
-book, agent executions, and the persisted track-record snapshot; they must not scan multi-year bars,
-run a backtest, or execute DDL.
+book, agent executions, and the persisted EOD snapshot; they must not scan historical bars, compute
+the daily buy list, run a backtest, or execute DDL.
 
 The historical quality-reversal simulation runs in `bullsofdhaka-hedge-refresh.service`. Its timer
 fires after the DSE EOD chain, with a low CPU quota and idle I/O priority. The job loads bars and
-fundamentals once, computes the portfolio history and signal ledger, then replaces both tenant-bound
-read models in one transaction:
+fundamentals once, computes the daily buy-list snapshot, portfolio history, and signal ledger, then
+replaces the tenant-bound read models in one transaction:
 
 - `hedge_track_record_snapshots`
 - `hedge_signals`
 
 Both tables use forced PostgreSQL row-level security on `tenant_id`. The production runtime role has
 DML privileges but no schema-creation privilege.
+
+The daily scan is stored under `hedge_track_record_snapshots.payload.daily_scan`. It retains recent
+trigger dates as session offsets, so Home, Risk/Sizing, and the signals API can apply bounded
+look-back windows from a small JSON document. A cache miss therefore performs one indexed snapshot
+read rather than loading every DSE bar and fundamental row into the web process.
 
 ## Agent portfolios
 
