@@ -19,6 +19,6 @@ CPUWeight=10
 IOWeight=10
 MemoryHigh=1024M
 MemoryMax=1536M
-RuntimeMaxSec=2h5min
+TimeoutStartSec=2h5min
 TimeoutStopSec=2min
 NoNewPrivileges=true

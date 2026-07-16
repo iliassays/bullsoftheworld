@@ -82,4 +82,18 @@ ssh "$REMOTE" "cd $APP \
        bullsofwallst-sec-watchdog.timer bullsofwallst-cohort-staging.timer \
        bullsofdhaka-hedge-refresh.timer"
 
+echo "→ waiting for public API readiness"
+API_READY=false
+for _attempt in $(seq 1 60); do
+  if curl -fsS "$API_URL/ready" >/dev/null; then
+    API_READY=true
+    break
+  fi
+  sleep 3
+done
+if [[ "$API_READY" != "true" ]]; then
+  echo "API did not become ready after deployment: $API_URL/ready" >&2
+  exit 1
+fi
+
 echo "✓ released backend and server assets for $SITE_URL"
