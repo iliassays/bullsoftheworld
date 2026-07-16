@@ -15,16 +15,17 @@ import argparse
 import asyncio
 import datetime as dt
 import time
+from collections import defaultdict
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from hedge_daily import scan
-from hedge_forward import read_log, render_ledger, sync
-from hedge_history import backtest, render_history
+from hedge_forward import read_log, render_ledger
+from hedge_history import read_snapshot, render_history
 from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
-from sqlalchemy import desc, select
+from sqlalchemy import select
 
-from bulls.analytics import STRATEGIES
+from bulls.analytics import STRATEGIES, calculate_agent_performance
 from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     AgentLot,
@@ -229,66 +230,103 @@ backtest no trade lost more than the stop, so "{risk:g}% at risk" holds up. Dela
 
 
 async def _agent_book() -> list[dict]:
-    """All five agent model portfolios, priced against the latest quotes. Not cached: the tables
-    are tiny and the book changes every 15-min engine tick during the session — a TTL here would
-    show stale positions right when you're watching them trade."""
-    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    """All agent portfolios from six bulk queries, priced against the latest DSE quotes."""
+    tenant_id, market = "bullsofdhaka", "DSE"
+    today = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     out: list[dict] = []
     async with get_sessionmaker()() as session:
-        await bind_tenant_context(session, "bullsofdhaka")
+        await bind_tenant_context(session, tenant_id)
         rows = (
             await session.execute(
-                select(AgentPortfolio, User).join(User, User.id == AgentPortfolio.user_id)
+                select(AgentPortfolio, User)
+                .join(User, User.id == AgentPortfolio.user_id)
+                .where(
+                    AgentPortfolio.market == market,
+                    User.tenant_id == tenant_id,
+                )
             )
         ).all()
-        for agent, user in sorted(rows, key=lambda r: r[1].handle):
-            spec = STRATEGIES[agent.strategy]
-            holdings = (
-                await session.scalars(
-                    select(PortfolioHolding).where(PortfolioHolding.user_id == agent.user_id)
+        user_ids = [agent.user_id for agent, _ in rows]
+        if not user_ids:
+            return out
+
+        holdings = (
+            await session.scalars(
+                select(PortfolioHolding).where(
+                    PortfolioHolding.tenant_id == tenant_id,
+                    PortfolioHolding.market == market,
+                    PortfolioHolding.user_id.in_(user_ids),
                 )
-            ).all()
-            quotes = {
-                q.code: q
-                for q in await session.scalars(
+            )
+        ).all()
+        lots = (
+            await session.scalars(
+                select(AgentLot).where(
+                    AgentLot.market == market,
+                    AgentLot.user_id.in_(user_ids),
+                    AgentLot.quantity_left > 0,
+                )
+            )
+        ).all()
+        all_trades = (
+            await session.scalars(
+                select(AgentTrade)
+                .where(AgentTrade.market == market, AgentTrade.user_id.in_(user_ids))
+                .order_by(AgentTrade.user_id, AgentTrade.id)
+            )
+        ).all()
+        codes = sorted({holding.code for holding in holdings})
+        quotes = {
+            q.code: q
+            for q in (
+                await session.scalars(
                     select(QuoteSnapshot).where(
-                        QuoteSnapshot.market == agent.market,
-                        QuoteSnapshot.code.in_([h.code for h in holdings] or [""]),
+                        QuoteSnapshot.market == market,
+                        QuoteSnapshot.code.in_(codes or [""]),
                     )
                 )
-            }
+            ).all()
+        }
+
+        holdings_by_user: dict[int, list] = defaultdict(list)
+        lots_by_user: dict[int, list] = defaultdict(list)
+        trades_by_user: dict[int, list] = defaultdict(list)
+        for holding in holdings:
+            holdings_by_user[holding.user_id].append(holding)
+        for lot in lots:
+            lots_by_user[lot.user_id].append(lot)
+        for trade in all_trades:
+            trades_by_user[trade.user_id].append(trade)
+
+        for agent, user in sorted(rows, key=lambda row: row[1].handle):
+            spec = STRATEGIES[agent.strategy]
+            agent_holdings = holdings_by_user[agent.user_id]
+            agent_trades = trades_by_user[agent.user_id]
             matured: dict[str, int] = {}
-            for lot in await session.scalars(
-                select(AgentLot).where(
-                    AgentLot.user_id == agent.user_id, AgentLot.quantity_left > 0
-                )
-            ):
+            for lot in lots_by_user[agent.user_id]:
                 if lot.sellable_from <= today:
                     matured[lot.code] = matured.get(lot.code, 0) + lot.quantity_left
             pending = sum(
-                t.net_cash
-                for t in await session.scalars(
-                    select(AgentTrade).where(
-                        AgentTrade.user_id == agent.user_id, AgentTrade.settled.is_(False)
-                    )
-                )
+                trade.net_cash
+                for trade in agent_trades
+                if trade.side == "sell" and not trade.settled
             )
-            trades = (
-                await session.scalars(
-                    select(AgentTrade)
-                    .where(AgentTrade.user_id == agent.user_id)
-                    .order_by(desc(AgentTrade.id))
-                    .limit(200)
-                )
-            ).all()
+            prices = {
+                holding.code: quotes[holding.code].ltp
+                for holding in agent_holdings
+                if holding.code in quotes and quotes[holding.code].ltp is not None
+            }
+            performance = calculate_agent_performance(agent_trades, prices)
 
             hout, value_known, total_value = [], True, 0.0
-            for h in holdings:
+            quote_times = []
+            for h in agent_holdings:
                 q = quotes.get(h.code)
-                if q is None:
+                if q is None or q.ltp is None:
                     value_known = False
                 else:
                     total_value += h.quantity * q.ltp
+                    quote_times.append(q.as_of)
                 hout.append(
                     {
                         "code": h.code,
@@ -314,8 +352,19 @@ async def _agent_book() -> list[dict]:
                     "capital": agent.initial_capital,
                     "equity": equity,
                     "pnl": equity - agent.initial_capital if equity is not None else None,
+                    "return_pct": (
+                        (equity / agent.initial_capital - 1) * 100
+                        if equity is not None and agent.initial_capital
+                        else None
+                    ),
+                    "realized_pnl": performance.realized_pnl,
+                    "unrealized_pnl": performance.unrealized_pnl,
+                    "fees": performance.fees,
+                    "closed_trades": performance.closed_trades,
+                    "win_rate": performance.win_rate,
+                    "quotes_as_of": min(quote_times) if quote_times else None,
                     "holdings": hout,
-                    "trades": trades,
+                    "trades": list(reversed(agent_trades[-200:])),
                 }
             )
     return out
@@ -323,6 +372,10 @@ async def _agent_book() -> list[dict]:
 
 def _fmt_tk(v: float | None) -> str:
     return "—" if v is None else f"{v:,.0f}"
+
+
+def _fmt_pct(v: float | None) -> str:
+    return "—" if v is None else f"{v:+.2f}%"
 
 
 def render_portfolios(book: list[dict], selected: str) -> str:
@@ -336,7 +389,7 @@ def render_portfolios(book: list[dict], selected: str) -> str:
       <div><label>Portfolio</label>
       <select name="p" onchange="this.form.submit()" style="background:#0f1115;border:1px solid #232733;
         color:#e6e8eb;border-radius:8px;padding:8px 10px;font-size:15px;margin-top:4px">
-      <option value="">All five — overview</option>{options}</select></div></form>"""
+      <option value="">All agents — overview</option>{options}</select></div></form>"""
 
     if chosen is None:  # overview table of the whole stable
         rows = (
@@ -347,7 +400,7 @@ def render_portfolios(book: list[dict], selected: str) -> str:
                 f"<td class='num'>{_fmt_tk(a['cash'])}</td>"
                 f"<td class='num'>{_fmt_tk(a['pending'])}</td>"
                 f"<td class='num'>{len(a['holdings'])}</td>"
-                f"<td class='num'>{len(a['trades'])}</td></tr>"
+                f"<td class='num'>{_fmt_pct(a['return_pct'])}</td></tr>"
                 for a in book
             )
             or '<tr><td colspan="7" class="empty">No agent portfolios seeded.</td></tr>'
@@ -362,7 +415,7 @@ settlement · paper trading on delayed quotes · not advice</div>
   <div><div class="k">vs deployed</div><div class="v {"pos" if total_eq >= total_cap else "neg"}">{total_eq - total_cap:+,.0f}</div></div>
 </div>
 <table><tr><th>portfolio</th><th class="num">equity ৳</th><th class="num">P&L ৳</th>
-<th class="num">cash ৳</th><th class="num">settling ৳</th><th class="num">positions</th><th class="num">trades</th></tr>
+<th class="num">cash ৳</th><th class="num">settling ৳</th><th class="num">positions</th><th class="num">return</th></tr>
 {rows}</table>
 <div class="foot">Pick a portfolio above for its holdings and full trade log. "Settling" = sell
 proceeds still inside the T+2 window — real money, not yet spendable. Full detail incl. reasons
@@ -401,6 +454,15 @@ also lives in the portal cockpit.</div>"""
   <div><div class="k">Settling</div><div class="v">{_fmt_tk(chosen["pending"])}</div></div>
   <div><div class="k">Positions</div><div class="v">{len(chosen["holdings"])}</div></div>
 </div>
+<div class="tr">
+  <div><div class="k">Realized P&L</div><div class="v {"pos" if chosen["realized_pnl"] >= 0 else "neg"}">{chosen["realized_pnl"]:+,.0f}</div></div>
+  <div><div class="k">Unrealized P&L</div><div class="v {"pos" if (chosen["unrealized_pnl"] or 0) >= 0 else "neg"}">{_fmt_tk(chosen["unrealized_pnl"])}</div></div>
+  <div><div class="k">Closed trades</div><div class="v">{chosen["closed_trades"]}</div></div>
+  <div><div class="k">Win rate</div><div class="v">{f"{chosen['win_rate']:.1f}%" if chosen["win_rate"] is not None else "Not established"}</div></div>
+  <div><div class="k">Fees paid</div><div class="v">{chosen["fees"]:,.0f}</div></div>
+</div>
+<div class="cap">Oldest quote in this valuation: {chosen["quotes_as_of"] or "no open positions"}.
+Returns are mark-to-market; a win rate appears only after positions have been sold.</div>
 <h2>Holdings</h2>
 <table><tr><th>code</th><th class="num">qty</th><th class="num">sellable</th>
 <th class="num">avg cost</th><th class="num">ltp</th><th class="num">P&L</th></tr>
@@ -420,8 +482,16 @@ async def _scan(days: int):  # shared by Today's-list and Sizing — computed on
 
 
 async def _history_body() -> str:
-    await sync()  # persist + re-score the ledger, then read it back
-    return render_history(await backtest()) + render_ledger(await read_log())
+    snapshot = await read_snapshot()
+    if snapshot is None:
+        return """<h2>Track record is preparing</h2>
+<div class="card"><div class="why">The batch snapshot has not completed yet. This page never runs
+the multi-year backtest inside your browser request; refresh after the scheduled EOD job.</div></div>"""
+    return render_history(
+        snapshot.payload,
+        computed_at=snapshot.computed_at,
+        as_of_date=snapshot.as_of_date,
+    ) + render_ledger(await read_log())
 
 
 @app.get("/", response_class=HTMLResponse)

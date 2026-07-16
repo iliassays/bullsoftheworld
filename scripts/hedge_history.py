@@ -10,19 +10,63 @@ from __future__ import annotations
 from portfolio_backtest import START, _load, simulate
 from scheme2_value import _load_fundamentals
 from scheme_lab import quality_reversal
+from sqlalchemy import select
+
+from bulls.core.db import bind_tenant_context, get_sessionmaker
+from bulls.core.models import HedgeTrackRecordSnapshot
 
 EXITS = dict(stop=-0.10, target=0.25, hold=63, max_pos=10)
+STRATEGY_KEY = "quality_reversal_v1"
+
+
+def backtest_from_inputs(by_code, dsex, sigs) -> dict:
+    """Run the simulation from an already-loaded research dataset."""
+    m = simulate(by_code, dsex, signal_fn=lambda b: sigs.get(b[0].code, set()), **EXITS)
+    dts = sorted(dsex)
+    idx0 = dsex[dts[0]]
+    index = [(d, START * dsex.get(d, idx0) / idx0) for d, _ in m["curve"]]
+    stats = {k: v for k, v in m.items() if k not in {"curve", "trade_log"}}
+    stats["index_return"] = (index[-1][1] / START - 1) * 100
+    return {"curve": m["curve"], "index": index, "trades": m["trade_log"], "stats": stats}
 
 
 async def backtest() -> dict:
     by_code, dsex = await _load()
     fin, div = await _load_fundamentals("DSE")
     sigs = quality_reversal(by_code, fin, div)
-    m = simulate(by_code, dsex, signal_fn=lambda b: sigs.get(b[0].code, set()), **EXITS)
-    dts = sorted(dsex)
-    idx0 = dsex[dts[0]]
-    index = [(d, START * dsex.get(d, idx0) / idx0) for d, _ in m["curve"]]
-    return {"curve": m["curve"], "index": index, "trades": m["trade_log"], "stats": m}
+    return backtest_from_inputs(by_code, dsex, sigs)
+
+
+def serialize_history(result: dict) -> dict:
+    """Convert dates to JSON-safe ISO strings for the persisted read model."""
+    return {
+        "curve": [[d.isoformat(), value] for d, value in result["curve"]],
+        "index": [[d.isoformat(), value] for d, value in result["index"]],
+        "trades": [
+            {
+                **trade,
+                "in_date": trade["in_date"].isoformat(),
+                "out_date": trade["out_date"].isoformat(),
+            }
+            for trade in result["trades"]
+        ],
+        "stats": result["stats"],
+    }
+
+
+async def read_snapshot(
+    *, tenant_id: str = "bullsofdhaka", market: str = "DSE"
+) -> HedgeTrackRecordSnapshot | None:
+    """Read the latest precomputed history. This is the only operation used by HTTP requests."""
+    async with get_sessionmaker()() as session:
+        await bind_tenant_context(session, tenant_id)
+        return await session.scalar(
+            select(HedgeTrackRecordSnapshot).where(
+                HedgeTrackRecordSnapshot.tenant_id == tenant_id,
+                HedgeTrackRecordSnapshot.market == market,
+                HedgeTrackRecordSnapshot.strategy == STRATEGY_KEY,
+            )
+        )
 
 
 def _svg(curve, index) -> str:
@@ -48,9 +92,10 @@ def _svg(curve, index) -> str:
     yr_marks = ""
     seen = set()
     for i, (d, _) in enumerate(curve):
-        if d.year not in seen:
-            seen.add(d.year)
-            yr_marks += f'<text x="{x(i):.0f}" y="{h - 10}" class="ax">{d.year}</text>'
+        year = str(d)[:4]
+        if year not in seen:
+            seen.add(year)
+            yr_marks += f'<text x="{x(i):.0f}" y="{h - 10}" class="ax">{year}</text>'
     return f"""<svg viewBox="0 0 {w} {h}" class="chart" role="img" aria-label="Equity curve">
   <line x1="{pad}" y1="{base_y:.1f}" x2="{w - pad}" y2="{base_y:.1f}" class="grid"/>
   <text x="{pad}" y="{base_y - 6:.1f}" class="ax">start {START:.0f}</text>
@@ -61,15 +106,17 @@ def _svg(curve, index) -> str:
 </svg>"""
 
 
-def render_history(d: dict) -> str:
+def render_history(d: dict, *, computed_at=None, as_of_date=None) -> str:
     """Portfolio growth section: headline stats + the equity curve (the persisted ledger sits below)."""
     s = d["stats"]
     return f"""
 <h2>Portfolio growth &mdash; 1,000 since {d["curve"][0][0]}</h2>
+<div class="cap">Backtest data through {as_of_date or d["curve"][-1][0]} · computed
+{computed_at.strftime("%Y-%m-%d %H:%M UTC") if computed_at else "offline"}</div>
 <div class="tr">
   <div><div class="k">1,000 became</div><div class="v pos">{s["final"]:,.0f}</div></div>
   <div><div class="k">total / CAGR</div><div class="v">+{s["total"]:.0f}% / {s["cagr"]:.0f}%</div></div>
-  <div><div class="k">vs market</div><div class="v">+8%</div></div>
+  <div><div class="k">market return</div><div class="v">{s["index_return"]:+.1f}%</div></div>
   <div><div class="k">win rate</div><div class="v">{s["winrate"]:.0f}%</div></div>
   <div><div class="k">worst drop</div><div class="v neg">{s["maxdd"]:.0f}%</div></div>
   <div><div class="k">trades</div><div class="v">{s["n_trades"]}</div></div>

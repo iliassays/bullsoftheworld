@@ -57,6 +57,10 @@ ssh "$REMOTE" "cd $APP \
   && ~/.local/bin/uv run python scripts/provision_runtime_db_role.py \
   && sudo cp infra/systemd/bulls-ai-worker.service \
        /etc/systemd/system/bullsofdhaka-ai-worker.service \
+  && sudo cp infra/systemd/bullsofdhaka-hedge.service \
+       infra/systemd/bullsofdhaka-hedge-refresh.service \
+       infra/systemd/bullsofdhaka-hedge-refresh.timer \
+       /etc/systemd/system/ \
   && sudo cp infra/systemd/bullsofwallst-worker.service \
        infra/systemd/bulls-research-lifecycle-worker.service \
        infra/systemd/bullsofwallst-sec-worker.service \
@@ -67,10 +71,11 @@ ssh "$REMOTE" "cd $APP \
   && sudo systemctl daemon-reload \
   && sudo systemctl enable bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
-       bullsofwallst-sec-watchdog.timer \
+       bullsofwallst-sec-watchdog.timer bullsofdhaka-hedge-refresh.timer \
+  && sudo systemctl start bullsofdhaka-hedge-refresh.service \
   && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker \
        bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
-       bullsofwallst-sec-watchdog.timer"
+       bullsofwallst-sec-watchdog.timer bullsofdhaka-hedge-refresh.timer"
 
 echo "✓ released backend and server assets for $SITE_URL"

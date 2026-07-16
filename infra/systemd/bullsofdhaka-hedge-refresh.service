@@ -1,0 +1,18 @@
+[Unit]
+Description=Refresh Bulls of Dhaka Hedge track-record read model
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka/scripts
+EnvironmentFile=/home/ubuntu/bullsofdhaka/.env
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python /home/ubuntu/bullsofdhaka/scripts/hedge_refresh.py
+TimeoutStartSec=15min
+MemoryMax=512M
+CPUQuota=35%
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true

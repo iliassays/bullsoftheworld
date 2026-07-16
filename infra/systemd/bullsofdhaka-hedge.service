@@ -1,0 +1,21 @@
+[Unit]
+Description=Bulls of Dhaka Hedge research portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka/scripts
+EnvironmentFile=/home/ubuntu/bullsofdhaka/.env
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python /home/ubuntu/bullsofdhaka/scripts/hedge_app.py --port 8013
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+MemoryMax=384M
+CPUWeight=50
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

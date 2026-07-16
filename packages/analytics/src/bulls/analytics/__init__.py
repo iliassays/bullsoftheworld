@@ -4,6 +4,7 @@ Computes descriptive facts (trend, momentum, levels, volume) over daily bars. No
 """
 
 from bulls.analytics.adjustments import AdjustedBar, adjust_bars
+from bulls.analytics.agent_performance import AgentPerformance, calculate_agent_performance
 from bulls.analytics.circuit import AT_LIMIT_TOLERANCE_PP, at_circuit, circuit_band
 from bulls.analytics.engine import AnalyticsResult, BarLike, Level, compute
 from bulls.analytics.indicators import (
@@ -55,6 +56,7 @@ __all__ = [
     "AT_LIMIT_TOLERANCE_PP",
     "STRATEGIES",
     "AdjustedBar",
+    "AgentPerformance",
     "AnalyticsResult",
     "BarLike",
     "Dimension",
@@ -84,6 +86,7 @@ __all__ = [
     "build_plain_read",
     "build_red_flags",
     "build_scorecard",
+    "calculate_agent_performance",
     "chaikin_money_flow",
     "circuit_band",
     "compute",

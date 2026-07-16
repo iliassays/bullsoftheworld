@@ -14,6 +14,7 @@ from bulls.core.models.company import (
 from bulls.core.models.company_logo import CompanyLogo
 from bulls.core.models.follow import Follow
 from bulls.core.models.growth import BetaFeedback, InstitutionalLead, ProductEvent
+from bulls.core.models.hedge import HedgeSignal, HedgeTrackRecordSnapshot
 from bulls.core.models.knowledge import KnowledgeChunk
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
@@ -84,6 +85,8 @@ __all__ = [
     "EvidenceDocument",
     "EvidenceSpan",
     "Follow",
+    "HedgeSignal",
+    "HedgeTrackRecordSnapshot",
     "InstitutionalHoldingSummary",
     "InstitutionalLead",
     "InstitutionalManager",

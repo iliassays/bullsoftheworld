@@ -12,31 +12,17 @@ from __future__ import annotations
 
 import asyncio
 
+from hedge_history import STRATEGY_KEY
 from portfolio_backtest import WARMUP, _load
 from scheme2_value import _load_fundamentals
 from scheme_lab import quality_reversal
-from sqlalchemy import text
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from bulls.core.db import get_sessionmaker
+from bulls.core.db import bind_tenant_context, get_sessionmaker
+from bulls.core.models import HedgeSignal
 
 STOP, TARGET, HOLD = -0.10, 0.25, 63
-
-_DDL = """
-CREATE TABLE IF NOT EXISTS hedge_log (
-  code text NOT NULL, signal_date date NOT NULL,
-  entry double precision, stop double precision, target double precision,
-  status text, exit_date date, exit_px double precision, result_pct double precision,
-  created_at timestamptz DEFAULT now(),
-  PRIMARY KEY (code, signal_date)
-)
-"""
-_UPSERT = """
-INSERT INTO hedge_log (code,signal_date,entry,stop,target,status,exit_date,exit_px,result_pct)
-VALUES (:code,:signal_date,:entry,:stop,:target,:status,:exit_date,:exit_px,:result_pct)
-ON CONFLICT (code,signal_date) DO UPDATE SET
-  status=excluded.status, exit_date=excluded.exit_date,
-  exit_px=excluded.exit_px, result_pct=excluded.result_pct
-"""
 
 
 def _score(bars, i):
@@ -54,11 +40,8 @@ def _score(bars, i):
     return "open", None, None, None  # still running
 
 
-async def sync() -> dict:
-    """Recompute every Scheme-3 signal, persist + (re)score. Idempotent; created_at kept on insert."""
-    by_code, _ = await _load()
-    fin, div = await _load_fundamentals("DSE")
-    sigs = quality_reversal(by_code, fin, div)
+def build_rows(by_code, sigs) -> list[dict]:
+    """Score every signal using an already-loaded dataset."""
     rows = []
     for code, dates in sigs.items():
         bars = by_code[code]
@@ -71,6 +54,9 @@ async def sync() -> dict:
             status, ed, ex, res = _score(bars, i)
             rows.append(
                 {
+                    "tenant_id": "bullsofdhaka",
+                    "market": "DSE",
+                    "strategy": STRATEGY_KEY,
                     "code": code,
                     "signal_date": sd,
                     "entry": round(entry, 2),
@@ -82,11 +68,50 @@ async def sync() -> dict:
                     "result_pct": res,
                 }
             )
+    return rows
+
+
+async def replace_rows(
+    session: AsyncSession,
+    rows: list[dict],
+    *,
+    tenant_id: str = "bullsofdhaka",
+    market: str = "DSE",
+) -> None:
+    """Atomically replace one strategy ledger so deleted/corrected historical signals disappear."""
+    await session.execute(
+        delete(HedgeSignal).where(
+            HedgeSignal.tenant_id == tenant_id,
+            HedgeSignal.market == market,
+            HedgeSignal.strategy == STRATEGY_KEY,
+        )
+    )
+    if rows:
+        session.add_all(
+            [
+                HedgeSignal(
+                    **{
+                        **row,
+                        "tenant_id": tenant_id,
+                        "market": market,
+                        "strategy": STRATEGY_KEY,
+                    }
+                )
+                for row in rows
+            ]
+        )
+
+
+async def sync() -> dict:
+    """Manual compatibility entry point. Scheduled refreshes use hedge_refresh.py to load once."""
+    by_code, _ = await _load()
+    fin, div = await _load_fundamentals("DSE")
+    sigs = quality_reversal(by_code, fin, div)
+    rows = build_rows(by_code, sigs)
     sm = get_sessionmaker()
     async with sm() as s:
-        await s.execute(text(_DDL))
-        if rows:
-            await s.execute(text(_UPSERT), rows)
+        await bind_tenant_context(s, "bullsofdhaka")
+        await replace_rows(s, rows)
         await s.commit()
     return {"logged": len(rows), "open": sum(1 for r in rows if r["status"] == "open")}
 
@@ -95,20 +120,33 @@ async def read_log() -> dict:
     """Read the ledger back: summary stats + all rows (newest first)."""
     sm = get_sessionmaker()
     async with sm() as s:
-        await s.execute(text(_DDL))
+        await bind_tenant_context(s, "bullsofdhaka")
         res = (
-            (
-                await s.execute(
-                    text(
-                        "SELECT code,signal_date,entry,stop,target,status,exit_date,exit_px,result_pct,created_at "
-                        "FROM hedge_log ORDER BY signal_date DESC"
-                    )
+            await s.scalars(
+                select(HedgeSignal)
+                .where(
+                    HedgeSignal.tenant_id == "bullsofdhaka",
+                    HedgeSignal.market == "DSE",
+                    HedgeSignal.strategy == STRATEGY_KEY,
                 )
+                .order_by(HedgeSignal.signal_date.desc())
             )
-            .mappings()
-            .all()
-        )
-    rows = [dict(r) for r in res]
+        ).all()
+    rows = [
+        {
+            "code": r.code,
+            "signal_date": r.signal_date,
+            "entry": r.entry,
+            "stop": r.stop,
+            "target": r.target,
+            "status": r.status,
+            "exit_date": r.exit_date,
+            "exit_px": r.exit_px,
+            "result_pct": r.result_pct,
+            "created_at": r.created_at,
+        }
+        for r in res
+    ]
     closed = [r for r in rows if r["status"] != "open"]
     wins = [r for r in closed if (r["result_pct"] or 0) > 0]
     return {

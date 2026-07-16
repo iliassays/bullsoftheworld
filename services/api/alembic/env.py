@@ -14,7 +14,7 @@ from bulls.core.db import Base
 
 target_metadata = Base.metadata
 
-_UNMANAGED_TABLES = {"hedge_log"}
+_UNMANAGED_TABLES: set[str] = set()
 
 
 def _include_object(obj, name, type_, reflected, compare_to):

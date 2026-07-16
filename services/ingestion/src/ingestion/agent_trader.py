@@ -43,6 +43,7 @@ from bulls.core.models import (
     QuoteSnapshot,
     Symbol,
     TickerAnalytics,
+    User,
 )
 from bulls.market_data.calendar import add_trading_days, is_trading_hours, to_market_tz
 
@@ -55,6 +56,11 @@ QUOTE_MAX_AGE = dt.timedelta(minutes=45)  # a 15-min feed older than 3 ticks is 
 # stop-loss the same stale row often still "qualifies" — without this the engine would rebuy
 # what it just sold in the very same tick.
 REENTRY_COOLDOWN = dt.timedelta(days=7)
+
+
+def _calendar_market(market: str) -> str:
+    """Synthetic test markets intentionally follow DSE hours; production markets use themselves."""
+    return market if market in {"DSE", "US"} else "DSE"
 
 
 def settle_days(category: str | None) -> int:
@@ -139,6 +145,8 @@ async def _settle_due(session: AsyncSession, agent: AgentPortfolio, today: dt.da
         await session.scalars(
             select(AgentTrade).where(
                 AgentTrade.user_id == agent.user_id,
+                AgentTrade.market == agent.market,
+                AgentTrade.side == "sell",
                 AgentTrade.settled.is_(False),
                 AgentTrade.settles_on <= today,
             )
@@ -178,7 +186,9 @@ async def _sell(
             fee=fee,
             net_cash=round(gross - fee, 2),
             trade_date=today,
-            settles_on=add_trading_days(today, settle_days(category)),
+            settles_on=add_trading_days(
+                today, settle_days(category), market=_calendar_market(agent.market)
+            ),
             settled=False,  # proceeds credited by _settle_due when the date arrives
             reason=reason,
             quote_as_of=snap.quote_as_of,
@@ -212,7 +222,7 @@ async def _buy(
     gross = qty * snap.ltp
     fee = round(gross * FEE_RATE, 2)
     cost = round(gross + fee, 2)
-    settles = add_trading_days(today, settle_days(category))
+    settles = add_trading_days(today, settle_days(category), market=_calendar_market(agent.market))
     session.add(
         AgentTrade(
             user_id=agent.user_id,
@@ -271,9 +281,10 @@ async def run_agents(
     """One engine tick. Safe to call any time: outside trading hours it's a no-op, and inside
     the session it only acts on quotes fresh enough to trust."""
     now = now or dt.datetime.now(dt.UTC)
-    if not is_trading_hours(now):
+    calendar_market = _calendar_market(market)
+    if not is_trading_hours(now, market=calendar_market):
         return {"skipped": 1}
-    today = to_market_tz(now).date()
+    today = to_market_tz(now, market=calendar_market).date()
 
     counts = {"agents": 0, "buys": 0, "sells": 0, "settled": 0}
     sm = get_sessionmaker()
@@ -281,9 +292,14 @@ async def run_agents(
         await bind_tenant_context(session, tenant_id)
         agents = (
             await session.scalars(
-                select(AgentPortfolio).where(
-                    AgentPortfolio.market == market, AgentPortfolio.is_active.is_(True)
+                select(AgentPortfolio)
+                .join(User, User.id == AgentPortfolio.user_id)
+                .where(
+                    AgentPortfolio.market == market,
+                    AgentPortfolio.is_active.is_(True),
+                    User.tenant_id == tenant_id,
                 )
+                .with_for_update(of=AgentPortfolio)
             )
         ).all()
         if not agents:
@@ -305,6 +321,7 @@ async def run_agents(
                 for h in await session.scalars(
                     select(PortfolioHolding).where(
                         PortfolioHolding.user_id == agent.user_id,
+                        PortfolioHolding.tenant_id == tenant_id,
                         PortfolioHolding.market == market,
                     )
                 )
@@ -312,7 +329,11 @@ async def run_agents(
             lots_by_code: dict[str, list[AgentLot]] = {}
             for lot in await session.scalars(
                 select(AgentLot)
-                .where(AgentLot.user_id == agent.user_id, AgentLot.quantity_left > 0)
+                .where(
+                    AgentLot.user_id == agent.user_id,
+                    AgentLot.market == market,
+                    AgentLot.quantity_left > 0,
+                )
                 .order_by(AgentLot.id)
             ):
                 lots_by_code.setdefault(lot.code, []).append(lot)
@@ -344,6 +365,7 @@ async def run_agents(
                     await session.scalars(
                         select(AgentTrade.code).where(
                             AgentTrade.user_id == agent.user_id,
+                            AgentTrade.market == market,
                             AgentTrade.side == "sell",
                             AgentTrade.trade_date >= today - REENTRY_COOLDOWN,
                         )
