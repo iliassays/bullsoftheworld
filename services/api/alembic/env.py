@@ -36,6 +36,20 @@ def _run(connection):
         context.run_migrations()
 
 
+def run_offline() -> None:
+    settings = get_settings()
+    url = os.environ.get("MIGRATION_DATABASE_URL") or settings.database_url
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        include_object=_include_object,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
 async def run_online():
     settings = get_settings()
     # MIGRATION_DATABASE_URL is injected only into the deploy command. It must not be present in
@@ -47,4 +61,7 @@ async def run_online():
     await engine.dispose()
 
 
-asyncio.run(run_online())
+if context.is_offline_mode():
+    run_offline()
+else:
+    asyncio.run(run_online())

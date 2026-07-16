@@ -72,3 +72,14 @@ def test_production_accepts_long_random_jwt_secret() -> None:
 def test_unknown_ai_provider_is_rejected_at_configuration_boundary() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, ai_provider="mystery")
+
+
+def test_production_options_ingestion_requires_s3_storage() -> None:
+    with pytest.raises(ValidationError, match="requires immutable S3"):
+        Settings(
+            _env_file=None,
+            env="production",
+            jwt_secret="x" * 48,
+            us_options_phase_a_enabled=True,
+            research_object_store_backend="local",
+        )

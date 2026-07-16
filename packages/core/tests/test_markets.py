@@ -69,6 +69,8 @@ def test_us_profile_is_opt_in_and_does_not_inherit_dse_features() -> None:
     assert format_money_millions(500, "US") == "$500.0M"
     assert format_money_millions(1250, "US") == "$1.2B"
     assert format_money_millions(500, "US", style="market_cap") == "$500M"
+    assert dt.date(2025, 7, 4) in us.holidays
+    assert us.close_time_on(dt.date(2025, 7, 3)) == dt.time(13, 0)
 
 
 def test_wall_street_tenant_loads_without_changing_default_tenant() -> None:

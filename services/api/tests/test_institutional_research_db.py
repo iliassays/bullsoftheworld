@@ -60,6 +60,9 @@ async def test_research_tables_force_tenant_market_row_security() -> None:
             "research_evidence_documents",
             "research_evidence_spans",
             "research_catalyst_events",
+            "research_data_entitlements",
+            "research_dataset_evaluations",
+            "research_dataset_snapshots",
         }
         assert {row[0] for row in rows} == (
             direct_user_scope | set(lineage_scope) | tenant_shared_scope

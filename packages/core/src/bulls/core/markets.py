@@ -105,10 +105,20 @@ DSE_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
     }
 )
 
-# Verified against the NYSE 2026 calendar. Keep the worker's verified-year gate closed until each
-# later year's full holidays and early closes have been reviewed and added here.
-US_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
+# Verified against the official NYSE 2025-2026 holiday and early-close calendars. Keep the
+# worker's verified-year gate closed until each additional full year is reviewed and added here.
+US_HOLIDAYS_2025_2026: frozenset[dt.date] = frozenset(
     {
+        dt.date(2025, 1, 1),
+        dt.date(2025, 1, 20),
+        dt.date(2025, 2, 17),
+        dt.date(2025, 4, 18),
+        dt.date(2025, 5, 26),
+        dt.date(2025, 6, 19),
+        dt.date(2025, 7, 4),
+        dt.date(2025, 9, 1),
+        dt.date(2025, 11, 27),
+        dt.date(2025, 12, 25),
         dt.date(2026, 1, 1),
         dt.date(2026, 1, 19),
         dt.date(2026, 2, 16),
@@ -121,11 +131,14 @@ US_HOLIDAYS_2026: frozenset[dt.date] = frozenset(
         dt.date(2026, 12, 25),
     }
 )
-US_EARLY_CLOSES_2026: dict[dt.date, dt.time] = {
+US_EARLY_CLOSES_2025_2026: dict[dt.date, dt.time] = {
+    dt.date(2025, 7, 3): dt.time(13, 0),
+    dt.date(2025, 11, 28): dt.time(13, 0),
+    dt.date(2025, 12, 24): dt.time(13, 0),
     dt.date(2026, 11, 27): dt.time(13, 0),
     dt.date(2026, 12, 24): dt.time(13, 0),
 }
-US_VERIFIED_CALENDAR_YEARS = frozenset({2026})
+US_VERIFIED_CALENDAR_YEARS = frozenset({2025, 2026})
 
 
 MARKET_PROFILES: dict[str, MarketProfile] = {
@@ -203,8 +216,8 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         # First US EOD publication attempt: 22:45 UTC, 1h45-2h45 after the regular close.
         analytics_ready_utc=dt.time(22, 45),
         trading_isoweekdays=frozenset({1, 2, 3, 4, 5}),
-        holidays=US_HOLIDAYS_2026,
-        early_closes=US_EARLY_CLOSES_2026,
+        holidays=US_HOLIDAYS_2025_2026,
+        early_closes=US_EARLY_CLOSES_2025_2026,
         settlement_cycle="T+1",
         # The free EOD adapter stores SPY, not the cash S&P 500 index. Never present an ETF price
         # as the index level; relative-return comparisons remain valid when both use SPY.
