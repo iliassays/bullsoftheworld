@@ -1,0 +1,15 @@
+[Unit]
+Description=Warm the Bulls of Wall Street /screens cache off-request
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka/services/api
+Environment=DATABASE_STATEMENT_TIMEOUT_MS=180000
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m api.warm_screens bullsofwallst
+StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/screens-warm.log
+StandardError=append:/home/ubuntu/bullsofdhaka/var/log/screens-warm.log
+Nice=10
+NoNewPrivileges=true

@@ -1,0 +1,15 @@
+[Unit]
+Description=Warm Bulls of Wall Street screens after each US EOD chain slot
+
+[Timer]
+# The US EOD chain runs at 22:45 UTC with recovery passes at 01:30, 13:30, and 23:30 UTC;
+# warm shortly after each slot can have produced new analytics.
+OnCalendar=*-*-* 14:00:00 UTC
+OnCalendar=*-*-* 23:20:00 UTC
+OnCalendar=*-*-* 00:15:00 UTC
+OnCalendar=*-*-* 02:00:00 UTC
+AccuracySec=2min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

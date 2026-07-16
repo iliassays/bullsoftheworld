@@ -1,0 +1,15 @@
+[Unit]
+Description=Warm Bulls of Dhaka screens after each quote poll and the EOD analytics refresh
+
+[Timer]
+# Pre-session, then two minutes after each 15-minute intraday quote poll (04:00-08:45 UTC),
+# a post-session pass, and once after the EOD chain has refreshed analytics (13:15-13:50 UTC).
+OnCalendar=*-*-* 03:58:00 UTC
+OnCalendar=*-*-* 04..08:02/15:00 UTC
+OnCalendar=*-*-* 09:02:00 UTC
+OnCalendar=*-*-* 13:58:00 UTC
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

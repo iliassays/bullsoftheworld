@@ -7,6 +7,7 @@ the condition, never by implication. No advice, no AI — pure data the analytic
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections import defaultdict
 from contextlib import suppress
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from redis.exceptions import RedisError
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature, visible_codes
@@ -46,6 +48,8 @@ from bulls.core.models import (
     WatchlistItem,
 )
 from bulls.market_data.calendar import to_market_tz
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["screener"])
 
@@ -412,7 +416,9 @@ class ScreenItem(BaseModel):
     turnover_mn: float | None = None  # latest quote turnover, ৳ millions
     safe_order_mn: float | None = None  # 5% ADTV proxy, ৳ millions
     market_cap_mn: float | None = None
-    cap_tier: str | None = None  # canonical size tier (mega|large|mid|small|micro); None = unclassified
+    cap_tier: str | None = (
+        None  # canonical size tier (mega|large|mid|small|micro); None = unclassified
+    )
     free_float_cap_mn: float | None = None
     liquidity: str | None = None  # Deep | Tradeable | Thin | Watch size
     setup_quality: str | None = None  # Clean setup | Mixed setup | High-risk setup
@@ -646,10 +652,7 @@ async def _institutional_13f(
                 previous_summary,
                 (previous_summary.market == InstitutionalHoldingSummary.market)
                 & (previous_summary.code == InstitutionalHoldingSummary.code)
-                & (
-                    previous_summary.report_date
-                    == InstitutionalHoldingSummary.prior_report_date
-                ),
+                & (previous_summary.report_date == InstitutionalHoldingSummary.prior_report_date),
             )
             .where(
                 InstitutionalHoldingSummary.market == market,
@@ -1792,14 +1795,63 @@ async def build_screen(
             session, market, tenant_id=tenant_id, limit=limit, cap_tier=cap_tier
         )
     spec = _SPEC_BY_KEY.get(key)
-    return (
-        await _build_spec(session, market, spec, limit, cap_tier=cap_tier) if spec else None
-    )
+    return await _build_spec(session, market, spec, limit, cap_tier=cap_tier) if spec else None
 
 
 # Cache safety-sweep TTL. Real invalidation is the data-fingerprinted key (quote + analytics
 # timestamps), so this only reaps keys for days/polls that will never be requested again.
 _SCREENS_TTL = 6 * 60 * 60
+# The stale copy is a last-known-good fallback served (with its own embedded as-of timestamps)
+# when a fresh rebuild cannot finish inside the statement timeout — e.g. when another workload
+# saturates the shared host. Long enough to bridge a weekend, short enough to never resurrect
+# ancient screens.
+_SCREENS_STALE_TTL = 72 * 60 * 60
+
+
+def screens_cache_keys(
+    tenant_name: str,
+    market: str,
+    size: str | None,
+    quote_ts: dt.datetime | None,
+    ana_ts: dt.datetime | None,
+) -> tuple[str, str]:
+    """Return the freshness-keyed cache key and the stable last-known-good key."""
+    # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
+    # v18 distinguishes refresh-to-refresh entries from source-derived disclosure entries.
+    fresh = f"screens:v18:{tenant_name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
+    stale = f"screens:stale:v18:{tenant_name}:{market}:{size or 'all'}"
+    return fresh, stale
+
+
+async def screens_data_timestamps(
+    session, market: str
+) -> tuple[dt.datetime | None, dt.datetime | None]:
+    quote_ts = await session.scalar(
+        select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
+    )
+    ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
+    return quote_ts, ana_ts
+
+
+async def build_and_cache_screens(
+    tenant,
+    session,
+    redis,
+    *,
+    size: str | None,
+    quote_ts: dt.datetime | None,
+    ana_ts: dt.datetime | None,
+) -> ScreensResponse:
+    """Build the screens once and populate both the fresh and last-known-good cache entries."""
+    resp = await _build_screens(tenant, session, quote_ts, cap_tier=size)
+    payload = resp.model_dump_json()
+    fresh_key, stale_key = screens_cache_keys(tenant.name, tenant.market, size, quote_ts, ana_ts)
+    await update_screen_memberships(
+        redis, screen_membership_key(tenant.name, tenant.market, size), resp.screens
+    )
+    await redis.set(fresh_key, payload, ex=_SCREENS_TTL)
+    await redis.set(stale_key, payload, ex=_SCREENS_STALE_TTL)
+    return resp
 
 
 @router.get("/screens")
@@ -1813,29 +1865,38 @@ async def screens(
     The key folds in BOTH the latest quote snapshot (changes every 15-min poll → intraday prices /
     'today's move' stay current) AND the analytics recompute time (changes nightly at EOD → the
     screen rankings refresh). Within a poll window every request is a ~ms Redis read; the heavy
-    multi-screen compute runs once per poll, not once per request.
+    multi-screen compute normally runs off-request in the scheduled warmer
+    (`python -m api.warm_screens`, systemd `*-screens-warm.timer`); this in-request rebuild is the
+    backstop. If the rebuild cannot finish inside the statement timeout, the last-known-good copy
+    is served instead of a 500 — its payload carries its own as-of timestamps, so freshness stays
+    honest.
     """
     enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
     size = _validated_cap_tier(market, size)
-    quote_ts = await session.scalar(
-        select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
-    )
-    ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
-    # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    # v18 distinguishes refresh-to-refresh entries from source-derived disclosure entries.
-    key = f"screens:v18:{tenant.name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
-    membership_key = screen_membership_key(tenant.name, market, size)
+    quote_ts, ana_ts = await screens_data_timestamps(session, market)
+    key, stale_key = screens_cache_keys(tenant.name, market, size, quote_ts, ana_ts)
     redis = aioredis.from_url(get_settings().redis_url)
     try:
         cached = await redis.get(key)
         if cached:
             # Serve the cached JSON bytes verbatim — skip the pydantic parse + re-serialize of ~65KB.
             return Response(content=cached, media_type="application/json")
-        resp = await _build_screens(tenant, session, quote_ts, cap_tier=size)
-        await update_screen_memberships(redis, membership_key, resp.screens)
-        await redis.set(key, resp.model_dump_json(), ex=_SCREENS_TTL)
-        return resp
+        try:
+            return await build_and_cache_screens(
+                tenant, session, redis, size=size, quote_ts=quote_ts, ana_ts=ana_ts
+            )
+        except DBAPIError:
+            stale = await redis.get(stale_key)
+            if stale is None:
+                raise
+            log.warning(
+                "screens rebuild timed out for %s/%s size=%s; serving last-known-good copy",
+                tenant.name,
+                market,
+                size or "all",
+            )
+            return Response(content=stale, media_type="application/json")
     finally:
         await redis.aclose()
 
@@ -1859,27 +1920,15 @@ async def _build_screens(
         for spec in _SCREENS
     ]
     out.append(
-        await _movers(
-            session, tenant.market, gainers=True, limit=PER_SCREEN, cap_tier=cap_tier
-        )
+        await _movers(session, tenant.market, gainers=True, limit=PER_SCREEN, cap_tier=cap_tier)
     )
     out.append(
-        await _movers(
-            session, tenant.market, gainers=False, limit=PER_SCREEN, cap_tier=cap_tier
-        )
+        await _movers(session, tenant.market, gainers=False, limit=PER_SCREEN, cap_tier=cap_tier)
     )
-    out.append(
-        await _most_active(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
-    )
-    out.append(
-        await _momentum(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
-    )
-    out.append(
-        await _unusual_volume(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
-    )
-    out.append(
-        await _beating_market(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
-    )
+    out.append(await _most_active(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier))
+    out.append(await _momentum(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier))
+    out.append(await _unusual_volume(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier))
+    out.append(await _beating_market(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier))
     if profile.features.shareholding_breakdown:
         out.append(
             await _ownership(
@@ -1911,9 +1960,7 @@ async def _build_screens(
         )
     if profile.features.sponsor_director_disclosures:
         out.append(
-            await _sponsor_selling(
-                session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier
-            )
+            await _sponsor_selling(session, tenant.market, limit=PER_SCREEN, cap_tier=cap_tier)
         )
     if profile.features.institutional_holdings:
         out.append(
@@ -1977,9 +2024,7 @@ async def _build_screens(
         _filter_screens_by_cap_tier(out, cap_tier=cap_tier, limit=PER_SCREEN)
     # Page-level freshness must describe the newest analytics batch. A bare LIMIT 1 is unordered
     # and can label the whole page with any older ticker's date.
-    as_of = await session.scalar(
-        select(func.max(T.as_of_date)).where(T.market == tenant.market)
-    )
+    as_of = await session.scalar(select(func.max(T.as_of_date)).where(T.market == tenant.market))
     settings = _screen_settings(tenant.market)
     methodology = MarketMethodology(
         market=tenant.market,
