@@ -542,17 +542,6 @@ async def api(days: int = 5):
     return await _scan(days)
 
 
-_warm_tasks: set[asyncio.Task] = set()
-
-
-@app.on_event("startup")
-async def _warm():
-    # Pre-compute the daily scan in the background so the first page load is instant too.
-    t = asyncio.create_task(_scan(10))
-    _warm_tasks.add(t)
-    t.add_done_callback(_warm_tasks.discard)
-
-
 def main():
     import os
 
