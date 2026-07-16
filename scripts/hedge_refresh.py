@@ -1,7 +1,7 @@
 """Batch refresh for the Hedge track-record read model.
 
-Run after the DSE EOD chain. It loads the multi-year dataset once, computes the backtest and signal
-ledger in memory, then replaces both read models in one database transaction.
+Run after the DSE EOD chain. It loads the multi-year dataset once, computes the backtest, immutable
+daily monitor publication, and signal ledger in memory, then commits the read models together.
 """
 
 from __future__ import annotations
@@ -9,16 +9,18 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 
+from hedge_archive import content_hash
 from hedge_daily import build_scan_snapshot, load_profiles
 from hedge_forward import build_rows, replace_rows
 from hedge_history import STRATEGY_KEY, backtest_from_inputs, serialize_history
 from portfolio_backtest import _load
 from scheme2_value import _load_fundamentals
 from scheme_lab import quality_reversal
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from bulls.core.db import bind_tenant_context, get_sessionmaker
-from bulls.core.models import HedgeTrackRecordSnapshot
+from bulls.core.models import HedgeDailyScanSnapshot, HedgeTrackRecordSnapshot
 
 TENANT_ID = "bullsofdhaka"
 MARKET = "DSE"
@@ -33,16 +35,55 @@ async def refresh() -> dict:
     history = backtest_from_inputs(by_code, dsex, signals)
     ledger = build_rows(by_code, signals)
     as_of = max(dsex)
+    profiles = await load_profiles(MARKET)
     payload = serialize_history(history)
-    payload["daily_scan"] = build_scan_snapshot(
-        by_code,
-        fin,
-        div,
-        await load_profiles(MARKET),
-    )
 
     async with get_sessionmaker()() as session:
         await bind_tenant_context(session, TENANT_ID)
+        existing_daily = await session.get(
+            HedgeDailyScanSnapshot,
+            (TENANT_ID, MARKET, STRATEGY_KEY, as_of),
+        )
+        previous_daily = await session.scalar(
+            select(HedgeDailyScanSnapshot)
+            .where(
+                HedgeDailyScanSnapshot.tenant_id == TENANT_ID,
+                HedgeDailyScanSnapshot.market == MARKET,
+                HedgeDailyScanSnapshot.strategy == STRATEGY_KEY,
+                HedgeDailyScanSnapshot.as_of_date < as_of,
+            )
+            .order_by(HedgeDailyScanSnapshot.as_of_date.desc())
+            .limit(1)
+        )
+        daily_scan = (
+            existing_daily.payload
+            if existing_daily is not None
+            else build_scan_snapshot(
+                by_code,
+                fin,
+                div,
+                profiles,
+                signals,
+                ledger,
+                previous=previous_daily.payload if previous_daily else None,
+            )
+        )
+        if existing_daily is None:
+            daily_stmt = insert(HedgeDailyScanSnapshot).values(
+                tenant_id=TENANT_ID,
+                market=MARKET,
+                strategy=STRATEGY_KEY,
+                as_of_date=as_of,
+                payload=daily_scan,
+                content_hash=content_hash(daily_scan),
+                computed_at=dt.datetime.now(dt.UTC),
+            )
+            await session.execute(
+                daily_stmt.on_conflict_do_nothing(
+                    index_elements=["tenant_id", "market", "strategy", "as_of_date"]
+                )
+            )
+        payload["daily_scan"] = daily_scan
         stmt = insert(HedgeTrackRecordSnapshot).values(
             tenant_id=TENANT_ID,
             market=MARKET,
@@ -68,6 +109,8 @@ async def refresh() -> dict:
         "signals": len(ledger),
         "open": sum(row["status"] == "open" for row in ledger),
         "trades": history["stats"]["n_trades"],
+        "new_today": len(daily_scan["new_signals"]),
+        "watchlist": len(daily_scan["watchlist"]),
     }
 
 

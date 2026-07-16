@@ -108,6 +108,8 @@ class StrategySpec:
     take_profit_pct: float | None
     max_positions: int = 6
     position_pct: float = 0.15  # of initial capital per new position
+    entry_source: str = "intraday_rules"
+    max_holding_sessions: int | None = None
 
 
 def _rebound_entry(s: Snapshot) -> str | None:
@@ -135,6 +137,15 @@ def _rebound_entry(s: Snapshot) -> str | None:
 def _rebound_exit(s: Snapshot) -> str | None:
     if s.rsi_14 is not None and s.rsi_14 >= 65:
         return f"RSI recovered to {s.rsi_14:.0f} — the oversold thesis has played out"
+    return None
+
+
+def _archived_quality_entry(_s: Snapshot) -> str | None:
+    """The entry decision is supplied by the immutable daily Hedge publication."""
+    return None
+
+
+def _archived_quality_exit(_s: Snapshot) -> str | None:
     return None
 
 
@@ -318,6 +329,25 @@ STRATEGIES: dict[str, StrategySpec] = {
     spec.key: spec
     for spec in (
         StrategySpec(
+            key="quality_reversal_eod",
+            display_name="Quality Reversal EOD Portfolio",
+            handle="QualityReversalPortfolio",
+            description=(
+                "Forward paper account for the exact archived Scheme-3 decision: washed-out, "
+                "profitable, inexpensive names breaking their five-session high. Signals are "
+                "published after EOD and can execute only in the next DSE session."
+            ),
+            entry=_archived_quality_entry,
+            rank=lambda _s: 0,
+            exit_extra=_archived_quality_exit,
+            stop_loss_pct=-10.0,
+            take_profit_pct=25.0,
+            max_positions=10,
+            position_pct=0.10,
+            entry_source="hedge_daily_archive",
+            max_holding_sessions=63,
+        ),
+        StrategySpec(
             key="rebound",
             display_name="Rebound Portfolio",
             handle="ReboundPortfolio",
@@ -456,6 +486,11 @@ def entry_reason(strategy: str, s: Snapshot) -> str | None:
     if not universe_ok(s) or _near_upper_lock(s):
         return None
     return STRATEGIES[strategy].entry(s)
+
+
+def entry_execution_available(s: Snapshot) -> bool:
+    """Whether an observed quote can honestly support a simulated buy fill."""
+    return not _near_upper_lock(s)
 
 
 def exit_reason(strategy: str, s: Snapshot, *, avg_cost: float) -> str | None:

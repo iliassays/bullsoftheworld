@@ -8,19 +8,26 @@ the daily buy list, run a backtest, or execute DDL.
 
 The historical quality-reversal simulation runs in `bullsofdhaka-hedge-refresh.service`. Its timer
 fires after the DSE EOD chain, with a low CPU quota and idle I/O priority. The job loads bars and
-fundamentals once, computes the daily buy-list snapshot, portfolio history, and signal ledger, then
-replaces the tenant-bound read models in one transaction:
+fundamentals once, computes the daily monitor publication, portfolio history, and signal ledger,
+then writes the tenant-bound read models in one transaction:
 
 - `hedge_track_record_snapshots`
+- `hedge_daily_scan_snapshots`
 - `hedge_signals`
 
-Both tables use forced PostgreSQL row-level security on `tenant_id`. The production runtime role has
+All tables use forced PostgreSQL row-level security on `tenant_id`. The production runtime role has
 DML privileges but no schema-creation privilege.
 
-The daily scan is stored under `hedge_track_record_snapshots.payload.daily_scan`. It retains recent
-trigger dates as session offsets, so Home, Risk/Sizing, and the signals API can apply bounded
-look-back windows from a small JSON document. A cache miss therefore performs one indexed snapshot
-read rather than loading every DSE bar and fundamental row into the web process.
+`hedge_daily_scan_snapshots` is the point-in-time archive. One insert-only row is published per DSE
+session with exact new signals, still-open signal episodes, the current pre-trigger watchlist, and
+added/continued/removed codes versus the prior publication. Its canonical JSON payload has a
+SHA-256 fingerprint. Repeated refreshes reuse an already-published date instead of rewriting
+historical evidence. There is deliberately no synthetic archive before deployment.
+
+The latest publication is also copied into
+`hedge_track_record_snapshots.payload.daily_scan` for compatibility. Home, Risk/Sizing, the archive
+selector, and the signals API read the small publication documents; a cache miss never loads DSE
+bars or fundamentals.
 
 ## Agent portfolios
 
@@ -41,6 +48,13 @@ and pending cash, free slots, the executable cash threshold, observation counts,
 price path. An episode resolves as `entered` when the account later buys it or `expired` when the
 strategy no longer qualifies it. Best/worst/since-missed returns are counterfactual observations,
 not simulated fills or portfolio P&L.
+
+`QualityReversalPortfolio` is the forward-only account for the exact archived Scheme-3 decision.
+It reads only `new_signals` from the immediately preceding DSE trading session, ranks them by the
+published conviction score, and executes through the same delayed-quote, brokerage, settlement,
+cash, slot, circuit-lock, opportunity, and audit machinery as every other model portfolio. Policy:
+10 positions, 10% target allocation per entry, -10% stop, +25% target, and a 63-trading-session time
+exit. It never backfills historical fills; its performance starts when the account is provisioned.
 
 No strategy should be promoted from experimental status based on a few days of open-position
 mark-to-market performance. Evaluation requires enough closed trades across more than one market

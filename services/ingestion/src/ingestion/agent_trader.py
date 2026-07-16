@@ -32,7 +32,13 @@ import math
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bulls.analytics import STRATEGIES, Snapshot, exit_reason, rank_entries
+from bulls.analytics import (
+    STRATEGIES,
+    Snapshot,
+    entry_execution_available,
+    exit_reason,
+    rank_entries,
+)
 from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     AgentLot,
@@ -40,13 +46,19 @@ from bulls.core.models import (
     AgentPortfolio,
     AgentTrade,
     CompanyProfile,
+    HedgeDailyScanSnapshot,
     PortfolioHolding,
     QuoteSnapshot,
     Symbol,
     TickerAnalytics,
     User,
 )
-from bulls.market_data.calendar import add_trading_days, is_trading_hours, to_market_tz
+from bulls.market_data.calendar import (
+    add_trading_days,
+    is_trading_day,
+    is_trading_hours,
+    to_market_tz,
+)
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +70,7 @@ QUOTE_MAX_AGE = dt.timedelta(minutes=45)  # a 15-min feed older than 3 ticks is 
 # what it just sold in the very same tick.
 REENTRY_COOLDOWN = dt.timedelta(days=7)
 _BLOCK_REASONS = {"no_cash", "no_slot", "order_too_small"}
+HEDGE_STRATEGY_KEY = "quality_reversal_v1"
 
 
 def _calendar_market(market: str) -> str:
@@ -74,6 +87,57 @@ def _minimum_executable_cash(price: float) -> float:
     """Smallest cash amount that can buy an integer number of shares with gross value >= floor."""
     quantity = max(1, math.ceil(MIN_ORDER_VALUE / price))
     return round(quantity * price * (1 + FEE_RATE), 2)
+
+
+def _previous_trading_day(today: dt.date, market: str) -> dt.date:
+    candidate = today - dt.timedelta(days=1)
+    while not is_trading_day(candidate, market=market):
+        candidate -= dt.timedelta(days=1)
+    return candidate
+
+
+async def _load_archived_entries(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    market: str,
+    today: dt.date,
+) -> tuple[dt.date | None, list[dict]]:
+    """Only the immediately preceding trading session may seed new paper entries."""
+    expected = _previous_trading_day(today, _calendar_market(market))
+    publication = await session.get(
+        HedgeDailyScanSnapshot,
+        (tenant_id, market, HEDGE_STRATEGY_KEY, expected),
+    )
+    if publication is None:
+        return None, []
+    return publication.as_of_date, list(publication.payload.get("new_signals", []))
+
+
+def _rank_archived_entries(
+    snapshots: dict[str, Snapshot],
+    decisions: list[dict],
+    *,
+    as_of_date: dt.date | None,
+    held: set[str],
+) -> list[tuple[Snapshot, str]]:
+    """Translate published decisions into executable candidates without changing their ranking."""
+    if as_of_date is None:
+        return []
+    ranked: list[tuple[Snapshot, str, int]] = []
+    for decision in decisions:
+        code = decision["code"]
+        snap = snapshots.get(code)
+        if snap is None or code in held or not entry_execution_available(snap):
+            continue
+        reason = (
+            f"Archived EOD Quality Reversal signal {as_of_date}: "
+            f"{decision['below_high']}% off 52w high, P/E {decision['pe']}, "
+            f"ROE {decision['roe']}%, conviction {decision['score']}/100"
+        )
+        ranked.append((snap, reason, int(decision["score"])))
+    ranked.sort(key=lambda row: (row[2], row[0].code), reverse=True)
+    return [(snap, reason) for snap, reason, _score in ranked]
 
 
 def _update_opportunity_price(
@@ -427,6 +491,18 @@ async def run_agents(
             log.warning("agent tick: no fresh quotes for %s — feed stale, doing nothing", market)
             return counts
         categories = {code: s.category for code, s in snapshots.items()}
+        archived_as_of: dt.date | None = None
+        archived_entries: list[dict] = []
+        if any(
+            STRATEGIES[agent.strategy].entry_source == "hedge_daily_archive"
+            for agent in agents
+        ):
+            archived_as_of, archived_entries = await _load_archived_entries(
+                session,
+                tenant_id=tenant_id,
+                market=market,
+                today=today,
+            )
 
         for agent in agents:
             counts["agents"] += 1
@@ -461,6 +537,20 @@ async def run_agents(
                 if snap is None:
                     continue  # no fresh quote for this code this tick: hold, don't guess
                 reason = exit_reason(agent.strategy, snap, avg_cost=holding.avg_cost)
+                if reason is None and spec.max_holding_sessions is not None:
+                    open_lots = lots_by_code.get(code, [])
+                    if open_lots:
+                        entered_on = min(lot.trade_date for lot in open_lots)
+                        exit_on = add_trading_days(
+                            entered_on,
+                            spec.max_holding_sessions,
+                            market=calendar_market,
+                        )
+                        if today >= exit_on:
+                            reason = (
+                                f"Time exit: held {spec.max_holding_sessions} trading sessions "
+                                f"since {entered_on}"
+                            )
                 if reason and await _sell(
                     session,
                     agent,
@@ -502,13 +592,22 @@ async def run_agents(
                 or 0.0
             )
             target_budget = round(agent.initial_capital * spec.position_pct, 2)
-            ranked = list(
-                rank_entries(
-                    agent.strategy,
-                    snapshots.values(),
-                    held=set(holdings) | cooling,
+            excluded_codes = set(holdings) | cooling
+            if spec.entry_source == "hedge_daily_archive":
+                ranked = _rank_archived_entries(
+                    snapshots,
+                    archived_entries,
+                    as_of_date=archived_as_of,
+                    held=excluded_codes,
                 )
-            )
+            else:
+                ranked = list(
+                    rank_entries(
+                        agent.strategy,
+                        snapshots.values(),
+                        held=excluded_codes,
+                    )
+                )
             candidate_codes = {snap.code for snap, _ in ranked}
             open_opportunities = {
                 opportunity.code: opportunity

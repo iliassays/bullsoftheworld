@@ -150,7 +150,7 @@ async def _run(capital, risk_pct, held):
         f"{MAX_HEAT_PCT:.0f}% total at-risk.\n"
     )
 
-    d = await scan(days=10)
+    d = await scan()
     r = size(capital, risk_pct, d["fired"], held=held)
     rows, invested, heat = r["rows"], r["invested"], r["heat"]
     print(

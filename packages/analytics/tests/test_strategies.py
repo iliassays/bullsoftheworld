@@ -252,3 +252,15 @@ def test_buffett_entry_and_exit_track_the_lens_score():
 def test_new_strategies_respect_universe_gates_too():
     good = snap(paid_up_capital_mn=300.0, pe_ratio=14.0, rsi_14=55.0, category="Z")
     assert entry_reason("lowpaidup", good) is None  # Z-category stays untouchable
+
+
+def test_archived_quality_strategy_never_reconstructs_entry_from_intraday_fields():
+    good = snap(
+        pct_from_52w_high=-45.0,
+        pct_from_52w_low=8.0,
+        pe_ratio=10.0,
+        rsi_14=32.0,
+        change_pct=1.5,
+        relative_volume=1.5,
+    )
+    assert entry_reason("quality_reversal_eod", good) is None

@@ -55,6 +55,7 @@ ssh "$REMOTE" "cd $APP \
   && set +a \
   && ( cd services/api && ~/.local/bin/uv run alembic upgrade head ) \
   && ~/.local/bin/uv run python scripts/provision_runtime_db_role.py \
+  && ~/.local/bin/uv run python scripts/seed_agent_portfolios.py \
   && sudo cp infra/systemd/bulls-ai-worker.service \
        /etc/systemd/system/bullsofdhaka-ai-worker.service \
   && sudo cp infra/systemd/bullsofdhaka-hedge.service \

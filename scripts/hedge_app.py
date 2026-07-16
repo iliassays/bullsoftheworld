@@ -19,7 +19,8 @@ from collections import defaultdict
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from hedge_daily import MAX_SNAPSHOT_SESSIONS, TRACK_RECORD, scan_from_snapshot
+from hedge_archive import read_daily_snapshots
+from hedge_daily import TRACK_RECORD, scan_from_snapshot
 from hedge_forward import read_log, render_ledger
 from hedge_history import read_snapshot, render_history
 from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
@@ -90,6 +91,20 @@ nav{display:flex;gap:8px;margin:12px 0 4px}
 nav a{font-size:13px;color:#b6bbc4;text-decoration:none;padding:6px 14px;border:1px solid #232733;
   border-radius:20px}
 nav a.on{background:#1f2a22;color:#3ddc84;border-color:#2a5a3f}
+.toolbar{display:flex;gap:12px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;
+  margin:14px 0}
+.toolbar form{display:flex;gap:8px;align-items:flex-end}
+.toolbar label{font-size:11px;color:#8b909a;text-transform:uppercase;display:block}
+.toolbar select{background:#0f1115;border:1px solid #232733;color:#e6e8eb;border-radius:8px;
+  padding:8px 10px;font-size:14px;margin-top:4px;cursor:pointer}
+.metric-note{font-size:11px;color:#8b909a;margin-top:3px}
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:22px}
+.section-head h2{margin:0}
+.delta{display:flex;gap:6px;flex-wrap:wrap}
+.delta .pill{padding:3px 9px}
+.paper-link{color:#3ddc84;text-decoration:none}
+.action-link{display:inline-block;color:#3ddc84;text-decoration:none;border:1px solid #2a5a3f;
+  border-radius:8px;padding:6px 10px;font-size:12px}
 .chart{width:100%;height:auto;margin:6px 0}
 .chart .grid{stroke:#2a2f3a;stroke-width:1}
 .chart .ax{fill:#6b7280;font-size:11px;text-anchor:middle}
@@ -118,12 +133,38 @@ def _shell(active: str, body: str) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Hedge</title>
 <style>{_CSS}</style></head><body>
 <h1>Hedge <span style="color:#3ddc84">·</span></h1>
-<nav>{tab("/", "Today's list")}{tab("/sizing", "Risk / sizing")}{tab("/history", "Track record")}{tab("/portfolios", "Agent portfolios")}</nav>
+<nav>{tab("/", "Quality Reversal")}{tab("/sizing", "Risk / sizing")}{tab("/history", "Track record")}{tab("/portfolios", "Agent portfolios")}</nav>
 {body}
 </body></html>"""
 
 
-def _render(d: dict) -> str:
+def _paper_summary(paper: dict | None) -> str:
+    if paper is None:
+        return """<div class="card"><div class="why">The dedicated forward paper account is being
+prepared. No historical fills will be invented; its record begins when the account is created.</div></div>"""
+    return f"""
+<div class="tr">
+  <div><div class="k">Paper equity</div><div class="v">{_fmt_tk(paper["equity"])}</div></div>
+  <div><div class="k">Return</div><div class="v {"pos" if (paper["return_pct"] or 0) >= 0 else "neg"}">{_fmt_pct(paper["return_pct"])}</div></div>
+  <div><div class="k">Open positions</div><div class="v">{len(paper["holdings"])} / 10</div></div>
+  <div><div class="k">Closed trades</div><div class="v">{paper["closed_trades"]}</div></div>
+  <div><div class="k">Blocked setups</div><div class="v">{paper["opportunities_open"]}</div></div>
+</div>
+<div class="cap">Forward-only account: previous-session archived signals, next-session delayed
+quote fills, 0.4% brokerage each side, DSE settlement, -10% stop, +25% target, 63-session time exit.
+Entries blocked at the upper circuit are not treated as fills.
+<a class="paper-link" href="/portfolios?p={paper["handle"]}">Open holdings, missed opportunities and trade audit →</a></div>"""
+
+
+def _render(
+    d: dict,
+    *,
+    archive: list,
+    selected_date: str,
+    evidence_hash: str | None,
+    computed_at: dt.datetime | None,
+    paper: dict | None,
+) -> str:
     if not d.get("ready", True):
         return f"""
 <div class="sub">Daily list · EOD {d["as_of"]} · delayed data · for your own use, not advice</div>
@@ -132,21 +173,31 @@ def _render(d: dict) -> str:
 yet. This page will not run the full-market scan inside your browser request. Try again after the
 next refresh.</div></div>"""
     tr = d["track_record"]
+    selected_index = next(
+        (index for index, row in enumerate(archive) if row.as_of_date.isoformat() == selected_date),
+        0,
+    )
+    archive_options = "".join(
+        f'<option value="{row.as_of_date}" {"selected" if row.as_of_date.isoformat() == selected_date else ""}>'
+        f'{row.as_of_date}{" · latest" if index == 0 else ""}</option>'
+        for index, row in enumerate(archive)
+    )
     buys = (
         "".join(
             f"""<div class="card"><div class="top"><span class="tk">{x["code"]}</span>
         <span class="tag">{x["sector"]}</span></div>
         <div class="lvl">
-          <div><div class="k">entry</div><div class="v">{x["price"]}</div></div>
+          <div><div class="k">signal close</div><div class="v">{x["price"]}</div></div>
           <div><div class="k">stop</div><div class="v neg">{x["stop"]}</div></div>
           <div><div class="k">target</div><div class="v pos">{x["target"]}</div></div>
           <div><div class="k">P/E · ROE</div><div class="v">{x["pe"]} · {x["roe"]}%</div></div>
         </div>
-        <div class="why">washed-out {x["below_high"]}% off its high · cheap + profitable · fired {x["fired_on"]}</div>
+        <div class="why">washed-out {x["below_high"]}% off its high · cheap + profitable ·
+        five-session breakout confirmed at this EOD · conviction {x["score"]}/100</div>
         </div>"""
             for x in d["fired"]
         )
-        or '<div class="empty">No buy signals today — the strategy is selective. Check the watchlist.</div>'
+        or '<div class="empty">No new Quality Reversal signal was confirmed in this session.</div>'
     )
 
     watch = (
@@ -157,23 +208,73 @@ next refresh.</div></div>"""
         )
         or '<tr><td colspan="6" class="empty">Nothing set up right now.</td></tr>'
     )
+    active = (
+        "".join(
+            f"<tr><td>{x['signal_date']}</td><td><b>{x['code']}</b></td>"
+            f"<td class='num'>{x['entry']:.2f}</td><td class='num'>{x['price']:.2f}</td>"
+            f"<td class='num {'pos' if x['return_pct'] >= 0 else 'neg'}'>{x['return_pct']:+.1f}%</td>"
+            f"<td class='num neg'>{x['stop']:.2f}</td><td class='num pos'>{x['target']:.2f}</td></tr>"
+            for x in d.get("active", [])
+        )
+        or '<tr><td colspan="7" class="empty">No historical signal episode remains open.</td></tr>'
+    )
+    changes = d.get("changes", {})
+    added = ", ".join(changes.get("added", [])) or "none"
+    removed = ", ".join(changes.get("removed", [])) or "none"
+    archive_note = (
+        f"Archive session {selected_index + 1} of {len(archive)}"
+        if archive
+        else "Archive begins with the first publication"
+    )
 
     return f"""
-<div class="sub">Daily list · as of EOD {d["as_of"]} · delayed data · for your own use, not advice</div>
-<div class="tr">
-  <div><div class="k">Backtest 2yr</div><div class="v pos">+{tr["total_2y"]}%</div></div>
-  <div><div class="k">vs market</div><div class="v">+{tr["index_2y"]}%</div></div>
-  <div><div class="k">win rate</div><div class="v">{tr["win"]}%</div></div>
-  <div><div class="k">worst drop</div><div class="v neg">{tr["maxdd"]}%</div></div>
+<div class="toolbar">
+  <div>
+    <h1 style="font-size:20px">Quality Reversal Monitor</h1>
+    <div class="sub">Published after each DSE EOD refresh, normally around 20:20 BDT · not intraday</div>
+  </div>
+  <form method="get" action="/">
+    <div><label>Published session</label><select name="date" onchange="this.form.submit()">
+      {archive_options or f'<option value="{selected_date}">{selected_date}</option>'}
+    </select></div>
+  </form>
 </div>
-<h2>BUY signals ({len(d["fired"])})</h2>
+<div class="cap">Viewing <b>{d["as_of"]}</b> · published
+{computed_at.strftime("%Y-%m-%d %H:%M UTC") if computed_at else "offline"} ·
+evidence {evidence_hash[:12] if evidence_hash else "pending"} · {archive_note}</div>
+<div class="tr">
+  <div><div class="k">New this EOD</div><div class="v">{len(d["fired"])}</div><div class="metric-note">eligible next session</div></div>
+  <div><div class="k">Signals still open</div><div class="v">{len(d.get("active", []))}</div><div class="metric-note">outcome tracker, not holdings</div></div>
+  <div><div class="k">Waiting for trigger</div><div class="v">{len(d["watch"])}</div><div class="metric-note">setup only</div></div>
+  <div><div class="k">Removed vs prior</div><div class="v">{len(changes.get("removed", []))}</div><div class="metric-note">no longer monitored</div></div>
+</div>
+<div class="cap">Historical validation: +{tr["total_2y"]}% strategy vs +{tr["index_2y"]}% market,
+{tr["win"]}% wins, {tr["maxdd"]}% worst drawdown. This is a single-regime backtest; the forward
+paper account below is the decision-grade evidence.</div>
+<div class="section-head"><h2>New signals ({len(d["fired"])})</h2>
+<a class="action-link" href="/sizing?date={selected_date}">Size this session</a></div>
 {buys}
-<h2>Watchlist — set up, waiting for the turn ({len(d["watch"])})</h2>
+<div class="section-head"><h2>Open signal episodes ({len(d.get("active", []))})</h2>
+<span class="pill">target / stop / 63 sessions</span></div>
+<div class="scroll"><table><tr><th>signal date</th><th>code</th><th class="num">signal close</th>
+<th class="num">current</th><th class="num">since signal</th><th class="num">stop</th>
+<th class="num">target</th></tr>{active}</table></div>
+<div class="section-head"><h2>Watchlist ({len(d["watch"])})</h2>
+<span class="pill">setup waiting for breakout</span></div>
 <table><tr><th>code</th><th>price</th><th>P/E</th><th>ROE</th><th>off high</th><th>sector</th></tr>
 {watch}</table>
-<div class="foot">Hold ~2 weeks to 3 months · exit at target (+25%), stop (-10%), or 3 months ·
-risk ~1-2% of capital per name, ~10 positions. Single-regime backtest, EOD data - trade small,
-the stop is mandatory.</div>"""
+<div class="section-head"><h2>Session changes</h2><span class="pill">vs prior archived session</span></div>
+<div class="card"><div class="why"><b class="pos">Added:</b> {added}<br>
+<b class="neg">Removed:</b> {removed}<br>
+“Added” means newly present in the monitor, not necessarily a buy signal. “Removed” means the
+name is no longer new, active, or waiting in the current setup.</div></div>
+<div class="section-head"><h2>Exact-strategy paper account</h2>
+<span class="pill win">forward only</span></div>
+{_paper_summary(paper)}
+<div class="foot">Daily publications are append-only and fingerprinted. The archive begins at this
+feature's deployment; earlier day-by-day screens are not fabricated from hindsight. Risk/Sizing
+uses only the selected session's new signals. The paper engine checks observed delayed quotes every
+15 minutes during the following DSE session.</div>"""
 
 
 def render_sizing(d: dict, capital: float, risk: float, held: int) -> str:
@@ -196,7 +297,12 @@ next refresh.</div></div>"""
             f"<td class='num'>{x['risk']:,.0f}</td><td class='num pos'>{x['reward']:,.0f}</td></tr>"
             for x in rows
         )
-        or f'<tr><td colspan="9" class="empty">No free slots — you already hold {held} of {MAX_POSITIONS}. Wait for an exit.</td></tr>'
+        or (
+            f'<tr><td colspan="9" class="empty">No free slots — you already hold {held} of '
+            f"{MAX_POSITIONS}. Wait for an exit.</td></tr>"
+            if d["fired"]
+            else '<tr><td colspan="9" class="empty">No new signal was confirmed for this EOD session.</td></tr>'
+        )
     )
     wait = (
         '<div class="cap"><b>Waitlist</b> (no room today — take when an open position exits): '
@@ -212,8 +318,9 @@ next refresh.</div></div>"""
         for rp in (0.5, 1.0, 1.5, 2.0)
     )
     return f"""
-<div class="sub">Sizing the buy list · holding {held}, {r["free"]} of {MAX_POSITIONS} slots free · fund {len(rows)}, waitlist {len(r["waitlist"])} · EOD {d["as_of"]}</div>
+<div class="sub">Sizing this session's confirmed signals · holding {held}, {r["free"]} of {MAX_POSITIONS} slots free · fund {len(rows)}, waitlist {len(r["waitlist"])} · EOD {d["as_of"]}</div>
 <form class="sz" method="get" action="/sizing">
+  <input type="hidden" name="date" value="{d["as_of"]}">
   <div><label>Capital (BDT)</label><input name="capital" type="number" value="{capital:.0f}" step="1000"></div>
   <div><label>Risk per trade %</label><input name="risk" type="number" value="{risk:g}" step="0.25" min="0.25" max="3"></div>
   <div><label>Positions open</label><input name="held" type="number" value="{held}" step="1" min="0" max="{MAX_POSITIONS}"></div>
@@ -226,7 +333,7 @@ next refresh.</div></div>"""
   <div><div class="k">Positions after</div><div class="v">{held + len(rows)} / {MAX_POSITIONS}</div></div>
 </div>
 <table>
-<tr><th>code</th><th class="num">conv</th><th class="num">entry</th><th class="num">stop</th><th class="num">target</th>
+<tr><th>code</th><th class="num">conv</th><th class="num">signal px</th><th class="num">stop</th><th class="num">target</th>
 <th class="num">shares</th><th class="num">invest ৳</th><th class="num">risk ৳</th><th class="num">reward ৳</th></tr>
 {body}</table>
 {wait}
@@ -234,6 +341,8 @@ next refresh.</div></div>"""
 sized so a stop-out costs ~{risk:g}% of capital; capped at {MAX_POSITION_PCT:.0f}% per name and {MAX_HEAT_PCT:.0f}% total.
 You never hold more than {MAX_POSITIONS} — extra signals wait for a slot to free, which is why a fresh
 batch can never demand money you don't have. "conv" = the strategy's conviction rank (fund the top first).</div>
+<div class="cap">This is a planning calculator using the EOD signal close. The forward paper account
+records its own next-session observed fill price; it does not claim execution at this reference price.</div>
 <h2>How many names? (risk % sets it automatically)</h2>
 <table>
 <tr><th class="num">risk/trade</th><th class="num">position size</th><th class="num">max names</th><th class="num">portfolio max loss</th></tr>
@@ -243,23 +352,24 @@ for fewer, bigger ones. The DSE ~10% circuit breaker makes the -10% stop reliabl
 backtest no trade lost more than the stop, so "{risk:g}% at risk" holds up. Delayed EOD data · your own use, not advice.</div>"""
 
 
-async def _agent_book() -> list[dict]:
+async def _agent_book(handles: set[str] | None = None) -> list[dict]:
     """All agent portfolios from six bulk queries, priced against the latest DSE quotes."""
     tenant_id, market = "bullsofdhaka", "DSE"
     today = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
     out: list[dict] = []
     async with get_sessionmaker()() as session:
         await bind_tenant_context(session, tenant_id)
-        rows = (
-            await session.execute(
-                select(AgentPortfolio, User)
-                .join(User, User.id == AgentPortfolio.user_id)
-                .where(
-                    AgentPortfolio.market == market,
-                    User.tenant_id == tenant_id,
-                )
+        stmt = (
+            select(AgentPortfolio, User)
+            .join(User, User.id == AgentPortfolio.user_id)
+            .where(
+                AgentPortfolio.market == market,
+                User.tenant_id == tenant_id,
             )
-        ).all()
+        )
+        if handles:
+            stmt = stmt.where(User.handle.in_(handles))
+        rows = (await session.execute(stmt)).all()
         user_ids = [agent.user_id for agent, _ in rows]
         if not user_ids:
             return out
@@ -441,6 +551,7 @@ async def _agent_book() -> list[dict]:
             out.append(
                 {
                     "handle": user.handle,
+                    "strategy": agent.strategy,
                     "display": spec.display_name,
                     "desc": spec.description,
                     "cash": agent.cash_settled,
@@ -619,29 +730,33 @@ rest yet, whatever the price does. Every fill is at the delayed last-traded pric
 Paper trading · not advice.</div>"""
 
 
-def _bounded_days(days: int) -> int:
-    return min(max(int(days), 1), MAX_SNAPSHOT_SESSIONS)
+async def _archive_view(selected_date: str = ""):
+    """Selected immutable publication plus the bounded archive index."""
+    archive = await _cached("daily-archive", lambda: read_daily_snapshots(limit=90))
+    if archive:
+        chosen = next(
+            (row for row in archive if row.as_of_date.isoformat() == selected_date),
+            archive[0],
+        )
+        return scan_from_snapshot(chosen.payload), archive, chosen
 
-
-async def _scan(days: int):
-    """Read the EOD scan snapshot; never load historical bars in an HTTP request."""
-    days = _bounded_days(days)
-
-    async def load():
-        snapshot = await read_snapshot()
-        daily_scan = snapshot.payload.get("daily_scan") if snapshot else None
-        if daily_scan:
-            return scan_from_snapshot(daily_scan, days)
-        return {
+    snapshot = await read_snapshot()
+    daily_scan = snapshot.payload.get("daily_scan") if snapshot else None
+    if daily_scan:
+        return scan_from_snapshot(daily_scan), [], None
+    return (
+        {
             "as_of": snapshot.as_of_date.isoformat() if snapshot else "not available",
-            "days": days,
             "fired": [],
             "watch": [],
+            "active": [],
+            "changes": {},
             "track_record": TRACK_RECORD,
             "ready": False,
-        }
-
-    return await _cached(("scan", days), load)
+        },
+        [],
+        None,
+    )
 
 
 async def _history_body() -> str:
@@ -658,15 +773,31 @@ the multi-year backtest inside your browser request; refresh after the scheduled
 
 
 @app.get("/", response_class=HTMLResponse)
-async def home(days: int = 10):  # ~2 weeks of recent fires for the morning view
-    return _shell("/", _render(await _scan(days)))
+async def home(date: str = ""):
+    (d, archive, publication), paper_book = await asyncio.gather(
+        _archive_view(date),
+        _agent_book({"QualityReversalPortfolio"}),
+    )
+    selected_date = publication.as_of_date.isoformat() if publication else d["as_of"]
+    return _shell(
+        "/",
+        _render(
+            d,
+            archive=archive,
+            selected_date=selected_date,
+            evidence_hash=publication.content_hash if publication else None,
+            computed_at=publication.computed_at if publication else None,
+            paper=paper_book[0] if paper_book else None,
+        ),
+    )
 
 
 @app.get("/sizing", response_class=HTMLResponse)
-async def sizing(capital: float = 200_000, risk: float = 1.0, held: int = 0, days: int = 10):
+async def sizing(capital: float = 200_000, risk: float = 1.0, held: int = 0, date: str = ""):
     risk = min(max(risk, 0.25), 3.0)  # keep the knob in a sane band
     held = min(max(held, 0), MAX_POSITIONS)
-    return _shell("/sizing", render_sizing(await _scan(days), capital, risk, held))
+    d, _archive, _publication = await _archive_view(date)
+    return _shell("/sizing", render_sizing(d, capital, risk, held))
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -701,8 +832,9 @@ async def api_portfolios():
 
 
 @app.get("/api/signals")
-async def api(days: int = 5):
-    return await _scan(days)
+async def api(date: str = ""):
+    d, _archive, _publication = await _archive_view(date)
+    return d
 
 
 def main():

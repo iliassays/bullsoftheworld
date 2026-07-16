@@ -5,8 +5,7 @@ a washed-out, profitable, cheap company turning up — and prints each with entr
 and the quality context (P/E, ROE, sector). Also a WATCHLIST: names set up in the zone, waiting only
 for the breakout trigger.
 
-    uv run python scripts/hedge_daily.py            # fired in last 5 sessions + watchlist
-    uv run python scripts/hedge_daily.py --days 1   # only today
+    uv run python scripts/hedge_daily.py            # this EOD's new signals + watchlist
 
 Scheme-3 (backtested, out-of-sample validated): ~58% win, winners ~2.3x losers, +74% / 2yr vs index
 +8%, ~12% worst drawdown. EOD/delayed data, single market regime — trade small, a stop is mandatory.
@@ -16,9 +15,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
 
+from hedge_forward import build_rows
 from portfolio_backtest import MIN_AVG_VOL, WARMUP, _load
 from scheme2_value import _fundamentals_at, _load_fundamentals
+from scheme_lab import quality_reversal
 from schemes import _prep
 from sqlalchemy import select
 
@@ -27,7 +29,6 @@ from bulls.core.models import CompanyProfile
 
 STOP, TARGET = -0.10, 0.25
 MAX_PE = 25  # quality gate: profitable and not expensive
-MAX_SNAPSHOT_SESSIONS = 63
 
 
 async def load_profiles(market):
@@ -51,29 +52,22 @@ def _qualifies(code, price, year, fin, div):
 TRACK_RECORD = {"total_2y": 73.6, "index_2y": 7.8, "win": 58, "maxdd": -12, "cagr": 31.7}
 
 
-def build_scan_snapshot(
+def _current_setup_rows(
     by_code,
     fin,
     div,
     profs,
-    *,
-    max_sessions: int = MAX_SNAPSHOT_SESSIONS,
-) -> dict:
-    """Build the EOD read model used by the Hedge home and sizing pages.
-
-    Recent trigger dates are retained as session offsets. The web process can therefore serve
-    different look-back windows without loading bars or recomputing technical indicators.
-    """
-    max_sessions = max(1, int(max_sessions))
+) -> tuple[dt.date, dict[str, dict]]:
+    """Current launch-zone rows, including names that fired on this session."""
     latest = max(b.date for bars in by_code.values() for b in bars)
-
-    candidates = []
+    candidates: dict[str, dict] = {}
     for code, bars in by_code.items():
         if len(bars) < WARMUP + 5 or sum(x.volume for x in bars[-20:]) / 20 < MIN_AVG_VOL:
             continue
-        if (latest - bars[-1].date).days > 10:  # stale/delisted
+        if bars[-1].date != latest:
+            # A point-in-time publication must not present an older close as today's setup.
             continue
-        c, h, _r, _s20, _s200, _v20, hi, lo = _prep(bars)
+        c, _h, _r, _s20, _s200, _v20, hi, lo = _prep(bars)
         i = len(bars) - 1
         if not hi[i] or hi[i] <= lo[i]:
             continue
@@ -93,15 +87,7 @@ def build_scan_snapshot(
         cheap = max(0.0, (25 - min(pe, 25)) / 25)
         qual = min(max(roe, 0), 30) / 30
         score = round((washout + cheap + qual) / 3 * 100)
-        fires = [
-            {
-                "date": bars[j].date.isoformat(),
-                "sessions_ago": i - j,
-            }
-            for j in range(max(5, len(bars) - max_sessions), len(bars))
-            if c[j] > max(h[j - 5 : j])
-        ]
-        item = {
+        candidates[code] = {
             "code": code,
             "price": round(px, 2),
             "stop": round(px * (1 + STOP), 2),
@@ -111,50 +97,123 @@ def build_scan_snapshot(
             "below_high": round(below),
             "score": score,
             "sector": (profs.get(code).sector if profs.get(code) else None) or "?",
-            "fires": fires,
         }
-        candidates.append(item)
+    return latest, candidates
+
+
+def _active_signal_rows(by_code, ledger_rows: list[dict], latest: dt.date) -> list[dict]:
+    active = []
+    for signal in ledger_rows:
+        if signal["status"] != "open" or signal["signal_date"] == latest:
+            continue
+        bars = by_code.get(signal["code"], [])
+        current = next((bar.close for bar in reversed(bars) if bar.date <= latest), None)
+        if current is None:
+            continue
+        entry = signal["entry"]
+        active.append(
+            {
+                "code": signal["code"],
+                "signal_date": signal["signal_date"].isoformat(),
+                "entry": entry,
+                "stop": signal["stop"],
+                "target": signal["target"],
+                "price": round(current, 2),
+                "return_pct": round((current / entry - 1) * 100, 1),
+            }
+        )
+    active.sort(key=lambda row: (row["signal_date"], row["code"]), reverse=True)
+    return active
+
+
+def _monitor_codes(payload: dict | None) -> set[str]:
+    if not payload:
+        return set()
     return {
+        row["code"]
+        for key in ("new_signals", "active_signals", "watchlist")
+        for row in payload.get(key, [])
+    }
+
+
+def classify_monitor_changes(
+    *,
+    new_signals: list[dict],
+    active_signals: list[dict],
+    watchlist: list[dict],
+    previous: dict | None,
+) -> dict:
+    current_codes = {
+        row["code"] for row in [*new_signals, *active_signals, *watchlist]
+    }
+    previous_codes = _monitor_codes(previous)
+    return {
+        "added": sorted(current_codes - previous_codes),
+        "continued": sorted(current_codes & previous_codes),
+        "removed": sorted(previous_codes - current_codes),
+        "has_prior_session": previous is not None,
+    }
+
+
+def build_scan_snapshot(
+    by_code,
+    fin,
+    div,
+    profs,
+    signals,
+    ledger_rows: list[dict],
+    *,
+    previous: dict | None = None,
+) -> dict:
+    """Build one point-in-time, session-specific Quality Reversal publication."""
+    latest, current_setups = _current_setup_rows(by_code, fin, div, profs)
+    new_signals = []
+    for code in sorted(signals):
+        if latest not in signals[code]:
+            continue
+        item = current_setups.get(code)
+        if item is None:
+            continue
+        new_signals.append({**item, "fired_on": latest.isoformat()})
+    new_signals.sort(key=lambda row: (row["score"], row["code"]), reverse=True)
+
+    new_codes = {row["code"] for row in new_signals}
+    watchlist = [
+        row for code, row in current_setups.items() if code not in new_codes
+    ]
+    watchlist.sort(key=lambda row: (row["score"], row["code"]), reverse=True)
+    active_signals = _active_signal_rows(by_code, ledger_rows, latest)
+
+    return {
+        "schema_version": 1,
         "as_of": latest.isoformat(),
-        "max_sessions": max_sessions,
-        "candidates": candidates,
+        "new_signals": new_signals,
+        "active_signals": active_signals,
+        "watchlist": watchlist,
+        "changes": classify_monitor_changes(
+            new_signals=new_signals,
+            active_signals=active_signals,
+            watchlist=watchlist,
+            previous=previous,
+        ),
         "track_record": TRACK_RECORD,
     }
 
 
-def scan_from_snapshot(snapshot: dict, days: int = 5) -> dict:
-    """Materialize one look-back window from a persisted EOD scan snapshot."""
-    max_sessions = max(1, int(snapshot.get("max_sessions") or MAX_SNAPSHOT_SESSIONS))
-    days = min(max(int(days), 1), max_sessions)
-    fired, watch = [], []
-    for candidate in snapshot.get("candidates", []):
-        item = {key: value for key, value in candidate.items() if key != "fires"}
-        fired_on = next(
-            (
-                fire["date"]
-                for fire in candidate.get("fires", [])
-                if int(fire["sessions_ago"]) < days
-            ),
-            None,
-        )
-        item["fired_on"] = fired_on
-        (fired if fired_on else watch).append(item)
-
-    # Rank by conviction (strongest first) so the top of the list is what to fund when room is tight;
-    # recency breaks ties. The watchlist stays ordered by how close each is to firing.
-    fired.sort(key=lambda r: (r["score"], r["fired_on"]), reverse=True)
-    watch.sort(key=lambda r: r["score"], reverse=True)
+def scan_from_snapshot(snapshot: dict) -> dict:
+    """Compatibility shape consumed by the Hedge list, sizing page, and signals API."""
     return {
         "as_of": snapshot["as_of"],
-        "days": days,
-        "fired": fired,
-        "watch": watch,
+        "fired": snapshot.get("new_signals", []),
+        "watch": snapshot.get("watchlist", []),
+        "active": snapshot.get("active_signals", []),
+        "changes": snapshot.get("changes", {}),
         "track_record": snapshot.get("track_record", TRACK_RECORD),
         "ready": True,
     }
 
 
-async def scan(days: int = 5) -> dict:
+async def scan() -> dict:
     """Compute today's Scheme-3 signals for CLI/offline use.
 
     HTTP requests use the persisted snapshot written by ``hedge_refresh.py`` instead.
@@ -162,13 +221,23 @@ async def scan(days: int = 5) -> dict:
     by_code, _ = await _load()
     fin, div = await _load_fundamentals("DSE")
     profs = await load_profiles("DSE")
-    return scan_from_snapshot(build_scan_snapshot(by_code, fin, div, profs), days)
+    signals = quality_reversal(by_code, fin, div)
+    return scan_from_snapshot(
+        build_scan_snapshot(
+            by_code,
+            fin,
+            div,
+            profs,
+            signals,
+            build_rows(by_code, signals),
+        )
+    )
 
 
-async def _run(days):
-    r = await scan(days)
+async def _run():
+    r = await scan()
     print(f"HEDGE — daily list · as of EOD {r['as_of']} · EOD/delayed · stop is mandatory\n")
-    print(f"=== BUY signals (fired in last {days} session(s)): {len(r['fired'])} ===")
+    print(f"=== NEW BUY signals this session: {len(r['fired'])} ===")
     if r["fired"]:
         print(
             f"  {'CODE':<11}{'entry':>8}{'stop':>8}{'target':>8}{'P/E':>6}{'ROE':>6}  why / sector"
@@ -196,8 +265,8 @@ def main():
     ap = argparse.ArgumentParser(
         description="Hedge daily morning list (Scheme-3 Quality Reversal)."
     )
-    ap.add_argument("--days", type=int, default=5, help="look-back window for a fired breakout")
-    asyncio.run(_run(ap.parse_args().days))
+    ap.parse_args()
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

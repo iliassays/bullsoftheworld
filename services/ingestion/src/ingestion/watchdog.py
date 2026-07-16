@@ -42,6 +42,7 @@ import httpx
 import redis.asyncio as aioredis
 from sqlalchemy import text
 
+from bulls.analytics import STRATEGIES
 from bulls.core.config import get_settings
 from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.market_data.calendar import is_trading_day, is_trading_hours, to_market_tz
@@ -383,21 +384,27 @@ async def _agent_problems(
             sample = ", ".join(f"@{h} {c} holding={q} lots={lq}" for h, c, q, lq in drift)
             problems.append(f"agent holdings/lots books disagree: {sample}")
 
-        # 4. Churn guard: 6 position slots mean ≤6 buys + ≤6 sells is the legitimate daily
-        #    ceiling. More = the engine is trading every tick (rule hysteresis broken).
+        # 4. Churn guard: a strategy can at most replace its full book once in a session.
         churn = (
             await session.execute(
                 text(
-                    "select u.handle, count(*) from agent_trades t "
-                    "join users u on u.id = t.user_id where t.market = :market "
+                    "select u.handle, a.strategy, count(*) from agent_trades t "
+                    "join users u on u.id = t.user_id "
+                    "join agent_portfolios a on a.user_id = t.user_id "
+                    "where t.market = :market "
                     "and u.tenant_id = :tenant_id and t.trade_date = :today "
-                    "group by u.handle having count(*) > 12"
+                    "group by u.handle, a.strategy"
                 ),
                 {"market": market, "tenant_id": tenant_id, "today": today},
             )
         ).all()
-        for handle, n in churn:
-            problems.append(f"agent @{handle} made {n} trades today — churn guard tripped")
+        for handle, strategy, n in churn:
+            limit = STRATEGIES[strategy].max_positions * 2
+            if n > limit:
+                problems.append(
+                    f"agent @{handle} made {n} trades today — churn guard tripped "
+                    f"(limit {limit})"
+                )
     return problems
 
 

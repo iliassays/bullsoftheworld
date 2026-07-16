@@ -28,6 +28,22 @@ class HedgeTrackRecordSnapshot(Base):
     )
 
 
+class HedgeDailyScanSnapshot(Base):
+    """One immutable, point-in-time Quality Reversal monitor publication per market session."""
+
+    __tablename__ = "hedge_daily_scan_snapshots"
+
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    market: Mapped[str] = mapped_column(String(8), primary_key=True)
+    strategy: Mapped[str] = mapped_column(String(32), primary_key=True)
+    as_of_date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    computed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class HedgeSignal(Base):
     __tablename__ = "hedge_signals"
     __table_args__ = (
