@@ -19,6 +19,11 @@ from pathlib import Path
 
 import redis.asyncio as aioredis
 
+from api.routers.scanner import (
+    build_and_cache_radar,
+    radar_data_timestamps,
+    scanner_pack_for,
+)
 from api.routers.screener import (
     build_and_cache_screens,
     screens_data_timestamps,
@@ -49,10 +54,11 @@ async def warm_tenant(tenant_name: str, requested_sizes: str | None) -> int:
     sm = get_sessionmaker()
     redis = aioredis.from_url(get_settings().redis_url)
     failures = 0
+    radar_tabs = [tab.key for tab in scanner_pack_for(tenant.market).tabs]
     try:
         for size in warm_sizes(tenant.market, requested_sizes):
-            # One session per size: a statement timeout poisons the transaction it happens in,
-            # and a fresh session keeps one slow screen group from failing the rest.
+            # One session per unit of work: a statement timeout poisons the transaction it
+            # happens in, and a fresh session keeps one slow group from failing the rest.
             async with sm() as session:
                 try:
                     quote_ts, ana_ts = await screens_data_timestamps(session, tenant.market)
@@ -70,6 +76,38 @@ async def warm_tenant(tenant_name: str, requested_sizes: str | None) -> int:
                         size or "all",
                         len(resp.screens),
                     )
+            # The Ideas tab (scanner radar) serves the same shared read-model audience; warm its
+            # default (non-watchlist, default-limit) view for every tab at this size.
+            for tab in radar_tabs:
+                async with sm() as session:
+                    try:
+                        quote_ts, ana_ts = await radar_data_timestamps(session, tenant.market)
+                        await build_and_cache_radar(
+                            tenant,
+                            session,
+                            redis,
+                            tab=tab,
+                            size=size,
+                            limit=10,
+                            quote_ts=quote_ts,
+                            ana_ts=ana_ts,
+                        )
+                    except Exception:
+                        failures += 1
+                        log.exception(
+                            "radar warm failed for %s tab=%s size=%s",
+                            tenant_name,
+                            tab,
+                            size or "all",
+                        )
+                    else:
+                        log.info(
+                            "warmed radar %s/%s tab=%s size=%s",
+                            tenant_name,
+                            tenant.market,
+                            tab,
+                            size or "all",
+                        )
     finally:
         await redis.aclose()
     return 1 if failures else 0

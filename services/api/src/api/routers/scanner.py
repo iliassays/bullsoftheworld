@@ -11,6 +11,7 @@ import datetime as dt
 from collections import defaultdict
 from dataclasses import dataclass
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, true
@@ -28,7 +29,9 @@ from api.routers.screener import (
     _unusual_volume,
     _validated_cap_tier,
 )
+from api.swr import json_response, serve_cached
 from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
+from bulls.core.config import get_settings
 from bulls.core.models import (
     DailyBar,
     MarketSummary,
@@ -1298,9 +1301,7 @@ def _apply_dse_scanner_context(boards: list[ScreenOut]) -> None:
             )
         elif board.key == "most_active":
             board.title = "Top Turnover"
-            board.description = (
-                "Where the most money traded in the latest price snapshot. Useful for liquidity, not a call."
-            )
+            board.description = "Where the most money traded in the latest price snapshot. Useful for liquidity, not a call."
         elif board.key == "value_quality":
             board.title = "Value + Quality"
             board.description = "Cheaper than sector peers with profitability support."
@@ -1561,10 +1562,7 @@ async def _build_scanner_boards(
 ) -> list[ScreenOut]:
     # Tier membership is applied inside each database query before ranking/limit. Post-filtering
     # below is a defensive assertion after enrichment, not an approximate top-N workaround.
-    boards = [
-        await _BOARD_BUILDERS[key](session, market, limit, cap_tier)
-        for key in tab.boards
-    ]
+    boards = [await _BOARD_BUILDERS[key](session, market, limit, cap_tier) for key in tab.boards]
     await _enrich(session, market, boards)
     pack = scanner_pack_for(market)
     _CONTEXT_APPLIERS[pack.key](boards)
@@ -1610,6 +1608,130 @@ async def daily_scanner_highlights(
     return highlights
 
 
+def radar_cache_keys(
+    tenant_name: str,
+    market: str,
+    tab: str,
+    size: str | None,
+    limit: int,
+    quote_ts: dt.datetime | None,
+    ana_ts: dt.datetime | None,
+) -> tuple[str, str]:
+    """Freshness-keyed and last-known-good cache keys for the shared (non-watchlist) radar view."""
+    scope = f"{tenant_name}:{market}:{tab}:{size or 'all'}:{limit}"
+    return (
+        f"scanner:radar:v1:{scope}:{quote_ts}:{ana_ts}",
+        f"scanner:radar:stale:v1:{scope}",
+    )
+
+
+async def build_and_cache_radar(
+    tenant,
+    session,
+    redis,
+    *,
+    tab: str,
+    size: str | None,
+    limit: int,
+    quote_ts: dt.datetime | None,
+    ana_ts: dt.datetime | None,
+) -> ScannerResponse:
+    """Build the shared radar view once and populate both cache entries."""
+    resp = await _build_radar_response(
+        tenant, session, tab=tab, size=size, limit=limit, quote_ts=quote_ts, ana_ts=ana_ts
+    )
+    fresh_key, stale_key = radar_cache_keys(
+        tenant.name, tenant.market, resp.tab, size, limit, quote_ts, ana_ts
+    )
+    payload = resp.model_dump_json()
+    await redis.set(fresh_key, payload, ex=_RADAR_TTL)
+    await redis.set(stale_key, payload, ex=_RADAR_STALE_TTL)
+    return resp
+
+
+_RADAR_TTL = 6 * 60 * 60
+_RADAR_STALE_TTL = 72 * 60 * 60
+
+
+async def radar_data_timestamps(
+    session, market: str
+) -> tuple[dt.datetime | None, dt.datetime | None]:
+    ana_ts = await session.scalar(
+        select(func.max(TickerAnalytics.computed_at)).where(TickerAnalytics.market == market)
+    )
+    quote_ts = await session.scalar(
+        select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
+    )
+    return quote_ts, ana_ts
+
+
+async def _revalidate_radar(tenant, tab: str, size: str | None, limit: int) -> None:
+    from redis.asyncio import from_url as redis_from_url
+
+    from bulls.core.config import get_settings
+    from bulls.core.db import get_sessionmaker
+
+    sm = get_sessionmaker()
+    redis = redis_from_url(get_settings().redis_url)
+    try:
+        async with sm() as session:
+            quote_ts, ana_ts = await radar_data_timestamps(session, tenant.market)
+            await build_and_cache_radar(
+                tenant,
+                session,
+                redis,
+                tab=tab,
+                size=size,
+                limit=limit,
+                quote_ts=quote_ts,
+                ana_ts=ana_ts,
+            )
+    finally:
+        await redis.aclose()
+
+
+async def _build_radar_response(
+    tenant,
+    session,
+    *,
+    tab: str,
+    size: str | None,
+    limit: int,
+    quote_ts: dt.datetime | None,
+    ana_ts: dt.datetime | None,
+) -> ScannerResponse:
+    market = tenant.market
+    pack = scanner_pack_for(market)
+    selected_tab = pack.tab(tab)
+    boards = await _build_scanner_boards(
+        session,
+        market,
+        selected_tab,
+        limit,
+        cap_tier=size,
+    )
+    as_of = await session.scalar(
+        select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == market)
+    )
+    # Live regime gate (spec §2): only fetched when a regime-sensitive board is on this tab.
+    regime = None
+    if any(b.key in _REGIME_SENSITIVE for b in boards):
+        regime = await _market_regime(session, market)
+    return ScannerResponse(
+        as_of=str(as_of) if as_of else None,
+        quote_as_of=quote_ts.isoformat() if quote_ts else None,
+        tab=selected_tab.key,
+        strategy_pack=pack.key,
+        cap_tier=size,
+        tabs=[
+            ScannerTabOut(key=item.key, title=item.title, description=item.description)
+            for item in pack.tabs
+        ],
+        market_regime=regime,
+        boards=boards,
+    )
+
+
 @router.get("/scanner/radar")
 async def radar(
     tenant: CurrentTenant,
@@ -1620,11 +1742,46 @@ async def radar(
     limit: int = Query(10, ge=1, le=25),
     size: str | None = Query(None, description="cap tier: mega | large | mid | small | micro"),
 ) -> ScannerResponse:
+    """Ideas-tab boards, served stale-while-revalidate like /screens.
+
+    The default view is identical for every user, so it is cached and warmed exactly like the
+    Market tab. Only the opt-in watchlist filter is personal; it bypasses the shared cache and is
+    computed live for that user.
+    """
     enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
     size = _validated_cap_tier(market, size)
     pack = scanner_pack_for(market)
     selected_tab = pack.tab(tab)
+    if not watched:
+        quote_ts, ana_ts = await radar_data_timestamps(session, market)
+        fresh_key, stale_key = radar_cache_keys(
+            tenant.name, market, selected_tab.key, size, limit, quote_ts, ana_ts
+        )
+        redis = aioredis.from_url(get_settings().redis_url)
+        try:
+            served = await serve_cached(
+                redis,
+                fresh_key=fresh_key,
+                stale_key=stale_key,
+                revalidate=lambda: _revalidate_radar(tenant, selected_tab.key, size, limit),
+            )
+            if served is not None:
+                return served
+            resp = await build_and_cache_radar(
+                tenant,
+                session,
+                redis,
+                tab=selected_tab.key,
+                size=size,
+                limit=limit,
+                quote_ts=quote_ts,
+                ana_ts=ana_ts,
+            )
+            return json_response(resp.model_dump_json())
+        finally:
+            await redis.aclose()
+
     boards = await _build_scanner_boards(
         session,
         market,
