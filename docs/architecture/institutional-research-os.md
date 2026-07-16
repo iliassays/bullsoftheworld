@@ -4,6 +4,12 @@ Status: approved architecture; private V1 vertical slice implemented July 2026. 
 defines a separate authenticated research product. It does not extend the public retail portal and
 it does not authorize commercial use of unlicensed market data.
 
+The next US research-data module is options intelligence. It is approved for historical feasibility
+work, not implemented or licensed for customer display. The governing specification is
+`docs/research/us-options-flow-research-2026-07.md`: options evidence must distinguish directional
+delta, volatility demand, position lifecycle, abnormality, liquidity, and confirmation instead of
+turning large call prints into trade recommendations.
+
 The implemented foundation includes tenant-bound organizations and workspaces, least-privilege
 authorization policy, point-in-time research runs and steps, shared official evidence within one
 tenant/market boundary, claim-to-source-span lineage, and composite database constraints that reject
@@ -32,7 +38,9 @@ underlying tenancy schema.
 Bulls Atlas is an evidence-first investment research workspace for DSE equities and US
 small/micro-cap equities. It converts a user's mandate into a research queue, produces an auditable
 company dossier, tests hypotheses against point-in-time data, records the investment thesis, and
-monitors evidence that strengthens or invalidates it.
+monitors evidence that strengthens or invalidates it. When licensed and validated, US options-chain
+and options-flow evidence becomes an additional research lens; it never replaces the underlying
+company, filing, catalyst, liquidity, or price evidence.
 
 It is not:
 
@@ -285,6 +293,37 @@ For DSE, prioritize disclosure changes, sponsor/director and institutional owner
 earnings/dividends, record dates, board meetings, category/operational status, block trades,
 financial-submission status, going-concern evidence, and source-linked corporate actions.
 
+### US options intelligence
+
+Options intelligence is a planned US-only evidence module. It must answer separate questions about
+directional delta, volatility demand, opening/closing status, abnormality, chain liquidity, and
+stock/catalyst confirmation. It is not an unusual-activity widget and does not infer that a large
+call trade is bullish.
+
+The staged data design is:
+
+1. Cboe Option Sentiment for underlying-level EOD delta, premium, volatility, skew, vega, implied
+   borrow, participant, tenor, moneyness, size, and baseline research;
+2. a licensed EOD chain source for contract quotes, volume, previous-settlement open interest,
+   implied volatility, Greeks, and explicit stale/illiquid states;
+3. Cboe Open-Close evidence for participant, buy/sell, and open/close labels, with its partial-market
+   exchange coverage exposed;
+4. full-market OPRA trade/NBBO inference only after it is benchmarked against exact labels.
+
+The Research Queue may use transparent options dimensions to prioritize analyst attention. The
+Company Dossier must show directional and volatility interpretations, false-positive explanations,
+contradictory evidence, source coverage, and abstention. Hypothesis Lab may test registered
+stock-selection strategies using the next observable eligible underlying-stock price; the first
+experiment does not trade options. Research Memory records subsequent returns, excursions,
+volatility realization, and later open-interest support without rewriting what was knowable at the
+original cutoff.
+
+Open interest is previous-settlement state, not a same-day opening-position label. Rolls, spreads,
+covered calls, protective puts, straddles, conversions, deep-ITM stock substitution, expiration
+activity, market-maker inventory, and event-volatility trades must be detected, downgraded, or
+marked unknown. The full method, feature registry, test design, promotion gates, source references,
+and licensing boundary are in `docs/research/us-options-flow-research-2026-07.md`.
+
 ### Hypothesis Lab
 
 Natural language compiles to a versioned, reviewable DSL rather than arbitrary generated Python.
@@ -353,6 +392,8 @@ accounts are excluded unless deliberately included by an administrator.
 - US: 11,092 reference symbols, but only 67 ready and 3 research-only; 112 symbols have price
   history/analytics, 105 have SEC filing coverage, and 103 have Company Facts coverage. FINRA daily
   short-volume coverage is broad, but it does not compensate for the narrow research-ready universe.
+- US options: no licensed historical options-flow dataset or customer-display chain is integrated.
+  Cboe Option Sentiment, Option EOD Summary, and Open-Close quotes/samples remain prerequisites.
 - Evidence index: 39,120 US chunks but only 1,035 DSE chunks. US filing chunks currently represent
   filing metadata/selected facts rather than full filing bodies and tables.
 
@@ -389,6 +430,10 @@ and cost.
 - transaction costs, market impact, capacity, delistings, and regime breakdown;
 - probability-of-backtest-overfitting/deflated-performance checks and complete trial registry;
 - paper/forward monitoring before any model receives a validated label.
+- options experiments additionally require previous-settlement open-interest semantics, exact EOD
+  delivery timing, chain/contract corporate-action reconciliation, event and expiration-week
+  breakdowns, classification-confidence tests, and proof of incremental value beyond a stock-only
+  baseline.
 
 ### Performance contract
 
@@ -465,7 +510,9 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
 Catalyst Calendar remains a target module. Hypothesis Lab, Portfolio Intelligence, and Research
 Memory are enabled in Atlas. A backtest remains `diagnostic` until history length, breadth,
 inactive/delisted coverage, and execution-count gates pass; the UI does not relabel diagnostics as
-validated research.
+validated research. US options intelligence remains a planned research module and must not appear
+in production as implemented, live, or validated until its separate data, licensing, historical,
+and forward gates pass.
 
 ## Delivery sequence
 
@@ -473,7 +520,8 @@ validated research.
    run/claim/evidence schema, RLS, audit ledger, point-in-time contracts, and fixed tenant builds.
    Object storage, a complete source registry, and market-data licensing decisions remain.
 2. **Data depth**: full filing body/table evidence, insider and beneficial-owner filings, catalyst
-   events, DSE publication timestamps, broader US onboarding, and longer DSE history.
+   events, DSE publication timestamps, broader US onboarding, longer DSE history, and the staged US
+   options feasibility work defined in `docs/research/us-options-flow-research-2026-07.md`.
 3. **Paid-alpha workflow (partially implemented)**: Research Queue, Company Dossier, bounded
    autonomous thesis creation, and forward outcome memory are active. Catalyst Calendar and
    evidence-change monitoring remain.

@@ -35,10 +35,23 @@ also uses Yahoo — that is fine and out of scope: internal-only pipeline, no di
 | Discovery + cross-check | Yahoo (free, unofficial) | Keep. Internal breadth scanning only. |
 | Production EOD (public display + Atlas reads) | **Tiingo** — tiingo.com | Migrate first. ~$30/mo Power plan for internal use now; commercial/redistribution addendum via sales@tiingo.com before paid launch. |
 | Research-grade history (point-in-time, delisted-inclusive, 1998+) | **Sharadar Core US Equities** — data.nasdaq.com/databases/SFA | Evaluate this quarter. The only tier Yahoo structurally cannot serve; unlocks `validated` US backtests. Quote via Nasdaq Data Link. |
-| Options (catalyst-scoped) | **Cboe DataShop "Option Sentiment"** — datashop.cboe.com/option-sentiment | Decided 2026-07-16, quote pending. Buy ~1yr historical first, subscribe after validation. Ask explicitly for display/external-use license pricing, not just internal use. Spec: one EOD file for all optionable underlyings (~80 fields incl. iv30/iv90, norm 25d skew, net option delta, directional premium, implied_borrow, size/DTE/moneyness buckets, 20d baselines). Blank fields mean "no data" → must render as unavailable/illiquid, never zero. |
+| Options research — underlying-level | **Cboe DataShop "Option Sentiment"** — `datashop.cboe.com/Documents/Cboe_OptionSentiment_Specs.pdf` | Historical feasibility source. Buy ~1yr first; subscribe only after the registered stock-selection test shows incremental value. One EOD file for all optionable underlyings, including iv30/iv90, normalized 25d skew, net option delta, directional premium, implied borrow, size/DTE/moneyness buckets, and baselines. |
+| Options research — chain display | **Cboe Option EOD Summary or licensed OPRA-derived vendor** | Required for the actual contract chain: point-in-time bid/ask, volume, previous-settlement open interest, IV, Greeks, and liquidity flags. Quote and customer-display/retention rights pending. Do not pretend the underlying-level sentiment file is a full chain. |
+| Options research — exact flow labels | **Cboe Open-Close Volume Summary** | Evaluate after the feasibility stage. Supplies participant, buy/sell, and open/close classification on Cboe exchanges; partial-market coverage must remain visible. External derived display requires additional licensing/approval. |
 
 **Hard rule:** nothing new gets built on Yahoo. Catalysts run on EDGAR, forensics on
 EDGAR/FINRA, options on Cboe. Every added Yahoo dependency is migration debt.
+
+The options research contract is
+`docs/research/us-options-flow-research-2026-07.md`. Its hard rules include:
+
+- options flow is an evidence lens, not a recommendation;
+- directional delta and volatility demand are separate;
+- open interest is previous-settlement state and cannot prove same-day opening;
+- exact Open-Close labels outrank inferred OPRA bid/ask classification;
+- the first registered strategy trades the underlying stock, not options;
+- blank fields mean unavailable, not zero;
+- no customer-facing chain or derived alert ships until the exact license permits it.
 
 ## Implementation plan (next session picks up here)
 
@@ -57,9 +70,20 @@ EDGAR/FINRA, options on Cboe. Every added Yahoo dependency is migration debt.
 4. **Sharadar evaluation:** score against Hypothesis Lab's own gates (survivorship, delistings,
    corporate actions, point-in-time fundamentals, history length). Success = the
    inactive/delisted-universe gate can pass for US.
-5. **One licensing review, three vendors:** Tiingo commercial terms + Sharadar quote + Cboe
-   display license, decided together as one memo. This also closes the open licensing item from
+5. **Options schema audit:** obtain Option Sentiment history plus Option EOD Summary and Open-Close
+   samples. Reconcile symbol identity, sessions, blank fields, exchange coverage, previous-settlement
+   open interest, adjusted contracts, and delivery times before adding a serving model.
+6. **One licensing review, three source families:** Tiingo commercial terms + Sharadar quote + Cboe/
+   OPRA internal, display, derived-data, retention, and redistribution terms, decided together as
+   one memo. This also closes the open licensing item from
    `docs/research/platform-intelligence-research-2026-07.md`.
+
+## Separate second-product boundary
+
+The proposed cross-venue arbitrage/dislocation scanner is not an Atlas module. Its discovery memo
+is `docs/research/cross-venue-dislocation-product-2026-07.md`. It may reuse provenance, identity,
+calculation, replay, alerts, and audit concepts, but not Atlas research scores, licenses, or
+validation labels.
 
 Related but separate: DSE history extension candidate is the Mendeley DSE EOD dataset
 (doi 10.17632/23553sm4tn.4, CC BY 4.0, Oct 2012–Jan 2026, raw + adjusted + instrument-availability

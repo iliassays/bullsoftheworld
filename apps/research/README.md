@@ -21,6 +21,11 @@ explicit workspace policy and dedicated tenant-bound worker. Catalyst Calendar r
 contract and workflow are implemented. The existing organization schema does not imply that team
 invitations or administration are already available.
 
+US options intelligence is a planned, unimplemented Atlas evidence module. Its specification is
+`../../docs/research/us-options-flow-research-2026-07.md`. It must separate directional delta,
+volatility demand, opening/closing evidence, abnormality, liquidity, and stock/catalyst confirmation;
+it is not a large-call alert or an authorization to trade options.
+
 ## Module boundaries
 
 - `src/app`: composition, providers, and routing only.
