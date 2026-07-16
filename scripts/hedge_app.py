@@ -23,12 +23,13 @@ from hedge_daily import scan
 from hedge_forward import read_log, render_ledger
 from hedge_history import read_snapshot, render_history
 from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 
 from bulls.analytics import STRATEGIES, calculate_agent_performance
 from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     AgentLot,
+    AgentOpportunity,
     AgentPortfolio,
     AgentTrade,
     PortfolioHolding,
@@ -275,6 +276,59 @@ async def _agent_book() -> list[dict]:
                 .order_by(AgentTrade.user_id, AgentTrade.id)
             )
         ).all()
+        opportunity_counts: dict[int, dict[str, int]] = defaultdict(
+            lambda: {"open": 0, "total": 0}
+        )
+        for user_id, status, count in (
+            await session.execute(
+                select(
+                    AgentOpportunity.user_id,
+                    AgentOpportunity.status,
+                    func.count(AgentOpportunity.id),
+                )
+                .where(
+                    AgentOpportunity.tenant_id == tenant_id,
+                    AgentOpportunity.market == market,
+                    AgentOpportunity.user_id.in_(user_ids),
+                )
+                .group_by(AgentOpportunity.user_id, AgentOpportunity.status)
+            )
+        ).all():
+            opportunity_counts[user_id]["total"] += count
+            if status == "open":
+                opportunity_counts[user_id]["open"] = count
+
+        ranked_opportunity_ids = (
+            select(
+                AgentOpportunity.id,
+                func.row_number()
+                .over(
+                    partition_by=AgentOpportunity.user_id,
+                    order_by=(
+                        case((AgentOpportunity.status == "open", 0), else_=1),
+                        AgentOpportunity.id.desc(),
+                    ),
+                )
+                .label("row_number"),
+            )
+            .where(
+                AgentOpportunity.tenant_id == tenant_id,
+                AgentOpportunity.market == market,
+                AgentOpportunity.user_id.in_(user_ids),
+            )
+            .subquery()
+        )
+        opportunities = (
+            await session.scalars(
+                select(AgentOpportunity)
+                .join(
+                    ranked_opportunity_ids,
+                    ranked_opportunity_ids.c.id == AgentOpportunity.id,
+                )
+                .where(ranked_opportunity_ids.c.row_number <= 50)
+                .order_by(AgentOpportunity.user_id, AgentOpportunity.id.desc())
+            )
+        ).all()
         codes = sorted({holding.code for holding in holdings})
         quotes = {
             q.code: q
@@ -291,12 +345,15 @@ async def _agent_book() -> list[dict]:
         holdings_by_user: dict[int, list] = defaultdict(list)
         lots_by_user: dict[int, list] = defaultdict(list)
         trades_by_user: dict[int, list] = defaultdict(list)
+        opportunities_by_user: dict[int, list] = defaultdict(list)
         for holding in holdings:
             holdings_by_user[holding.user_id].append(holding)
         for lot in lots:
             lots_by_user[lot.user_id].append(lot)
         for trade in all_trades:
             trades_by_user[trade.user_id].append(trade)
+        for opportunity in opportunities:
+            opportunities_by_user[opportunity.user_id].append(opportunity)
 
         for agent, user in sorted(rows, key=lambda row: row[1].handle):
             spec = STRATEGIES[agent.strategy]
@@ -317,6 +374,32 @@ async def _agent_book() -> list[dict]:
                 if holding.code in quotes and quotes[holding.code].ltp is not None
             }
             performance = calculate_agent_performance(agent_trades, prices)
+            opportunity_rows = []
+            for opportunity in opportunities_by_user[agent.user_id]:
+                first_price = opportunity.first_price
+                opportunity_rows.append(
+                    {
+                        "code": opportunity.code,
+                        "status": opportunity.status,
+                        "block_reason": opportunity.last_block_reason,
+                        "first_seen_at": opportunity.first_seen_at,
+                        "last_seen_at": opportunity.last_seen_at,
+                        "first_price": first_price,
+                        "last_price": opportunity.last_price,
+                        "return_pct": (opportunity.last_price / first_price - 1) * 100,
+                        "best_return_pct": (opportunity.best_price / first_price - 1) * 100,
+                        "worst_return_pct": (opportunity.worst_price / first_price - 1) * 100,
+                        "first_rank": opportunity.first_rank,
+                        "best_rank": opportunity.best_rank,
+                        "last_rank": opportunity.last_rank,
+                        "required_cash": opportunity.required_cash,
+                        "available_cash": opportunity.last_available_cash,
+                        "pending_cash": opportunity.last_pending_cash,
+                        "free_slots": opportunity.last_free_slots,
+                        "blocked_ticks": opportunity.blocked_ticks,
+                        "signal_reason": opportunity.signal_reason,
+                    }
+                )
 
             hout, value_known, total_value = [], True, 0.0
             quote_times = []
@@ -363,6 +446,9 @@ async def _agent_book() -> list[dict]:
                     "closed_trades": performance.closed_trades,
                     "win_rate": performance.win_rate,
                     "quotes_as_of": min(quote_times) if quote_times else None,
+                    "opportunities_open": opportunity_counts[agent.user_id]["open"],
+                    "opportunities_total": opportunity_counts[agent.user_id]["total"],
+                    "opportunities": opportunity_rows,
                     "holdings": hout,
                     "trades": list(reversed(agent_trades[-200:])),
                 }
@@ -400,10 +486,11 @@ def render_portfolios(book: list[dict], selected: str) -> str:
                 f"<td class='num'>{_fmt_tk(a['cash'])}</td>"
                 f"<td class='num'>{_fmt_tk(a['pending'])}</td>"
                 f"<td class='num'>{len(a['holdings'])}</td>"
+                f"<td class='num'>{a['opportunities_open']}</td>"
                 f"<td class='num'>{_fmt_pct(a['return_pct'])}</td></tr>"
                 for a in book
             )
-            or '<tr><td colspan="7" class="empty">No agent portfolios seeded.</td></tr>'
+            or '<tr><td colspan="8" class="empty">No agent portfolios seeded.</td></tr>'
         )
         total_eq = sum(a["equity"] or 0 for a in book)
         total_cap = sum(a["capital"] for a in book)
@@ -415,7 +502,8 @@ settlement · paper trading on delayed quotes · not advice</div>
   <div><div class="k">vs deployed</div><div class="v {"pos" if total_eq >= total_cap else "neg"}">{total_eq - total_cap:+,.0f}</div></div>
 </div>
 <table><tr><th>portfolio</th><th class="num">equity ৳</th><th class="num">P&L ৳</th>
-<th class="num">cash ৳</th><th class="num">settling ৳</th><th class="num">positions</th><th class="num">return</th></tr>
+<th class="num">cash ৳</th><th class="num">settling ৳</th><th class="num">positions</th>
+<th class="num">blocked now</th><th class="num">return</th></tr>
 {rows}</table>
 <div class="foot">Pick a portfolio above for its holdings and full trade log. "Settling" = sell
 proceeds still inside the T+2 window — real money, not yet spendable. Full detail incl. reasons
@@ -444,6 +532,35 @@ also lives in the portal cockpit.</div>"""
         )
         or '<tr><td colspan="8" class="empty">No trades yet.</td></tr>'
     )
+    opportunity_status = {
+        "open": ("watch", "still blocked"),
+        "entered": ("win", "entered later"),
+        "expired": ("", "setup expired"),
+    }
+    opportunity_reason = {
+        "no_cash": "not enough settled cash",
+        "no_slot": "all position slots used",
+        "order_too_small": "budget below executable order",
+    }
+    opportunity_rows = (
+        "".join(
+            f"<tr><td>{op['first_seen_at'].strftime('%Y-%m-%d %H:%M')}</td>"
+            f"<td><b>{op['code']}</b></td>"
+            f"<td><span class='pill {opportunity_status[op['status']][0]}'>"
+            f"{opportunity_status[op['status']][1]}</span></td>"
+            f"<td>{opportunity_reason[op['block_reason']]}</td>"
+            f"<td class='num'>{op['best_rank']}</td>"
+            f"<td class='num'>{op['first_price']:.2f}</td>"
+            f"<td class='num {'pos' if op['return_pct'] >= 0 else 'neg'}'>"
+            f"{op['return_pct']:+.1f}%</td>"
+            f"<td class='num pos'>{op['best_return_pct']:+.1f}%</td>"
+            f"<td class='num neg'>{op['worst_return_pct']:+.1f}%</td>"
+            f"<td class='num'>{op['available_cash']:,.0f} / {op['required_cash']:,.0f}</td>"
+            f"<td class='num'>{op['free_slots']}</td></tr>"
+            for op in chosen["opportunities"]
+        )
+        or '<tr><td colspan="11" class="empty">No capital-constrained setups recorded yet.</td></tr>'
+    )
     pnl = chosen["pnl"]
     return f"""{combo}
 <div class="sub">{chosen["display"]} · @{chosen["handle"]} · {chosen["desc"]}</div>
@@ -453,6 +570,7 @@ also lives in the portal cockpit.</div>"""
   <div><div class="k">Cash</div><div class="v">{_fmt_tk(chosen["cash"])}</div></div>
   <div><div class="k">Settling</div><div class="v">{_fmt_tk(chosen["pending"])}</div></div>
   <div><div class="k">Positions</div><div class="v">{len(chosen["holdings"])}</div></div>
+  <div><div class="k">Blocked now</div><div class="v">{chosen["opportunities_open"]}</div></div>
 </div>
 <div class="tr">
   <div><div class="k">Realized P&L</div><div class="v {"pos" if chosen["realized_pnl"] >= 0 else "neg"}">{chosen["realized_pnl"]:+,.0f}</div></div>
@@ -467,6 +585,17 @@ Returns are mark-to-market; a win rate appears only after positions have been so
 <table><tr><th>code</th><th class="num">qty</th><th class="num">sellable</th>
 <th class="num">avg cost</th><th class="num">ltp</th><th class="num">P&L</th></tr>
 {holds}</table>
+<h2>Capital-constrained opportunities ({chosen["opportunities_total"]} episodes)</h2>
+<div class="cap">A setup appears here only when the strategy qualified but the account could not
+buy it. The setup comes from EOD analytics; the price path uses observed 15-minute delayed quotes.
+Returns are counterfactual observations, not portfolio P&amp;L or hypothetical fills. Recording starts
+from this feature's deployment; older discarded candidates cannot be reconstructed honestly.</div>
+<div class="scroll"><table>
+<tr><th>first seen</th><th>code</th><th>outcome</th><th>blocked by</th><th class="num">best rank</th>
+<th class="num">missed px</th><th class="num">since</th><th class="num">best</th>
+<th class="num">worst</th><th class="num">cash / needed</th><th class="num">slots</th></tr>
+{opportunity_rows}
+</table></div>
 <h2>Trade log ({len(chosen["trades"])})</h2>
 <div class="scroll"><table>
 <tr><th>date</th><th>side</th><th>code</th><th class="num">qty</th><th class="num">price</th>

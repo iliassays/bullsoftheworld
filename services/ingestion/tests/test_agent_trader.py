@@ -36,6 +36,7 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
     from bulls.core.db import dispose_engine, get_sessionmaker
     from bulls.core.models import (
         AgentLot,
+        AgentOpportunity,
         AgentPortfolio,
         AgentTrade,
         PortfolioHolding,
@@ -203,11 +204,19 @@ async def test_agent_full_lifecycle_with_t2_settlement() -> None:
         counts = await run_agents(
             MARKET, tenant_id="test", now=_utc(2026, 6, 28, 7, 0)
         )  # quote still from 06-25
-        assert counts == {"agents": 0, "buys": 0, "sells": 0, "settled": 0}
+        assert counts == {
+            "agents": 0,
+            "buys": 0,
+            "sells": 0,
+            "settled": 0,
+            "opportunities": 0,
+            "opportunities_resolved": 0,
+        }
     finally:
         async with sm() as session:
             for model, cond in (
                 (AgentTrade, AgentTrade.user_id == user_id),
+                (AgentOpportunity, AgentOpportunity.user_id == user_id),
                 (AgentLot, AgentLot.user_id == user_id),
                 (AgentPortfolio, AgentPortfolio.user_id == user_id),
                 (PortfolioHolding, PortfolioHolding.user_id == user_id),

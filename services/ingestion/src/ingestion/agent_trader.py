@@ -1,6 +1,6 @@
 """The agent-portfolio trading engine — one tick per 15-min quote poll during the session.
 
-Runs the five model portfolios (bulls.analytics.strategies) as simulated broker accounts:
+Runs the configured model portfolios (bulls.analytics.strategies) as simulated broker accounts:
 
     settle -> exits -> entries, per agent, all in one transaction per tick.
 
@@ -29,13 +29,14 @@ import datetime as dt
 import logging
 import math
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bulls.analytics import STRATEGIES, Snapshot, exit_reason, rank_entries
 from bulls.core.db import bind_tenant_context, get_sessionmaker
 from bulls.core.models import (
     AgentLot,
+    AgentOpportunity,
     AgentPortfolio,
     AgentTrade,
     CompanyProfile,
@@ -56,6 +57,7 @@ QUOTE_MAX_AGE = dt.timedelta(minutes=45)  # a 15-min feed older than 3 ticks is 
 # stop-loss the same stale row often still "qualifies" — without this the engine would rebuy
 # what it just sold in the very same tick.
 REENTRY_COOLDOWN = dt.timedelta(days=7)
+_BLOCK_REASONS = {"no_cash", "no_slot", "order_too_small"}
 
 
 def _calendar_market(market: str) -> str:
@@ -66,6 +68,114 @@ def _calendar_market(market: str) -> str:
 def settle_days(category: str | None) -> int:
     """DSE settlement cycle in trading days: Z-category contracts clear T+3, everything else T+2."""
     return 3 if category == "Z" else 2
+
+
+def _minimum_executable_cash(price: float) -> float:
+    """Smallest cash amount that can buy an integer number of shares with gross value >= floor."""
+    quantity = max(1, math.ceil(MIN_ORDER_VALUE / price))
+    return round(quantity * price * (1 + FEE_RATE), 2)
+
+
+def _update_opportunity_price(
+    opportunity: AgentOpportunity, snap: Snapshot, observed_at: dt.datetime
+) -> None:
+    opportunity.last_seen_at = observed_at
+    opportunity.last_price = snap.ltp
+    opportunity.best_price = max(opportunity.best_price, snap.ltp)
+    opportunity.worst_price = min(opportunity.worst_price, snap.ltp)
+    if snap.quote_as_of >= opportunity.last_quote_as_of:
+        opportunity.last_quote_as_of = snap.quote_as_of
+
+
+def _observe_blocked_opportunity(
+    opportunity: AgentOpportunity | None,
+    *,
+    tenant_id: str,
+    agent: AgentPortfolio,
+    snap: Snapshot,
+    observed_at: dt.datetime,
+    signal_reason: str,
+    block_reason: str,
+    rank: int,
+    target_budget: float,
+    available_cash: float,
+    pending_cash: float,
+    free_slots: int,
+) -> AgentOpportunity:
+    """Create or update one continuous blocked-setup episode."""
+    if block_reason not in _BLOCK_REASONS:
+        raise ValueError(f"Unknown opportunity block reason: {block_reason!r}")
+    required_cash = _minimum_executable_cash(snap.ltp)
+    if opportunity is None:
+        opportunity = AgentOpportunity(
+            tenant_id=tenant_id,
+            user_id=agent.user_id,
+            market=agent.market,
+            strategy=agent.strategy,
+            code=snap.code,
+            status="open",
+            signal_reason=signal_reason,
+            first_block_reason=block_reason,
+            last_block_reason=block_reason,
+            first_seen_at=observed_at,
+            last_seen_at=observed_at,
+            first_quote_as_of=snap.quote_as_of,
+            last_quote_as_of=snap.quote_as_of,
+            first_price=snap.ltp,
+            last_price=snap.ltp,
+            best_price=snap.ltp,
+            worst_price=snap.ltp,
+            first_rank=rank,
+            best_rank=rank,
+            last_rank=rank,
+            target_budget=target_budget,
+            required_cash=required_cash,
+            first_available_cash=available_cash,
+            last_available_cash=available_cash,
+            first_pending_cash=pending_cash,
+            last_pending_cash=pending_cash,
+            first_free_slots=free_slots,
+            last_free_slots=free_slots,
+            blocked_ticks=0,
+            no_cash_ticks=0,
+            no_slot_ticks=0,
+            order_too_small_ticks=0,
+        )
+    else:
+        _update_opportunity_price(opportunity, snap, observed_at)
+        opportunity.signal_reason = signal_reason
+        opportunity.last_block_reason = block_reason
+        opportunity.best_rank = min(opportunity.best_rank, rank)
+        opportunity.last_rank = rank
+        opportunity.target_budget = target_budget
+        opportunity.required_cash = required_cash
+        opportunity.last_available_cash = available_cash
+        opportunity.last_pending_cash = pending_cash
+        opportunity.last_free_slots = free_slots
+
+    opportunity.blocked_ticks += 1
+    if block_reason == "no_cash":
+        opportunity.no_cash_ticks += 1
+    elif block_reason == "no_slot":
+        opportunity.no_slot_ticks += 1
+    else:
+        opportunity.order_too_small_ticks += 1
+    return opportunity
+
+
+def _resolve_opportunity(
+    opportunity: AgentOpportunity,
+    *,
+    status: str,
+    observed_at: dt.datetime,
+    snap: Snapshot,
+) -> None:
+    if status not in {"entered", "expired"}:
+        raise ValueError(f"Unknown opportunity resolution: {status!r}")
+    _update_opportunity_price(opportunity, snap, observed_at)
+    opportunity.status = status
+    opportunity.resolved_at = observed_at
+    opportunity.resolved_price = snap.ltp
 
 
 async def _load_snapshots(
@@ -286,7 +396,14 @@ async def run_agents(
         return {"skipped": 1}
     today = to_market_tz(now, market=calendar_market).date()
 
-    counts = {"agents": 0, "buys": 0, "sells": 0, "settled": 0}
+    counts = {
+        "agents": 0,
+        "buys": 0,
+        "sells": 0,
+        "settled": 0,
+        "opportunities": 0,
+        "opportunities_resolved": 0,
+    }
     sm = get_sessionmaker()
     async with sm() as session:
         await bind_tenant_context(session, tenant_id)
@@ -373,12 +490,88 @@ async def run_agents(
                 ).all()
             )
             free_slots = spec.max_positions - len(holdings)
-            for snap, reason in rank_entries(
-                agent.strategy, snapshots.values(), held=set(holdings) | cooling
-            ):
-                if free_slots <= 0 or agent.cash_settled < MIN_ORDER_VALUE:
-                    break
-                budget = min(agent.initial_capital * spec.position_pct, agent.cash_settled)
+            pending_cash = float(
+                await session.scalar(
+                    select(func.coalesce(func.sum(AgentTrade.net_cash), 0.0)).where(
+                        AgentTrade.user_id == agent.user_id,
+                        AgentTrade.market == market,
+                        AgentTrade.side == "sell",
+                        AgentTrade.settled.is_(False),
+                    )
+                )
+                or 0.0
+            )
+            target_budget = round(agent.initial_capital * spec.position_pct, 2)
+            ranked = list(
+                rank_entries(
+                    agent.strategy,
+                    snapshots.values(),
+                    held=set(holdings) | cooling,
+                )
+            )
+            candidate_codes = {snap.code for snap, _ in ranked}
+            open_opportunities = {
+                opportunity.code: opportunity
+                for opportunity in await session.scalars(
+                    select(AgentOpportunity).where(
+                        AgentOpportunity.tenant_id == tenant_id,
+                        AgentOpportunity.user_id == agent.user_id,
+                        AgentOpportunity.market == market,
+                        AgentOpportunity.strategy == agent.strategy,
+                        AgentOpportunity.status == "open",
+                    )
+                )
+            }
+
+            # First close old episodes that now have an observable resolution. Missing/stale quotes
+            # leave an episode open: absence of evidence is not evidence that the setup expired.
+            for code, opportunity in list(open_opportunities.items()):
+                snap = snapshots.get(code)
+                if snap is None:
+                    continue
+                if code in holdings:
+                    _resolve_opportunity(
+                        opportunity, status="entered", observed_at=now, snap=snap
+                    )
+                elif code not in candidate_codes:
+                    _resolve_opportunity(
+                        opportunity, status="expired", observed_at=now, snap=snap
+                    )
+                else:
+                    continue
+                counts["opportunities_resolved"] += 1
+                del open_opportunities[code]
+
+            # Continue through the full ranked list for evidence collection even when the account
+            # cannot buy. Trade selection itself is unchanged: no slot/cash means no execution.
+            for rank, (snap, reason) in enumerate(ranked, start=1):
+                block_reason: str | None = None
+                if free_slots <= 0:
+                    block_reason = "no_slot"
+                elif agent.cash_settled < MIN_ORDER_VALUE:
+                    block_reason = "no_cash"
+                if block_reason is not None:
+                    opportunity = _observe_blocked_opportunity(
+                        open_opportunities.get(snap.code),
+                        tenant_id=tenant_id,
+                        agent=agent,
+                        snap=snap,
+                        observed_at=now,
+                        signal_reason=reason,
+                        block_reason=block_reason,
+                        rank=rank,
+                        target_budget=target_budget,
+                        available_cash=agent.cash_settled,
+                        pending_cash=pending_cash,
+                        free_slots=free_slots,
+                    )
+                    if opportunity.id is None:
+                        session.add(opportunity)
+                    open_opportunities[snap.code] = opportunity
+                    counts["opportunities"] += 1
+                    continue
+
+                budget = min(target_budget, agent.cash_settled)
                 spent = await _buy(
                     session,
                     agent,
@@ -390,9 +583,35 @@ async def run_agents(
                     reason,
                     categories.get(snap.code),
                 )
-                if spent > 0:
-                    counts["buys"] += 1
-                    free_slots -= 1
+                if spent <= 0:
+                    opportunity = _observe_blocked_opportunity(
+                        open_opportunities.get(snap.code),
+                        tenant_id=tenant_id,
+                        agent=agent,
+                        snap=snap,
+                        observed_at=now,
+                        signal_reason=reason,
+                        block_reason="order_too_small",
+                        rank=rank,
+                        target_budget=target_budget,
+                        available_cash=agent.cash_settled,
+                        pending_cash=pending_cash,
+                        free_slots=free_slots,
+                    )
+                    if opportunity.id is None:
+                        session.add(opportunity)
+                    open_opportunities[snap.code] = opportunity
+                    counts["opportunities"] += 1
+                    continue
+
+                counts["buys"] += 1
+                free_slots -= 1
+                opportunity = open_opportunities.pop(snap.code, None)
+                if opportunity is not None:
+                    _resolve_opportunity(
+                        opportunity, status="entered", observed_at=now, snap=snap
+                    )
+                    counts["opportunities_resolved"] += 1
 
         await session.commit()
     return counts

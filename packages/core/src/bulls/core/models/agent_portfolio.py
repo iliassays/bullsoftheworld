@@ -21,7 +21,20 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -89,4 +102,94 @@ class AgentLot(Base):
     sellable_from: Mapped[dt.date] = mapped_column(Date)  # the lot's settlement date
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AgentOpportunity(Base):
+    """One continuous episode where a qualifying setup could not be purchased.
+
+    Repeated 15-minute observations update the same open episode. It closes only when the agent
+    later enters the stock or the strategy setup no longer qualifies, preserving a counterfactual
+    price path without pretending that a paper trade occurred.
+    """
+
+    __tablename__ = "agent_opportunities"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["user_id", "tenant_id"],
+            ["users.id", "users.tenant_id"],
+            name="fk_agent_opportunities_user_tenant",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'entered', 'expired')",
+            name="ck_agent_opportunities_status",
+        ),
+        CheckConstraint(
+            "first_block_reason IN ('no_cash', 'no_slot', 'order_too_small')",
+            name="ck_agent_opportunities_first_block_reason",
+        ),
+        CheckConstraint(
+            "last_block_reason IN ('no_cash', 'no_slot', 'order_too_small')",
+            name="ck_agent_opportunities_last_block_reason",
+        ),
+        Index(
+            "uq_agent_opportunities_open_episode",
+            "tenant_id",
+            "user_id",
+            "market",
+            "strategy",
+            "code",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index(
+            "ix_agent_opportunities_scope_status_seen",
+            "tenant_id",
+            "market",
+            "status",
+            "last_seen_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int] = mapped_column(Integer)
+    market: Mapped[str] = mapped_column(String(8))
+    strategy: Mapped[str] = mapped_column(String(24))
+    code: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(12), default="open", server_default="open")
+    signal_reason: Mapped[str] = mapped_column(String(300))
+    first_block_reason: Mapped[str] = mapped_column(String(24))
+    last_block_reason: Mapped[str] = mapped_column(String(24))
+    first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    first_quote_as_of: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    last_quote_as_of: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    first_price: Mapped[float] = mapped_column(Float)
+    last_price: Mapped[float] = mapped_column(Float)
+    best_price: Mapped[float] = mapped_column(Float)
+    worst_price: Mapped[float] = mapped_column(Float)
+    first_rank: Mapped[int] = mapped_column(Integer)
+    best_rank: Mapped[int] = mapped_column(Integer)
+    last_rank: Mapped[int] = mapped_column(Integer)
+    target_budget: Mapped[float] = mapped_column(Float)
+    required_cash: Mapped[float] = mapped_column(Float)
+    first_available_cash: Mapped[float] = mapped_column(Float)
+    last_available_cash: Mapped[float] = mapped_column(Float)
+    first_pending_cash: Mapped[float] = mapped_column(Float)
+    last_pending_cash: Mapped[float] = mapped_column(Float)
+    first_free_slots: Mapped[int] = mapped_column(Integer)
+    last_free_slots: Mapped[int] = mapped_column(Integer)
+    blocked_ticks: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    no_cash_ticks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    no_slot_ticks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    order_too_small_ticks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_price: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

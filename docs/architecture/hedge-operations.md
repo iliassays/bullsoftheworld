@@ -30,6 +30,13 @@ same decision twice. Queries are explicitly scoped by tenant, market, and user. 
 FIFO execution performance independently and reports realized P&L, unrealized P&L, fees, closed
 trades, win rate, quote freshness, cash, pending settlement, and holdings.
 
+Qualifying setups that cannot be purchased are stored in `agent_opportunities`. One row represents
+one continuous episode, not one row per 15-minute tick. It records rank, signal explanation, settled
+and pending cash, free slots, the executable cash threshold, observation counts, and the delayed
+price path. An episode resolves as `entered` when the account later buys it or `expired` when the
+strategy no longer qualifies it. Best/worst/since-missed returns are counterfactual observations,
+not simulated fills or portfolio P&L.
+
 No strategy should be promoted from experimental status based on a few days of open-position
 mark-to-market performance. Evaluation requires enough closed trades across more than one market
 regime, comparison with DSEX, drawdown, turnover, and fee-aware returns.

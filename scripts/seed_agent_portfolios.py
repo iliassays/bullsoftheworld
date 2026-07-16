@@ -1,4 +1,4 @@
-"""Seed the five agent model-portfolio users (৳1,00,000 each). Idempotent: re-running only
+"""Seed the configured agent model-portfolio users (৳1,00,000 each). Idempotent: re-running only
 creates what's missing — it NEVER resets cash, holdings, or trade history of an existing agent
 (that history is the whole point of the experiment; wipe it only by hand, deliberately).
 

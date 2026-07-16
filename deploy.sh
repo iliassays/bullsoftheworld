@@ -72,7 +72,6 @@ ssh "$REMOTE" "cd $APP \
   && sudo systemctl enable bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
        bullsofwallst-sec-watchdog.timer bullsofdhaka-hedge-refresh.timer \
-  && sudo systemctl start bullsofdhaka-hedge-refresh.service \
   && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker \
        bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \

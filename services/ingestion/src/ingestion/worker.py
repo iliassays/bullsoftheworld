@@ -115,14 +115,17 @@ async def finalize_quotes(ctx) -> str:
 
 
 async def run_agent_portfolios(ctx) -> str:
-    """One trading tick for the five agent model portfolios — settle, exits, entries. Runs 3 min
+    """One trading tick for all agent model portfolios — settle, exits, entries. Runs 3 min
     after each intraday quote poll so it always sees the freshest snapshot; the engine itself
     no-ops outside trading hours and refuses stale quotes, so a mistimed run does nothing."""
     counts = await run_agents(MARKET, tenant_id=TENANT_ID)
     if counts.get("skipped"):
         return "skipped: market closed"
     log.info("agent portfolios: %s", counts)
-    return f"agents={counts['agents']} buys={counts['buys']} sells={counts['sells']}"
+    return (
+        f"agents={counts['agents']} buys={counts['buys']} sells={counts['sells']} "
+        f"blocked={counts['opportunities']} resolved={counts['opportunities_resolved']}"
+    )
 
 
 async def pull_eod_bars(ctx) -> str:

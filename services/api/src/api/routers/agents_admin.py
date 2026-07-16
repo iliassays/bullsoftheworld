@@ -1,6 +1,6 @@
 """Admin cockpit for the agent model portfolios (admin-token gated, read-only).
 
-The five agent accounts trade simulated ৳1-lac portfolios on the 15-min quote cycle
+The agent accounts trade simulated ৳1-lac portfolios on the 15-min quote cycle
 (services/ingestion/agent_trader.py). This router is how the admin reviews them: equity and P&L
 per agent, current holdings priced live, and the full trade log with each decision's
 plain-language reason. Nothing here mutates state — the engine is the only writer.
@@ -21,6 +21,7 @@ from api.deps import CurrentTenant, DbSession, require_admin
 from bulls.analytics import STRATEGIES
 from bulls.core.models import (
     AgentLot,
+    AgentOpportunity,
     AgentPortfolio,
     AgentTrade,
     PortfolioHolding,
@@ -82,6 +83,42 @@ class AgentDetail(AgentSummary):
     trades: list[TradeOut]  # newest first
 
 
+class OpportunityOut(BaseModel):
+    id: int
+    code: str
+    strategy: str
+    status: str
+    signal_reason: str
+    first_block_reason: str
+    last_block_reason: str
+    first_seen_at: dt.datetime
+    last_seen_at: dt.datetime
+    first_quote_as_of: dt.datetime
+    last_quote_as_of: dt.datetime
+    first_price: float
+    last_price: float
+    return_pct: float
+    best_return_pct: float
+    worst_return_pct: float
+    first_rank: int
+    best_rank: int
+    last_rank: int
+    target_budget: float
+    required_cash: float
+    first_available_cash: float
+    last_available_cash: float
+    first_pending_cash: float
+    last_pending_cash: float
+    first_free_slots: int
+    last_free_slots: int
+    blocked_ticks: int
+    no_cash_ticks: int
+    no_slot_ticks: int
+    order_too_small_ticks: int
+    resolved_at: dt.datetime | None
+    resolved_price: float | None
+
+
 async def _summarize(
     session, agent: AgentPortfolio, user: User
 ) -> tuple[AgentSummary, list[HoldingOut]]:
@@ -90,6 +127,7 @@ async def _summarize(
         await session.scalars(
             select(PortfolioHolding).where(
                 PortfolioHolding.user_id == agent.user_id,
+                PortfolioHolding.tenant_id == user.tenant_id,
                 PortfolioHolding.market == agent.market,
             )
         )
@@ -106,7 +144,11 @@ async def _summarize(
     today = to_market_tz(dt.datetime.now(dt.UTC), market=agent.market).date()
     matured: dict[str, int] = {}
     for lot in await session.scalars(
-        select(AgentLot).where(AgentLot.user_id == agent.user_id, AgentLot.quantity_left > 0)
+        select(AgentLot).where(
+            AgentLot.user_id == agent.user_id,
+            AgentLot.market == agent.market,
+            AgentLot.quantity_left > 0,
+        )
     ):
         if lot.sellable_from <= today:
             matured[lot.code] = matured.get(lot.code, 0) + lot.quantity_left
@@ -142,17 +184,30 @@ async def _summarize(
 
     pending = 0.0
     for t in await session.scalars(
-        select(AgentTrade).where(AgentTrade.user_id == agent.user_id, AgentTrade.settled.is_(False))
+        select(AgentTrade).where(
+            AgentTrade.user_id == agent.user_id,
+            AgentTrade.market == agent.market,
+            AgentTrade.side == "sell",
+            AgentTrade.settled.is_(False),
+        )
     ):
         pending += t.net_cash
     trades_total = len(
         (
-            await session.scalars(select(AgentTrade.id).where(AgentTrade.user_id == agent.user_id))
+            await session.scalars(
+                select(AgentTrade.id).where(
+                    AgentTrade.user_id == agent.user_id,
+                    AgentTrade.market == agent.market,
+                )
+            )
         ).all()
     )
     last_trade_at = await session.scalar(
         select(AgentTrade.created_at)
-        .where(AgentTrade.user_id == agent.user_id)
+        .where(
+            AgentTrade.user_id == agent.user_id,
+            AgentTrade.market == agent.market,
+        )
         .order_by(desc(AgentTrade.id))
         .limit(1)
     )
@@ -230,7 +285,10 @@ async def agent_detail(
     trades = (
         await session.scalars(
             select(AgentTrade)
-            .where(AgentTrade.user_id == agent.user_id)
+            .where(
+                AgentTrade.user_id == agent.user_id,
+                AgentTrade.market == agent.market,
+            )
             .order_by(desc(AgentTrade.id))
             .limit(500)
         )
@@ -256,3 +314,75 @@ async def agent_detail(
             for t in trades
         ],
     )
+
+
+@router.get("/{handle}/opportunities")
+async def agent_opportunities(
+    handle: str,
+    tenant: CurrentTenant,
+    session: DbSession,
+    limit: int = 200,
+) -> list[OpportunityOut]:
+    """Capital-constrained setup episodes for counterfactual strategy evaluation."""
+    limit = min(max(limit, 1), 1_000)
+    user_id = await session.scalar(
+        select(User.id)
+        .join(AgentPortfolio, AgentPortfolio.user_id == User.id)
+        .where(
+            User.handle == handle,
+            User.tenant_id == tenant.name,
+            AgentPortfolio.market == tenant.market,
+        )
+    )
+    if user_id is None:
+        raise HTTPException(status_code=404, detail=f"No user @{handle}")
+    rows = (
+        await session.scalars(
+            select(AgentOpportunity)
+            .where(
+                AgentOpportunity.tenant_id == tenant.name,
+                AgentOpportunity.user_id == user_id,
+                AgentOpportunity.market == tenant.market,
+            )
+            .order_by(desc(AgentOpportunity.id))
+            .limit(limit)
+        )
+    ).all()
+    return [
+        OpportunityOut(
+            id=row.id,
+            code=row.code,
+            strategy=row.strategy,
+            status=row.status,
+            signal_reason=row.signal_reason,
+            first_block_reason=row.first_block_reason,
+            last_block_reason=row.last_block_reason,
+            first_seen_at=row.first_seen_at,
+            last_seen_at=row.last_seen_at,
+            first_quote_as_of=row.first_quote_as_of,
+            last_quote_as_of=row.last_quote_as_of,
+            first_price=row.first_price,
+            last_price=row.last_price,
+            return_pct=round((row.last_price / row.first_price - 1) * 100, 2),
+            best_return_pct=round((row.best_price / row.first_price - 1) * 100, 2),
+            worst_return_pct=round((row.worst_price / row.first_price - 1) * 100, 2),
+            first_rank=row.first_rank,
+            best_rank=row.best_rank,
+            last_rank=row.last_rank,
+            target_budget=row.target_budget,
+            required_cash=row.required_cash,
+            first_available_cash=row.first_available_cash,
+            last_available_cash=row.last_available_cash,
+            first_pending_cash=row.first_pending_cash,
+            last_pending_cash=row.last_pending_cash,
+            first_free_slots=row.first_free_slots,
+            last_free_slots=row.last_free_slots,
+            blocked_ticks=row.blocked_ticks,
+            no_cash_ticks=row.no_cash_ticks,
+            no_slot_ticks=row.no_slot_ticks,
+            order_too_small_ticks=row.order_too_small_ticks,
+            resolved_at=row.resolved_at,
+            resolved_price=row.resolved_price,
+        )
+        for row in rows
+    ]
