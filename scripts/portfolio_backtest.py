@@ -18,7 +18,7 @@ import argparse
 import asyncio
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, MarketSummary
@@ -67,6 +67,10 @@ def _roll_extreme(vals, n, want_max):
 async def _load():
     sm = get_sessionmaker()
     async with sm() as session:
+        # Historical research intentionally scans the complete market history. Keep the global
+        # runtime timeout strict for API traffic, but give this resource-capped batch transaction
+        # enough room to finish when PostgreSQL is contending with ingestion.
+        await session.execute(text("SET LOCAL statement_timeout = '5min'"))
         bars = list(
             await session.scalars(
                 select(DailyBar)
