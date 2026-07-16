@@ -4,6 +4,12 @@
 > portal (which stays descriptive-only). Goal: a multi-horizon, **data-driven** engine that ranks
 > candidates and helps catch moves early. Started 2026-06-26. Data as of EOD 2026-06-24/25.
 
+> **2026-07-16 revalidation:** the early portfolio studies below used same-close entries and some
+> unresolved end-of-sample trades. They remain hypothesis-generation evidence, not promotion-grade
+> backtests. The stricter next-open, costed, liquidity-capped, right-censor-safe study is
+> [`dse-edge-validation-2026-07.md`](dse-edge-validation-2026-07.md). No newly tested edge passed
+> its train/validation/test gates. `QualityReversalPortfolio` remains forward-paper evidence only.
+
 ## 0. Hard constraints (these shape everything)
 
 - **Data is EOD / delayed** (dsebd.org). No intraday, no live tape. → swing / positional / investing,

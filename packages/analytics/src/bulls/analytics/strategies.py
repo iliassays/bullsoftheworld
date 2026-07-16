@@ -5,9 +5,9 @@ STRATEGIES). Pure — no I/O, no clock.
 Grounded in our own factor study (docs/research/dse-trading-research.md, 2024-06 → 2026-06):
 contrarian was the strongest family (oversold-RSI IC +0.094 @ 60d, 82% hit rate), quality mildly
 positive, value flat, and momentum NEGATIVE (IC -0.077 @ 60d) — so there is deliberately no
-trend-following strategy here, and the flagship "rebound" strategy is the study's Quality
-Reversal scheme (washout + profitable + cheap + up-tick trigger; backtested +73.6% vs +7.8%
-buy-and-hold, single recovering-market regime — treat as evidence="framework", not a promise).
+trend-following strategy here. The original Quality Reversal study used optimistic same-close
+execution and remains a hypothesis, not validated expected performance. The exact EOD account below
+collects forward next-session evidence without backfilling trades.
 
 Simulation honesty: entries refuse a stock ticking near its upper circuit lock and exits refuse
 one near its lower lock — a fill at a limit-locked price has no real counterparty, and a paper
