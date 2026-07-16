@@ -8,7 +8,10 @@ from sqlalchemy.dialects import postgresql
 from api.institutional_research.catalysts import (
     _catalyst_upsert_statement,
     _dse_announcement_url,
+    _superseded_us_forecasts_statement,
+    _us_source_backfill_statement,
 )
+from bulls.analytics.catalysts import CatalystDraft
 
 
 def test_dse_source_url_targets_the_exact_announcement_date() -> None:
@@ -52,3 +55,41 @@ def test_catalyst_upsert_uses_stable_source_identity_and_preserves_cancellations
     assert "status = case" in sql
     assert "research_catalyst_events.status = " in sql
     assert "dedupe_key = excluded.dedupe_key" in sql
+
+
+def test_us_maintenance_backfills_sources_and_cancels_only_superseded_forecasts() -> None:
+    source_sql = str(
+        _us_source_backfill_statement("bullsofwallst", "US").compile(
+            dialect=postgresql.dialect()
+        )
+    ).lower()
+    draft = CatalystDraft(
+        market="US",
+        code="SOBR",
+        event_type="periodic_report_window",
+        title="SOBR expected periodic report",
+        timing_kind="window",
+        window_start=dt.date(2026, 8, 1),
+        window_end=dt.date(2026, 8, 20),
+        confidence="inferred_cadence",
+        source_type="sec_filing_cadence",
+        source_ref="current-accession",
+        source_url="https://www.sec.gov/current.htm",
+        known_at=dt.datetime(2026, 5, 8, 20, 31, tzinfo=dt.UTC),
+    )
+    superseded = _superseded_us_forecasts_statement("bullsofwallst", "US", [draft])
+
+    assert superseded is not None
+    compiled_superseded = superseded.compile(dialect=postgresql.dialect())
+    superseded_sql = str(compiled_superseded).lower()
+    assert "sec_filings.filing_url" in source_sql
+    assert "source_url is null" in source_sql
+    assert "(research_catalyst_events.code, research_catalyst_events.source_ref) not in" in (
+        superseded_sql
+    )
+    assert compiled_superseded.params["status"] == "cancelled"
+    assert ("SOBR", "current-accession") in compiled_superseded.params["param_1"]
+
+
+def test_us_supersession_is_skipped_when_no_current_forecast_exists() -> None:
+    assert _superseded_us_forecasts_statement("bullsofwallst", "US", []) is None

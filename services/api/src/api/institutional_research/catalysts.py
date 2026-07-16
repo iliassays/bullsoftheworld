@@ -17,7 +17,7 @@ import uuid
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,6 +72,59 @@ def _catalyst_upsert_statement(rows: list[dict[str, Any]]):
             "dedupe_key": stmt.excluded.dedupe_key,
             "updated_at": func.now(),
         },
+    )
+
+
+def _us_source_backfill_statement(tenant_id: str, market: str):
+    filing_url = (
+        select(SecFiling.filing_url)
+        .where(
+            SecFiling.market == CatalystEvent.market,
+            SecFiling.code == CatalystEvent.code,
+            SecFiling.accession_number == CatalystEvent.source_ref,
+        )
+        .limit(1)
+        .scalar_subquery()
+    )
+    return (
+        update(CatalystEvent)
+        .where(
+            CatalystEvent.tenant_id == tenant_id,
+            CatalystEvent.market == market,
+            CatalystEvent.source_type == "sec_filing_cadence",
+            CatalystEvent.source_url.is_(None),
+            filing_url.is_not(None),
+        )
+        .values(source_url=filing_url, updated_at=func.now())
+    )
+
+
+def _superseded_us_forecasts_statement(
+    tenant_id: str,
+    market: str,
+    drafts: list[CatalystDraft],
+):
+    current_pairs = sorted(
+        {
+            (draft.code, draft.source_ref)
+            for draft in drafts
+            if draft.event_type == "periodic_report_window"
+        }
+    )
+    if not current_pairs:
+        return None
+    current_codes = sorted({code for code, _ in current_pairs})
+    return (
+        update(CatalystEvent)
+        .where(
+            CatalystEvent.tenant_id == tenant_id,
+            CatalystEvent.market == market,
+            CatalystEvent.event_type == "periodic_report_window",
+            CatalystEvent.status == "scheduled",
+            CatalystEvent.code.in_(current_codes),
+            tuple_(CatalystEvent.code, CatalystEvent.source_ref).not_in(current_pairs),
+        )
+        .values(status="cancelled", updated_at=func.now())
     )
 
 
@@ -198,6 +251,20 @@ async def collect_catalyst_events(
         if rows:
             await session.execute(_catalyst_upsert_statement(rows))
 
+        backfilled_source_urls = 0
+        superseded_forecasts = 0
+        if market == "US":
+            backfilled = await session.execute(_us_source_backfill_statement(tenant_id, market))
+            backfilled_source_urls = int(backfilled.rowcount or 0)
+            superseded_statement = _superseded_us_forecasts_statement(
+                tenant_id,
+                market,
+                drafts,
+            )
+            if superseded_statement is not None:
+                superseded = await session.execute(superseded_statement)
+                superseded_forecasts = int(superseded.rowcount or 0)
+
         occurred = await session.execute(
             update(CatalystEvent)
             .where(
@@ -218,6 +285,8 @@ async def collect_catalyst_events(
         "market": market,
         "derived": len(drafts),
         "upserted": len(rows),
+        "backfilled_source_urls": backfilled_source_urls,
+        "superseded_forecasts": superseded_forecasts,
         "marked_occurred": int(occurred.rowcount or 0),
     }
 
