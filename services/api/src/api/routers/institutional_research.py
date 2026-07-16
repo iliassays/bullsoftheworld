@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from api.deps import CurrentTenant, CurrentUser, DbSession
 from api.institutional_research.audit import record_research_audit_event
+from api.institutional_research.catalysts import load_catalyst_calendar
 from api.institutional_research.dossier import (
     ResearchSecurityNotFound,
     build_company_dossier,
@@ -29,6 +30,7 @@ from api.institutional_research.schemas import (
     AutomationPolicyUpdate,
     BacktestRequest,
     CalibrationOut,
+    CatalystCalendarOut,
     CompanyDossierOut,
     CreateShadowPortfolioRequest,
     LifecycleDispatchOut,
@@ -212,7 +214,9 @@ async def configure_automation(
         policy.last_run_status = "failed"
         policy.last_error = f"Lifecycle enqueue failed: {exc}"[:2000]
         await session.commit()
-        raise HTTPException(status_code=503, detail="Research automation queue unavailable") from None
+        raise HTTPException(
+            status_code=503, detail="Research automation queue unavailable"
+        ) from None
     return automation_policy_out(policy)
 
 
@@ -274,7 +278,9 @@ async def run_automation_now(
         policy.last_run_status = "failed"
         policy.last_error = f"Lifecycle enqueue failed: {exc}"[:2000]
         await session.commit()
-        raise HTTPException(status_code=503, detail="Research automation queue unavailable") from None
+        raise HTTPException(
+            status_code=503, detail="Research automation queue unavailable"
+        ) from None
     return LifecycleDispatchOut(accepted=accepted, job_id=job_id, scheduled_for=now)
 
 
@@ -317,6 +323,43 @@ async def research_queue(
         limit=limit,
         cap_tier=cap_tier,
         query=query,
+    )
+
+
+@router.get("/workspaces/{workspace_id}/catalysts")
+async def catalyst_calendar(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    horizon_days: int = Query(60, ge=7, le=180),
+    code: str | None = Query(None, min_length=1, max_length=16),
+) -> CatalystCalendarOut:
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    try:
+        await authorize_research_workspace(
+            session,
+            workspace_id=workspace_id,
+            user_id=user.id,
+            tenant_id=tenant.name,
+            market=tenant.market,
+            permission=ResearchPermission.VIEW_WORKSPACE,
+        )
+    except ResearchWorkspaceNotFound:
+        raise HTTPException(status_code=404, detail="Research workspace not found") from None
+    except ResearchAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=exc.reason) from None
+
+    return await load_catalyst_calendar(
+        session,
+        tenant_id=tenant.name,
+        market=tenant.market,
+        workspace_id=workspace_id,
+        horizon_days=horizon_days,
+        code=code,
     )
 
 

@@ -449,3 +449,36 @@ class CalibrationOut(ApiModel):
     matured: int
     buckets: list[CalibrationBucketOut]
     observations: list[CalibrationObservationOut]
+
+
+class CatalystEventOut(ApiModel):
+    model_config = ConfigDict(
+        alias_generator=_to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: uuid.UUID
+    code: str
+    event_type: str
+    title: str
+    timing_kind: Literal["confirmed", "window"]
+    confirmed_date: dt.date | None = None
+    window_start: dt.date | None = None
+    window_end: dt.date | None = None
+    status: Literal["scheduled", "occurred", "cancelled"]
+    confidence: Literal["official_confirmed", "official_derived", "inferred_cadence"]
+    source_type: str
+    source_ref: str
+    source_url: str | None = None
+    known_at: dt.datetime
+    expected_evidence: str | None = None
+    outcome: dict[str, Any] | None = None
+    details: dict[str, Any] | None = None
+
+
+class CatalystCalendarOut(ApiModel):
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    workspace_id: uuid.UUID
+    generated_at: dt.datetime
+    horizon_days: int
+    events: list[CatalystEventOut]

@@ -2,6 +2,7 @@
 
 from bulls.core.models.research.audit import ResearchAuditEvent
 from bulls.core.models.research.automation import ResearchAutomationPolicy
+from bulls.core.models.research.catalysts import CatalystEvent
 from bulls.core.models.research.evidence import (
     EvidenceDocument,
     EvidenceSpan,
@@ -23,6 +24,7 @@ from bulls.core.models.research.tenancy import (
 )
 
 __all__ = [
+    "CatalystEvent",
     "EvidenceDocument",
     "EvidenceSpan",
     "ResearchAuditEvent",
