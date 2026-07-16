@@ -9,6 +9,9 @@ from bulls.core.models import (
     ResearchAutomationPolicy,
     ResearchClaim,
     ResearchClaimCitation,
+    ResearchDataEntitlement,
+    ResearchDatasetEvaluation,
+    ResearchDatasetSnapshot,
     ResearchOutcomeObservation,
     ResearchRun,
     ResearchRunEvidence,
@@ -47,10 +50,28 @@ def test_research_private_tables_have_non_nullable_full_security_scope() -> None
 
 
 def test_shared_official_evidence_is_tenant_and_market_bound() -> None:
-    for model in (EvidenceDocument, EvidenceSpan):
+    for model in (
+        EvidenceDocument,
+        EvidenceSpan,
+        ResearchDataEntitlement,
+        ResearchDatasetEvaluation,
+        ResearchDatasetSnapshot,
+    ):
         assert "organization_id" not in model.__table__.c
         assert not model.__table__.c.tenant_id.nullable
         assert not model.__table__.c.market.nullable
+
+
+def test_dataset_snapshot_cannot_reference_cross_tenant_entitlement() -> None:
+    assert (
+        ("entitlement_id", "tenant_id", "market", "dataset_key"),
+        (
+            "research_data_entitlements.id",
+            "research_data_entitlements.tenant_id",
+            "research_data_entitlements.market",
+            "research_data_entitlements.dataset_key",
+        ),
+    ) in _composite_foreign_keys(ResearchDatasetSnapshot)
 
 
 def test_run_cannot_reference_a_workspace_from_another_organization() -> None:

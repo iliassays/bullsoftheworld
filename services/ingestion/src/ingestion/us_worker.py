@@ -11,9 +11,11 @@ Run in a UTC process:
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import math
+from pathlib import Path
 from typing import ClassVar
 
 from arq import cron
@@ -46,6 +48,7 @@ from ingestion.signals.runner import (
     run_short_flow_agent,
 )
 from ingestion.us_eod_snapshot import collect as publish_us_eod
+from ingestion.us_options.pipeline import import_option_sentiment
 
 log = logging.getLogger(__name__)
 MARKET = "US"
@@ -239,6 +242,54 @@ async def refresh_restricted_research(ctx) -> str:
     return f"restricted_research={stats}"
 
 
+def _resolve_options_inbox_file(inbox_dir: str, filename: str) -> Path:
+    if not filename or Path(filename).name != filename:
+        raise ValueError("filename must be a basename inside US_OPTIONS_INBOX_DIR")
+    inbox = Path(inbox_dir).expanduser().resolve()
+    path = (inbox / filename).resolve(strict=True)
+    if path.parent != inbox:
+        raise ValueError("option sentiment input escaped the configured inbox")
+    return path
+
+
+async def import_us_option_sentiment(
+    ctx,
+    filename: str,
+    known_at: str,
+    completeness: str,
+    source_revision: str,
+    delivery_mode: str = "historical",
+) -> str:
+    """Bounded operator-triggered import. No options vendor job runs on a cron schedule."""
+
+    del ctx
+    settings = get_settings()
+    if not settings.us_options_phase_a_enabled:
+        return "us_options=disabled"
+    path = await asyncio.to_thread(
+        _resolve_options_inbox_file,
+        settings.us_options_inbox_dir,
+        filename,
+    )
+    parsed_known_at = dt.datetime.fromisoformat(known_at.replace("Z", "+00:00"))
+    sm = get_sessionmaker()
+    async with sm() as session:
+        snapshot = await import_option_sentiment(
+            session,
+            path=path,
+            known_at=parsed_known_at,
+            completeness=completeness,
+            source_revision=source_revision,
+            delivery_mode=delivery_mode,
+            settings=settings,
+        )
+        await session.commit()
+    return (
+        f"us_options={snapshot.status} date={snapshot.trade_date} "
+        f"rows={snapshot.row_count} snapshot={snapshot.id}"
+    )
+
+
 class WorkerSettings:
     on_startup: ClassVar = startup
     functions: ClassVar = [
@@ -248,6 +299,7 @@ class WorkerSettings:
         run_short_flow_notes,
         run_finra_short_chain,
         refresh_restricted_research,
+        import_us_option_sentiment,
     ]
     cron_jobs: ClassVar = [
         # First attempt 22:45 UTC = 17:45 ET winter / 18:45 ET summer — inside the 1-3h

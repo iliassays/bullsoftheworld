@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+
 from ingestion.history import _is_ready
-from ingestion.us_worker import _completion_key, most_recent_due_session
+from ingestion.us_worker import (
+    _completion_key,
+    _resolve_options_inbox_file,
+    most_recent_due_session,
+)
 
 
 def _utc(year: int, month: int, day: int, hour: int, minute: int = 0) -> dt.datetime:
@@ -33,3 +39,20 @@ def test_eod_completion_marker_is_tenant_and_session_specific() -> None:
     assert _completion_key(dt.date(2026, 7, 9)) == (
         "ingestion:bullsofwallst:eod-complete:v2:2026-07-09"
     )
+
+
+def test_options_worker_input_stays_inside_configured_inbox(tmp_path) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    delivery = inbox / "delivery.zip"
+    delivery.write_bytes(b"PK")
+
+    assert _resolve_options_inbox_file(str(inbox), delivery.name) == delivery
+    with pytest.raises(ValueError, match="basename"):
+        _resolve_options_inbox_file(str(inbox), "../delivery.zip")
+
+    outside = tmp_path / "outside.zip"
+    outside.write_bytes(b"PK")
+    (inbox / "escaped.zip").symlink_to(outside)
+    with pytest.raises(ValueError, match="escaped"):
+        _resolve_options_inbox_file(str(inbox), "escaped.zip")

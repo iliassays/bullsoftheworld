@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     us_eod_min_coverage: float = Field(default=0.90, gt=0, le=1)
     us_universe_promotion_enabled: bool = False
     us_market_data_authorization_id: str = ""
+    us_options_phase_a_enabled: bool = False
+    us_options_inbox_dir: str = "/tmp/bulls-us-options-inbox"
+    us_options_min_identity_coverage: float = Field(default=0.95, gt=0, le=1)
+    research_object_store_backend: Literal["disabled", "local", "s3"] = "disabled"
+    research_object_store_local_dir: str = "/tmp/bulls-research-objects"
+    research_object_store_s3_bucket: str = ""
+    research_object_store_s3_prefix: str = "atlas"
+    research_object_store_aws_region: str = ""
     on_demand_research_daily_limit: int = Field(default=5, ge=1, le=50)
     sec_contact_email: str = "hello@bullsofwallst.com"
 
@@ -134,6 +142,23 @@ class Settings(BaseSettings):
             and self.ai_embedding_provider == "hash"
         ):
             raise ValueError("AI_EMBEDDING_PROVIDER=hash is not allowed outside local/test")
+        if self.us_options_phase_a_enabled and self.research_object_store_backend == "disabled":
+            raise ValueError(
+                "US_OPTIONS_PHASE_A_ENABLED requires a configured research object store"
+            )
+        if (
+            self.env.lower() not in {"local", "dev", "development", "test"}
+            and self.us_options_phase_a_enabled
+            and self.research_object_store_backend != "s3"
+        ):
+            raise ValueError(
+                "production US options ingestion requires immutable S3 object storage"
+            )
+        if (
+            self.research_object_store_backend == "s3"
+            and not self.research_object_store_s3_bucket
+        ):
+            raise ValueError("RESEARCH_OBJECT_STORE_S3_BUCKET is required for the S3 backend")
         return self
 
     @property

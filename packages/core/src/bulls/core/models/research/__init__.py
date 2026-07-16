@@ -3,6 +3,11 @@
 from bulls.core.models.research.audit import ResearchAuditEvent
 from bulls.core.models.research.automation import ResearchAutomationPolicy
 from bulls.core.models.research.catalysts import CatalystEvent
+from bulls.core.models.research.datasets import (
+    ResearchDataEntitlement,
+    ResearchDatasetEvaluation,
+    ResearchDatasetSnapshot,
+)
 from bulls.core.models.research.evidence import (
     EvidenceDocument,
     EvidenceSpan,
@@ -31,6 +36,9 @@ __all__ = [
     "ResearchAutomationPolicy",
     "ResearchClaim",
     "ResearchClaimCitation",
+    "ResearchDataEntitlement",
+    "ResearchDatasetEvaluation",
+    "ResearchDatasetSnapshot",
     "ResearchOrganization",
     "ResearchOrganizationMembership",
     "ResearchOutcomeObservation",
