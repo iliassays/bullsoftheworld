@@ -39,3 +39,4 @@ def test_warm_sizes_defaults_to_all_plus_every_market_tier() -> None:
 
 def test_warm_sizes_honours_explicit_selection() -> None:
     assert warm_sizes("DSE", "all,mid") == [None, "mid"]
+

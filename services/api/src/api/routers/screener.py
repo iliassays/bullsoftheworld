@@ -6,6 +6,7 @@ the condition, never by implication. No advice, no AI — pure data the analytic
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 from collections import defaultdict
@@ -17,7 +18,6 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 from redis.exceptions import RedisError
 from sqlalchemy import ColumnElement, and_, case, func, or_, select
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import aliased
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature, visible_codes
@@ -30,6 +30,7 @@ from api.screen_membership import (
 )
 from bulls.analytics.indicators import index_change_pct
 from bulls.core.config import get_settings
+from bulls.core.db import get_sessionmaker
 from bulls.core.markets import format_money_millions, get_market_profile
 from bulls.core.models import (
     Announcement,
@@ -1854,22 +1855,66 @@ async def build_and_cache_screens(
     return resp
 
 
+# Browsers and any CDN in front of the API may reuse a copy briefly and refresh in the
+# background; the payload's own as-of timestamps remain the freshness authority.
+_SCREENS_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300"
+# Bounds how long one revalidation claims the rebuild; anything longer has failed anyway.
+_REVALIDATE_LOCK_TTL = 240
+_revalidation_tasks: set[asyncio.Task] = set()
+
+
+def _screens_response(payload: bytes | str) -> Response:
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Cache-Control": _SCREENS_CACHE_CONTROL},
+    )
+
+
+async def _revalidate_screens(tenant, size: str | None, lock_key: str) -> None:
+    """Rebuild one screens variant in the background with its own session and connection."""
+    sm = get_sessionmaker()
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        async with sm() as session:
+            quote_ts, ana_ts = await screens_data_timestamps(session, tenant.market)
+            await build_and_cache_screens(
+                tenant, session, redis, size=size, quote_ts=quote_ts, ana_ts=ana_ts
+            )
+        await redis.delete(lock_key)
+    except Exception:
+        # The stale copy keeps serving; the lock expires on its own and the next request or
+        # scheduled warm retries.
+        log.exception(
+            "background screens revalidation failed for %s size=%s", tenant.name, size or "all"
+        )
+    finally:
+        await redis.aclose()
+
+
+def _spawn_revalidation(tenant, size: str | None, lock_key: str) -> None:
+    task = asyncio.create_task(_revalidate_screens(tenant, size, lock_key))
+    _revalidation_tasks.add(task)
+    task.add_done_callback(_revalidation_tasks.discard)
+
+
 @router.get("/screens")
 async def screens(
     tenant: CurrentTenant,
     session: DbSession,
     size: str | None = Query(None, description="cap tier: mega | large | mid | small | micro"),
 ) -> ScreensResponse:
-    """Cached, but keyed on data freshness so it's never staler than the data itself.
+    """Stale-while-revalidate over freshness-keyed cache entries.
 
-    The key folds in BOTH the latest quote snapshot (changes every 15-min poll → intraday prices /
-    'today's move' stay current) AND the analytics recompute time (changes nightly at EOD → the
-    screen rankings refresh). Within a poll window every request is a ~ms Redis read; the heavy
-    multi-screen compute normally runs off-request in the scheduled warmer
-    (`python -m api.warm_screens`, systemd `*-screens-warm.timer`); this in-request rebuild is the
-    backstop. If the rebuild cannot finish inside the statement timeout, the last-known-good copy
-    is served instead of a 500 — its payload carries its own as-of timestamps, so freshness stays
-    honest.
+    The fresh key folds in BOTH the latest quote snapshot (changes every 15-min poll → intraday
+    prices / 'today's move' stay current) AND the analytics recompute time (changes nightly at
+    EOD → the screen rankings refresh). Within a poll window every request is a ~ms Redis read;
+    the heavy multi-screen compute runs in the scheduled warmer (`python -m api.warm_screens`,
+    systemd `*-screens-warm.timer`). When the key rotates before the warmer has run, the
+    last-known-good copy is served immediately and a single background revalidation (guarded by a
+    Redis lock so concurrent requests cannot stampede) refreshes the cache. Only a cold start with
+    no last-known-good copy rebuilds in-request; if that rebuild exceeds the statement timeout the
+    error propagates because there is nothing safe to serve.
     """
     enforce_market_feature(tenant, "curated_screens")
     market = tenant.market
@@ -1881,22 +1926,20 @@ async def screens(
         cached = await redis.get(key)
         if cached:
             # Serve the cached JSON bytes verbatim — skip the pydantic parse + re-serialize of ~65KB.
-            return Response(content=cached, media_type="application/json")
-        try:
-            return await build_and_cache_screens(
-                tenant, session, redis, size=size, quote_ts=quote_ts, ana_ts=ana_ts
-            )
-        except DBAPIError:
-            stale = await redis.get(stale_key)
-            if stale is None:
-                raise
-            log.warning(
-                "screens rebuild timed out for %s/%s size=%s; serving last-known-good copy",
-                tenant.name,
-                market,
-                size or "all",
-            )
-            return Response(content=stale, media_type="application/json")
+            return _screens_response(cached)
+        stale = await redis.get(stale_key)
+        if stale is not None:
+            # Canonical stale-while-revalidate: answer instantly from the last-known-good copy
+            # and refresh once in the background instead of making this visitor pay for the
+            # rebuild (or 500ing when the shared host is saturated).
+            lock_key = f"{stale_key}:revalidating"
+            if await redis.set(lock_key, "1", nx=True, ex=_REVALIDATE_LOCK_TTL):
+                _spawn_revalidation(tenant, size, lock_key)
+            return _screens_response(stale)
+        resp = await build_and_cache_screens(
+            tenant, session, redis, size=size, quote_ts=quote_ts, ana_ts=ana_ts
+        )
+        return _screens_response(resp.model_dump_json())
     finally:
         await redis.aclose()
 
