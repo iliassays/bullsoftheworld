@@ -7,6 +7,9 @@ Wants=network-online.target
 Type=oneshot
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bullsofdhaka
+# Batch analytics over 10y x 100-symbol cohorts legitimately exceeds the API's 30s statement
+# budget on this shared host; the longer timeout applies only to this oneshot job.
+Environment=DATABASE_STATEMENT_TIMEOUT_MS=180000
 ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.universe_onboarding_nightly
 StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
 StandardError=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
