@@ -1,0 +1,131 @@
+.catalyst-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.catalyst-calendar__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.catalyst-calendar__header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.25rem;
+  margin: 0 0 0.35rem;
+}
+
+.catalyst-calendar__header p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--research-text-muted, #6b7280);
+  font-size: 0.875rem;
+}
+
+.catalyst-calendar__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.catalyst-calendar__error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--research-danger-bg, rgba(220, 38, 38, 0.08));
+  color: var(--research-danger, #b91c1c);
+  font-size: 0.875rem;
+}
+
+.catalyst-calendar__empty {
+  color: var(--research-text-muted, #6b7280);
+  font-size: 0.875rem;
+  max-width: 62ch;
+}
+
+.catalyst-calendar__days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.catalyst-calendar__day > h2 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--research-text-muted, #6b7280);
+  margin: 0 0 0.5rem;
+}
+
+.catalyst-calendar__day > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.catalyst-event {
+  border: 1px solid var(--research-border, #e5e7eb);
+  border-left-width: 3px;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--research-surface, #fff);
+}
+
+.catalyst-event--confirmed {
+  border-left-color: var(--research-positive, #15803d);
+}
+
+.catalyst-event--window {
+  border-left-color: var(--research-caution, #b45309);
+}
+
+.catalyst-event__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.catalyst-event__ticker {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalyst-event__type {
+  font-size: 0.8rem;
+  color: var(--research-text-muted, #6b7280);
+}
+
+.catalyst-event__timing {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalyst-event__evidence {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: var(--research-text-muted, #6b7280);
+  max-width: 72ch;
+}
+
+.catalyst-event__source {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  color: var(--research-text-muted, #9ca3af);
+}

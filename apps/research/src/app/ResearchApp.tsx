@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { ResearchShell } from "../layout/ResearchShell";
 import { CompanyDossierPage } from "../features/company-dossier/CompanyDossierPage";
 import { CompanyDossierLibraryPage } from "../features/company-dossier/CompanyDossierLibraryPage";
+import { CatalystCalendarPage } from "../features/catalyst-calendar/CatalystCalendarPage";
 import { ResearchQueuePage } from "../features/research-queue/ResearchQueuePage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { HypothesisLabPage } from "../features/autonomous-research/HypothesisLabPage";
@@ -25,6 +26,7 @@ export function ResearchApp() {
         <Route path="/queue" element={<ResearchQueuePage />} />
         <Route path="/companies" element={<CompanyDossierLibraryPage />} />
         <Route path="/companies/:ticker" element={<CompanyDossierPage />} />
+        <Route path="/catalysts" element={<CatalystCalendarPage />} />
         <Route path="/hypotheses" element={<HypothesisLabPage />} />
         <Route path="/lifecycle" element={<LifecycleControlPage />} />
         <Route path="/portfolio" element={<PortfolioIntelligencePage />} />

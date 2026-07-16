@@ -33,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Research queue", icon: BookOpenCheck, href: "/queue" },
   { label: "Company dossiers", icon: FileSearch, href: "/companies" },
   { label: "Lifecycle control", icon: Workflow, href: "/lifecycle" },
-  { label: "Catalyst calendar", icon: CalendarDays },
+  { label: "Catalyst calendar", icon: CalendarDays, href: "/catalysts" },
   { label: "Hypothesis lab", icon: FlaskConical, href: "/hypotheses" },
   { label: "Portfolio intelligence", icon: ChartNoAxesCombined, href: "/portfolio" },
   { label: "Research memory", icon: Library, href: "/memory" },

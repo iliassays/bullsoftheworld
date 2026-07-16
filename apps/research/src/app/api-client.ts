@@ -1,5 +1,6 @@
 import { researchDeployment, tenantRequestHeaders } from "./deployment";
 import type { ResearchCompanyDossier } from "../features/company-dossier/model";
+import type { CatalystCalendar } from "../features/catalyst-calendar/model";
 import type { ResearchQueueSnapshot } from "../features/research-queue/model";
 
 export interface ResearchUser {
@@ -252,6 +253,20 @@ function assertWorkspaceBoundary(workspace: ResearchWorkspace): ResearchWorkspac
   return workspace;
 }
 
+function assertCatalystBoundary(
+  calendar: CatalystCalendar,
+  workspaceId: string,
+): CatalystCalendar {
+  const crossedBoundary =
+    calendar.tenantId !== researchDeployment.tenant ||
+    calendar.market !== researchDeployment.market ||
+    calendar.workspaceId !== workspaceId;
+  if (crossedBoundary) {
+    throw new ResearchApiError(502, "The API returned research data outside this tenant boundary");
+  }
+  return calendar;
+}
+
 function assertQueueBoundary(
   snapshot: ResearchQueueSnapshot,
   workspaceId: string,
@@ -386,6 +401,20 @@ export const researchApi = {
       { signal },
     );
     return assertDossierBoundary(dossier, workspaceId, normalizedTicker);
+  },
+  async catalystCalendar(
+    workspaceId: string,
+    filters: { horizonDays: number; code?: string },
+    signal?: AbortSignal,
+  ): Promise<CatalystCalendar> {
+    const parameters = new URLSearchParams();
+    parameters.set("horizon_days", String(filters.horizonDays));
+    if (filters.code?.trim()) parameters.set("code", filters.code.trim().toUpperCase());
+    const calendar = await request<CatalystCalendar>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/catalysts?${parameters.toString()}`,
+      { signal },
+    );
+    return assertCatalystBoundary(calendar, workspaceId);
   },
   async startCompanyResearch(workspaceId: string, ticker: string): Promise<ResearchRun> {
     const normalizedTicker = ticker.trim().toUpperCase();
