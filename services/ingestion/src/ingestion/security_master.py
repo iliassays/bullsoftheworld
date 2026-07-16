@@ -14,7 +14,7 @@ import asyncio
 import datetime as dt
 import sys
 
-from sqlalchemy import case, exists, select, update
+from sqlalchemy import case, exists, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.config import get_settings
@@ -93,6 +93,24 @@ async def _upsert_product_symbols(session, rows: list[dict]) -> None:
         await session.execute(stmt)
 
 
+def security_id_backlink_stmt(market: str):
+    """Join-style backlink update touching only rows whose security_id actually changes.
+
+    A correlated-subquery form rewrote every symbol row per run (with FK checks and index
+    churn on each), which exceeded the 30s statement timeout on a loaded host.
+    """
+    return (
+        update(Symbol)
+        .where(
+            Symbol.market == market,
+            SecurityMaster.market == Symbol.market,
+            SecurityMaster.symbol == Symbol.code,
+            Symbol.security_id.is_distinct_from(SecurityMaster.security_id),
+        )
+        .values(security_id=SecurityMaster.security_id)
+    )
+
+
 async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, int]:
     fetched_at = dt.datetime.now(dt.UTC)
     security_rows = _security_rows(records, fetched_at)
@@ -104,19 +122,7 @@ async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, 
         await _upsert_product_symbols(session, symbol_rows)
         if records:
             market = records[0].market
-            security_id = (
-                select(SecurityMaster.security_id)
-                .where(
-                    SecurityMaster.market == Symbol.market,
-                    SecurityMaster.symbol == Symbol.code,
-                )
-                .scalar_subquery()
-            )
-            await session.execute(
-                update(Symbol)
-                .where(Symbol.market == market, security_id.isnot(None))
-                .values(security_id=security_id)
-            )
+            await session.execute(security_id_backlink_stmt(market))
             await session.execute(
                 update(SecurityMaster)
                 .where(SecurityMaster.market == market, SecurityMaster.last_seen_at < fetched_at)

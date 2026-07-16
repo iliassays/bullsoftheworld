@@ -6,8 +6,10 @@ security master while only product-eligible securities are projected into `symbo
 
 from __future__ import annotations
 
+from sqlalchemy.dialects import postgresql
+
 from bulls.market_data.providers.us_security_master import parse_nasdaq_listed, parse_other_listed
-from ingestion.security_master import _chunks, _symbol_rows
+from ingestion.security_master import _chunks, _symbol_rows, security_id_backlink_stmt
 
 
 def test_symbol_rows_publish_only_product_eligible_instruments() -> None:
@@ -43,6 +45,21 @@ def test_symbol_rows_preserve_long_official_names() -> None:
 
     assert len(long_name) > 160
     assert row["name_en"] == long_name
+
+
+def test_security_id_backlink_is_a_join_update_guarded_by_change() -> None:
+    sql = str(
+        security_id_backlink_stmt("US").compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    # A join-style UPDATE evaluates the security-master lookup once per matched row instead of
+    # re-running a correlated subquery for every symbol row.
+    assert "FROM security_master" in sql
+    assert "SELECT" not in sql.upper()
+    # Unchanged rows must be skipped so repeated refreshes stay within the statement timeout.
+    assert "IS DISTINCT FROM" in sql
 
 
 def test_bulk_rows_are_chunked_before_upsert() -> None:
