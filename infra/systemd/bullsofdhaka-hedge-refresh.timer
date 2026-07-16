@@ -2,7 +2,7 @@
 Description=Refresh Hedge history after the DSE EOD pipeline
 
 [Timer]
-OnCalendar=Sun..Thu *-*-* 14:20:00 UTC
+OnCalendar=Sun..Thu *-*-* 14:20:00
 Persistent=true
 RandomizedDelaySec=3min
 Unit=bullsofdhaka-hedge-refresh.service
