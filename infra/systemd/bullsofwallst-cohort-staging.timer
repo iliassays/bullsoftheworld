@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly private staging of one US onboarding cohort at 02:10 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:10:00 UTC
+AccuracySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

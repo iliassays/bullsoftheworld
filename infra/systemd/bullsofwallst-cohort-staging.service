@@ -1,0 +1,14 @@
+[Unit]
+Description=Stage one pending US onboarding cohort privately (no publication)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.universe_onboarding_nightly
+StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
+StandardError=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
+Nice=15
+NoNewPrivileges=true
