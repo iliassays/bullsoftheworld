@@ -16,7 +16,7 @@ import sys
 from collections import defaultdict
 from types import SimpleNamespace
 
-from sqlalchemy import delete, exists, func, select, true, update
+from sqlalchemy import String, column, delete, exists, select, true, update, values
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics import adjust_bars, compute, compute_valuation, detect_patterns
@@ -228,11 +228,15 @@ def _extra_row(
     return row
 
 
-async def _load_bar_batch(session, market: str, codes: list[str]) -> dict[str, list]:
-    """Load the latest lookback per code in one windowed query."""
-    ranked = (
+def _bar_batch_statement(market: str, codes: list[str]):
+    """Build an index-friendly latest-bars query for one bounded symbol batch."""
+    requested_codes = (
+        values(column("code", String(16)), name="requested_codes")
+        .data([(code,) for code in codes])
+        .cte("requested_codes")
+    )
+    latest_bars = (
         select(
-            DailyBar.code.label("code"),
             DailyBar.date.label("date"),
             DailyBar.open.label("open"),
             DailyBar.high.label("high"),
@@ -240,19 +244,35 @@ async def _load_bar_batch(session, market: str, codes: list[str]) -> dict[str, l
             DailyBar.close.label("close"),
             DailyBar.volume.label("volume"),
             DailyBar.adjusted_close.label("adjusted_close"),
-            func.row_number()
-            .over(partition_by=DailyBar.code, order_by=DailyBar.date.desc())
-            .label("row_num"),
         )
-        .where(DailyBar.market == market, DailyBar.code.in_(codes))
-        .subquery()
+        .where(
+            DailyBar.market == market,
+            DailyBar.code == requested_codes.c.code,
+        )
+        .order_by(DailyBar.date.desc())
+        .limit(_LOOKBACK)
+        .lateral("latest_bars")
     )
-    rows = (
-        await session.execute(
-            select(ranked)
-            .where(ranked.c.row_num <= _LOOKBACK)
-            .order_by(ranked.c.code, ranked.c.date)
+    return (
+        select(
+            requested_codes.c.code,
+            latest_bars.c.date,
+            latest_bars.c.open,
+            latest_bars.c.high,
+            latest_bars.c.low,
+            latest_bars.c.close,
+            latest_bars.c.volume,
+            latest_bars.c.adjusted_close,
         )
+        .select_from(requested_codes.join(latest_bars, true()))
+        .order_by(requested_codes.c.code, latest_bars.c.date)
+    )
+
+
+async def _load_bar_batch(session, market: str, codes: list[str]) -> dict[str, list]:
+    """Load the latest lookback per code through the `(market, code, date)` primary-key index."""
+    rows = (
+        await session.execute(_bar_batch_statement(market, codes))
     ).mappings()
     grouped: dict[str, list] = defaultdict(list)
     for row in rows:

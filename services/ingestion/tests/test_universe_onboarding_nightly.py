@@ -12,6 +12,7 @@ from ingestion.universe_onboarding_nightly import (
     BAND_ORDER,
     in_protected_window,
     latest_manifest_index,
+    runtime_budget_seconds,
     stage_next_cohort,
 )
 
@@ -27,6 +28,12 @@ def test_protected_windows_cover_session_and_eod() -> None:
     assert not in_protected_window(_utc(2, 10))  # nightly slot
     assert not in_protected_window(_utc(10, 0))
     assert not in_protected_window(_utc(23, 0))
+
+
+def test_runtime_budget_stops_before_the_next_protected_window() -> None:
+    assert runtime_budget_seconds(_utc(0, 45)) == 2 * 60 * 60
+    assert runtime_budget_seconds(_utc(2, 10)) == 55 * 60
+    assert runtime_budget_seconds(_utc(12, 30)) == 5 * 60
 
 
 def test_risky_bands_are_not_scheduled() -> None:

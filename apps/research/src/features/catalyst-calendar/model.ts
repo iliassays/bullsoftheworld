@@ -65,6 +65,17 @@ export function confidenceLabel(confidence: CatalystConfidence): string {
   }
 }
 
+export function statusLabel(event: CatalystEvent): string {
+  switch (event.status) {
+    case "scheduled":
+      return "Upcoming";
+    case "occurred":
+      return event.timingKind === "window" ? "Window elapsed" : "Occurred";
+    case "cancelled":
+      return "Cancelled";
+  }
+}
+
 export function anchorDate(event: CatalystEvent): string {
   return event.confirmedDate ?? event.windowStart ?? "";
 }

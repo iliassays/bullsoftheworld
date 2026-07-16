@@ -34,7 +34,19 @@ def test_closed_tenants_are_never_collected() -> None:
     assert targets == [("bullsofdhaka", "DSE"), ("bullsofwallst", "US")]
 
 
-def test_worker_schedules_post_close_catalyst_crons() -> None:
-    names = {job.name for job in WorkerSettings.cron_jobs}
+def test_collection_targets_can_be_restricted_to_one_market() -> None:
+    tenants = [
+        _tenant("bullsofdhaka", "DSE", "authenticated"),
+        _tenant("bullsofwallst", "US", "authenticated"),
+    ]
 
-    assert names == {"catalysts_post_dse", "catalysts_post_us"}
+    assert research_collection_targets(tenants, market="DSE") == [("bullsofdhaka", "DSE")]
+    assert research_collection_targets(tenants, market="US") == [("bullsofwallst", "US")]
+
+
+def test_worker_schedules_post_close_catalyst_crons() -> None:
+    jobs = {job.name: job for job in WorkerSettings.cron_jobs}
+
+    assert set(jobs) == {"catalysts_post_dse", "catalysts_post_us"}
+    assert jobs["catalysts_post_dse"].coroutine.__name__ == "collect_dse_catalysts"
+    assert jobs["catalysts_post_us"].coroutine.__name__ == "collect_us_catalysts"

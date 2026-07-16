@@ -6,6 +6,7 @@ import datetime as dt
 
 from bulls.analytics.catalysts import (
     CatalystDraft,
+    PeriodicFilingEvidence,
     dse_events_from_announcement,
     us_report_window_from_filings,
 )
@@ -60,8 +61,24 @@ def test_dse_projection_handles_missing_details() -> None:
     assert _dse(None) == []
 
 
-def _quarterly(dates: list[str]) -> list[tuple[str, dt.date, str]]:
-    return [("10-Q", dt.date.fromisoformat(day), f"acc-{i}") for i, day in enumerate(dates)]
+def _filing(
+    form: str,
+    day: str,
+    accession: str,
+    *,
+    accepted_at: dt.datetime | None = None,
+) -> PeriodicFilingEvidence:
+    return PeriodicFilingEvidence(
+        form=form,
+        filing_date=dt.date.fromisoformat(day),
+        accession_number=accession,
+        accepted_at=accepted_at,
+        source_url=f"https://www.sec.gov/Archives/{accession}.htm",
+    )
+
+
+def _quarterly(dates: list[str]) -> list[PeriodicFilingEvidence]:
+    return [_filing("10-Q", day, f"acc-{i}") for i, day in enumerate(dates)]
 
 
 def test_us_cadence_infers_forward_window_never_confirmed() -> None:
@@ -82,7 +99,7 @@ def test_us_cadence_infers_forward_window_never_confirmed() -> None:
     assert draft.details["cadence_days"] == 91
 
 
-def test_us_cadence_rolls_window_forward_past_stale_history() -> None:
+def test_us_cadence_does_not_roll_stale_history_into_an_unsupported_future_window() -> None:
     draft = us_report_window_from_filings(
         market="US",
         code="ABCD",
@@ -91,7 +108,7 @@ def test_us_cadence_rolls_window_forward_past_stale_history() -> None:
     )
 
     assert draft is not None
-    assert draft.window_end >= dt.date(2026, 7, 16)
+    assert draft.window_end < dt.date(2026, 7, 16)
 
 
 def test_us_cadence_requires_enough_history() -> None:
@@ -107,8 +124,8 @@ def test_us_cadence_requires_enough_history() -> None:
 
 def test_us_cadence_ignores_non_periodic_forms() -> None:
     filings = [
-        ("8-K", dt.date(2026, 1, 5), "a"),
-        ("8-K", dt.date(2026, 3, 5), "b"),
+        _filing("8-K", "2026-01-05", "a"),
+        _filing("8-K", "2026-03-05", "b"),
         *_quarterly(["2026-02-06", "2026-05-08"]),
     ]
 
@@ -118,6 +135,49 @@ def test_us_cadence_ignores_non_periodic_forms() -> None:
         )
         is None
     )
+
+
+def test_us_cadence_ignores_amendments_and_future_knowledge() -> None:
+    filings = [
+        _filing("10-Q", "2025-08-08", "q1"),
+        _filing("10-Q", "2025-11-07", "q2"),
+        _filing("10-Q/A", "2025-12-01", "q2-amendment"),
+        _filing("10-Q", "2026-02-06", "q3"),
+        _filing(
+            "10-Q",
+            "2026-05-08",
+            "future-acceptance",
+            accepted_at=dt.datetime(2026, 7, 17, 1, 0, tzinfo=dt.UTC),
+        ),
+    ]
+
+    draft = us_report_window_from_filings(
+        market="US",
+        code="ABCD",
+        periodic_filings=filings,
+        as_of=dt.date(2026, 7, 16),
+    )
+
+    assert draft is not None
+    assert draft.source_ref == "q3"
+    assert draft.details["observed_filings"] == 3
+
+
+def test_us_cadence_preserves_exact_acceptance_time_and_source_url() -> None:
+    accepted_at = dt.datetime(2026, 5, 8, 20, 31, 4, tzinfo=dt.UTC)
+    filings = _quarterly(["2025-08-08", "2025-11-07", "2026-02-06"])
+    filings.append(_filing("10-Q", "2026-05-08", "latest", accepted_at=accepted_at))
+
+    draft = us_report_window_from_filings(
+        market="US",
+        code="ABCD",
+        periodic_filings=filings,
+        as_of=dt.date(2026, 7, 16),
+    )
+
+    assert draft is not None
+    assert draft.known_at == accepted_at
+    assert draft.source_url == "https://www.sec.gov/Archives/latest.htm"
 
 
 def test_dedupe_key_is_stable_and_tenant_scoped() -> None:

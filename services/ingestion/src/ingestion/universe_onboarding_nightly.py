@@ -30,6 +30,9 @@ log = logging.getLogger("universe_onboarding_nightly")
 
 BAND_ORDER = ("small_cap", "micro_cap", "mid_cap")
 DEFAULT_UNIVERSE_DIR = Path("var/us-universe")
+MAX_RUN_SECONDS = 2 * 60 * 60
+MIN_RUN_SECONDS = 30 * 60
+PROTECTED_WINDOW_SAFETY_SECONDS = 10 * 60
 
 # The staging job must never compete with the DSE morning watch/session polling or the EOD chain
 # on the shared 2-core host. Windows are UTC (server clock), end-exclusive.
@@ -44,6 +47,21 @@ RunBatch = Callable[..., Awaitable[dict[str, Any]]]
 def in_protected_window(now: dt.datetime) -> bool:
     moment = now.astimezone(dt.UTC).time()
     return any(start <= moment < end for start, end in PROTECTED_UTC_WINDOWS)
+
+
+def runtime_budget_seconds(now: dt.datetime) -> int:
+    """Return a bounded budget that ends before the next protected market window."""
+    utc_now = now.astimezone(dt.UTC)
+    starts: list[dt.datetime] = []
+    for day_offset in (0, 1):
+        day = utc_now.date() + dt.timedelta(days=day_offset)
+        for start, _ in PROTECTED_UTC_WINDOWS:
+            candidate = dt.datetime.combine(day, start, tzinfo=dt.UTC)
+            if candidate > utc_now:
+                starts.append(candidate)
+    next_protected = min(starts)
+    available = int((next_protected - utc_now).total_seconds())
+    return max(0, min(MAX_RUN_SECONDS, available - PROTECTED_WINDOW_SAFETY_SECONDS))
 
 
 def latest_manifest_index(universe_dir: Path) -> Path | None:
@@ -101,6 +119,13 @@ async def run_nightly(index_path: Path | None) -> int:
     if in_protected_window(now):
         log.info("inside a protected market window at %s UTC; skipping this run", now.time())
         return 0
+    runtime_budget = runtime_budget_seconds(now)
+    if runtime_budget < MIN_RUN_SECONDS:
+        log.info(
+            "only %ss remain before the protected-window safety boundary; skipping this run",
+            runtime_budget,
+        )
+        return 0
     if index_path is None:
         index_path = latest_manifest_index(DEFAULT_UNIVERSE_DIR)
     if index_path is None or not index_path.is_file():
@@ -108,7 +133,14 @@ async def run_nightly(index_path: Path | None) -> int:
         return 2
 
     try:
-        result = await stage_next_cohort(index_path)
+        async with asyncio.timeout(runtime_budget):
+            result = await stage_next_cohort(index_path)
+    except TimeoutError:
+        await _send_failure_alert(
+            "US cohort staging reached its market-safety deadline",
+            f"Stopped after {runtime_budget}s before the next protected window (index: {index_path})",
+        )
+        return 1
     except Exception as error:
         await _send_failure_alert(
             "US cohort staging failed",

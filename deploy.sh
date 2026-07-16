@@ -68,14 +68,18 @@ ssh "$REMOTE" "cd $APP \
        infra/systemd/bullsofwallst-research-worker.service \
        infra/systemd/bullsofwallst-sec-watchdog.service \
        infra/systemd/bullsofwallst-sec-watchdog.timer \
+       infra/systemd/bullsofwallst-cohort-staging.service \
+       infra/systemd/bullsofwallst-cohort-staging.timer \
        /etc/systemd/system/ \
   && sudo systemctl daemon-reload \
   && sudo systemctl enable bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
-       bullsofwallst-sec-watchdog.timer bullsofdhaka-hedge-refresh.timer \
+       bullsofwallst-sec-watchdog.timer bullsofwallst-cohort-staging.timer \
+       bullsofdhaka-hedge-refresh.timer \
   && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker \
        bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
-       bullsofwallst-sec-watchdog.timer bullsofdhaka-hedge-refresh.timer"
+       bullsofwallst-sec-watchdog.timer bullsofwallst-cohort-staging.timer \
+       bullsofdhaka-hedge-refresh.timer"
 
 echo "✓ released backend and server assets for $SITE_URL"

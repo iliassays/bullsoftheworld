@@ -17,9 +17,10 @@ tenant and one market; users cannot switch between DSE and US inside a workspace
 Private V1 enables the server-ranked Research Queue, evidence-first Company Dossier, bounded
 Autonomous Analyst, registered Hypothesis Lab, no-broker Portfolio Intelligence, and immutable
 Research Memory with forward calibration. Lifecycle Control coordinates these stages through an
-explicit workspace policy and dedicated tenant-bound worker. Catalyst Calendar remains disabled until its data
-contract and workflow are implemented. The existing organization schema does not imply that team
-invitations or administration are already available.
+explicit workspace policy and dedicated tenant-bound worker. Catalyst Calendar provides typed DSE
+official dates and point-in-time US filing-cadence windows with explicit confidence, source links,
+and lifecycle status. The existing organization schema does not imply that team invitations or
+administration are already available.
 
 US options intelligence is a planned, unimplemented Atlas evidence module. Its specification is
 `../../docs/research/us-options-flow-research-2026-07.md`. It must separate directional delta,

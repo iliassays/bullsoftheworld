@@ -332,6 +332,9 @@ async def run_onboarding(
             "fetch": fetch_stats,
             "failures": failures,
         }
+    except asyncio.CancelledError:
+        await _mark_failed(run.id, RuntimeError("onboarding cancelled before completion"))
+        raise
     except Exception as error:
         await _mark_failed(run.id, error)
         raise

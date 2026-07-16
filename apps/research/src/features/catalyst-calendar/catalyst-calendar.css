@@ -111,6 +111,12 @@
   color: var(--research-text-muted, #6b7280);
 }
 
+.catalyst-event__title {
+  margin: 0.45rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
 .catalyst-event__timing {
   margin: 0.35rem 0 0;
   font-size: 0.875rem;
@@ -128,4 +134,18 @@
   margin: 0.4rem 0 0;
   font-size: 0.72rem;
   color: var(--research-text-muted, #9ca3af);
+}
+
+.catalyst-event__source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15rem;
+}
+
+.catalyst-event__source a:hover {
+  color: var(--research-text, #111827);
 }

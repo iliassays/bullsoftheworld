@@ -56,7 +56,14 @@ async def test_research_tables_force_tenant_market_row_security() -> None:
             "research_claim_citations": "research_claims",
             "research_shadow_snapshots": "research_shadow_portfolios",
         }
-        assert len(rows) == 16
+        tenant_shared_scope = {
+            "research_evidence_documents",
+            "research_evidence_spans",
+            "research_catalyst_events",
+        }
+        assert {row[0] for row in rows} == (
+            direct_user_scope | set(lineage_scope) | tenant_shared_scope
+        )
         for table, enabled, forced, predicate in rows:
             assert enabled and forced, table
             assert "app.research_tenant_id" in predicate, table
@@ -188,6 +195,15 @@ async def test_authenticated_research_api_isolates_dse_and_us_accounts() -> None
                 assert payload["tenantId"] == tenant_id
                 assert payload["market"] == market
                 assert all(candidate["market"] == market for candidate in payload["candidates"])
+
+                catalysts = await client.get(
+                    f"/institutional-research/workspaces/{workspace['id']}/catalysts?horizon_days=60",
+                    headers=authorized,
+                )
+                assert catalysts.status_code == 200, catalysts.text
+                catalyst_payload = catalysts.json()
+                assert catalyst_payload["tenantId"] == tenant_id
+                assert catalyst_payload["market"] == market
 
                 # Forced lineage policies query the parent run. Persist it before adding claims;
                 # this catches ORM flush-order regressions with the restricted runtime role.

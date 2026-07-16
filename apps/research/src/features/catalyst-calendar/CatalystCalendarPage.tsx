@@ -1,4 +1,4 @@
-import { CalendarDays, CircleAlert, RefreshCw } from "lucide-react";
+import { CalendarDays, CircleAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 
 import { isResearchPreview, researchDeployment } from "../../app/deployment";
@@ -17,6 +17,7 @@ import {
   eventTypeLabel,
   filterEvents,
   groupByDate,
+  statusLabel,
   timingLabel,
   type HorizonDays,
 } from "./model";
@@ -143,13 +144,34 @@ export function CatalystCalendarPage() {
                     >
                       {confidenceLabel(event.confidence)}
                     </StatusBadge>
+                    <StatusBadge
+                      tone={
+                        event.status === "cancelled"
+                          ? "negative"
+                          : event.status === "occurred"
+                            ? "neutral"
+                            : "info"
+                      }
+                    >
+                      {statusLabel(event)}
+                    </StatusBadge>
                   </div>
+                  <p className="catalyst-event__title">{event.title}</p>
                   <p className="catalyst-event__timing">{timingLabel(event)}</p>
                   {event.expectedEvidence ? (
                     <p className="catalyst-event__evidence">{event.expectedEvidence}</p>
                   ) : null}
                   <p className="catalyst-event__source">
-                    Source: {event.sourceType.split("_").join(" ")} · known{" "}
+                    Source:{" "}
+                    {event.sourceUrl ? (
+                      <a href={event.sourceUrl} target="_blank" rel="noreferrer">
+                        {event.sourceType.split("_").join(" ")}
+                        <ExternalLink aria-hidden="true" size={12} />
+                      </a>
+                    ) : (
+                      event.sourceType.split("_").join(" ")
+                    )}{" "}
+                    · known{" "}
                     {event.knownAt.slice(0, 10)}
                   </p>
                 </li>

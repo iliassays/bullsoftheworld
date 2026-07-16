@@ -13,7 +13,17 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Date, DateTime, Index, String, Text, Uuid, func
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,6 +73,14 @@ class CatalystEvent(Base):
         CheckConstraint(
             "dedupe_key ~ '^[0-9a-f]{64}$'",
             name="ck_research_catalyst_dedupe_key",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "market",
+            "code",
+            "event_type",
+            "source_ref",
+            name="uq_research_catalyst_source_event",
         ),
         Index(
             "ix_research_catalyst_events_tenant_confirmed",

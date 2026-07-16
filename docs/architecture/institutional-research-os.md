@@ -17,8 +17,11 @@ cross-tenant and cross-market references. The current API exposes authenticated 
 bootstrap/listing, a deterministic research-attention queue, and an evidence-first company dossier
 backed by current analytics and market-specific official evidence adapters. It also exposes the
 bounded autonomous analyst loop, registered point-in-time backtests, forward shadow portfolios,
-and 5/20/60-session outcome calibration. PostgreSQL row-level security, transaction-scoped
-tenant/market/user identity, and append-only audit events are active on research tables.
+5/20/60-session outcome calibration, and a typed Catalyst Calendar. Catalyst events retain
+point-in-time source knowledge, distinguish confirmed dates from inferred windows, and update
+official corrections through stable source identity. PostgreSQL row-level security,
+transaction-scoped tenant/market/user identity, and append-only audit events are active on
+research tables.
 
 Atlas does not require a human analyst in its execution path. The autonomous analyst is a bounded,
 versioned software role: it plans a company review, builds an evidence and calculation pack, forms a
@@ -30,8 +33,8 @@ runtime dependency.
 
 Private V1 intentionally supports one self-provisioned organization/workspace per account. It does
 not yet expose team invitations, member administration, SSO/SCIM, private document upload, billing,
-exports, or Catalyst Calendar. Those are product capabilities, not implied by the existence of the
-underlying tenancy schema.
+or exports. Those are product capabilities, not implied by the existence of the underlying tenancy
+schema.
 
 ## Product thesis
 
@@ -507,24 +510,27 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   authorization, composite foreign keys, transaction context, frontend response checks, and forced
   RLS. DSE and US use separate fixed-host builds with no in-product market switch.
 
-Catalyst Calendar remains a target module. Hypothesis Lab, Portfolio Intelligence, and Research
-Memory are enabled in Atlas. A backtest remains `diagnostic` until history length, breadth,
-inactive/delisted coverage, and execution-count gates pass; the UI does not relabel diagnostics as
-validated research. US options intelligence remains a planned research module and must not appear
-in production as implemented, live, or validated until its separate data, licensing, historical,
-and forward gates pass.
+Catalyst Calendar, Hypothesis Lab, Portfolio Intelligence, and Research Memory are enabled in
+Atlas. The calendar currently covers decoded DSE announcement dates and inferred US periodic-report
+windows from EDGAR cadence; broader event sources and post-event outcome scoring remain future
+depth. A backtest remains `diagnostic` until history length, breadth, inactive/delisted coverage,
+and execution-count gates pass; the UI does not relabel diagnostics as validated research. US
+options intelligence remains a planned research module and must not appear in production as
+implemented, live, or validated until its separate data, licensing, historical, and forward gates
+pass.
 
 ## Delivery sequence
 
 1. **Foundation (implemented, licensing incomplete)**: organization tenancy, research
    run/claim/evidence schema, RLS, audit ledger, point-in-time contracts, and fixed tenant builds.
    Object storage, a complete source registry, and market-data licensing decisions remain.
-2. **Data depth**: full filing body/table evidence, insider and beneficial-owner filings, catalyst
-   events, DSE publication timestamps, broader US onboarding, longer DSE history, and the staged US
-   options feasibility work defined in `docs/research/us-options-flow-research-2026-07.md`.
+2. **Data depth**: full filing body/table evidence, insider and beneficial-owner filings, broader
+   catalyst sources and outcomes, DSE publication timestamps, broader US onboarding, longer DSE
+   history, and the staged US options feasibility work defined in
+   `docs/research/us-options-flow-research-2026-07.md`.
 3. **Paid-alpha workflow (partially implemented)**: Research Queue, Company Dossier, bounded
-   autonomous thesis creation, and forward outcome memory are active. Catalyst Calendar and
-   evidence-change monitoring remain.
+   autonomous thesis creation, Catalyst Calendar, and forward outcome memory are active.
+   Evidence-change monitoring remains.
 4. **Deep Research (bounded V2 implemented)**: deterministic planner, finance-specific synthesis,
    skeptic, verifier, conditional scenarios, evidence requests, claims, abstention, and reproducible
    run ledger are active. Full-document evidence differentials, hybrid retrieval inside Atlas, and

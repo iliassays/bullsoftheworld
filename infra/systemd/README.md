@@ -81,6 +81,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bulls-research-lifecycle-worker
 ```
 
+Private U.S. cohort staging runs as a resource-bounded nightly oneshot and never publishes a
+cohort. The timer advances to the first unfinished cohort and stops before protected market
+windows:
+
+```bash
+sudo cp infra/systemd/bullsofwallst-cohort-staging.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bullsofwallst-cohort-staging.timer
+```
+
 For an audited first production run, configure exactly one tenant account. The command requires
 the tenant, handle, market-registered strategy, paper capital, and an explicit mutation flag; it
 does not scan or configure other accounts:

@@ -1,8 +1,8 @@
 [Unit]
-Description=Nightly private staging of one US onboarding cohort at 02:10 UTC
+Description=Nightly private staging of one US onboarding cohort at 00:45 UTC
 
 [Timer]
-OnCalendar=*-*-* 02:10:00 UTC
+OnCalendar=*-*-* 00:45:00 UTC
 AccuracySec=5min
 Persistent=true
 

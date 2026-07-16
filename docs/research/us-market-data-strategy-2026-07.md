@@ -13,17 +13,15 @@ Yahoo Finance's **unofficial** endpoints (spark batch + v8 chart) currently feed
 - the daily US EOD bars that are publicly displayed on bullsofwallst.com for the
   ~367 `ready` symbols and consumed by Atlas (queue, dossier, Hypothesis Lab).
 
-DSE is unaffected (own scraper against dsebd.org). bullstreetai (separate private project)
-also uses Yahoo — that is fine and out of scope: internal-only pipeline, no display, no customers.
+DSE is unaffected (own scraper against dsebd.org).
 
 ## Why this must change (in order of urgency)
 
 1. **No contract.** Yahoo's API is reverse-engineered; auth (crumb/cookie) and rate limits have
    tightened repeatedly. The entire US data plane can break without notice.
-2. **ToS exposure.** Yahoo prohibits commercial redistribution. Public display of Yahoo-derived
-   bars is defensible only while the product is free and small; it is indefensible for paid Atlas.
-   The architecture doc's own words: "Yahoo remains a bootstrap discovery source, not commercial
-   authority."
+2. **ToS exposure.** Yahoo's published API terms restrict commercial derivation and redistribution.
+   A free or small product is not an exemption. Yahoo-derived bars must not be treated as an
+   authorized customer-facing source without explicit permission.
 3. **Structural inadequacy for research.** No delisted symbols, no point-in-time, silent
    corporate-action revisions — the exact reasons US Hypothesis Lab backtests are permanently
    stuck at `diagnostic`.
@@ -32,8 +30,9 @@ also uses Yahoo — that is fine and out of scope: internal-only pipeline, no di
 
 | Tier | Source | Status / action |
 |---|---|---|
-| Discovery + cross-check | Yahoo (free, unofficial) | Keep. Internal breadth scanning only. |
-| Production EOD (public display + Atlas reads) | **Tiingo** — tiingo.com | Migrate first. ~$30/mo Power plan for internal use now; commercial/redistribution addendum via sales@tiingo.com before paid launch. |
+| Temporary discovery bootstrap | Yahoo (unofficial) | Remove from customer-facing and production fallback paths. Any continued private cross-check requires terms review; no new dependency is allowed. |
+| Production EOD (internal Atlas reads) | **Tiingo** — tiingo.com | Migrate first only under a plan licensed to the actual subscriber. The low-cost individual plan is not a business-product license; the internal commercial plan is for internal use and does not grant public redistribution. |
+| Customer-facing EOD display | **Licensed redistribution/display agreement** | Obtain explicit display and redistribution rights from Tiingo or another vendor before public or paid US display. Fail closed rather than falling back to Yahoo. |
 | Research-grade history (point-in-time, delisted-inclusive, 1998+) | **Sharadar Core US Equities** — data.nasdaq.com/databases/SFA | Evaluate this quarter. The only tier Yahoo structurally cannot serve; unlocks `validated` US backtests. Quote via Nasdaq Data Link. |
 | Options research — underlying-level | **Cboe DataShop "Option Sentiment"** — `datashop.cboe.com/Documents/Cboe_OptionSentiment_Specs.pdf` | Historical feasibility source. Buy ~1yr first; subscribe only after the registered stock-selection test shows incremental value. One EOD file for all optionable underlyings, including iv30/iv90, normalized 25d skew, net option delta, directional premium, implied borrow, size/DTE/moneyness buckets, and baselines. |
 | Options research — chain display | **Cboe Option EOD Summary or licensed OPRA-derived vendor** | Required for the actual contract chain: point-in-time bid/ask, volume, previous-settlement open interest, IV, Greeks, and liquidity flags. Quote and customer-display/retention rights pending. Do not pretend the underlying-level sentiment file is a full chain. |
@@ -60,10 +59,11 @@ The options research contract is
    post-EOD freshness checks in `ingestion.watchdog` are the pattern; verify what the existing US
    checks already cover before adding.
 2. **Tiingo provider (first real step):** new adapter in `packages/market_data/providers/`
-   implementing the existing `MarketDataProvider` interface; registry flip for US EOD; Yahoo
-   demoted to automatic fallback + cross-check. Config via env (e.g. `TIINGO_API_KEY` on
-   `bulls.core.config.Settings`) — **never hardcode a key, never commit one**. The account/key
-   must belong to this business (see licensing note below).
+   implementing the existing `MarketDataProvider` interface; registry flip for authorized internal
+   US EOD. Customer-facing reads fail closed unless the configured authorization explicitly permits
+   display/redistribution. Yahoo is not an automatic public fallback. Config via env (e.g.
+   `TIINGO_API_KEY` on `bulls.core.config.Settings`) — **never hardcode a key, never commit one**.
+   The account/key must belong to this business (see licensing note below).
 3. **Backfill reconciliation:** before flipping, reconcile Tiingo vs stored Yahoo bars on the 367
    ready symbols (close/adjusted-close/volume tolerances; flag corporate-action disagreements).
    Store the reconciliation report; omit-over-mislead applies to discrepancies.

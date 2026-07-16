@@ -17,7 +17,7 @@ import uuid
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from api.institutional_research.schemas import CatalystCalendarOut, CatalystEven
 from api.research_access import bind_research_tenant_context
 from bulls.analytics.catalysts import (
     CatalystDraft,
+    PeriodicFilingEvidence,
     dse_events_from_announcement,
     us_report_window_from_filings,
 )
@@ -34,6 +35,44 @@ from bulls.core.models.research import CatalystEvent
 
 DSE_ANNOUNCEMENT_LOOKBACK_DAYS = 180
 CALENDAR_PAST_GRACE_DAYS = 7
+DSE_ANNOUNCEMENT_ARCHIVE_URL = "https://www.dsebd.org/old_news.php"
+
+
+def _dse_announcement_url(published_at: dt.date) -> str:
+    day = published_at.isoformat()
+    return (
+        f"{DSE_ANNOUNCEMENT_ARCHIVE_URL}?startDate={day}&endDate={day}"
+        "&criteria=4&archive=news"
+    )
+
+
+def _catalyst_upsert_statement(rows: list[dict[str, Any]]):
+    stmt = pg_insert(CatalystEvent).values(rows)
+    return stmt.on_conflict_do_update(
+        constraint="uq_research_catalyst_source_event",
+        set_={
+            "title": stmt.excluded.title,
+            "timing_kind": stmt.excluded.timing_kind,
+            "confirmed_date": stmt.excluded.confirmed_date,
+            "window_start": stmt.excluded.window_start,
+            "window_end": stmt.excluded.window_end,
+            "status": case(
+                (
+                    CatalystEvent.status == "cancelled",
+                    CatalystEvent.status,
+                ),
+                else_=stmt.excluded.status,
+            ),
+            "confidence": stmt.excluded.confidence,
+            "source_type": stmt.excluded.source_type,
+            "source_url": stmt.excluded.source_url,
+            "known_at": stmt.excluded.known_at,
+            "expected_evidence": stmt.excluded.expected_evidence,
+            "details": stmt.excluded.details,
+            "dedupe_key": stmt.excluded.dedupe_key,
+            "updated_at": func.now(),
+        },
+    )
 
 
 async def _eligible_codes(session: AsyncSession, market: str) -> list[str]:
@@ -79,6 +118,7 @@ async def _dse_drafts(session: AsyncSession, market: str, today: dt.date) -> lis
                 headline=headline,
                 details=details,
                 source_ref=f"announcement:{key}",
+                source_url=_dse_announcement_url(published_at),
             )
         )
     return drafts
@@ -90,12 +130,25 @@ async def _us_drafts(session: AsyncSession, market: str, today: dt.date) -> list
         return []
     filings = await session.execute(
         select(
-            SecFiling.code, SecFiling.form, SecFiling.filing_date, SecFiling.accession_number
+            SecFiling.code,
+            SecFiling.form,
+            SecFiling.filing_date,
+            SecFiling.accession_number,
+            SecFiling.accepted_at,
+            SecFiling.filing_url,
         ).where(SecFiling.market == market, SecFiling.code.in_(codes))
     )
-    by_code: dict[str, list[tuple[str, dt.date, str]]] = defaultdict(list)
-    for code, form, filing_date, accession in filings:
-        by_code[code].append((form, filing_date, accession))
+    by_code: dict[str, list[PeriodicFilingEvidence]] = defaultdict(list)
+    for code, form, filing_date, accession, accepted_at, filing_url in filings:
+        by_code[code].append(
+            PeriodicFilingEvidence(
+                form=form,
+                filing_date=filing_date,
+                accession_number=accession,
+                accepted_at=accepted_at,
+                source_url=filing_url,
+            )
+        )
     drafts: list[CatalystDraft] = []
     for code, history in by_code.items():
         draft = us_report_window_from_filings(
@@ -125,32 +178,25 @@ async def collect_catalyst_events(
             drafts = await _us_drafts(session, market, today)
 
         rows = []
-        seen: set[str] = set()
+        seen: set[tuple[str, str, str, str]] = set()
         for draft in drafts:
-            key = draft.dedupe_key(tenant_id)
-            if key in seen:
+            identity = (draft.market, draft.code, draft.event_type, draft.source_ref)
+            if identity in seen:
                 continue
-            seen.add(key)
+            seen.add(identity)
+            key = draft.dedupe_key(tenant_id)
+            ends_at = draft.confirmed_date or draft.window_end
             rows.append(
                 {
                     "id": uuid.uuid4(),
                     "tenant_id": tenant_id,
                     "dedupe_key": key,
+                    "status": "occurred" if ends_at and ends_at < today else "scheduled",
                     **draft.model_dump(),
                 }
             )
         if rows:
-            stmt = pg_insert(CatalystEvent).values(rows)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["dedupe_key"],
-                set_={
-                    "title": stmt.excluded.title,
-                    "expected_evidence": stmt.excluded.expected_evidence,
-                    "details": stmt.excluded.details,
-                    "source_url": stmt.excluded.source_url,
-                },
-            )
-            await session.execute(stmt)
+            await session.execute(_catalyst_upsert_statement(rows))
 
         occurred = await session.execute(
             update(CatalystEvent)

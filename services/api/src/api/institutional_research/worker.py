@@ -37,26 +37,39 @@ _TENANTS_DIR = Path(__file__).resolve().parents[5] / "tenants"
 _SYSTEM_USER_ID = 0
 
 
-def research_collection_targets(tenants: Iterable[Tenant]) -> list[tuple[str, str]]:
+def research_collection_targets(
+    tenants: Iterable[Tenant],
+    *,
+    market: str | None = None,
+) -> list[tuple[str, str]]:
     """(tenant, market) pairs whose Atlas product is open; closed tenants are never scanned."""
     return [
         (tenant.name, tenant.market)
         for tenant in tenants
         if tenant.research_access == "authenticated"
+        and (market is None or tenant.market == market)
     ]
 
 
-async def collect_all_catalysts(ctx) -> None:
-    """Refresh tenant-shared catalyst events after each market's post-close data settles."""
+async def collect_market_catalysts(ctx, market: str) -> None:
+    """Refresh one market only; the DSE and US schedules must never rescan each other."""
     registry = TenantRegistry.from_dir(_TENANTS_DIR, default=get_settings().default_tenant)
-    for tenant_id, market in research_collection_targets(registry.all()):
+    for tenant_id, tenant_market in research_collection_targets(registry.all(), market=market):
         try:
             result = await collect_catalyst_events(
-                tenant_id=tenant_id, market=market, user_id=_SYSTEM_USER_ID
+                tenant_id=tenant_id, market=tenant_market, user_id=_SYSTEM_USER_ID
             )
             log.info("catalyst collection: %s", result)
         except Exception:
-            log.exception("catalyst collection failed for %s/%s", tenant_id, market)
+            log.exception("catalyst collection failed for %s/%s", tenant_id, tenant_market)
+
+
+async def collect_dse_catalysts(ctx) -> None:
+    await collect_market_catalysts(ctx, "DSE")
+
+
+async def collect_us_catalysts(ctx) -> None:
+    await collect_market_catalysts(ctx, "US")
 
 
 async def _schedule_next(ctx, policy: ResearchAutomationPolicy) -> None:
@@ -203,10 +216,10 @@ async def startup(ctx) -> None:
 class WorkerSettings:
     functions: ClassVar = [run_research_lifecycle]
     # 14:10 UTC follows the DSE EOD chain (ends 13:50); 22:30 UTC follows the US close and the
-    # bulk of same-day EDGAR acceptance. Collection is idempotent, so overlap is harmless.
+    # bulk of same-day EDGAR acceptance. Each job is market-specific.
     cron_jobs: ClassVar = [
-        cron(collect_all_catalysts, hour=14, minute=10, name="catalysts_post_dse"),
-        cron(collect_all_catalysts, hour=22, minute=30, name="catalysts_post_us"),
+        cron(collect_dse_catalysts, hour=14, minute=10, name="catalysts_post_dse"),
+        cron(collect_us_catalysts, hour=22, minute=30, name="catalysts_post_us"),
     ]
     on_startup: ClassVar = startup
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)

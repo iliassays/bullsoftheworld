@@ -16,14 +16,24 @@ import datetime as dt
 import hashlib
 import itertools
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from statistics import median
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 US_REPORT_WINDOW_HALF_SPAN_DAYS = 12
-_US_PERIODIC_FORMS = {"10-K", "10-Q", "10-K/A", "10-Q/A", "20-F", "40-F"}
+_US_PERIODIC_FORMS = {"10-K", "10-Q", "20-F", "40-F"}
 _MIN_CADENCE_FILINGS = 3
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodicFilingEvidence:
+    form: str
+    filing_date: dt.date
+    accession_number: str
+    accepted_at: dt.datetime | None
+    source_url: str
 
 
 class CatalystDraft(BaseModel):
@@ -83,6 +93,15 @@ def _parse_date(value: Any) -> dt.date | None:
 def _known_at(published_at: dt.date) -> dt.datetime:
     """DSE announcements carry only a publication date; the day end is the honest upper bound."""
     return dt.datetime.combine(published_at, dt.time(23, 59), tzinfo=dt.UTC)
+
+
+def _filing_known_at(filing: PeriodicFilingEvidence) -> dt.datetime:
+    """Use exact EDGAR acceptance time, or filing-day end when legacy evidence lacks it."""
+    if filing.accepted_at is None:
+        return dt.datetime.combine(filing.filing_date, dt.time(23, 59, 59), tzinfo=dt.UTC)
+    if filing.accepted_at.tzinfo is None:
+        return filing.accepted_at.replace(tzinfo=dt.UTC)
+    return filing.accepted_at.astimezone(dt.UTC)
 
 
 def dse_events_from_announcement(
@@ -180,22 +199,29 @@ def us_report_window_from_filings(
     *,
     market: str,
     code: str,
-    periodic_filings: Iterable[tuple[str, dt.date, str]],
+    periodic_filings: Iterable[PeriodicFilingEvidence],
     as_of: dt.date,
 ) -> CatalystDraft | None:
     """Infer the next periodic-report window from historical filing cadence.
 
-    `periodic_filings` is (form, filing_date, accession_number) history. The inference requires at
-    least three periodic filings, uses the median gap between consecutive filings, and always emits
-    a window with `inferred_cadence` confidence — never a confirmed date.
+    Only base periodic forms knowable by `as_of` participate. Amendments do not create a new
+    reporting cadence. The inference requires at least three filings, uses the median gap between
+    consecutive filings, and emits one window from the latest official filing. A stale missed
+    window is not rolled forward into another unsupported forecast.
     """
     rows = sorted(
-        (row for row in periodic_filings if row[0].upper() in _US_PERIODIC_FORMS),
-        key=lambda row: row[1],
+        (
+            row
+            for row in periodic_filings
+            if row.form.upper() in _US_PERIODIC_FORMS
+            and row.filing_date <= as_of
+            and _filing_known_at(row).date() <= as_of
+        ),
+        key=lambda row: (row.filing_date, _filing_known_at(row), row.accession_number),
     )
     if len(rows) < _MIN_CADENCE_FILINGS:
         return None
-    dates = [row[1] for row in rows]
+    dates = [row.filing_date for row in rows]
     gaps = [(later - earlier).days for earlier, later in itertools.pairwise(dates)]
     positive_gaps = [gap for gap in gaps if gap > 0]
     if not positive_gaps:
@@ -204,10 +230,8 @@ def us_report_window_from_filings(
     if not 30 <= cadence_days <= 400:
         return None
 
-    last_form, last_date, last_accession = rows[-1]
-    center = last_date + dt.timedelta(days=cadence_days)
-    while center + dt.timedelta(days=US_REPORT_WINDOW_HALF_SPAN_DAYS) < as_of:
-        center += dt.timedelta(days=cadence_days)
+    latest = rows[-1]
+    center = latest.filing_date + dt.timedelta(days=cadence_days)
     half_span = dt.timedelta(days=US_REPORT_WINDOW_HALF_SPAN_DAYS)
     return CatalystDraft(
         market=market,
@@ -219,8 +243,9 @@ def us_report_window_from_filings(
         window_end=center + half_span,
         confidence="inferred_cadence",
         source_type="sec_filing_cadence",
-        source_ref=last_accession,
-        known_at=dt.datetime.combine(as_of, dt.time(0, 0), tzinfo=dt.UTC),
+        source_ref=latest.accession_number,
+        source_url=latest.source_url,
+        known_at=_filing_known_at(latest),
         expected_evidence=(
             "Next 10-K/10-Q: revenue and margin trajectory, liquidity, share count, and any "
             "going-concern or control language changes versus the prior period."
@@ -228,7 +253,7 @@ def us_report_window_from_filings(
         details={
             "cadence_days": cadence_days,
             "observed_filings": len(rows),
-            "last_form": last_form,
-            "last_filing_date": last_date.isoformat(),
+            "last_form": latest.form,
+            "last_filing_date": latest.filing_date.isoformat(),
         },
     )

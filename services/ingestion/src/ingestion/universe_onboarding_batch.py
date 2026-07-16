@@ -67,8 +67,16 @@ async def run_batch(
     rerun_completed: bool = False,
     continue_on_failure: bool = False,
 ) -> dict[str, Any]:
-    files = selected_cohort_files(index_path, band=band, max_cohorts=max_cohorts)
-    summary: dict[str, Any] = {"requested_cohorts": len(files), "completed": [], "skipped": [], "failed": []}
+    # Select the full band, then apply the bound to unfinished cohorts. Applying the limit before
+    # completion checks permanently pins a recurring job to `*-001` after that manifest completes.
+    files = selected_cohort_files(index_path, band=band, max_cohorts=None)
+    summary: dict[str, Any] = {
+        "candidate_cohorts": len(files),
+        "requested_cohorts": 0,
+        "completed": [],
+        "skipped": [],
+        "failed": [],
+    }
     for path, expected_hash in files:
         manifest = load_cohort(path, "US")
         if expected_hash and manifest.manifest_sha256 != expected_hash:
@@ -76,6 +84,9 @@ async def run_batch(
         if not rerun_completed and await _already_completed(manifest):
             summary["skipped"].append({"file": path.name, "reason": "already_completed"})
             continue
+        if max_cohorts is not None and summary["requested_cohorts"] >= max_cohorts:
+            break
+        summary["requested_cohorts"] += 1
         try:
             result = await run_onboarding(manifest, fetch=fetch, promote=False)
             summary["completed"].append({"file": path.name, **result})

@@ -4,6 +4,7 @@ import {
   confidenceLabel,
   filterEvents,
   groupByDate,
+  statusLabel,
   timingLabel,
   type CatalystEvent,
 } from "./model";
@@ -81,5 +82,24 @@ describe("confidenceLabel", () => {
   it("distinguishes official confirmation from cadence inference", () => {
     expect(confidenceLabel("official_confirmed")).toBe("Official");
     expect(confidenceLabel("inferred_cadence")).toContain("Inferred");
+  });
+});
+
+describe("statusLabel", () => {
+  it("distinguishes upcoming, completed dates, elapsed windows, and cancellations", () => {
+    expect(statusLabel(event({ status: "scheduled" }))).toBe("Upcoming");
+    expect(statusLabel(event({ status: "occurred" }))).toBe("Occurred");
+    expect(
+      statusLabel(
+        event({
+          status: "occurred",
+          timingKind: "window",
+          confirmedDate: null,
+          windowStart: "2026-07-01",
+          windowEnd: "2026-07-10",
+        }),
+      ),
+    ).toBe("Window elapsed");
+    expect(statusLabel(event({ status: "cancelled" }))).toBe("Cancelled");
   });
 });
