@@ -37,12 +37,14 @@ from bulls.analytics.research_strategy import STRATEGIES
 from bulls.core.models import (
     DailyBar,
     ResearchAutomationPolicy,
+    ResearchOutcomeObservation,
     ResearchShadowPortfolio,
+    ResearchShadowSnapshot,
     ResearchWorkspace,
 )
 from bulls.market_data.calendar import is_trading_day, market_close_on, market_timezone
 
-LIFECYCLE_VERSION = "atlas-lifecycle-v3"
+LIFECYCLE_VERSION = "atlas-lifecycle-v4"
 # First data-gated research attempt after the exchange close. The worker refuses stale bars or
 # analytics and retries cheaply, so this is an earliest-safe attempt rather than an assertion that
 # the provider has already published. DSE's early EOD recovery starts at the same 17:00 BDT slot.
@@ -183,6 +185,37 @@ def _research_fingerprint(candidate: Any) -> str:
             "evidence": candidate.evidence.model_dump(mode="json"),
         }
     )
+
+
+def target_weight_changes(
+    previous: dict[str, Any], current: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Describe material target transitions without presenting them as executed trades."""
+
+    changes: list[dict[str, Any]] = []
+    for code in sorted(set(previous) | set(current)):
+        before = float(previous.get(code, 0) or 0)
+        after = float(current.get(code, 0) or 0)
+        if abs(after - before) < 0.000001:
+            continue
+        if before <= 0 < after:
+            action = "entry_target"
+        elif before > 0 >= after:
+            action = "exit_target"
+        elif after > before:
+            action = "increase_target"
+        else:
+            action = "reduce_target"
+        changes.append(
+            {
+                "code": code,
+                "previous_weight": before,
+                "target_weight": after,
+                "change": after - before,
+                "action": action,
+            }
+        )
+    return sorted(changes, key=lambda item: (-abs(item["change"]), item["code"]))
 
 
 async def execute_research_lifecycle(
@@ -385,8 +418,36 @@ async def execute_research_lifecycle(
             shadow_created = True
         except (LookupError, ValueError) as exc:
             shadow_error = str(exc)
+    previous_snapshot = None
+    if managed_portfolio is not None:
+        previous_snapshot = await session.scalar(
+            select(ResearchShadowSnapshot)
+            .where(
+                ResearchShadowSnapshot.portfolio_id == managed_portfolio.id,
+                ResearchShadowSnapshot.organization_id == workspace.organization_id,
+                ResearchShadowSnapshot.tenant_id == workspace.tenant_id,
+                ResearchShadowSnapshot.market == workspace.market,
+            )
+            .order_by(ResearchShadowSnapshot.as_of_date.desc())
+            .limit(1)
+        )
+    matured_before = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ResearchOutcomeObservation)
+            .where(
+                ResearchOutcomeObservation.workspace_id == workspace.id,
+                ResearchOutcomeObservation.organization_id == workspace.organization_id,
+                ResearchOutcomeObservation.tenant_id == workspace.tenant_id,
+                ResearchOutcomeObservation.market == workspace.market,
+                ResearchOutcomeObservation.status == "matured",
+            )
+        )
+        or 0
+    )
     portfolios = await reconcile_shadow_portfolios(session, workspace=workspace)
     calibration = await refresh_outcome_observations(session, workspace=workspace)
+    newly_matured = max(calibration.matured - matured_before, 0)
     managed = next(
         (
             item
@@ -396,6 +457,51 @@ async def execute_research_lifecycle(
         ),
         None,
     )
+    new_snapshots: list[ResearchShadowSnapshot] = []
+    if managed is not None and previous_snapshot is not None:
+        new_snapshots = list(
+            await session.scalars(
+                select(ResearchShadowSnapshot)
+                .where(
+                    ResearchShadowSnapshot.portfolio_id == managed.id,
+                    ResearchShadowSnapshot.organization_id == workspace.organization_id,
+                    ResearchShadowSnapshot.tenant_id == workspace.tenant_id,
+                    ResearchShadowSnapshot.market == workspace.market,
+                    ResearchShadowSnapshot.as_of_date > previous_snapshot.as_of_date,
+                )
+                .order_by(ResearchShadowSnapshot.as_of_date)
+            )
+        )
+    new_executions = [
+        {
+            **trade,
+            "date": str(trade.get("date") or snapshot.as_of_date.isoformat()),
+            "session_number": snapshot.session_number,
+        }
+        for snapshot in new_snapshots
+        for trade in snapshot.trades
+    ]
+    new_risk_interventions = [
+        {
+            **intervention,
+            "date": snapshot.as_of_date.isoformat(),
+            "session_number": snapshot.session_number,
+        }
+        for snapshot in new_snapshots
+        for intervention in snapshot.risk_interventions
+    ]
+    target_changes: list[dict[str, Any]] = []
+    prior_targets = previous_snapshot.target_weights if previous_snapshot is not None else {}
+    for snapshot in new_snapshots:
+        target_changes.extend(
+            {
+                **change,
+                "date": snapshot.as_of_date.isoformat(),
+                "session_number": snapshot.session_number,
+            }
+            for change in target_weight_changes(prior_targets, snapshot.target_weights)
+        )
+        prior_targets = snapshot.target_weights
     _add_step(
         session,
         run=run,
@@ -411,6 +517,14 @@ async def execute_research_lifecycle(
                 if managed and managed.last_evaluated_on
                 else None
             ),
+            "previous_evaluated_on": (
+                previous_snapshot.as_of_date.isoformat() if previous_snapshot else None
+            ),
+            "sessions_advanced": len(new_snapshots),
+            "new_execution_count": len(new_executions),
+            "new_executions": new_executions,
+            "target_changes": target_changes,
+            "new_risk_interventions": new_risk_interventions,
             "promotion": managed.configuration.get("promotion") if managed else None,
             "error": shadow_error,
         },
@@ -423,6 +537,7 @@ async def execute_research_lifecycle(
         output={
             "pending": calibration.pending,
             "matured": calibration.matured,
+            "newly_matured": newly_matured,
             "bucket_count": len(calibration.buckets),
         },
     )
@@ -437,11 +552,15 @@ async def execute_research_lifecycle(
             "research_decisions": decision_counts,
             "backtest_validation_status": summary.get("validation_status"),
             "shadow_portfolio_id": str(managed.id) if managed else None,
+            "shadow_sessions_advanced": len(new_snapshots),
+            "new_paper_executions": len(new_executions),
+            "target_changes": len(target_changes),
             "promotion_status": (
                 managed.configuration.get("promotion", {}).get("status") if managed else None
             ),
             "calibration_pending": calibration.pending,
             "calibration_matured": calibration.matured,
+            "newly_matured_outcomes": newly_matured,
         },
     }
     run.status = "succeeded"

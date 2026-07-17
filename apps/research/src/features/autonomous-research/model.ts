@@ -14,6 +14,26 @@ export interface ShadowExecution {
   reason: string;
 }
 
+export interface LifecycleRunDelta {
+  researchChanges: Array<{
+    ticker: string;
+    status: string;
+    action: "researched" | "unchanged" | "skipped";
+  }>;
+  sessionsAdvanced: number;
+  executions: ShadowExecution[];
+  targetChanges: Array<{
+    code: string;
+    previousWeight: number;
+    targetWeight: number;
+    action: "entry_target" | "exit_target" | "increase_target" | "reduce_target";
+    date: string;
+    sessionNumber: number;
+  }>;
+  riskInterventions: number;
+  calibrationMatured: number;
+}
+
 export interface AutonomousDecision {
   status: "qualified" | "monitor" | "rejected" | "abstained";
   confidence: number;
@@ -116,49 +136,122 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function execution(
+  raw: unknown,
+  options: { id: string; fallbackDate: string; fallbackSession: number },
+): ShadowExecution | null {
+  const { id, fallbackDate, fallbackSession } = options;
+  const trade = record(raw);
+  const date = text(trade?.date, fallbackDate);
+  const code = text(trade?.code).toUpperCase();
+  const side = text(trade?.side);
+  const quantity = numeric(trade?.quantity, Number.NaN);
+  const fillPrice = numeric(trade?.fill_price, Number.NaN);
+  const grossValue = numeric(trade?.gross_value, Number.NaN);
+  const fee = numeric(trade?.fee, Number.NaN);
+  if (
+    !trade ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    !code ||
+    (side !== "buy" && side !== "sell") ||
+    !Number.isFinite(quantity) || quantity <= 0 ||
+    !Number.isFinite(fillPrice) || fillPrice <= 0 ||
+    !Number.isFinite(grossValue) || grossValue <= 0 ||
+    !Number.isFinite(fee) || fee < 0
+  ) return null;
+  return {
+    id,
+    sessionNumber: numeric(trade.session_number, fallbackSession),
+    date,
+    code,
+    side,
+    quantity,
+    fillPrice,
+    grossValue,
+    fee,
+    cashImpact: side === "buy" ? -(grossValue + fee) : grossValue - fee,
+    reason: text(trade.reason, "Systematic target rebalance"),
+  };
+}
+
 export function shadowExecutions(portfolio: ShadowPortfolio | undefined): ShadowExecution[] {
   if (!portfolio) return [];
 
   return portfolio.snapshots
     .flatMap((snapshot) => snapshot.trades.flatMap((raw, index) => {
-      const trade = record(raw);
-      const date = text(trade?.date, snapshot.asOfDate);
-      const code = text(trade?.code).toUpperCase();
-      const side = text(trade?.side);
-      const quantity = numeric(trade?.quantity, Number.NaN);
-      const fillPrice = numeric(trade?.fill_price, Number.NaN);
-      const grossValue = numeric(trade?.gross_value, Number.NaN);
-      const fee = numeric(trade?.fee, Number.NaN);
-      if (
-        !trade ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-        !code ||
-        (side !== "buy" && side !== "sell") ||
-        !Number.isFinite(quantity) || quantity <= 0 ||
-        !Number.isFinite(fillPrice) || fillPrice <= 0 ||
-        !Number.isFinite(grossValue) || grossValue <= 0 ||
-        !Number.isFinite(fee) || fee < 0
-      ) return [];
-
-      return [{
+      const parsed = execution(raw, {
         id: `${snapshot.id}:${index}`,
-        sessionNumber: snapshot.sessionNumber,
-        date,
-        code,
-        side,
-        quantity,
-        fillPrice,
-        grossValue,
-        fee,
-        cashImpact: side === "buy" ? -(grossValue + fee) : grossValue - fee,
-        reason: text(trade.reason, "Systematic target rebalance"),
-      } satisfies ShadowExecution];
+        fallbackDate: snapshot.asOfDate,
+        fallbackSession: snapshot.sessionNumber,
+      });
+      return parsed ? [parsed] : [];
     }))
     .sort((left, right) =>
       right.date.localeCompare(left.date) ||
       right.sessionNumber - left.sessionNumber ||
       left.code.localeCompare(right.code),
     );
+}
+
+export function lifecycleRunDelta(run: ResearchRun | undefined): LifecycleRunDelta {
+  const research = run?.steps.find((step) => step.kind === "evidence_changed_research")?.output;
+  const shadow = run?.steps.find((step) => step.kind === "forward_shadow_reconciliation")?.output;
+  const calibration = run?.steps.find((step) => step.kind === "outcome_calibration")?.output;
+  const researchChanges = Array.isArray(research?.companies)
+    ? research.companies.flatMap((raw) => {
+        const item = record(raw);
+        const action = text(item?.action);
+        const ticker = text(item?.ticker).toUpperCase();
+        if (!item || !ticker || !["researched", "unchanged", "skipped"].includes(action)) return [];
+        return [{
+          ticker,
+          status: text(item.status, "unknown"),
+          action: action as LifecycleRunDelta["researchChanges"][number]["action"],
+        }];
+      })
+    : [];
+  const executions = Array.isArray(shadow?.new_executions)
+    ? shadow.new_executions.flatMap((raw, index) => {
+        const parsed = execution(raw, {
+          id: `${run?.id ?? "run"}:execution:${index}`,
+          fallbackDate: "",
+          fallbackSession: 0,
+        });
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  const validTargetActions = [
+    "entry_target",
+    "exit_target",
+    "increase_target",
+    "reduce_target",
+  ];
+  const targetChanges = Array.isArray(shadow?.target_changes)
+    ? shadow.target_changes.flatMap((raw) => {
+        const item = record(raw);
+        const action = text(item?.action);
+        const code = text(item?.code).toUpperCase();
+        if (!item || !code || !validTargetActions.includes(action)) return [];
+        return [{
+          code,
+          previousWeight: numeric(item.previous_weight),
+          targetWeight: numeric(item.target_weight),
+          action: action as LifecycleRunDelta["targetChanges"][number]["action"],
+          date: text(item.date),
+          sessionNumber: numeric(item.session_number),
+        }];
+      })
+    : [];
+  return {
+    researchChanges,
+    sessionsAdvanced: numeric(shadow?.sessions_advanced),
+    executions,
+    targetChanges,
+    riskInterventions: Array.isArray(shadow?.new_risk_interventions)
+      ? shadow.new_risk_interventions.length
+      : 0,
+    calibrationMatured: numeric(calibration?.newly_matured),
+  };
 }
 
 function financialLenses(value: unknown): AutonomousDecision["lenses"] {

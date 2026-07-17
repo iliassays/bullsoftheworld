@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from api.institutional_research.lifecycle import (
     expected_lifecycle_session,
     next_lifecycle_run_at,
+    target_weight_changes,
     upsert_automation_policy,
 )
 from api.institutional_research.schemas import AutomationPolicyUpdate
@@ -50,6 +51,20 @@ def test_expected_session_advances_only_after_the_research_slot() -> None:
 
     assert before == dt.date(2026, 7, 14)
     assert after == dt.date(2026, 7, 15)
+
+
+def test_target_weight_changes_distinguish_targets_from_executions() -> None:
+    changes = target_weight_changes(
+        {"EXIT": 0.10, "REDUCE": 0.20, "INCREASE": 0.05},
+        {"ENTRY": 0.15, "REDUCE": 0.10, "INCREASE": 0.12},
+    )
+
+    assert {item["code"]: item["action"] for item in changes} == {
+        "ENTRY": "entry_target",
+        "EXIT": "exit_target",
+        "INCREASE": "increase_target",
+        "REDUCE": "reduce_target",
+    }
 
 
 def test_automation_policy_rejects_more_research_than_queue_capacity() -> None:

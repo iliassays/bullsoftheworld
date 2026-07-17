@@ -1320,6 +1320,107 @@
     font-size: 11px;
   }
 
+  .lifecycle-status > header .ds-select {
+    width: min(250px, 38vw);
+    margin-left: auto;
+  }
+
+  .lifecycle-change-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lifecycle-change-kpis > span {
+    display: grid;
+    min-height: 58px;
+    align-content: center;
+    gap: 4px;
+    border-right: 1px solid var(--border);
+    padding: 10px 14px;
+  }
+
+  .lifecycle-change-kpis > span:last-child {
+    border-right: 0;
+  }
+
+  .lifecycle-change-kpis small,
+  .lifecycle-change-grid h3 {
+    color: var(--text-faint);
+    font-size: 8px;
+    text-transform: uppercase;
+  }
+
+  .lifecycle-change-kpis strong {
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  .lifecycle-change-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lifecycle-change-grid > div {
+    min-width: 0;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 14px;
+  }
+
+  .lifecycle-change-grid > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .lifecycle-change-grid > div:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .lifecycle-change-grid h3 {
+    margin: 0 0 9px;
+  }
+
+  .lifecycle-change-grid p,
+  .lifecycle-change-grid > div > small {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 9px;
+    line-height: 1.5;
+  }
+
+  .lifecycle-change-list {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .lifecycle-change-list > span {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+  }
+
+  .lifecycle-change-list > span:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .lifecycle-change-list strong {
+    color: var(--text);
+    font-size: 10px;
+  }
+
+  .lifecycle-change-list small {
+    overflow-wrap: anywhere;
+    color: var(--text-muted);
+    font-size: 9px;
+    text-align: right;
+  }
+
   .lifecycle-guardrails dl {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1361,8 +1462,38 @@
 
   @media (max-width: 620px) {
     .lifecycle-summary,
-    .lifecycle-guardrails dl {
+    .lifecycle-guardrails dl,
+    .lifecycle-change-kpis,
+    .lifecycle-change-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .lifecycle-status > header .ds-select {
+      width: 100%;
+      margin-left: 0;
+    }
+
+    .lifecycle-change-kpis > span:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .lifecycle-change-kpis > span:nth-child(-n + 2) {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .lifecycle-change-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .lifecycle-change-grid > div,
+    .lifecycle-change-grid > div:nth-child(2n),
+    .lifecycle-change-grid > div:nth-last-child(-n + 2) {
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .lifecycle-change-grid > div:last-child {
+      border-bottom: 0;
     }
 
     .lifecycle-summary > span:nth-child(2),

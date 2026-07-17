@@ -3,6 +3,7 @@ import {
   Check,
   Clock3,
   DatabaseZap,
+  History,
   Play,
   RefreshCw,
   Save,
@@ -16,9 +17,11 @@ import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import {
   useAutomationPolicy,
   useConfigureAutomation,
+  useResearchRun,
   useResearchRuns,
   useRunLifecycle,
 } from "./hooks";
+import { lifecycleRunDelta } from "./model";
 
 const CAP_OPTIONS = [
   { value: "all", label: "All capitalizations" },
@@ -49,6 +52,18 @@ function statusTone(status: string | null | undefined) {
   return "neutral" as const;
 }
 
+function money(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: researchDeployment.currency,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function targetAction(value: string): string {
+  return value.replace("_target", "").replace("_", " ");
+}
+
 export function LifecycleControlPage() {
   const workspace = useResearchWorkspaces().data?.[0];
   const policy = useAutomationPolicy(workspace?.id);
@@ -64,6 +79,7 @@ export function LifecycleControlPage() {
   const [initialCapital, setInitialCapital] = useState(
     researchDeployment.market === "DSE" ? 10_000_000 : 100_000,
   );
+  const [selectedRunId, setSelectedRunId] = useState("");
 
   useEffect(() => {
     if (!policy.data) return;
@@ -75,12 +91,26 @@ export function LifecycleControlPage() {
     setInitialCapital(policy.data.initialCapital);
   }, [policy.data]);
 
-  const latestLifecycle = useMemo(
-    () => runs.data?.find((run) => run.runKind === "lifecycle"),
+  const lifecycleRuns = useMemo(
+    () => runs.data?.filter((run) => run.runKind === "lifecycle") ?? [],
     [runs.data],
   );
-  const steps = new Map(latestLifecycle?.steps.map((step) => [step.kind, step]));
-  const summary = latestLifecycle?.parameters.summary as Record<string, unknown> | undefined;
+  const listedLifecycle = lifecycleRuns.find((run) => run.id === selectedRunId) ?? lifecycleRuns[0];
+  const runDetail = useResearchRun(workspace?.id, listedLifecycle?.id);
+  const selectedLifecycle = runDetail.data ?? listedLifecycle;
+  const steps = new Map(selectedLifecycle?.steps.map((step) => [step.kind, step]));
+  const summary = selectedLifecycle?.parameters.summary as Record<string, unknown> | undefined;
+  const delta = useMemo(() => lifecycleRunDelta(selectedLifecycle), [selectedLifecycle]);
+  const shadowStep = steps.get("forward_shadow_reconciliation");
+  const paperDeltaAvailable = Boolean(
+    shadowStep && Object.prototype.hasOwnProperty.call(shadowStep.output, "new_execution_count"),
+  );
+  const calibrationStep = steps.get("outcome_calibration");
+  const calibrationDeltaAvailable = Boolean(
+    calibrationStep && Object.prototype.hasOwnProperty.call(calibrationStep.output, "newly_matured"),
+  );
+  const researched = delta.researchChanges.filter((item) => item.action === "researched");
+  const unchangedResearch = delta.researchChanges.filter((item) => item.action === "unchanged").length;
   const invalidLimits = researchLimit > queueLimit;
   const failed = policy.isError || runs.isError;
 
@@ -131,20 +161,49 @@ export function LifecycleControlPage() {
 
         <main className="lifecycle-main">
           <section className="atlas-panel lifecycle-status">
-            <header><Clock3 aria-hidden="true" size={16} /><span><strong>Latest lifecycle</strong><small>{latestLifecycle ? displayDate(latestLifecycle.requestedAt) : "No lifecycle run recorded"}</small></span>{latestLifecycle && <StatusBadge tone={statusTone(latestLifecycle.status)}>{latestLifecycle.status}</StatusBadge>}</header>
+            <header><Clock3 aria-hidden="true" size={16} /><span><strong>Lifecycle run</strong><small>{selectedLifecycle ? displayDate(selectedLifecycle.requestedAt) : "No lifecycle run recorded"}</small></span>{lifecycleRuns.length > 0 && <SelectField label="Lifecycle history" onChange={setSelectedRunId} options={lifecycleRuns.map((run) => ({ value: run.id, label: `${displayDate(run.requestedAt)} · ${run.status}` }))} value={listedLifecycle?.id ?? ""} />}{selectedLifecycle && <StatusBadge tone={statusTone(selectedLifecycle.status)}>{selectedLifecycle.status}</StatusBadge>}</header>
             <div className="lifecycle-stages">
               {STAGES.map(([key, label], index) => {
                 const step = steps.get(key);
                 return <div className={`lifecycle-stage lifecycle-stage--${step?.status ?? "pending"}`} key={key}><span>{step?.status === "succeeded" ? <Check size={13} /> : index + 1}</span><strong>{label}</strong><small>{step?.status ?? "pending"}</small></div>;
               })}
             </div>
-            {latestLifecycle && <div className="lifecycle-summary">
+            {selectedLifecycle && <div className="lifecycle-summary">
               <span><small>Queue selected</small><strong>{typeof summary?.queue_selected === "number" ? summary.queue_selected : "—"}</strong></span>
               <span><small>Backtest</small><strong>{typeof summary?.backtest_validation_status === "string" ? summary.backtest_validation_status.replace(/_/g, " ") : "—"}</strong></span>
               <span><small>Paper gate</small><strong>{typeof summary?.promotion_status === "string" ? summary.promotion_status : "—"}</strong></span>
               <span><small>Matured outcomes</small><strong>{typeof summary?.calibration_matured === "number" ? summary.calibration_matured : "—"}</strong></span>
             </div>}
           </section>
+
+          {selectedLifecycle && <section className="atlas-panel lifecycle-changes">
+            <header><History aria-hidden="true" size={16} /><span><strong>What changed in this run</strong><small>Only deltas created by this lifecycle · targets are not executions</small></span></header>
+            <div className="lifecycle-change-kpis">
+              <span><small>Research updated</small><strong>{researched.length}</strong></span>
+              <span><small>Sessions advanced</small><strong>{paperDeltaAvailable ? delta.sessionsAdvanced : "—"}</strong></span>
+              <span><small>Paper executions</small><strong>{paperDeltaAvailable ? delta.executions.length : "—"}</strong></span>
+              <span><small>Outcomes matured</small><strong>{calibrationDeltaAvailable ? delta.calibrationMatured : "—"}</strong></span>
+            </div>
+            <div className="lifecycle-change-grid">
+              <div>
+                <h3>Research evidence changes</h3>
+                {researched.length > 0 ? <div className="lifecycle-change-list">{researched.map((item) => <span key={item.ticker}><strong>{item.ticker}</strong><small>{item.status}</small></span>)}</div> : <p>No company evidence changed enough to create a new research run.</p>}
+                {unchangedResearch > 0 && <small>{unchangedResearch} selected {unchangedResearch === 1 ? "company was" : "companies were"} unchanged and reused.</small>}
+              </div>
+              <div>
+                <h3>Paper fills created</h3>
+                {!paperDeltaAvailable ? <p>This historical run predates per-run execution deltas. Its complete fills remain in Portfolio intelligence → Execution ledger.</p> : delta.executions.length > 0 ? <div className="lifecycle-change-list">{delta.executions.map((trade) => <span key={trade.id}><strong>{trade.side.toUpperCase()} {trade.code}</strong><small>{trade.quantity.toLocaleString()} @ {money(trade.fillPrice)} · {trade.date}</small></span>)}</div> : <p>No paper trade was created by this run.</p>}
+              </div>
+              <div>
+                <h3>Next-session target changes</h3>
+                {!paperDeltaAvailable ? <p>Target deltas were not retained for this historical run.</p> : delta.targetChanges.length > 0 ? <div className="lifecycle-change-list">{delta.targetChanges.map((change, index) => <span key={`${change.date}:${change.sessionNumber}:${change.code}:${index}`}><strong>{change.code} · {targetAction(change.action)}</strong><small>{(change.previousWeight * 100).toFixed(1)}% → {(change.targetWeight * 100).toFixed(1)}% · {change.date}</small></span>)}</div> : <p>No target weight changed in this run.</p>}
+              </div>
+              <div>
+                <h3>Risk actions</h3>
+                <p>{!paperDeltaAvailable ? "Per-run risk deltas were not retained for this historical run." : delta.riskInterventions > 0 ? `${delta.riskInterventions} risk intervention${delta.riskInterventions === 1 ? "" : "s"} recorded.` : "No risk intervention fired in this run."}</p>
+              </div>
+            </div>
+          </section>}
 
           <section className="atlas-panel lifecycle-guardrails">
             <header><DatabaseZap aria-hidden="true" size={16} /><span><strong>Decision boundary</strong><small>No broker integration</small></span></header>

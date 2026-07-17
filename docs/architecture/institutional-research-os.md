@@ -531,7 +531,9 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   separate post-close slots. DSE makes its first data-gated attempt at 17:00 BDT and a freshness
   preflight refuses stale bars or analytics, retrying every 15 minutes while enabled. Automatic
   attempts collapse to one durable lifecycle per market session; an explicit operator rerun remains
-  separately auditable.
+  separately auditable. Lifecycle V4 also records the exact research changes, shadow sessions,
+  target transitions, paper executions, risk interventions, and matured outcomes created by each
+  run so operators can distinguish a new target from an executed fill.
 - **Promotion policy** is deterministic and advisory only. A strategy needs a historically eligible
   source backtest, at least 60 completed forward sessions, at least 10 executions, at least 2%
   benchmark-relative return, and no more than 15% maximum drawdown. Diagnostic source data always

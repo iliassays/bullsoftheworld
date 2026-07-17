@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ResearchRun, ShadowPortfolio } from "../../app/api-client";
-import { autonomousDecision, backtestResult, shadowExecutions } from "./model";
+import { autonomousDecision, backtestResult, lifecycleRunDelta, shadowExecutions } from "./model";
 
 const baseRun: ResearchRun = {
   id: "run-1",
@@ -104,6 +104,58 @@ describe("autonomous research JSON adapters", () => {
       expect.objectContaining({ code: "BSC", side: "buy", cashImpact: -12_060 }),
       expect.objectContaining({ code: "GP", side: "sell", cashImpact: 2_985 }),
     ]);
+  });
+
+  it("builds an explicit per-run research and paper-book delta", () => {
+    const delta = lifecycleRunDelta({
+      ...baseRun,
+      runKind: "lifecycle",
+      steps: [
+        {
+          ordinal: 1,
+          kind: "evidence_changed_research",
+          status: "succeeded",
+          metrics: {},
+          output: {
+            companies: [
+              { ticker: "BSC", status: "qualified", action: "researched" },
+              { ticker: "GP", status: "monitor", action: "unchanged" },
+            ],
+          },
+        },
+        {
+          ordinal: 3,
+          kind: "forward_shadow_reconciliation",
+          status: "succeeded",
+          metrics: {},
+          output: {
+            sessions_advanced: 1,
+            new_executions: [{ date: "2026-07-16", session_number: 1, code: "BSC", side: "buy", quantity: 100, fill_price: 120, gross_value: 12_000, fee: 60 }],
+            target_changes: [{ code: "GP", previous_weight: 0.1, target_weight: 0, action: "exit_target", date: "2026-07-16", session_number: 1 }],
+            new_risk_interventions: [{ rule: "position_cap" }],
+          },
+        },
+        {
+          ordinal: 4,
+          kind: "outcome_calibration",
+          status: "succeeded",
+          metrics: {},
+          output: { matured: 10, newly_matured: 2 },
+        },
+      ],
+    });
+
+    expect(delta).toMatchObject({
+      sessionsAdvanced: 1,
+      riskInterventions: 1,
+      calibrationMatured: 2,
+      researchChanges: [
+        { ticker: "BSC", status: "qualified", action: "researched" },
+        { ticker: "GP", status: "monitor", action: "unchanged" },
+      ],
+      targetChanges: [{ code: "GP", previousWeight: 0.1, targetWeight: 0, action: "exit_target", date: "2026-07-16", sessionNumber: 1 }],
+      executions: [expect.objectContaining({ code: "BSC", side: "buy", cashImpact: -12_060 })],
+    });
   });
 
   it("keeps validation gates separate from performance metrics", () => {
