@@ -24,8 +24,20 @@ def test_lifecycle_slots_follow_each_markets_post_close_data_window() -> None:
         "US", now=dt.datetime(2026, 7, 15, 20, tzinfo=dt.UTC)
     )
 
-    assert dse == dt.datetime(2026, 7, 15, 13, 30, tzinfo=dt.UTC)
+    assert dse == dt.datetime(2026, 7, 15, 11, 0, tzinfo=dt.UTC)
     assert us == dt.datetime(2026, 7, 15, 23, 30, tzinfo=dt.UTC)
+
+
+def test_dse_expected_session_opens_at_first_data_gated_attempt() -> None:
+    before = expected_lifecycle_session(
+        "DSE", now=dt.datetime(2026, 7, 15, 10, 59, tzinfo=dt.UTC)
+    )
+    after = expected_lifecycle_session(
+        "DSE", now=dt.datetime(2026, 7, 15, 11, 1, tzinfo=dt.UTC)
+    )
+
+    assert before == dt.date(2026, 7, 14)
+    assert after == dt.date(2026, 7, 15)
 
 
 def test_expected_session_advances_only_after_the_research_slot() -> None:

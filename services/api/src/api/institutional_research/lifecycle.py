@@ -42,9 +42,12 @@ from bulls.core.models import (
 )
 from bulls.market_data.calendar import is_trading_day, market_close_on, market_timezone
 
-LIFECYCLE_VERSION = "atlas-lifecycle-v2"
+LIFECYCLE_VERSION = "atlas-lifecycle-v3"
+# First data-gated research attempt after the exchange close. The worker refuses stale bars or
+# analytics and retries cheaply, so this is an earliest-safe attempt rather than an assertion that
+# the provider has already published. DSE's early EOD recovery starts at the same 17:00 BDT slot.
 _POST_CLOSE_DELAYS = {
-    "DSE": dt.timedelta(hours=5),
+    "DSE": dt.timedelta(hours=2, minutes=30),
     "US": dt.timedelta(hours=3, minutes=30),
 }
 
@@ -84,7 +87,7 @@ async def get_automation_policy(
 
 
 def next_lifecycle_run_at(market: str, *, now: dt.datetime | None = None) -> dt.datetime:
-    """Return the next market-session post-close slot in UTC."""
+    """Return the next market-session earliest-safe research attempt in UTC."""
 
     current = (now or dt.datetime.now(dt.UTC)).astimezone(dt.UTC)
     timezone = market_timezone(market)
@@ -108,7 +111,7 @@ def next_lifecycle_run_at(market: str, *, now: dt.datetime | None = None) -> dt.
 def expected_lifecycle_session(
     market: str, *, now: dt.datetime | None = None
 ) -> dt.date | None:
-    """Latest session whose configured post-close research slot has elapsed."""
+    """Latest session whose first data-gated research attempt has elapsed."""
 
     current = (now or dt.datetime.now(dt.UTC)).astimezone(dt.UTC)
     timezone = market_timezone(market)

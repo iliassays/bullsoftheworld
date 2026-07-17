@@ -35,6 +35,7 @@ from bulls.market_data.calendar import to_market_tz
 from ingestion.signals import factors, institutional, ownership, sec_filings, shorts, volume
 from ingestion.signals import market as market_wrap
 from ingestion.signals.agents import agent_identity, ensure_agents
+from ingestion.signals.confirmation import SignalConfirmationStore, state_is_confirmed
 from ingestion.signals.levels import BEAT, detect, render
 from ingestion.signals.publish import already_fired, publish_note
 
@@ -174,14 +175,26 @@ async def run_ownership_agents(market: str, *, tenant_id: str) -> dict[str, int]
     return {"symbols": len(codes), "published": published}
 
 
-async def run_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
-    """Flag unusual intraday volume vs the expected-by-now pace. Fires once per name per day."""
+async def run_volume_agent(
+    market: str,
+    *,
+    tenant_id: str,
+    confirmation_store: SignalConfirmationStore | None = None,
+    required_observations: int = 1,
+) -> dict[str, int]:
+    """Flag persistent unusual intraday volume versus expected-by-now pace.
+
+    Production supplies Redis and requires two distinct delayed snapshots. One-shot maintenance
+    calls retain the historical single-observation behavior unless they opt into confirmation.
+    The durable signal ledger still guarantees at most one publication per ticker and session.
+    """
     now = dt.datetime.now(dt.UTC)
     fraction = volume.session_fraction(now)
     today = to_market_tz(now).date()
     day = str(today)
     sm = get_sessionmaker()
     published = 0
+    awaiting_confirmation = 0
     async with sm() as session:
         agent_id = (await ensure_agents(session, tenant_id))[volume.BEAT]
         handle = agent_identity(tenant_id, volume.BEAT)[0]
@@ -231,6 +244,18 @@ async def run_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
                 cooldown_days=1,
             ):
                 continue
+            if confirmation_store is not None and not await state_is_confirmed(
+                confirmation_store,
+                key=(
+                    f"signals:confirm:v1:{tenant_id}:{market}:{code}:"
+                    f"{sig.event_type}:{today.isoformat()}"
+                ),
+                observed_at=as_of.astimezone(dt.UTC).isoformat(),
+                state=str(sig.payload.get("direction", "flat")),
+                required_observations=required_observations,
+            ):
+                awaiting_confirmation += 1
+                continue
             await publish_note(
                 session,
                 tenant_id=tenant_id,
@@ -248,7 +273,7 @@ async def run_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:
             )
             published += 1
         await session.commit()
-    return {"published": published}
+    return {"published": published, "awaiting_confirmation": awaiting_confirmation}
 
 
 async def run_eod_volume_agent(market: str, *, tenant_id: str) -> dict[str, int]:

@@ -35,6 +35,28 @@ log = logging.getLogger(__name__)
 _TENANTS_DIR = Path(__file__).resolve().parents[5] / "tenants"
 # System-triggered collection; catalyst rows are tenant-shared, so the RLS user id does not gate.
 _SYSTEM_USER_ID = 0
+_DATA_READINESS_RETRY = dt.timedelta(minutes=15)
+
+
+def lifecycle_execution_trigger(
+    trigger_key: str,
+    *,
+    scheduled: bool,
+    market: str,
+    latest_bar: dt.date,
+    latest_analytics: dt.date,
+) -> str:
+    """Collapse all automatic attempts for one completed market session into one durable run.
+
+    Operators retain unique trigger keys so an explicit manual rerun remains possible. Scheduled
+    attempts use the oldest fully available input date, preventing an early attempt, a retry, and
+    a previously deferred fallback from advancing the lifecycle more than once.
+    """
+
+    if not scheduled:
+        return trigger_key
+    completed_session = min(latest_bar, latest_analytics)
+    return f"session:{market}:{completed_session.isoformat()}"
 
 
 def research_collection_targets(
@@ -167,16 +189,38 @@ async def run_research_lifecycle(
                     f"latest bar {latest_bar}, latest analytics {latest_analytics}."
                 )
                 policy.next_run_at = (
-                    dt.datetime.now(dt.UTC) + dt.timedelta(minutes=30) if policy.enabled else None
+                    dt.datetime.now(dt.UTC) + _DATA_READINESS_RETRY if policy.enabled else None
                 )
                 await session.commit()
                 await _schedule_next(ctx, policy)
                 return "data-not-ready"
+            if latest_bar is None or latest_analytics is None:
+                # ``expected_session`` can be None before the first configured market slot. A
+                # manually scheduled policy still must never execute without both input families.
+                policy.last_run_status = "failed"
+                policy.last_completed_at = dt.datetime.now(dt.UTC)
+                policy.last_error = (
+                    "Research preflight refused missing bars or analytics: "
+                    f"latest bar {latest_bar}, latest analytics {latest_analytics}."
+                )
+                policy.next_run_at = (
+                    dt.datetime.now(dt.UTC) + _DATA_READINESS_RETRY if policy.enabled else None
+                )
+                await session.commit()
+                await _schedule_next(ctx, policy)
+                return "data-not-ready"
+            execution_trigger = lifecycle_execution_trigger(
+                trigger_key,
+                scheduled=scheduled,
+                market=market,
+                latest_bar=latest_bar,
+                latest_analytics=latest_analytics,
+            )
             run = await execute_research_lifecycle(
                 session,
                 workspace=workspace,
                 policy=policy,
-                trigger_key=trigger_key,
+                trigger_key=execution_trigger,
             )
             policy.last_run_status = run.status
             policy.last_completed_at = dt.datetime.now(dt.UTC)

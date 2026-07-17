@@ -14,7 +14,7 @@ Badged 🤖 auto · data note, delayed/as-of stamped. Public side only — never
 | Agent (handle) | Fires on | Cadence / publish |
 |---|---|---|
 | `bullsofdhaka-levels-agent` | new 52w high/low, confirmed breakout/breakdown, 200-DMA cross, RSI into OB/OS | **EOD** (evening + morning brief) |
-| `bullsofdhaka-volume-agent` | unusual volume (relvol ≥ 2.5×, day-fraction scaled) | **intraday** (reactive) |
+| `bullsofdhaka-volume-agent` | persistent unusual volume (relvol ≥ 2.5×, day-fraction scaled) | **intraday** (15-min delayed, provisional) |
 | `bullsofdhaka-foreign-agent` | foreign stake Δ ≥ 1.0pp (new monthly disclosure) | **monthly** (pre-open, 1st trading day) |
 | `bullsofdhaka-institution-agent` | institutional Δ ≥ 2.0pp | monthly |
 | `bullsofdhaka-sponsor-agent` | sponsor/director Δ ≥ 1.0pp | monthly |
@@ -24,14 +24,19 @@ Badged 🤖 auto · data note, delayed/as-of stamped. Public side only — never
 | `bullsofdhaka-market-update-agent` | daily market wrap | EOD (evening) |
 
 ## Thresholds (data-calibrated; v1 starters)
-relvol ≥ 2.5× (p97) + avg_volume_20 ≥ 50k floor · foreign Δ ≥ 1.0pp (rare → low) · institution
-Δ ≥ 2.0pp (noisy → high) · breakout needs relvol ≥ 1.2 · per-ticker cap ~2 notes/day.
+relvol ≥ 2.5× (p97) + avg_volume_20 ≥ 50k floor + at least 10% of the session elapsed + two
+direction-consistent delayed snapshots · foreign Δ ≥ 1.0pp (rare → low) · institution Δ ≥ 2.0pp
+(noisy → high) · breakout needs relvol ≥ 1.2 · per-ticker volume cap 1 note/day.
 
 ## Mechanics
 - **Detect** by comparing `compute(bars)` vs `compute(bars[:-1])` (today vs yesterday) — no coupling
   to the analytics upsert; re-derivable, pull-agnostic.
 - **Dedupe ledger** `signal_events` (market, code, event_type, occurrence_key unique) — one note per
   occurrence, ever. Re-runs never duplicate.
+- **Intraday confirmation:** Redis holds disposable observation state only. Reprocessing the same
+  timestamp cannot increment confirmation, and a buying/selling direction change restarts it.
+  Published notes remain durable in `signal_events`; provisional state never becomes research
+  evidence or an Atlas paper order.
 - **Publish** = a `Post` (kind=`note`, authored by the agent account) + a `Cashtag` (so it lands on
   the ticker feed) + a `signal_events` row linking the post. Users can react/reply (feeds buzz).
 - **Quality gate:** only on valid data, stamped to as-of/disclosure date (omit over mislead).
@@ -39,7 +44,10 @@ relvol ≥ 2.5× (p97) + avg_volume_20 ≥ 50k floor · foreign Δ ≥ 1.0pp (ra
 ## Publishing rhythm (the disclosure calendar)
 - **Morning brief (pre-open ~9:15):** overnight news + monthly ownership (1st) + yesterday's levels — actionable before the bell.
 - **Evening recap (post-close ~18:00):** market wrap + today's levels.
-- **Intraday:** volume (reactive). The appointment surface is a scheduled roundup that always posts (even "quiet"); per-ticker notes stay strictly material.
+- **Intraday:** volume is checked after each 15-minute quote poll, but only persistent state changes
+  publish. Every note says that it is provisional and based on delayed snapshots. The appointment
+  surface is a scheduled roundup that always posts (even "quiet"); per-ticker notes stay strictly
+  material.
 
 ## News source (Phase 2 — new)
 DSE has no news/PSI scrape yet. Add `get_news()` + an `announcements` model; news = the timely

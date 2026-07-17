@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+
 from bulls.analytics.engine import AnalyticsResult
 from bulls.core.models import MarketSummary, ShareholdingSnapshot
 from ingestion.signals import market as market_wrap
 from ingestion.signals import ownership, volume
+from ingestion.signals.confirmation import state_is_confirmed
 from ingestion.signals.levels import detect, render
 
 
@@ -103,6 +106,45 @@ def test_volume_detect_threshold_and_floor():
     # day-fraction: a half-day's volume is judged against expected-by-now
     assert volume.detect(130_000, 100_000, 0.5, "d") is not None  # 2.6x of expected
     assert volume.detect(110_000, 100_000, 0.5, "d") is None  # 2.2x — under
+    assert volume.detect(30_000, 100_000, 0.05, "d") is None  # opening sample is unstable
+
+
+class _MemoryConfirmationStore:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    async def get(self, name: str) -> str | None:
+        return self.values.get(name)
+
+    async def set(self, name: str, value: str, *, ex: int) -> None:
+        assert ex > 0
+        self.values[name] = value
+
+
+@pytest.mark.asyncio
+async def test_intraday_state_needs_distinct_consistent_observations() -> None:
+    store = _MemoryConfirmationStore()
+    options = {"store": store, "key": "GP:2026-07-15", "required_observations": 2}
+
+    assert not await state_is_confirmed(
+        **options, observed_at="2026-07-15T05:05:00+00:00", state="buying"
+    )
+    assert not await state_is_confirmed(  # same quote cannot confirm itself
+        **options, observed_at="2026-07-15T05:05:00+00:00", state="buying"
+    )
+    assert not await state_is_confirmed(  # direction reversal restarts confirmation
+        **options, observed_at="2026-07-15T05:20:00+00:00", state="selling"
+    )
+    assert await state_is_confirmed(
+        **options, observed_at="2026-07-15T05:35:00+00:00", state="selling"
+    )
+
+
+def test_intraday_volume_render_is_explicitly_provisional() -> None:
+    signal = volume.detect(300_000, 100_000, 1.0, "2026-07-15", 1.0)
+    assert signal is not None
+    assert "Provisional intraday" in volume.render(signal, "GP", "en")
+    assert "১৫ মিনিট বিলম্বিত" in volume.render(signal, "GP", "bn")
 
 
 def test_market_render():

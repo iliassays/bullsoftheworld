@@ -316,12 +316,24 @@ async def run_ownership_signals(ctx) -> str:
 
 
 async def run_volume_signals(ctx) -> str:
-    """Flag unusual intraday volume — only while the market is open."""
+    """Flag persistent unusual volume after each delayed quote refresh."""
     if not is_trading_hours(dt.datetime.now(dt.UTC)):
         return "skipped: market closed"
-    counts = await run_volume_agent(MARKET, tenant_id=TENANT_ID)
-    log.info("volume signals: %s notes published", counts["published"])
-    return f"volume={counts['published']}"
+    counts = await run_volume_agent(
+        MARKET,
+        tenant_id=TENANT_ID,
+        confirmation_store=ctx.get("redis") if ctx else None,
+        required_observations=2,
+    )
+    log.info(
+        "volume signals: %s published, %s awaiting confirmation",
+        counts["published"],
+        counts["awaiting_confirmation"],
+    )
+    return (
+        f"volume={counts['published']} "
+        f"awaiting_confirmation={counts['awaiting_confirmation']}"
+    )
 
 
 async def pull_news(ctx) -> str:
@@ -541,8 +553,14 @@ class WorkerSettings:
         cron(run_signals, hour=13, minute=25, run_at_startup=True),
         # Ownership desk-notes after the weekly company/shareholding refresh (Fri 14:00).
         cron(run_ownership_signals, weekday="fri", hour=14, minute=10, run_at_startup=True),
-        # Unusual-volume notes mid/late session, after the :30 quote polls.
-        cron(run_volume_signals, hour={5, 6, 7, 8}, minute=45, run_at_startup=True),
+        # Provisional unusual-volume states, five minutes after each quote poll. Detection ignores
+        # the opening sample and requires two direction-consistent snapshots before publishing.
+        cron(
+            run_volume_signals,
+            hour={4, 5, 6, 7, 8},
+            minute={5, 20, 35, 50},
+            run_at_startup=True,
+        ),
         # Evening Wrap card → in-app feed + Facebook, after EOD summary/analytics/factor notes
         # land (13:05/13:15/13:40 UTC ≈ 19:40 Dhaka). Trading days only; idempotent per day.
         cron(run_market_signals, hour=13, minute=50, run_at_startup=True),

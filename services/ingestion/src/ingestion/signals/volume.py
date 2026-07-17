@@ -14,6 +14,7 @@ from bulls.market_data.calendar import MARKET_CLOSE, MARKET_OPEN, to_market_tz
 BEAT = "volume"
 _RELVOL = 2.5  # ~p98 of the relative-volume distribution
 _MIN_AVG_VOL = 50_000  # liquidity floor — don't flag thin names
+_MIN_SESSION_FRACTION = 0.10  # ignore the unstable opening sample (roughly first 27 minutes)
 
 
 @dataclass
@@ -43,7 +44,12 @@ def detect(
     day: str,
     change_pct: float | None = None,
 ) -> VolSignal | None:
-    if not volume_today or not avg_volume_20 or avg_volume_20 < _MIN_AVG_VOL:
+    if (
+        not volume_today
+        or not avg_volume_20
+        or avg_volume_20 < _MIN_AVG_VOL
+        or fraction < _MIN_SESSION_FRACTION
+    ):
         return None
     expected = avg_volume_20 * max(fraction, 0.05)
     relvol = volume_today / expected
@@ -108,4 +114,10 @@ def render(sig: VolSignal, code: str, locale: str) -> str:
     variants = _TEMPLATES.get(sig.payload.get("direction", "flat"), _TEMPLATES["flat"])
     # Stable per-code variant pick (deterministic; avoids process-randomized hash()).
     pair = variants[sum(ord(c) for c in code) % len(variants)]
-    return pair[1 if locale == "bn" else 0].format(code=code, relvol=sig.payload["relvol"])
+    body = pair[1 if locale == "bn" else 0].format(code=code, relvol=sig.payload["relvol"])
+    suffix = (
+        " এটি ১৫ মিনিট বিলম্বিত দুটি স্ন্যাপশটে দেখা প্রাথমিক ইন্ট্রাডে পর্যবেক্ষণ।"
+        if locale == "bn"
+        else " Provisional intraday observation confirmed across two 15-minute-delayed snapshots."
+    )
+    return f"{body}{suffix}"

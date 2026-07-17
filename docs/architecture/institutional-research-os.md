@@ -504,7 +504,7 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   fundamentals, evidence coverage, DSE periodic ownership composition, US quarterly 13F aggregates,
   and FINRA daily short-marked activity. It explicitly distinguishes disclosures from live fund
   flows and FINRA short volume from short interest.
-- **Autonomous Analyst / Finance Reasoner V2** runs a fixed plan, evidence collection, finance-lens
+- **Autonomous Analyst / Finance Reasoner V3** runs a fixed plan, evidence collection, finance-lens
   interpretation, thesis, independent skeptic, claim-verification, scenario, and decision sequence.
   It is provider-free, produces qualified, monitor, rejected, or abstained outcomes, and creates
   immutable 5/20/60-session observations. FINRA activity is never treated as short interest, and
@@ -528,8 +528,10 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   queue, evidence-changed research, registered backtest, forward shadow reconciliation, and outcome
   calibration. Jobs carry an exact tenant/market/user/workspace envelope and bind the normal forced
   RLS context; no worker scans private workspaces globally. DSE and US use verified calendars and
-  separate post-close slots. A freshness preflight refuses stale bars or analytics and retries in
-  30 minutes while enabled.
+  separate post-close slots. DSE makes its first data-gated attempt at 17:00 BDT and a freshness
+  preflight refuses stale bars or analytics, retrying every 15 minutes while enabled. Automatic
+  attempts collapse to one durable lifecycle per market session; an explicit operator rerun remains
+  separately auditable.
 - **Promotion policy** is deterministic and advisory only. A strategy needs a historically eligible
   source backtest, at least 60 completed forward sessions, at least 10 executions, at least 2%
   benchmark-relative return, and no more than 15% maximum drawdown. Diagnostic source data always
