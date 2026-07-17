@@ -111,6 +111,19 @@ The SEC and AI units run at lower CPU/I/O weight with bounded memory. The SEC wo
 jobs cancelled by a deployment instead of replaying archive work at the next process startup;
 freshness monitoring surfaces the missed run and the normal cron schedule retries it.
 
+Run a full on-demand EDGAR and 13F refresh only through its bounded unit. A fixed unit name makes
+overlapping runs impossible, while CPU, memory, and wall-clock limits protect the shared APIs:
+
+```bash
+sudo cp infra/systemd/bullsofwallst-sec-refresh.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start bullsofwallst-sec-refresh.service
+journalctl -u bullsofwallst-sec-refresh.service -f -o cat
+```
+
+Do not launch `ingestion.us_sec_refresh --13f` with `nohup`; that bypasses the production resource
+contract and leaves no reliable unit state for operations or watchdogs.
+
 The U.S. EOD worker is now an active production unit. On a new server, install it after the provider,
 same-site API hostname, verified exchange calendar, and initial coverage checks in
 `docs/architecture/multi-tenant-us-readiness.md` are complete:

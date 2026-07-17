@@ -14,6 +14,7 @@ RestartSec=5
 TimeoutStopSec=30
 # Embedding backlogs are throughput work and must yield to API traffic.
 Nice=10
+CPUQuota=75%
 CPUWeight=20
 IOWeight=20
 MemoryHigh=1536M

@@ -38,6 +38,17 @@ curl -fsS https://api.bullsofwallst.com/ready
 
 Take the normal database snapshot before a migration or large first-time bootstrap.
 
+Full SEC/13F refreshes use the canonical bounded unit, never an unmanaged background process:
+
+```bash
+sudo systemctl start bullsofwallst-sec-refresh.service
+systemctl status bullsofwallst-sec-refresh.service --no-pager
+tail -f /home/ubuntu/bullsofdhaka/var/log/sec-refresh.log
+```
+
+Starting the same unit again cannot create an overlapping run. The parser reports progress every
+250,000 holdings rows and uses a bounded unresolved-CUSIP cache.
+
 ## Bounded unit template
 
 Use a unique unit name. This example gives the task one CPU, low scheduler priority, a 3 GiB memory

@@ -65,6 +65,7 @@ ssh "$REMOTE" "cd $APP \
   && sudo cp infra/systemd/bullsofwallst-worker.service \
        infra/systemd/bulls-research-lifecycle-worker.service \
        infra/systemd/bullsofwallst-sec-worker.service \
+       infra/systemd/bullsofwallst-sec-refresh.service \
        infra/systemd/bullsofwallst-research-worker.service \
        infra/systemd/bullsofwallst-sec-watchdog.service \
        infra/systemd/bullsofwallst-sec-watchdog.timer \

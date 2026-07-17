@@ -13,7 +13,7 @@ import io
 import re
 import zipfile
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -334,12 +334,19 @@ def parse_13f_archive(
     source_url: str,
     symbols: Iterable[SymbolIdentity],
     known_cusips: dict[str, str] | None = None,
+    progress: Callable[[int], None] | None = None,
+    progress_every_rows: int = 250_000,
 ) -> ArchiveResult:
+    if progress_every_rows < 1:
+        raise ValueError("progress_every_rows must be positive")
     symbol_list = tuple(symbols)
     match_index = _symbol_match_index(symbol_list)
     cusip_to_code = dict(known_cusips or {})
     matches: dict[str, CusipMatch] = {}
-    unmatched_labels: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    # SEC archives contain millions of repeated rows. Retaining the complete issuer/class
+    # strings for every unresolved CUSIP used several GiB on production. Keep only bounded
+    # in-process fingerprints; they are used solely to avoid repeating the same match attempt.
+    unmatched_label_fingerprints: dict[str, tuple[int, ...]] = {}
 
     with zipfile.ZipFile(path) as archive:
         submissions = _selected_submissions(archive)
@@ -398,6 +405,9 @@ def parse_13f_archive(
 
         late_match_rows: dict[str, int] = {}
         for row_number, row in enumerate(_rows(archive, "INFOTABLE.tsv")):
+            processed_rows = row_number + 1
+            if progress and processed_rows % progress_every_rows == 0:
+                progress(processed_rows)
             accession = row.get("ACCESSION_NUMBER") or ""
             submission = submissions.get(accession)
             if submission is None:
@@ -413,20 +423,22 @@ def parse_13f_archive(
             issuer_name = (row.get("NAMEOFISSUER") or "").strip()
             title_of_class = (row.get("TITLEOFCLASS") or "").strip()
             label = (issuer_name.upper(), title_of_class.upper())
+            fingerprints = unmatched_label_fingerprints.get(cusip, ())
+            fingerprint = hash(label)
             if (
                 code is None
-                and label not in unmatched_labels[cusip]
-                and len(unmatched_labels[cusip]) < MAX_LABEL_ATTEMPTS_PER_CUSIP
+                and fingerprint not in fingerprints
+                and len(fingerprints) < MAX_LABEL_ATTEMPTS_PER_CUSIP
             ):
-                had_prior_label = bool(unmatched_labels[cusip])
-                unmatched_labels[cusip].add(label)
+                had_prior_label = bool(fingerprints)
+                unmatched_label_fingerprints[cusip] = (*fingerprints, fingerprint)
                 matched = _match_13f_security(issuer_name, title_of_class, match_index)
                 if matched:
                     code, confidence, method = matched
                     cusip_to_code[cusip] = code
                     if had_prior_label:
                         late_match_rows[cusip] = row_number
-                    unmatched_labels.pop(cusip, None)
+                    unmatched_label_fingerprints.pop(cusip, None)
                     matches[cusip] = CusipMatch(
                         code=code,
                         cusip=cusip,
@@ -469,7 +481,7 @@ def parse_13f_archive(
         report_date=latest_report,
         positions=positions,
         matches=tuple(matches.values()),
-        unmatched_cusips=len(unmatched_labels),
+        unmatched_cusips=len(unmatched_label_fingerprints),
         manager_filings=manager_filings,
     )
 

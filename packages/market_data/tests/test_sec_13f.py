@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+
 from bulls.market_data.providers.sec_13f import (
     ArchiveResult,
     ManagerFiling,
@@ -322,6 +324,55 @@ def test_archive_value_is_already_reported_in_us_dollars(tmp_path) -> None:
     )
 
     assert result.positions[0].value_usd == 290_512_251_859
+
+
+def test_archive_reports_bounded_streaming_progress(tmp_path) -> None:
+    import zipfile
+
+    archive_path = tmp_path / "13f-progress.zip"
+    files = {
+        "COVERPAGE.tsv": (
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n"
+            "0000000001-26-000001\tExample Manager\n"
+        ),
+        "SUBMISSION.tsv": (
+            "ACCESSION_NUMBER\tCIK\tFILING_DATE\tPERIODOFREPORT\tSUBMISSIONTYPE\n"
+            "0000000001-26-000001\t1\t15-May-2026\t31-Mar-2026\t13F-HR\n"
+        ),
+        "INFOTABLE.tsv": (
+            "ACCESSION_NUMBER\tNAMEOFISSUER\tTITLEOFCLASS\tCUSIP\tVALUE\tSSHPRNAMT"
+            "\tSSHPRNAMTTYPE\tPUTCALL\n"
+            "0000000001-26-000001\tUNKNOWN ONE\tCOM\t000000001\t1\t1\tSH\t\n"
+            "0000000001-26-000001\tUNKNOWN TWO\tCOM\t000000002\t1\t1\tSH\t\n"
+            "0000000001-26-000001\tAPPLE INC\tCOM\t037833100\t2\t2\tSH\t\n"
+        ),
+    }
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+
+    progress: list[int] = []
+    result = parse_13f_archive(
+        archive_path,
+        source_url="https://www.sec.gov/example.zip",
+        symbols=[SymbolIdentity(code="AAPL", name="Apple Inc. - Common Stock")],
+        progress=progress.append,
+        progress_every_rows=2,
+    )
+
+    assert progress == [2]
+    assert result.unmatched_cusips == 2
+    assert [(row.code, row.shares) for row in result.positions] == [("AAPL", 2)]
+
+
+def test_archive_rejects_non_positive_progress_interval(tmp_path) -> None:
+    with pytest.raises(ValueError, match="progress_every_rows must be positive"):
+        parse_13f_archive(
+            tmp_path / "unused.zip",
+            source_url="https://www.sec.gov/example.zip",
+            symbols=[],
+            progress_every_rows=0,
+        )
 
 
 def test_archive_replays_earlier_rows_when_same_cusip_has_a_later_exact_label(

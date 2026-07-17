@@ -563,6 +563,10 @@ async def collect(
                         source_url=url,
                         symbols=symbols,
                         known_cusips=known_cusips,
+                        progress=lambda rows, archive_number=index + 1: print(
+                            f"  ...archive {archive_number}: scanned {rows:,} holdings rows",
+                            flush=True,
+                        ),
                     )
                 except (httpx.HTTPError, ValueError) as error:
                     print(f"  ! skipped 13F archive {url} ({error})", flush=True)

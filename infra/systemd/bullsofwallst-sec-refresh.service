@@ -1,0 +1,24 @@
+[Unit]
+Description=Bounded on-demand Bulls of Wall Street SEC and 13F refresh
+After=network-online.target redis-server.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka/services/ingestion
+EnvironmentFile=/home/ubuntu/bullsofdhaka/.env
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.us_sec_refresh --13f
+StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/sec-refresh.log
+StandardError=append:/home/ubuntu/bullsofdhaka/var/log/sec-refresh.log
+Nice=15
+CPUQuota=50%
+CPUWeight=10
+IOWeight=10
+MemoryHigh=2048M
+MemoryMax=3072M
+RuntimeMaxSec=6h
+TimeoutStopSec=2min
+OOMScoreAdjust=500
+NoNewPrivileges=true
+PrivateTmp=true
