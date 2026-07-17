@@ -6,11 +6,14 @@ import datetime as dt
 import hashlib
 import json
 import os
+import subprocess
 import uuid
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.models import (
@@ -27,6 +30,28 @@ COMPANY_NORMALIZATION_VERSION = "company-info-v1"
 SEC_FACT_NORMALIZATION_VERSION = "sec-company-facts-v1"
 SECURITY_MASTER_NORMALIZATION_VERSION = "us-security-master-v1"
 LINEAGE_INSERT_BATCH_ROWS = 500
+
+
+@lru_cache(maxsize=1)
+def current_code_version() -> str:
+    """Resolve one stable release identity per process without requiring shell environment setup."""
+
+    configured = (os.getenv("RELEASE_VERSION") or os.getenv("GIT_SHA") or "").strip()
+    if configured and configured != "unknown":
+        return configured[:96]
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    resolved = completed.stdout.strip()
+    return resolved[:96] if resolved else "unknown"
 
 
 def _json_default(value: Any) -> str:
@@ -90,6 +115,7 @@ async def persist_source_snapshot(
     """Insert or resolve an immutable manifest for an idempotent normalized delivery."""
     normalized = list(normalized_records)
     normalized_sha256 = content_sha256(normalized)
+    code_version = current_code_version()
     values = {
         "market": market,
         "dataset_key": dataset_key,
@@ -98,7 +124,7 @@ async def persist_source_snapshot(
         "source_revision": normalized_sha256,
         "schema_version": LINEAGE_SCHEMA_VERSION,
         "normalization_version": normalization_version,
-        "code_version": os.getenv("RELEASE_VERSION") or os.getenv("GIT_SHA") or "unknown",
+        "code_version": code_version,
         "effective_at": effective_at,
         "known_at": known_at,
         "status": "accepted",
@@ -121,7 +147,7 @@ async def persist_source_snapshot(
     if snapshot_id is not None:
         return snapshot_id
     existing = await session.scalar(
-        select(DataSourceSnapshot.id).where(
+        select(DataSourceSnapshot).where(
             DataSourceSnapshot.market == market,
             DataSourceSnapshot.dataset_key == dataset_key,
             DataSourceSnapshot.scope_key == scope_key,
@@ -130,7 +156,16 @@ async def persist_source_snapshot(
     )
     if existing is None:
         raise RuntimeError("source snapshot conflict did not resolve to a persisted manifest")
-    return existing
+    if existing.code_version == "unknown" and code_version != "unknown":
+        await session.execute(
+            update(DataSourceSnapshot)
+            .where(
+                DataSourceSnapshot.id == existing.id,
+                DataSourceSnapshot.code_version == "unknown",
+            )
+            .values(code_version=code_version)
+        )
+    return existing.id
 
 
 def _bar_row(bar) -> dict[str, Any]:

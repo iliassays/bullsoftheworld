@@ -12,6 +12,7 @@ from ingestion.lineage import (
     _insert_observation_batches,
     canonical_json,
     content_sha256,
+    current_code_version,
     record_sec_fact_observations,
     sec_fact_known_at,
 )
@@ -37,6 +38,15 @@ def test_canonical_hash_is_order_independent_for_mapping_keys() -> None:
 def test_canonical_hash_rejects_non_finite_financial_values() -> None:
     with pytest.raises(ValueError, match="Out of range float"):
         content_sha256({"close": float("nan")})
+
+
+def test_release_environment_is_the_authoritative_lineage_code_version(monkeypatch) -> None:
+    current_code_version.cache_clear()
+    monkeypatch.setenv("RELEASE_VERSION", "release-2026-07-17")
+
+    assert current_code_version() == "release-2026-07-17"
+
+    current_code_version.cache_clear()
 
 
 def test_sec_fact_known_time_prefers_official_acceptance_timestamp() -> None:
