@@ -84,8 +84,9 @@ async def test_batch_bound_applies_to_first_unfinished_cohort(monkeypatch, tmp_p
     async def latest_failed(_manifest):
         return None
 
-    async def onboard(manifest, *, resume_id, fetch, promote):
+    async def onboard(manifest, *, resume_id, fetch, promote, refresh_security_master):
         assert resume_id is None
+        assert refresh_security_master
         attempted.append(manifest.name)
         return {"run_id": manifest.name}
 
@@ -124,8 +125,9 @@ async def test_batch_resumes_latest_failed_run(monkeypatch, tmp_path) -> None:
     async def latest_failed(_manifest):
         return resumed
 
-    async def onboard(_manifest, *, resume_id, fetch, promote):
+    async def onboard(_manifest, *, resume_id, fetch, promote, refresh_security_master):
         assert resume_id is resumed
+        assert refresh_security_master
         return {"run_id": "resumed"}
 
     monkeypatch.setattr(universe_onboarding_batch, "_already_completed", not_completed)

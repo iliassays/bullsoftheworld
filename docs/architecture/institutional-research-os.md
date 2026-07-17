@@ -391,14 +391,17 @@ workspaces, while new accounts receive the same workspace through an idempotent 
 `POST`. Retail registration remains independent of Atlas provisioning, and official automated desk
 accounts are excluded unless deliberately included by an administrator.
 
-## Production data readiness found on 2026-07-15
+## Production data readiness updated on 2026-07-17
 
-- DSE: 396 ready symbols, 191,984 bars across 401 symbols from 2024-06-27 to 2026-07-14,
-  16,397 announcements, 1,964 annual financial rows, 1,535 ownership snapshots, and 4,556 dividend
-  rows. Two years of price history is not sufficient for institutional strategy validation.
-- US: 11,092 reference symbols, but only 67 ready and 3 research-only; 112 symbols have price
-  history/analytics, 105 have SEC filing coverage, and 103 have Company Facts coverage. FINRA daily
-  short-volume coverage is broad, but it does not compensate for the narrow research-ready universe.
+- DSE: 396 ready symbols and 192,776 bars across 401 symbols from 2024-06-27 to 2026-07-16.
+  Immutable bar lineage covers every current projection key; 395 source-available companies have
+  immutable fundamental/ownership baselines. Two years of price history is still insufficient for
+  institutional strategy validation.
+- US: the guarded master has 13,057 active listings and 11,071 active product symbols: 5,216 common
+  stocks, 306 ADRs, and 5,549 ETFs. The initially hydrated 612-symbol universe has complete legacy
+  bar lineage. SEC baseline collection checked 372 current research issuers with zero failures;
+  four explicitly produced no normalized Company Facts. A deterministic full-product catalog is
+  now filling the remainder under private research status without changing public publication.
 - US options: no licensed historical options-flow dataset or customer-display chain is integrated.
   A fail-closed Phase A foundation records platform entitlements, stores immutable raw and
   normalized artifacts, enforces append-only revision manifests, writes versioned Parquet, and

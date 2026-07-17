@@ -26,6 +26,7 @@ from bulls.analytics.research_queue import (
 )
 from bulls.core.markets import format_money_millions, get_market_profile
 from bulls.core.models import DailyBar, Symbol, TickerAnalytics
+from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
 
 
 def _as_utc(value: dt.datetime) -> dt.datetime:
@@ -254,7 +255,7 @@ async def build_research_queue(
         TickerAnalytics.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
-        Symbol.data_status.in_(("ready", "research_only")),
+        Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
     )
     filters = list(base_conditions)
     if cap_tier == "unclassified":

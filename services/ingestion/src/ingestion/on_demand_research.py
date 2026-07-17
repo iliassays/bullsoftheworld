@@ -127,11 +127,17 @@ async def _finish_job(
         if symbol is not None:
             if symbol_status in {"ready", "research_only"}:
                 symbol.data_status = symbol_status
+                symbol.research_status = "ready"
+                symbol.research_status_updated_at = dt.datetime.now(dt.UTC)
                 symbol.is_hidden = False
             elif status == "rejected":
                 symbol.data_status = "degraded"
+                symbol.research_status = "unavailable"
+                symbol.research_status_updated_at = dt.datetime.now(dt.UTC)
             elif status == "failed" and symbol.data_status == "onboarding":
                 symbol.data_status = "reference_only"
+                symbol.research_status = "reference_only"
+                symbol.research_status_updated_at = dt.datetime.now(dt.UTC)
         await session.commit()
 
 

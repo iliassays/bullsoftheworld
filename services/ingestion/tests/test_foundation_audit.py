@@ -9,7 +9,7 @@ def _snapshot(market: str = "US") -> dict:
     date = dt.date(2026, 7, 16)
     return {
         "market": market,
-        "symbols": {"ready": 100},
+        "symbols": {"ready": 100, "by_research_status": {"ready": 100}},
         "identity": {
             "security_id_mismatches": 0,
             "eligible_listings_missing_symbol": 0,
@@ -108,4 +108,18 @@ def test_foundation_audit_rejects_unknown_source_release_lineage() -> None:
 
     assert [(item["severity"], item["code"]) for item in issues] == [
         ("critical", "source_release_lineage_unknown")
+    ]
+
+
+def test_us_foundation_rejects_unresolved_private_research_catalog() -> None:
+    snapshot = _snapshot()
+    snapshot["symbols"]["by_research_status"] = {
+        "ready": 75,
+        "partial": 10,
+        "reference_only": 10,
+        "onboarding": 5,
+    }
+
+    assert [item["code"] for item in health_issues(snapshot)] == [
+        "private_research_coverage_incomplete"
     ]

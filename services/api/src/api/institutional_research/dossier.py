@@ -29,6 +29,7 @@ from bulls.core.models import (
     Symbol,
     TickerAnalytics,
 )
+from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
 
 
 class ResearchSecurityNotFound(LookupError):
@@ -211,7 +212,7 @@ async def build_company_dossier(
                 TickerAnalytics.code == normalized_code,
                 Symbol.is_active.is_(True),
                 Symbol.is_hidden.is_(False),
-                Symbol.data_status.in_(("ready", "research_only")),
+                Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
             )
         )
     ).one_or_none()

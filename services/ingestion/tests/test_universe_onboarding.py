@@ -124,6 +124,32 @@ def test_named_risk_review_allows_normal_authorization_checks(monkeypatch) -> No
     )
 
 
+def test_private_research_readiness_preserves_partial_and_unavailable_states() -> None:
+    sound_gates = {
+        key: {"passed": True}
+        for key in (
+            "symbol",
+            "stable_identity",
+            "product_eligible",
+            "instrument_type",
+            "exchange",
+            "ohlc_integrity",
+            "analytics",
+        )
+    }
+    partial = SimpleNamespace(passed=False, bar_count=40, gates=sound_gates)
+    unavailable = SimpleNamespace(
+        passed=False,
+        bar_count=40,
+        gates={**sound_gates, "stable_identity": {"passed": False}},
+    )
+    ready = SimpleNamespace(passed=True, bar_count=252, gates=sound_gates)
+
+    assert universe_onboarding._private_research_status(ready) == "ready"
+    assert universe_onboarding._private_research_status(partial) == "partial"
+    assert universe_onboarding._private_research_status(unavailable) == "unavailable"
+
+
 @pytest.mark.asyncio
 async def test_completed_onboarding_stage_is_not_executed_again(monkeypatch) -> None:
     async def begin(*_args, **_kwargs):

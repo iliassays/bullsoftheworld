@@ -149,9 +149,13 @@ async def _mark_onboarding(market: str, codes: list[str]) -> None:
             .where(
                 Symbol.market == market,
                 Symbol.code.in_(codes),
-                Symbol.data_status == "reference_only",
+                Symbol.research_status == "reference_only",
             )
-            .values(data_status="onboarding")
+            .values(
+                data_status="onboarding",
+                research_status="onboarding",
+                research_status_updated_at=dt.datetime.now(dt.UTC),
+            )
         )
         await session.commit()
 

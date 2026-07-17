@@ -43,6 +43,7 @@ from bulls.core.models import (
     Symbol,
     TickerAnalytics,
 )
+from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
 
 
 def _utc(value: dt.datetime) -> dt.datetime:
@@ -599,7 +600,7 @@ async def _backtest_universe(
         Symbol.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
-        Symbol.data_status.in_(("ready", "research_only")),
+        Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
         TickerAnalytics.market == market,
     ]
     if request.codes:

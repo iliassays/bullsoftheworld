@@ -165,6 +165,7 @@ async def request_preparation(
     if symbol.is_public_research:
         return await _response(session, symbol, None)
 
+    now = dt.datetime.now(dt.UTC)
     staged_result = await _onboarding_result(session, symbol, None)
     if staged_result is not None:
         publication_status = research_publication_status(
@@ -173,11 +174,12 @@ async def request_preparation(
         )
         if publication_status is not None:
             symbol.data_status = publication_status
+            symbol.research_status = "ready"
+            symbol.research_status_updated_at = now
             symbol.is_hidden = False
             await session.commit()
             return await _response(session, symbol, None, staged_result)
 
-    now = dt.datetime.now(dt.UTC)
     today = now.date()
     await session.scalar(select(func.pg_advisory_xact_lock(user.id)))
     existing_request = await session.scalar(
@@ -231,6 +233,8 @@ async def request_preparation(
         job.error = None
         job.completed_at = None
         symbol.data_status = "onboarding"
+        symbol.research_status = "onboarding"
+        symbol.research_status_updated_at = now
     job.request_count += 1
     job.requested_at = now
 
@@ -263,6 +267,8 @@ async def request_preparation(
                 job.completed_at = dt.datetime.now(dt.UTC)
             if symbol is not None and symbol.data_status == "onboarding":
                 symbol.data_status = "reference_only"
+                symbol.research_status = "reference_only"
+                symbol.research_status_updated_at = dt.datetime.now(dt.UTC)
             await session.commit()
             raise HTTPException(
                 status_code=503,

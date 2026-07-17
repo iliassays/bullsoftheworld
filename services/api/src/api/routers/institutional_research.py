@@ -65,6 +65,7 @@ from api.research_access import (
 )
 from bulls.core.models import Symbol
 from bulls.core.research_access import ResearchPermission
+from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
 from bulls.core.tenancy import Tenant
 from bulls.market_data.providers.us_yahoo_options import (
     OptionChainProviderError,
@@ -467,7 +468,7 @@ async def company_option_chain(
             Symbol.code == normalized,
             Symbol.is_active.is_(True),
             Symbol.is_hidden.is_(False),
-            Symbol.data_status.in_(("ready", "research_only")),
+            Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
         )
     )
     if symbol is None:

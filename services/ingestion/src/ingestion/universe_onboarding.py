@@ -42,6 +42,7 @@ async def create_onboarding_run(
     manifest: CohortManifest,
     promote: bool = False,
     publish_research: bool = False,
+    refresh_security_master: bool = True,
 ) -> UniverseOnboardingRun:
     settings = get_settings()
     run = UniverseOnboardingRun(
@@ -70,6 +71,7 @@ async def create_onboarding_run(
             ),
             "risk_review_id": manifest.risk_review_id,
             "allow_restricted_research": manifest.allow_restricted_research,
+            "refresh_security_master": refresh_security_master,
         },
         error=None,
         started_at=dt.datetime.now(dt.UTC),
@@ -87,6 +89,7 @@ async def _resume_run(
     manifest: CohortManifest,
     promote: bool,
     publish_research: bool,
+    refresh_security_master: bool,
 ) -> UniverseOnboardingRun:
     sm = get_sessionmaker()
     async with sm() as session:
@@ -110,6 +113,8 @@ async def _resume_run(
         )
         if run.parameters.get("publication_mode", "private") != expected_mode:
             raise ValueError("resume publication mode does not match the original run")
+        if run.parameters.get("refresh_security_master", True) != refresh_security_master:
+            raise ValueError("resume security-master policy does not match the original run")
         if run.status == "completed":
             raise ValueError("completed onboarding runs are immutable")
         run.status = "running"
@@ -255,6 +260,24 @@ def _stage_input_fingerprint(
     )
 
 
+def _private_research_status(row: GateEvidence) -> str:
+    if row.passed:
+        return "ready"
+    identity_is_sound = all(
+        row.gates[key]["passed"]
+        for key in (
+            "symbol",
+            "stable_identity",
+            "product_eligible",
+            "instrument_type",
+            "exchange",
+            "ohlc_integrity",
+        )
+    )
+    has_researchable_market_data = row.bar_count > 0 and row.gates["analytics"]["passed"]
+    return "partial" if identity_is_sound and has_researchable_market_data else "unavailable"
+
+
 async def _persist_results(
     run: UniverseOnboardingRun,
     evidence: list[GateEvidence],
@@ -272,6 +295,20 @@ async def _persist_results(
         )
         if rows:
             await session.execute(pg_insert(UniverseOnboardingResult).values(rows))
+        private_statuses: dict[str, list[str]] = {
+            "ready": [],
+            "partial": [],
+            "unavailable": [],
+        }
+        for row in evidence:
+            private_statuses[_private_research_status(row)].append(row.code)
+        for status, codes in private_statuses.items():
+            if codes:
+                await session.execute(
+                    update(Symbol)
+                    .where(Symbol.market == run.market, Symbol.code.in_(codes))
+                    .values(research_status=status, research_status_updated_at=now)
+                )
         published = 0
         research_only = 0
         if promote and passed_codes:
@@ -361,6 +398,8 @@ async def _stage_restricted_research_symbols(manifest: CohortManifest) -> int:
                 "is_active": True,
                 "is_hidden": True,
                 "data_status": "onboarding",
+                "research_status": "onboarding",
+                "research_status_updated_at": dt.datetime.now(dt.UTC),
             }
             for security in securities
         ]
@@ -374,6 +413,8 @@ async def _stage_restricted_research_symbols(manifest: CohortManifest) -> int:
                     "is_active": True,
                     "is_hidden": True,
                     "data_status": "onboarding",
+                    "research_status": "onboarding",
+                    "research_status_updated_at": stmt.excluded.research_status_updated_at,
                 },
             )
         )
@@ -413,24 +454,39 @@ async def run_onboarding(
     fetch: bool = True,
     promote: bool = False,
     publish_research: bool = False,
+    refresh_security_master: bool = True,
 ) -> dict[str, Any]:
     _validate_promotion(promote, manifest, publish_research=publish_research)
     run = (
-        await _resume_run(resume_id, manifest, promote, publish_research)
+        await _resume_run(
+            resume_id,
+            manifest,
+            promote,
+            publish_research,
+            refresh_security_master,
+        )
         if resume_id
-        else await create_onboarding_run(manifest, promote, publish_research)
+        else await create_onboarding_run(
+            manifest,
+            promote,
+            publish_research,
+            refresh_security_master,
+        )
     )
     print(f"[onboarding] run_id={run.id}", flush=True)
     try:
         fetch_stats: dict[str, Any] = {}
         if fetch:
-            fetch_stats["security_master"] = await _checkpointed_stage(
-                run.id,
-                stage_key="security_master",
-                ordinal=0,
-                input_fingerprint=_stage_input_fingerprint(run, manifest, "security_master"),
-                operation=lambda: collect_security_master(manifest.market),
-            )
+            if refresh_security_master:
+                fetch_stats["security_master"] = await _checkpointed_stage(
+                    run.id,
+                    stage_key="security_master",
+                    ordinal=0,
+                    input_fingerprint=_stage_input_fingerprint(run, manifest, "security_master"),
+                    operation=lambda: collect_security_master(manifest.market),
+                )
+            else:
+                fetch_stats["security_master"] = {"status": "reused_catalog_snapshot"}
             fetch_stats["restricted_research_symbols"] = await _checkpointed_stage(
                 run.id,
                 stage_key="restricted_research_symbols",
@@ -452,13 +508,19 @@ async def run_onboarding(
                     include_reference=True,
                 ),
             )
-            fetch_stats["sec"] = await _checkpointed_stage(
-                run.id,
-                stage_key="sec",
-                ordinal=3,
-                input_fingerprint=_stage_input_fingerprint(run, manifest, "sec"),
-                operation=lambda: collect_sec(codes=list(manifest.symbols)),
-            )
+            sec_types = set(manifest.policy.require_cik_for)
+            sec_types.update(manifest.policy.sec_filings_required_for)
+            sec_types.update(manifest.policy.sec_facts_required_for)
+            if sec_types.intersection(manifest.policy.allowed_instrument_types):
+                fetch_stats["sec"] = await _checkpointed_stage(
+                    run.id,
+                    stage_key="sec",
+                    ordinal=3,
+                    input_fingerprint=_stage_input_fingerprint(run, manifest, "sec"),
+                    operation=lambda: collect_sec(codes=list(manifest.symbols)),
+                )
+            else:
+                fetch_stats["sec"] = {"status": "not_applicable"}
             fetch_stats["analytics"] = await _checkpointed_stage(
                 run.id,
                 stage_key="analytics",

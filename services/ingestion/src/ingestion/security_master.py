@@ -184,6 +184,7 @@ def _symbol_rows(records: list[UsSecurityRecord]) -> list[dict]:
             "is_active": True,
             "is_hidden": False,
             "data_status": "reference_only",
+            "research_status": "reference_only",
         }
         for record in records
         if record.is_product_eligible
@@ -351,6 +352,11 @@ async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, 
                         (Symbol.data_status == "ready", "degraded"),
                         else_=Symbol.data_status,
                     ),
+                    research_status=case(
+                        (Symbol.research_status.in_(("ready", "partial")), "degraded"),
+                        else_=Symbol.research_status,
+                    ),
+                    research_status_updated_at=fetched_at,
                 )
             )
             await session.execute(
@@ -363,7 +369,11 @@ async def persist_security_master(records: list[UsSecurityRecord]) -> dict[str, 
                         SecurityMaster.is_active.is_(True),
                     ),
                 )
-                .values(is_active=False)
+                .values(
+                    is_active=False,
+                    research_status="unavailable",
+                    research_status_updated_at=fetched_at,
+                )
             )
         await session.commit()
 

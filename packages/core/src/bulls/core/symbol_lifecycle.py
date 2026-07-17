@@ -16,6 +16,8 @@ _RESEARCH_ONLY_FAILURES = frozenset(
     }
 )
 
+PRIVATE_RESEARCH_STATUSES = ("ready", "partial")
+
 
 def research_publication_status(
     required_gates_passed: bool,

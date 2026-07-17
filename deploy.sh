@@ -70,16 +70,20 @@ ssh "$REMOTE" "cd $APP \
        infra/systemd/bullsofwallst-sec-watchdog.timer \
        infra/systemd/bullsofwallst-cohort-staging.service \
        infra/systemd/bullsofwallst-cohort-staging.timer \
+       infra/systemd/bullsofwallst-full-universe.service \
+       infra/systemd/bullsofwallst-full-universe.timer \
        /etc/systemd/system/ \
   && sudo systemctl daemon-reload \
   && sudo systemctl enable bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
        bullsofwallst-sec-watchdog.timer bullsofwallst-cohort-staging.timer \
+       bullsofwallst-full-universe.timer \
        bullsofdhaka-hedge-refresh.timer \
   && sudo systemctl restart bullsofdhaka-api bullsofdhaka-hedge bullsofdhaka-worker \
        bullsofdhaka-ai-worker bullsofwallst-worker bullsofwallst-sec-worker \
        bullsofwallst-research-worker bulls-research-lifecycle-worker \
        bullsofwallst-sec-watchdog.timer bullsofwallst-cohort-staging.timer \
+       bullsofwallst-full-universe.timer \
        bullsofdhaka-hedge-refresh.timer"
 
 echo "→ waiting for public API readiness"

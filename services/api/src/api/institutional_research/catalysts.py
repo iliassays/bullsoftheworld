@@ -32,6 +32,7 @@ from bulls.analytics.catalysts import (
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import Announcement, SecFiling, Symbol
 from bulls.core.models.research import CatalystEvent
+from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
 
 DSE_ANNOUNCEMENT_LOOKBACK_DAYS = 180
 CALENDAR_PAST_GRACE_DAYS = 7
@@ -135,7 +136,7 @@ async def _eligible_codes(session: AsyncSession, market: str) -> list[str]:
                 Symbol.market == market,
                 Symbol.is_active.is_(True),
                 Symbol.is_hidden.is_(False),
-                Symbol.data_status.in_(("ready", "research_only")),
+                Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
             )
         )
     )

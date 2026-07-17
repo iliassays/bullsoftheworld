@@ -1,7 +1,7 @@
 # Bulls Research Data Foundation
 
-Status: production migration and forward-lineage activation complete; bounded legacy-bar bootstrap
-in progress, July 17, 2026.
+Status: production migration and forward-lineage activation complete; DSE and initially hydrated US
+bar baselines accepted; complete US private-research catalog rollout in progress, July 17, 2026.
 
 This document governs data onboarding for Bulls of Dhaka, Bulls of Wall Street, and Bulls Atlas.
 It distinguishes an operational market-data product from a point-in-time research platform. A
@@ -166,6 +166,13 @@ Required invariants:
 - research RLS context is transaction-local and cannot survive connection pooling;
 - no cross-market claim, citation, run, workspace, portfolio, or evidence foreign key is possible.
 
+Private research readiness is separate from public symbol publication. `symbols.data_status`
+continues to gate the public portals and licensed redistribution; `symbols.research_status` records
+whether authenticated Atlas has complete, partial, degraded, or unavailable evidence. A private
+backfill can therefore make a symbol researchable without silently publishing its vendor-derived
+prices. Atlas accepts `ready` and explicitly `partial` evidence; unresolved and unavailable symbols
+do not enter the research queue.
+
 ## Acceptance and service levels
 
 Run the unified read-only report after migrations, cohort runs, provider changes, and before a
@@ -186,6 +193,9 @@ The report complements, not replaces, the DSE and US freshness watchdogs. Initia
 - every onboarding gate failure has a classified disposition and retry date or exclusion reason;
 - source checkpoints expose records, symbols, bytes, source date, completion time, and quality;
 - table growth, run duration, retry count, and source failure rate are reviewed per cohort.
+- every active US product listing has a terminal private-research state (`ready`, `partial`, or
+  `unavailable`); `reference_only`, `onboarding`, or `degraded` means the catalog is incomplete and
+  strict acceptance fails.
 
 ## Implemented foundation
 
@@ -239,9 +249,14 @@ the constrained server is serving traffic.
 - Ten still-forming July 17 US daily candles were removed from mutable bars, analytics, and pattern
   projections. Restricted research was rebuilt for all ten names through the latest completed
   session. Their source observations remain auditable and cannot enter a completed-session query.
-- The SEC Company Facts revision baseline and bounded legacy-bar bootstrap are operator jobs, not
-  release-time migrations. Their final counts must be copied into the strict audit record when each
-  unit completes.
+- The SEC baseline completed 372/372 applicable current research issuers: 368 fact-bearing manifests
+  plus four accepted zero-fact manifests, with no failed or unversioned delivery. DSE bar lineage
+  covers all 192,776 current projection rows across 401 symbols. The initially hydrated US universe
+  has 1,287,536 immutable observations across 612 symbols; ten extra observations preserve rejected
+  still-forming revisions and are intentionally absent from the 1,287,526-row current projection.
+- The guarded US master contains 11,071 active product listings: 5,216 common stocks, 306 ADRs, and
+  5,549 ETFs. A deterministic 100-symbol private catalog now advances through the same durable
+  history, SEC-applicability, analytics, and gate ledger. Public status is unchanged by this job.
 
 ## Longer-term migration order
 

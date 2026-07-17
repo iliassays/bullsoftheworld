@@ -1,0 +1,10 @@
+[Unit]
+Description=Continue complete US research onboarding after the DSE close
+
+[Timer]
+OnCalendar=*-*-* 09:15:00 UTC
+AccuracySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

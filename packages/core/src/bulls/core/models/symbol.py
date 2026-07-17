@@ -8,7 +8,17 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, String, Text, Uuid
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -20,6 +30,11 @@ class Symbol(Base):
         CheckConstraint(
             "data_status IN ('reference_only', 'onboarding', 'ready', 'research_only', 'degraded')",
             name="ck_symbols_data_status",
+        ),
+        CheckConstraint(
+            "research_status IN "
+            "('reference_only', 'onboarding', 'ready', 'partial', 'degraded', 'unavailable')",
+            name="ck_symbols_research_status",
         ),
     )
 
@@ -46,6 +61,13 @@ class Symbol(Base):
     data_status: Mapped[str] = mapped_column(
         String(20), default="ready", server_default="ready", index=True
     )
+    # Atlas readiness is independent of public market-data publication and redistribution rights.
+    research_status: Mapped[str] = mapped_column(
+        String(20), default="ready", server_default="ready", index=True
+    )
+    research_status_updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), server_default=func.now()
+    )
     data_first_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
     data_last_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
 
@@ -54,3 +76,7 @@ class Symbol(Base):
         return (
             self.is_active and not self.is_hidden and self.data_status in {"ready", "research_only"}
         )
+
+    @property
+    def is_private_research(self) -> bool:
+        return self.is_active and self.research_status in {"ready", "partial"}

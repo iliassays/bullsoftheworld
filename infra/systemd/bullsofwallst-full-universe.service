@@ -1,0 +1,22 @@
+[Unit]
+Description=Advance complete private US research-data onboarding
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bullsofdhaka
+Environment=DATABASE_STATEMENT_TIMEOUT_MS=180000
+ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.full_universe_nightly
+StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/full-universe.log
+StandardError=append:/home/ubuntu/bullsofdhaka/var/log/full-universe.log
+Nice=15
+CPUQuota=100%
+CPUWeight=10
+IOWeight=10
+MemoryHigh=2048M
+MemoryMax=3072M
+RuntimeMaxSec=2h5min
+TimeoutStopSec=2min
+NoNewPrivileges=true

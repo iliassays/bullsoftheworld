@@ -84,6 +84,7 @@ async def run_batch(
     fetch: bool = True,
     rerun_completed: bool = False,
     continue_on_failure: bool = False,
+    refresh_security_master: bool = True,
 ) -> dict[str, Any]:
     # Select the full band, then apply the bound to unfinished cohorts. Applying the limit before
     # completion checks permanently pins a recurring job to `*-001` after that manifest completes.
@@ -112,6 +113,7 @@ async def run_batch(
                 resume_id=resume_id,
                 fetch=fetch,
                 promote=False,
+                refresh_security_master=refresh_security_master,
             )
             summary["completed"].append({"file": path.name, **result})
         except Exception as error:
@@ -135,6 +137,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--evaluate-only", action="store_true")
     parser.add_argument("--rerun-completed", action="store_true")
     parser.add_argument("--continue-on-failure", action="store_true")
+    parser.add_argument(
+        "--reuse-security-master",
+        action="store_true",
+        help="reuse the guarded security-master snapshot used to build this catalog",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +157,7 @@ def main() -> None:
             fetch=not args.evaluate_only,
             rerun_completed=args.rerun_completed,
             continue_on_failure=args.continue_on_failure,
+            refresh_security_master=not args.reuse_security_master,
         )
     )
     print(json.dumps(result, indent=2, sort_keys=True, default=str))

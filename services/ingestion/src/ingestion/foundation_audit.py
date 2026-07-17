@@ -92,6 +92,12 @@ async def _symbol_snapshot(session: AsyncSession, market: str) -> dict[str, Any]
         .where(Symbol.market == market)
         .group_by(Symbol.data_status),
     )
+    research_status_counts = await _group_counts(
+        session,
+        select(Symbol.research_status, func.count())
+        .where(Symbol.market == market)
+        .group_by(Symbol.research_status),
+    )
     total = sum(status_counts.values())
     active = int(
         await session.scalar(
@@ -132,6 +138,7 @@ async def _symbol_snapshot(session: AsyncSession, market: str) -> dict[str, Any]
         "visible": visible,
         "ready": ready,
         "by_data_status": status_counts,
+        "by_research_status": research_status_counts,
     }
 
 
@@ -530,6 +537,12 @@ def health_issues(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         issues.append({"severity": "critical", "code": "security_identity_drift"})
     if snapshot["onboarding"]["stale_running"]:
         issues.append({"severity": "critical", "code": "stale_onboarding_run"})
+    unresolved_research = sum(
+        int(snapshot["symbols"].get("by_research_status", {}).get(status, 0))
+        for status in ("reference_only", "onboarding", "degraded")
+    )
+    if market == "US" and unresolved_research:
+        issues.append({"severity": "critical", "code": "private_research_coverage_incomplete"})
     if snapshot["onboarding"]["recent_failure_reasons"]:
         issues.append({"severity": "warning", "code": "recent_gate_failures_need_disposition"})
     if analytics["unclassified_cap_tier"]:

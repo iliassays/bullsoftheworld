@@ -140,6 +140,33 @@ curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' \
    .venv/bin/python -m ingestion.foundation_audit --market US --strict
    ```
 
+## Complete US private catalog
+
+Refresh the guarded security master once, then freeze a deterministic catalog snapshot:
+
+```bash
+.venv/bin/python -m ingestion.security_master US
+.venv/bin/python -m ingestion.full_universe_catalog
+```
+
+The catalog includes every active product-eligible common stock, ADR, and ETF. Its policies are
+instrument-specific: ETFs do not require CIK, filings, or Company Facts; ADRs require identity and
+filings but not domestic-issuer XBRL facts; common stocks require all applicable SEC evidence.
+
+Advance one cohort manually without redownloading the security master:
+
+```bash
+.venv/bin/python -m ingestion.universe_onboarding_batch \
+  var/us-full-universe/YYYY-MM-DD/manifest-index.json \
+  --max-cohorts 1 --reuse-security-master --continue-on-failure
+```
+
+`bullsofwallst-full-universe.timer` continues the latest catalog daily at 09:15 UTC within the
+protected runtime budget. Completion means every catalog symbol is `ready`, `partial`, or
+`unavailable` in private research state. It does not mean every instrument has company financials,
+nor does it grant public display rights. Strict US acceptance fails while any catalog symbol remains
+`reference_only`, `onboarding`, or `degraded`.
+
 ## US cohort backlog
 
 Private cohort staging is separate from baseline activation. The persistent timer runs at 00:45
