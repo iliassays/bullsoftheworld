@@ -1,5 +1,5 @@
 [Unit]
-Description=Nightly private staging of one US onboarding cohort at 00:45 UTC
+Description=Nightly private staging of US onboarding cohorts (as many as the safe window allows) at 00:45 UTC
 
 [Timer]
 OnCalendar=*-*-* 00:45:00 UTC

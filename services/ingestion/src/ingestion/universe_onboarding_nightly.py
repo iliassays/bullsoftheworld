@@ -1,10 +1,11 @@
-"""Stage one pending US onboarding cohort per night, privately, outside protected market windows.
+"""Stage every cohort the safe nightly window allows, privately, outside protected market windows.
 
 Runs from a systemd timer (see infra/systemd/bullsofwallst-cohort-staging.*). Each night it walks
-the discovery bands in research-priority order and stages the first cohort that has not completed,
-using the normal audited batch runner with `promote=False`. Publication remains a separate,
-owner-directed decision; nano and ultra-nano bands are excluded because their policy requires an
-explicit risk review.
+the discovery bands in research-priority order and keeps staging cohorts - `run_batch` skips ones
+already completed, so repeated calls advance through a band's backlog - until either the whole
+backlog is staged, a cohort fails, or the safe runtime budget before the next protected window runs
+out. Publication remains a separate, owner-directed decision; nano and ultra-nano bands are
+excluded because their policy requires an explicit risk review.
 
     uv run python -m ingestion.universe_onboarding_nightly [--index PATH]
 """
@@ -73,22 +74,45 @@ def latest_manifest_index(universe_dir: Path) -> Path | None:
     return candidates[-1] if candidates else None
 
 
-async def stage_next_cohort(
+async def stage_available_cohorts(
     index_path: Path,
     *,
     bands: tuple[str, ...] = BAND_ORDER,
     runner: RunBatch = run_batch,
+    progress: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Stage the first incomplete cohort in band order; report when every band is done."""
+    """Stage cohorts across bands until the backlog is exhausted or a cohort fails.
+
+    Keeps staging within a band - one cohort per `run_batch` call, which skips cohorts already
+    completed - until a call reports nothing new, then advances to the next band. This uses the
+    full nightly window instead of stopping after a single cohort, which previously left most of a
+    quiet night's runtime budget unused. `progress` collects every cohort completed across the
+    whole call; pass a list in from the caller so a deadline that cuts the loop short
+    (`asyncio.timeout`) still leaves visible progress behind after the timeout is caught.
+    """
+    if progress is None:
+        progress = []
     skipped_total = 0
     for band in bands:
-        summary = await runner(index_path, band=band, max_cohorts=1, fetch=True)
-        if summary.get("failed"):
-            return {"outcome": "failed", "band": band, "summary": summary}
-        if summary.get("completed"):
-            return {"outcome": "staged", "band": band, "summary": summary}
-        skipped_total += len(summary.get("skipped", []))
-    return {"outcome": "backlog_complete", "bands": list(bands), "skipped": skipped_total}
+        while True:
+            summary = await runner(index_path, band=band, max_cohorts=1, fetch=True)
+            if summary.get("failed"):
+                return {
+                    "outcome": "failed",
+                    "band": band,
+                    "summary": summary,
+                    "progress": progress,
+                }
+            if not summary.get("completed"):
+                skipped_total += len(summary.get("skipped", []))
+                break
+            progress.extend(summary["completed"])
+    return {
+        "outcome": "backlog_complete",
+        "bands": list(bands),
+        "skipped": skipped_total,
+        "progress": progress,
+    }
 
 
 async def _send_failure_alert(subject: str, body: str) -> None:
@@ -132,13 +156,38 @@ async def run_nightly(index_path: Path | None) -> int:
         log.error("no discovery manifest index found under %s", DEFAULT_UNIVERSE_DIR)
         return 2
 
+    progress: list[dict[str, Any]] = []
     try:
         async with asyncio.timeout(runtime_budget):
-            result = await stage_next_cohort(index_path)
+            result = await stage_available_cohorts(index_path, progress=progress)
     except TimeoutError:
+        if progress:
+            # Graceful stop, not an incident: real progress was made and the run simply reached
+            # the safety boundary before the next protected window. Tomorrow's run continues
+            # from here (run_batch skips everything already completed).
+            log.info(
+                "reached the market-safety deadline after staging %d cohort(s) this run",
+                len(progress),
+            )
+            print(
+                json.dumps(
+                    {
+                        "index": str(index_path),
+                        "outcome": "deadline_reached",
+                        "staged_this_run": len(progress),
+                        "cohorts": progress,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                    default=str,
+                )
+            )
+            return 0
         await _send_failure_alert(
             "US cohort staging reached its market-safety deadline",
-            f"Stopped after {runtime_budget}s before the next protected window (index: {index_path})",
+            f"No cohort completed within {runtime_budget}s before the next protected window "
+            f"(index: {index_path}). The in-progress cohort may simply be unusually large; "
+            "check the log for what it was doing.",
         )
         return 1
     except Exception as error:
@@ -152,14 +201,15 @@ async def run_nightly(index_path: Path | None) -> int:
         failures = result["summary"]["failed"]
         await _send_failure_alert(
             "US cohort staging failed",
-            f"band {result['band']}: {json.dumps(failures, default=str)} (index: {index_path})",
+            f"band {result['band']}: {json.dumps(failures, default=str)} (index: {index_path}; "
+            f"{len(result['progress'])} cohort(s) staged before the failure)",
         )
         return 1
     return 0
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Stage one pending US cohort privately")
+    parser = argparse.ArgumentParser(description="Stage every pending US cohort the window allows")
     parser.add_argument(
         "--index",
         type=Path,

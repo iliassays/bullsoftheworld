@@ -1,4 +1,4 @@
-"""Nightly cohort staging: one cohort per run, band order respected, protected windows honored."""
+"""Nightly cohort staging: uses the whole safe window, band order respected, protected windows honored."""
 
 from __future__ import annotations
 
@@ -12,8 +12,9 @@ from ingestion.universe_onboarding_nightly import (
     BAND_ORDER,
     in_protected_window,
     latest_manifest_index,
+    run_nightly,
     runtime_budget_seconds,
-    stage_next_cohort,
+    stage_available_cohorts,
 )
 
 
@@ -42,44 +43,78 @@ def test_risky_bands_are_not_scheduled() -> None:
     assert BAND_ORDER[0] == "small_cap"
 
 
-@pytest.mark.asyncio
-async def test_stages_first_incomplete_band_and_stops() -> None:
-    calls: list[str] = []
+def _band_runner(responses: dict[str, list[dict]]):
+    """Return a fake run_batch that pops one canned response per call, per band."""
+    calls: dict[str, int] = {band: 0 for band in responses}
 
     async def runner(index_path, *, band, max_cohorts, fetch):
-        calls.append(band)
         assert max_cohorts == 1 and fetch is True
-        if band == "small_cap":
-            return {"completed": [], "skipped": [{"file": "s1"}], "failed": []}
-        return {"completed": [{"file": f"{band}-001"}], "skipped": [], "failed": []}
+        index = calls[band]
+        calls[band] += 1
+        return responses[band][index]
 
-    result = await stage_next_cohort(Path("index.json"), runner=runner)
-
-    assert result["outcome"] == "staged"
-    assert result["band"] == "micro_cap"
-    assert calls == ["small_cap", "micro_cap"]  # never reaches mid_cap
+    return runner, calls
 
 
 @pytest.mark.asyncio
-async def test_reports_backlog_complete_when_every_band_is_done() -> None:
+async def test_stages_every_cohort_in_a_band_before_advancing_to_the_next() -> None:
+    """Repeated calls within one band keep completing cohorts, not just the first."""
+    runner, calls = _band_runner(
+        {
+            "small_cap": [
+                {"completed": [{"file": "small-1"}], "skipped": [], "failed": []},
+                {"completed": [{"file": "small-2"}], "skipped": [], "failed": []},
+                {
+                    "completed": [],
+                    "skipped": [{"file": "small-1"}, {"file": "small-2"}],
+                    "failed": [],
+                },
+            ],
+            "micro_cap": [
+                {"completed": [{"file": "micro-1"}], "skipped": [], "failed": []},
+                {"completed": [], "skipped": [{"file": "micro-1"}], "failed": []},
+            ],
+            "mid_cap": [
+                {"completed": [], "skipped": [], "failed": []},
+            ],
+        }
+    )
+
+    result = await stage_available_cohorts(Path("index.json"), runner=runner)
+
+    assert result["outcome"] == "backlog_complete"
+    assert [c["file"] for c in result["progress"]] == ["small-1", "small-2", "micro-1"]
+    assert calls == {"small_cap": 3, "micro_cap": 2, "mid_cap": 1}
+
+
+@pytest.mark.asyncio
+async def test_reports_backlog_complete_when_every_band_is_already_done() -> None:
     async def runner(index_path, *, band, max_cohorts, fetch):
         return {"completed": [], "skipped": [{"file": f"{band}-001"}], "failed": []}
 
-    result = await stage_next_cohort(Path("index.json"), runner=runner)
+    result = await stage_available_cohorts(Path("index.json"), runner=runner)
 
     assert result["outcome"] == "backlog_complete"
+    assert result["progress"] == []
     assert result["skipped"] == len(BAND_ORDER)
 
 
 @pytest.mark.asyncio
-async def test_failed_cohort_surfaces_instead_of_continuing() -> None:
-    async def runner(index_path, *, band, max_cohorts, fetch):
-        return {"completed": [], "skipped": [], "failed": [{"file": "s1", "error": "boom"}]}
+async def test_failed_cohort_stops_the_run_but_keeps_prior_progress() -> None:
+    runner, _ = _band_runner(
+        {
+            "small_cap": [
+                {"completed": [{"file": "small-1"}], "skipped": [], "failed": []},
+                {"completed": [], "skipped": [], "failed": [{"file": "small-2", "error": "boom"}]},
+            ],
+        }
+    )
 
-    result = await stage_next_cohort(Path("index.json"), runner=runner)
+    result = await stage_available_cohorts(Path("index.json"), bands=("small_cap",), runner=runner)
 
     assert result["outcome"] == "failed"
     assert result["band"] == "small_cap"
+    assert [c["file"] for c in result["progress"]] == ["small-1"]
 
 
 def test_latest_manifest_index_picks_newest_snapshot(tmp_path: Path) -> None:
@@ -97,3 +132,65 @@ def test_latest_manifest_index_picks_newest_snapshot(tmp_path: Path) -> None:
 
 def test_latest_manifest_index_handles_empty_directory(tmp_path: Path) -> None:
     assert latest_manifest_index(tmp_path) is None
+
+
+@pytest.mark.asyncio
+async def test_run_nightly_treats_deadline_with_progress_as_a_normal_stop(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Running out of the safe window after staging cohorts is expected, not an incident."""
+    index_path = tmp_path / "manifest-index.json"
+    index_path.write_text("{}")
+    monkeypatch.setattr(
+        "ingestion.universe_onboarding_nightly.in_protected_window", lambda now: False
+    )
+    monkeypatch.setattr(
+        "ingestion.universe_onboarding_nightly.runtime_budget_seconds", lambda now: 3600
+    )
+
+    async def fake_stage(index_path, *, progress, **kwargs):
+        progress.append({"file": "small-1"})
+        raise TimeoutError
+
+    monkeypatch.setattr("ingestion.universe_onboarding_nightly.stage_available_cohorts", fake_stage)
+    alerted = []
+
+    async def fake_alert(subject, body):
+        alerted.append(subject)
+
+    monkeypatch.setattr("ingestion.universe_onboarding_nightly._send_failure_alert", fake_alert)
+
+    exit_code = await run_nightly(index_path)
+
+    assert exit_code == 0
+    assert alerted == []  # no alert - real progress was made before the deadline
+
+
+@pytest.mark.asyncio
+async def test_run_nightly_alerts_when_deadline_hits_with_zero_progress(
+    monkeypatch, tmp_path: Path
+) -> None:
+    index_path = tmp_path / "manifest-index.json"
+    index_path.write_text("{}")
+    monkeypatch.setattr(
+        "ingestion.universe_onboarding_nightly.in_protected_window", lambda now: False
+    )
+    monkeypatch.setattr(
+        "ingestion.universe_onboarding_nightly.runtime_budget_seconds", lambda now: 3600
+    )
+
+    async def fake_stage(index_path, *, progress, **kwargs):
+        raise TimeoutError
+
+    monkeypatch.setattr("ingestion.universe_onboarding_nightly.stage_available_cohorts", fake_stage)
+    alerted = []
+
+    async def fake_alert(subject, body):
+        alerted.append(subject)
+
+    monkeypatch.setattr("ingestion.universe_onboarding_nightly._send_failure_alert", fake_alert)
+
+    exit_code = await run_nightly(index_path)
+
+    assert exit_code == 1
+    assert alerted == ["US cohort staging reached its market-safety deadline"]
