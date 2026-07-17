@@ -3,6 +3,11 @@ Description=Continue complete US research onboarding after the DSE close
 
 [Timer]
 OnCalendar=*-*-* 09:15:00 UTC
+# US and DSE are both closed on Saturday. Additional bounded runs accelerate large catalog
+# snapshots without competing with either market's live-session ingestion.
+OnCalendar=Sat *-*-* 14:30:00 UTC
+OnCalendar=Sat *-*-* 17:00:00 UTC
+OnCalendar=Sat *-*-* 19:30:00 UTC
 AccuracySec=5min
 Persistent=true
 

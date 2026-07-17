@@ -162,10 +162,14 @@ Advance one cohort manually without redownloading the security master:
 ```
 
 `bullsofwallst-full-universe.timer` continues the latest catalog daily at 09:15 UTC within the
-protected runtime budget. Completion means every catalog symbol is `ready`, `partial`, or
-`unavailable` in private research state. It does not mean every instrument has company financials,
-nor does it grant public display rights. Strict US acceptance fails while any catalog symbol remains
-`reference_only`, `onboarding`, or `degraded`.
+protected runtime budget. Market-closed Saturday catch-up slots at 14:30, 17:00, and 19:30 UTC
+accelerate large snapshots without competing with live-session ingestion. The oneshot service and
+its two-hour runtime/resource limits make overlapping timer events harmless. Completion means every
+active product-eligible catalog symbol is `ready`, `partial`, or `unavailable` in private research
+state. It does not mean every instrument has company financials, nor does it grant public display
+rights. Strict US acceptance fails while any active product-eligible catalog symbol remains
+`reference_only`, `onboarding`, or `degraded`; inactive and product-excluded historical rows remain
+auditable but do not block acceptance.
 
 ## US cohort backlog
 

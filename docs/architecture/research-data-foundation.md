@@ -194,8 +194,9 @@ The report complements, not replaces, the DSE and US freshness watchdogs. Initia
 - source checkpoints expose records, symbols, bytes, source date, completion time, and quality;
 - table growth, run duration, retry count, and source failure rate are reviewed per cohort.
 - every active US product listing has a terminal private-research state (`ready`, `partial`, or
-  `unavailable`); `reference_only`, `onboarding`, or `degraded` means the catalog is incomplete and
-  strict acceptance fails.
+  `unavailable`); `reference_only`, `onboarding`, or `degraded` in that active product scope means
+  the catalog is incomplete and strict acceptance fails. Inactive or product-excluded historical
+  symbol rows remain queryable for identity continuity but do not block acceptance.
 
 ## Implemented foundation
 
