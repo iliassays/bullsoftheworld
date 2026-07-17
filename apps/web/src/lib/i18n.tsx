@@ -240,6 +240,15 @@ const STRINGS: Record<string, Entry> = {
   "tier.size": { en: "Company size", bn: "কোম্পানির আকার" },
   "tier.unclassified": { en: "Unclassified", bn: "অশ্রেণীবদ্ধ" },
   "tier.browseTitle": { en: "Browse by size", bn: "আকার অনুযায়ী দেখুন" },
+  "tier.scopeShort": {
+    en: "The size filter applies to these lists only.",
+    bn: "আকার ফিল্টার শুধু এই তালিকাগুলোতে কাজ করে।",
+  },
+  // Markets Focus tab — the four acts of the market story, in reading order.
+  "story.market": { en: "The market today", bn: "আজকের বাজার" },
+  "story.action": { en: "Where the action was", bn: "লেনদেন কোথায় জমেছিল" },
+  "story.ahead": { en: "The week ahead", bn: "সামনের সপ্তাহ" },
+  "story.boards": { en: "Find stocks", bn: "স্টক খুঁজুন" },
   "stat.vol": { en: "Vol", bn: "ভলিউম" },
   "stat.pe": { en: "P/E", bn: "পি/ই" },
   "stat.eps": { en: "EPS", bn: "ইপিএস" },

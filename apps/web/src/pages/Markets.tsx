@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EarningsWeek } from "../components/EarningsWeek";
 import { SizeChips } from "../components/SizeChips";
@@ -1639,8 +1639,57 @@ function LiquidityGuide() {
   );
 }
 
+// Editorial act header: the Focus tab reads as one market story — what the market did, where the
+// action was, what's ahead, then the stock boards. Each act announces itself with a small header
+// that only appears once its widgets actually put something on screen; on tenants missing a data
+// source (e.g. no market pulse yet) the whole act vanishes instead of leaving an orphan heading.
+function Chapter({
+  title,
+  sub,
+  right,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  right?: ReactNode;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [hasContent, setHasContent] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setHasContent(el.childElementCount > 0);
+    check();
+    const mo = new MutationObserver(check);
+    mo.observe(el, { childList: true });
+    return () => mo.disconnect();
+  }, []);
+  return (
+    <>
+      {hasContent && (
+        <div className="mt-1.5 px-1">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-0.5 rounded-full bg-accent shrink-0" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">
+              {title}
+            </span>
+            <span className="h-px flex-1 bg-border" />
+            {right}
+          </div>
+          {sub && <p className="mt-1 text-[11px] text-muted leading-snug">{sub}</p>}
+        </div>
+      )}
+      {/* display:contents so the page's flex gap keeps spacing the act's widgets directly. */}
+      <div ref={ref} className="contents">
+        {children}
+      </div>
+    </>
+  );
+}
+
 export function Markets() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const { config } = useTenantConfig();
   const { tier } = useUniverse();
   useSeo({
@@ -1675,7 +1724,6 @@ export function Markets() {
   const byKey = new Map(live.map((s) => [s.key, s]));
   const activeLens = LENSES.find((l) => l.id === lens);
   const isFocus = lens === "focus";
-  const isAllBoards = lens === "all";
   const defaultFocus = FOCUS_KEYS.map((k) => byKey.get(k)).filter((s): s is Screen => Boolean(s));
   // Stable sort: engaged boards float up, everything untouched keeps the curated merit order.
   const focusScreens = [...defaultFocus].sort(
@@ -1712,18 +1760,6 @@ export function Markets() {
         ))}
       </div>
 
-      <div className="px-1 flex items-baseline justify-between gap-2">
-        <div className="text-[11px] text-muted">
-          {isFocus
-            ? t(config.market === "US" ? "markets.focusBlurb.us" : "markets.focusBlurb")
-            : activeLens
-              ? t(activeLens.blurbKey)
-              : t("markets.browseAll")}
-        </div>
-        <Link to="/size/large" className="text-[11px] text-accent whitespace-nowrap shrink-0">
-          {t("tier.browseTitle")} →
-        </Link>
-      </div>
       <FreshnessTag
         asOf={data.as_of}
         quoteAsOf={data.quote_as_of}
@@ -1733,38 +1769,68 @@ export function Markets() {
         className=""
       />
 
-      <MarketPulse />
-      {isFocus && <MarketIntro />}
-      {isFocus && <WatchToday asOf={data.as_of} />}
-      {isFocus && <EarningsWeek />}
-      {(isFocus || isAllBoards) && <SectorHeat />}
-
-      {isFocus && focusAdapted && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface/60 px-3 py-2 text-[10px] text-muted">
-          <span>{t("focus.adaptedNote")}</span>
-          <button type="button" onClick={resetFocusOrder} className="shrink-0 font-semibold text-accent">
-            {t("focus.reset")}
-          </button>
-        </div>
+      {isFocus && (
+        <>
+          <MarketIntro />
+          <Chapter title={t("story.market")}>
+            <MarketPulse />
+          </Chapter>
+          <Chapter title={t("story.action")}>
+            <WatchToday asOf={data.as_of} />
+            <SectorHeat />
+          </Chapter>
+          <Chapter title={t("story.ahead")}>
+            <EarningsWeek />
+          </Chapter>
+        </>
       )}
 
-      {/* The size filter sits ON the board lists it scopes; everything above it is whole-market. */}
-      <SizeChips
-        scopeNote={
-          lang === "bn"
-            ? "শুধু নিচের তালিকাগুলো ফিল্টার হয় — উপরের বাজার-সারাংশ সব শেয়ারের।"
-            : "Filters the board lists below — the market overview above stays whole-market."
-        }
-      />
+      {/* Non-focus tabs are lean workspaces: one card saying what the lens is, with the size
+          filter anchored inside it, then the boards — no whole-market widgets repeated. */}
+      {!isFocus && (
+        <section className="bg-surface border border-border rounded-2xl p-3">
+          <div className="font-semibold text-sm">
+            {activeLens ? `${activeLens.icon} ${t(activeLens.labelKey)}` : t("lens.all")}
+          </div>
+          <p className="mt-1 text-[11px] text-muted leading-snug">
+            {activeLens ? t(activeLens.blurbKey) : t("markets.browseAll")}
+          </p>
+          <div className="mt-2.5">
+            <SizeChips scopeNote={t("tier.scopeShort")} />
+          </div>
+        </section>
+      )}
 
-      {isFocus
-        ? focusScreens.map((s) => <ScreenCard key={s.key} s={s} />)
-        : activeLens
-        ? activeLens.keys
+      {isFocus ? (
+        <Chapter
+          title={t("story.boards")}
+          sub={t(config.market === "US" ? "markets.focusBlurb.us" : "markets.focusBlurb")}
+          right={
+            <Link to="/size/large" className="text-[10px] text-accent whitespace-nowrap shrink-0">
+              {t("tier.browseTitle")} →
+            </Link>
+          }
+        >
+          {focusAdapted && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface/60 px-3 py-2 text-[10px] text-muted">
+              <span>{t("focus.adaptedNote")}</span>
+              <button type="button" onClick={resetFocusOrder} className="shrink-0 font-semibold text-accent">
+                {t("focus.reset")}
+              </button>
+            </div>
+          )}
+          <SizeChips scopeNote={t("tier.scopeShort")} />
+          {focusScreens.map((s) => (
+            <ScreenCard key={s.key} s={s} />
+          ))}
+        </Chapter>
+      ) : activeLens ? (
+        activeLens.keys
             .map((k) => byKey.get(k))
             .filter((s): s is Screen => Boolean(s))
             .map((s) => <ScreenCard key={s.key} s={s} />)
-        : GROUPS.map((g) => {
+      ) : (
+        GROUPS.map((g) => {
         const items = live.filter((s) => s.group === g.id);
         if (!items.length) return null;
         if (g.advanced) {
@@ -1794,7 +1860,8 @@ export function Markets() {
             ))}
           </div>
         );
-      })}
+      })
+      )}
 
       <LiquidityGuide />
       <p className="text-[10px] text-muted px-1 pb-2">{t("markets.footer")}</p>
