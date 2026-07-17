@@ -1,4 +1,18 @@
-import type { ResearchRun, ResearchRunStep } from "../../app/api-client";
+import type { ResearchRun, ResearchRunStep, ShadowPortfolio } from "../../app/api-client";
+
+export interface ShadowExecution {
+  id: string;
+  sessionNumber: number;
+  date: string;
+  code: string;
+  side: "buy" | "sell";
+  quantity: number;
+  fillPrice: number;
+  grossValue: number;
+  fee: number;
+  cashImpact: number;
+  reason: string;
+}
 
 export interface AutonomousDecision {
   status: "qualified" | "monitor" | "rejected" | "abstained";
@@ -97,6 +111,51 @@ function nullableNumeric(value: unknown): number | null {
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+export function shadowExecutions(portfolio: ShadowPortfolio | undefined): ShadowExecution[] {
+  if (!portfolio) return [];
+
+  return portfolio.snapshots
+    .flatMap((snapshot) => snapshot.trades.flatMap((raw, index) => {
+      const trade = record(raw);
+      const date = text(trade?.date, snapshot.asOfDate);
+      const code = text(trade?.code).toUpperCase();
+      const side = text(trade?.side);
+      const quantity = numeric(trade?.quantity, Number.NaN);
+      const fillPrice = numeric(trade?.fill_price, Number.NaN);
+      const grossValue = numeric(trade?.gross_value, Number.NaN);
+      const fee = numeric(trade?.fee, Number.NaN);
+      if (
+        !trade ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        !code ||
+        (side !== "buy" && side !== "sell") ||
+        !Number.isFinite(quantity) || quantity <= 0 ||
+        !Number.isFinite(fillPrice) || fillPrice <= 0 ||
+        !Number.isFinite(grossValue) || grossValue <= 0 ||
+        !Number.isFinite(fee) || fee < 0
+      ) return [];
+
+      return [{
+        id: `${snapshot.id}:${index}`,
+        sessionNumber: snapshot.sessionNumber,
+        date,
+        code,
+        side,
+        quantity,
+        fillPrice,
+        grossValue,
+        fee,
+        cashImpact: side === "buy" ? -(grossValue + fee) : grossValue - fee,
+        reason: text(trade.reason, "Systematic target rebalance"),
+      } satisfies ShadowExecution];
+    }))
+    .sort((left, right) =>
+      right.date.localeCompare(left.date) ||
+      right.sessionNumber - left.sessionNumber ||
+      left.code.localeCompare(right.code),
+    );
 }
 
 function financialLenses(value: unknown): AutonomousDecision["lenses"] {

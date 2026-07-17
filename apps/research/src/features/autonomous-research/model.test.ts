@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { ResearchRun } from "../../app/api-client";
-import { autonomousDecision, backtestResult } from "./model";
+import type { ResearchRun, ShadowPortfolio } from "../../app/api-client";
+import { autonomousDecision, backtestResult, shadowExecutions } from "./model";
 
 const baseRun: ResearchRun = {
   id: "run-1",
@@ -55,6 +55,49 @@ describe("autonomous research JSON adapters", () => {
       scenarios: [{ key: "base", state: "current" }],
       nextEvidence: [{ priority: "routine", question: "What changed?" }],
     });
+  });
+
+  it("normalizes persisted shadow fills and calculates signed cash impact", () => {
+    const portfolio: ShadowPortfolio = {
+      id: "portfolio-1",
+      workspaceId: "workspace-1",
+      tenantId: "bullsofdhaka",
+      market: "DSE",
+      sourceRunId: "run-1",
+      name: "Atlas forward book",
+      strategyKey: "dse_reversal_v1",
+      status: "active",
+      initialCapital: 10_000_000,
+      inceptionDate: "2026-07-15",
+      lastEvaluatedOn: "2026-07-17",
+      configuration: {},
+      snapshots: [{
+        id: "snapshot-1",
+        asOfDate: "2026-07-16",
+        sessionNumber: 1,
+        nav: 9_990_000,
+        cash: 8_000_000,
+        benchmarkNav: 9_900_000,
+        peakNav: 10_000_000,
+        grossExposurePct: 20,
+        drawdownPct: 0.1,
+        cumulativeFees: 1_500,
+        cumulativeTurnover: 2_000_000,
+        positions: {},
+        targetWeights: {},
+        trades: [
+          { date: "2026-07-16", code: "bsc", side: "buy", quantity: 100, fill_price: 120, gross_value: 12_000, fee: 60, reason: "prior-close shadow target" },
+          { date: "2026-07-16", code: "GP", side: "sell", quantity: 10, fill_price: 300, gross_value: 3_000, fee: 15, reason: "prior-close shadow target" },
+          { date: "bad", code: "INVALID", side: "buy", quantity: 0, fill_price: 0, gross_value: 0, fee: 0 },
+        ],
+        riskInterventions: [],
+      }],
+    };
+
+    expect(shadowExecutions(portfolio)).toEqual([
+      expect.objectContaining({ code: "BSC", side: "buy", cashImpact: -12_060 }),
+      expect.objectContaining({ code: "GP", side: "sell", cashImpact: 2_985 }),
+    ]);
   });
 
   it("keeps validation gates separate from performance metrics", () => {

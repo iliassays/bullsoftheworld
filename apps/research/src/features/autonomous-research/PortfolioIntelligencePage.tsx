@@ -1,14 +1,28 @@
-import { Activity, AlertTriangle, BriefcaseBusiness, RefreshCw, ShieldAlert } from "lucide-react";
+import { Activity, AlertTriangle, BriefcaseBusiness, ListChecks, RefreshCw, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { researchDeployment } from "../../app/deployment";
 import { Button, SelectField, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import { useShadowPortfolios } from "./hooks";
+import { shadowExecutions } from "./model";
 import { PerformanceChart } from "./PerformanceChart";
 
 function currency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: researchDeployment.currency, maximumFractionDigits: 0 }).format(value);
+}
+
+function executionCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: researchDeployment.currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function executionDate(value: string): string {
+  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 
 function detail(value: unknown): string {
@@ -26,6 +40,7 @@ export function PortfolioIntelligencePage() {
   const portfolios = useShadowPortfolios(workspace?.id);
   const [selectedId, setSelectedId] = useState("");
   const selected = useMemo(() => portfolios.data?.find((item) => item.id === selectedId) ?? portfolios.data?.[0], [portfolios.data, selectedId]);
+  const executions = useMemo(() => shadowExecutions(selected), [selected]);
   const latest = selected?.snapshots.at(-1);
   const initial = selected?.snapshots[0];
   const totalReturn = latest && initial ? (latest.nav / initial.nav - 1) * 100 : 0;
@@ -84,6 +99,37 @@ export function PortfolioIntelligencePage() {
               </div>
             </section>
           </div>
+
+          <section className="atlas-panel execution-ledger">
+            <header>
+              <ListChecks aria-hidden="true" size={16} />
+              <span><strong>Execution ledger</strong><small>{executions.length} recorded paper {executions.length === 1 ? "trade" : "trades"} · newest first</small></span>
+              <span className="execution-ledger__model">EOD shadow model</span>
+            </header>
+            <div className="execution-ledger__notice">
+              Targets are fixed after the prior close and filled at the next completed session's adjusted open, with configured slippage and fees. These are Atlas simulations, not broker orders or Hedge intraday-agent trades.
+            </div>
+            {executions.length === 0 ? (
+              <p className="execution-ledger__empty">No execution has occurred yet. The book remains in cash until the registered strategy produces an executable target.</p>
+            ) : (
+              <div className="execution-ledger__table">
+                <div><span>Date</span><span>Security</span><span>Side</span><span>Quantity</span><span>Fill</span><span>Gross</span><span>Fee</span><span>Cash impact</span><span>Reason</span></div>
+                {executions.map((trade) => (
+                  <div key={trade.id}>
+                    <span>{executionDate(trade.date)}<small>Session {trade.sessionNumber}</small></span>
+                    <strong>{trade.code}</strong>
+                    <span className={`execution-side execution-side--${trade.side}`}>{trade.side}</span>
+                    <span>{trade.quantity.toLocaleString("en-US")}</span>
+                    <span>{executionCurrency(trade.fillPrice)}</span>
+                    <span>{executionCurrency(trade.grossValue)}</span>
+                    <span>{executionCurrency(trade.fee)}</span>
+                    <span className={trade.cashImpact >= 0 ? "value-up" : "value-down"}>{trade.cashImpact >= 0 ? "+" : ""}{executionCurrency(trade.cashImpact)}</span>
+                    <span title={trade.reason}>{trade.reason === "prior-close shadow target" ? "Prior-close target rebalance" : trade.reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>
