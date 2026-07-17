@@ -5,11 +5,13 @@ const BUILD_BOUNDARIES = {
   bullsofdhaka: {
     market: "DSE",
     siteHost: "research.bullsofdhaka.com",
+    portalHost: "bullsofdhaka.com",
     apiHost: "api.bullsofdhaka.com",
   },
   bullsofwallst: {
     market: "US",
     siteHost: "research.bullsofwallst.com",
+    portalHost: "bullsofwallst.com",
     apiHost: "api.bullsofwallst.com",
   },
 } as const;
@@ -33,6 +35,9 @@ export default defineConfig(({ command, mode }) => {
     }
     if (httpsHost(env.VITE_RESEARCH_SITE_URL, "VITE_RESEARCH_SITE_URL") !== boundary.siteHost) {
       throw new Error(`${tenant} research builds must use site ${boundary.siteHost}`);
+    }
+    if (httpsHost(env.VITE_RESEARCH_PORTAL_URL, "VITE_RESEARCH_PORTAL_URL") !== boundary.portalHost) {
+      throw new Error(`${tenant} research builds must use portal ${boundary.portalHost}`);
     }
     if (httpsHost(env.VITE_RESEARCH_API_URL, "VITE_RESEARCH_API_URL") !== boundary.apiHost) {
       throw new Error(`${tenant} research builds must use API ${boundary.apiHost}`);

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-import { researchDeployment } from "../../app/deployment";
+import { portalTickerUrl, researchDeployment } from "../../app/deployment";
 import { AppTooltip, Button, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import { OptionsLens } from "../options-lens/OptionsLens";
@@ -293,6 +293,15 @@ export function CompanyDossierPage() {
           <span className="dossier-header__identity">
             <span className={`queue-security__market queue-security__market--${candidate.market.toLowerCase()}`}>{candidate.market}</span>
             <span><h1>{candidate.ticker}</h1><p>{candidate.company} · {candidate.sector}</p></span>
+            <a
+              className="dossier-portal-link"
+              href={portalTickerUrl(candidate.ticker)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open on {researchDeployment.brandName}
+              <ExternalLink aria-hidden="true" size={12} />
+            </a>
           </span>
         </div>
         <div className="dossier-header__meta">

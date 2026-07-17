@@ -46,6 +46,35 @@
     font-size: 11px;
   }
 
+  .dossier-portal-link {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 6px;
+    margin-left: 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-muted);
+    padding: 6px 9px;
+    font-size: 10px;
+    font-weight: 680;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .dossier-portal-link:hover,
+  .dossier-portal-link:focus-visible {
+    border-color: var(--accent);
+    color: var(--text);
+    outline: none;
+  }
+
+  .dossier-portal-link svg {
+    color: var(--accent-strong);
+  }
+
   .dossier-header__meta {
     display: flex;
     align-items: center;
@@ -1026,6 +1055,16 @@
     .dossier-header__meta {
       width: 100%;
       justify-content: space-between;
+    }
+
+    .dossier-header__identity {
+      flex-wrap: wrap;
+    }
+
+    .dossier-portal-link {
+      width: 100%;
+      justify-content: center;
+      margin: 2px 0 0;
     }
 
     .dossier-key-metrics {

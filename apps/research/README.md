@@ -103,6 +103,7 @@ us-east-1 certificate that covers both names.
 VITE_RESEARCH_TENANT=bullsofdhaka \
 VITE_RESEARCH_MARKET=DSE \
 VITE_RESEARCH_SITE_URL=https://research.bullsofdhaka.com \
+VITE_RESEARCH_PORTAL_URL=https://bullsofdhaka.com \
 VITE_RESEARCH_API_URL=https://api.bullsofdhaka.com \
 npm run build
 npm test

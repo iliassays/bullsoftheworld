@@ -7,6 +7,8 @@ export interface ResearchDeployment {
   exchangeName: string;
   siteUrl: string;
   siteAliases: readonly string[];
+  portalUrl: string;
+  portalLocale: "en";
   accountRecoveryUrl: string;
   apiUrl: string;
   tenantHost: string;
@@ -22,6 +24,8 @@ const DEPLOYMENTS: Record<ResearchDeployment["tenant"], ResearchDeployment> = {
     exchangeName: "Dhaka Stock Exchange",
     siteUrl: "https://research.bullsofdhaka.com",
     siteAliases: ["https://atlas.bullsofdhaka.com"],
+    portalUrl: "https://bullsofdhaka.com",
+    portalLocale: "en",
     accountRecoveryUrl: "https://bullsofdhaka.com/en/forgot",
     apiUrl: "https://api.bullsofdhaka.com",
     tenantHost: "research.bullsofdhaka.com",
@@ -35,6 +39,8 @@ const DEPLOYMENTS: Record<ResearchDeployment["tenant"], ResearchDeployment> = {
     exchangeName: "U.S. equities",
     siteUrl: "https://research.bullsofwallst.com",
     siteAliases: ["https://atlas.bullsofwallst.com"],
+    portalUrl: "https://bullsofwallst.com",
+    portalLocale: "en",
     accountRecoveryUrl: "https://bullsofwallst.com/en/forgot",
     apiUrl: "https://api.bullsofwallst.com",
     tenantHost: "research.bullsofwallst.com",
@@ -60,10 +66,12 @@ function deployment(): ResearchDeployment {
   }
 
   const configuredSite = import.meta.env.VITE_RESEARCH_SITE_URL;
+  const configuredPortal = import.meta.env.VITE_RESEARCH_PORTAL_URL;
   const configuredApi = import.meta.env.VITE_RESEARCH_API_URL;
   if (import.meta.env.PROD) {
     for (const [label, configured, expected] of [
       ["site", configuredSite, profile.siteUrl],
+      ["portal", configuredPortal, profile.portalUrl],
       ["API", configuredApi, profile.apiUrl],
     ] as const) {
       if (!configured) continue;
@@ -90,12 +98,36 @@ function deployment(): ResearchDeployment {
   return {
     ...profile,
     siteUrl: configuredSite || (import.meta.env.DEV && browserOrigin ? browserOrigin : profile.siteUrl),
+    portalUrl: configuredPortal || profile.portalUrl,
     apiUrl: configuredApi || (import.meta.env.DEV ? "http://127.0.0.1:8090" : profile.apiUrl),
   };
 }
 
 export const researchDeployment = deployment();
 export const isResearchPreview = import.meta.env.VITE_RESEARCH_PREVIEW === "true";
+
+export function buildPortalTickerUrl(
+  portalUrl: string,
+  locale: string,
+  ticker: string,
+): string {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  if (!normalizedTicker) throw new Error("A ticker is required to build a portal link");
+  const normalizedLocale = locale.trim().toLowerCase();
+  if (!normalizedLocale) throw new Error("A locale is required to build a portal link");
+  return new URL(
+    `/${encodeURIComponent(normalizedLocale)}/s/${encodeURIComponent(normalizedTicker)}`,
+    portalUrl,
+  ).toString();
+}
+
+export function portalTickerUrl(ticker: string): string {
+  return buildPortalTickerUrl(
+    researchDeployment.portalUrl,
+    researchDeployment.portalLocale,
+    ticker,
+  );
+}
 
 export function tenantRequestHeaders(): Record<string, string> {
   return { "X-Tenant-Host": researchDeployment.tenantHost };

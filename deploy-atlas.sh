@@ -9,10 +9,10 @@ cd "$(dirname "$0")"
 
 TENANT_CONFIG="tenants/$ATLAS_TENANT/tenant.toml"
 [[ -f "$TENANT_CONFIG" ]] || { echo "Unknown tenant: $ATLAS_TENANT" >&2; exit 2; }
-IFS=$'\t' read -r TENANT_NAME ATLAS_MARKET ATLAS_SITE_URL ATLAS_API_URL < <(python3 - "$TENANT_CONFIG" <<'PY'
+IFS=$'\t' read -r TENANT_NAME ATLAS_MARKET ATLAS_SITE_URL ATLAS_PORTAL_URL ATLAS_API_URL < <(python3 - "$TENANT_CONFIG" <<'PY'
 import pathlib, sys, tomllib
 config = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
-print("\t".join(config[key] for key in ("name", "market", "research_site_url", "research_api_url")))
+print("\t".join(config[key] for key in ("name", "market", "research_site_url", "site_url", "research_api_url")))
 PY
 )
 ATLAS_PREVIEW="${ATLAS_PREVIEW:-false}"
@@ -38,6 +38,7 @@ echo "Building Bulls Atlas (preview=$ATLAS_PREVIEW, api=$ATLAS_API_URL)"
   cd apps/research
   VITE_RESEARCH_API_URL="$ATLAS_API_URL" \
   VITE_RESEARCH_SITE_URL="$ATLAS_SITE_URL" \
+  VITE_RESEARCH_PORTAL_URL="$ATLAS_PORTAL_URL" \
   VITE_RESEARCH_TENANT="$TENANT_NAME" \
   VITE_RESEARCH_MARKET="$ATLAS_MARKET" \
   VITE_RESEARCH_PREVIEW="$ATLAS_PREVIEW" \
