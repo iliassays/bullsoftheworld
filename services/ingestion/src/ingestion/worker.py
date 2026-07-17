@@ -159,6 +159,9 @@ async def refresh_company(ctx) -> str:
     return f"profiles={stats['profiles']} shareholding={stats['shareholding_rows']}"
 
 
+COMPANY_REFRESH_TIMEOUT_SECONDS = 1800
+
+
 async def refresh_analytics(ctx) -> str:
     """Recompute + persist the analytics snapshot for every symbol — only on trading days."""
     if not _after_eod_window():
@@ -504,7 +507,14 @@ class WorkerSettings:
         # Market-wide summary (index/turnover) right after the bar pull.
         cron(pull_eod_summary, hour=13, minute=5, run_at_startup=False),
         # Weekly company/shareholding sweep — Friday (DSE closed, site quiet), well off the EOD path.
-        cron(refresh_company, weekday="fri", hour=14, minute=0, run_at_startup=False),
+        cron(
+            refresh_company,
+            weekday="fri",
+            hour=14,
+            minute=0,
+            run_at_startup=False,
+            timeout=COMPANY_REFRESH_TIMEOUT_SECONDS,
+        ),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
         # Portfolio growth-chart snapshot — 20 min after the bar pull, same cadence as the other

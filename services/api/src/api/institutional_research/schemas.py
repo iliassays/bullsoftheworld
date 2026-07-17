@@ -280,6 +280,21 @@ class ResearchRunStepOut(ApiModel):
     metrics: dict[str, Any]
 
 
+class ResearchCitationOut(ApiModel):
+    evidence_document_id: uuid.UUID
+    evidence_span_id: uuid.UUID
+    source_type: str
+    source_record_id: str
+    title: str
+    source_url: str | None
+    published_at: dt.datetime | None
+    known_at: dt.datetime
+    fact_key: str | None
+    text: str
+    relation: str
+    relevance: float
+
+
 class ResearchClaimOut(ApiModel):
     ordinal: int
     claim_type: str
@@ -288,6 +303,7 @@ class ResearchClaimOut(ApiModel):
     confidence: float
     values: dict[str, Any]
     verification: dict[str, Any]
+    citations: list[ResearchCitationOut] = Field(default_factory=list)
 
 
 class ResearchRunOut(ApiModel):
@@ -311,7 +327,15 @@ class ResearchRunOut(ApiModel):
     claims: list[ResearchClaimOut]
 
     @classmethod
-    def from_records(cls, run, *, steps: list, claims: list) -> ResearchRunOut:
+    def from_records(
+        cls,
+        run,
+        *,
+        steps: list,
+        claims: list,
+        citations_by_claim: dict[uuid.UUID, list[dict[str, Any]]] | None = None,
+    ) -> ResearchRunOut:
+        citations_by_claim = citations_by_claim or {}
         return cls(
             id=run.id,
             workspace_id=run.workspace_id,
@@ -348,6 +372,10 @@ class ResearchRunOut(ApiModel):
                     confidence=float(Decimal(claim.confidence)),
                     values=claim.values,
                     verification=claim.verification,
+                    citations=[
+                        ResearchCitationOut(**citation)
+                        for citation in citations_by_claim.get(claim.id, [])
+                    ],
                 )
                 for claim in claims
             ],

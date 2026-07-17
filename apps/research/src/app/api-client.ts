@@ -39,6 +39,20 @@ export interface ResearchClaim {
   confidence: number;
   values: Record<string, unknown>;
   verification: Record<string, unknown>;
+  citations: Array<{
+    evidenceDocumentId: string;
+    evidenceSpanId: string;
+    sourceType: string;
+    sourceRecordId: string;
+    title: string;
+    sourceUrl: string | null;
+    publishedAt: string | null;
+    knownAt: string;
+    factKey: string | null;
+    text: string;
+    relation: string;
+    relevance: number;
+  }>;
 }
 
 export interface ResearchRun {

@@ -13,6 +13,10 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.institutional_research.dossier import build_company_dossier
+from api.institutional_research.lineage import (
+    build_evidence_source_snapshots,
+    persist_run_evidence,
+)
 from api.institutional_research.schemas import BacktestRequest, ResearchRunOut
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
@@ -28,7 +32,10 @@ from bulls.analytics.research_strategy import (
 )
 from bulls.core.models import (
     DailyBar,
+    EvidenceDocument,
+    EvidenceSpan,
     ResearchClaim,
+    ResearchClaimCitation,
     ResearchOutcomeObservation,
     ResearchRun,
     ResearchRunStep,
@@ -82,6 +89,12 @@ def _research_input(dossier) -> AutonomousResearchInput:
         _fact("momentum_score", candidate.factors.momentum, cutoff=cutoff),
         _fact("risk_score", candidate.factors.risk, cutoff=cutoff),
         _fact("evidence_coverage", candidate.evidence.coverage_pct, cutoff=cutoff, unit="pct"),
+        _fact(
+            "market_data_as_of_date",
+            dossier.market_data.as_of_date.isoformat(),
+            cutoff=cutoff,
+            source_kind="market_data",
+        ),
         _fact("cap_tier", candidate.cap_tier, cutoff=cutoff, source_kind="market_data"),
         _fact("last_price", candidate.price, cutoff=cutoff, source_kind="market_data"),
         _fact(
@@ -180,6 +193,16 @@ def _research_input(dossier) -> AutonomousResearchInput:
             source_kind="market_data",
         ),
     ]
+    analytics_source_id = (
+        f"ticker-analytics:{candidate.market}:{candidate.ticker}:"
+        f"{dossier.market_data.as_of_date.isoformat()}"
+    )
+    facts = [
+        fact.model_copy(update={"source_id": analytics_source_id})
+        if fact.source_kind in {"calculation", "market_data"}
+        else fact
+        for fact in facts
+    ]
     if latest_evidence is not None:
         facts.append(
             _fact(
@@ -273,6 +296,13 @@ def _research_input(dossier) -> AutonomousResearchInput:
         source_id = f"finra-short-volume:{candidate.ticker}:{activity.as_of_date}"
         facts.extend(
             [
+                _fact(
+                    "finra_as_of_date",
+                    activity.as_of_date.isoformat(),
+                    cutoff=cutoff,
+                    source_kind="official_evidence",
+                    source_id=source_id,
+                ),
                 _fact(
                     "finra_short_marked_share_pct",
                     activity.short_marked_share_pct,
@@ -450,7 +480,17 @@ async def execute_company_research(
     )
     run.evidence_snapshot_hash = result.evidence_fingerprint
     await _persist_run_parent(session, run)
+    evidence_sources = build_evidence_source_snapshots(
+        payload,
+        evidence_items=dossier.candidate.evidence.items,
+    )
+    fact_spans = await persist_run_evidence(
+        session,
+        run=run,
+        sources=evidence_sources,
+    )
     facts_by_key = {fact.key: fact for fact in payload.facts}
+    persisted_claims: list[tuple[Any, ResearchClaim]] = []
     for stage in result.stages:
         _add_step(
             session,
@@ -460,31 +500,54 @@ async def execute_company_research(
             output=stage.model_dump(mode="json"),
         )
     for ordinal, claim in enumerate(result.claims):
-        session.add(
-            ResearchClaim(
-                id=uuid.uuid4(),
-                organization_id=run.organization_id,
-                tenant_id=run.tenant_id,
-                market=run.market,
-                run_id=run.id,
-                ordinal=ordinal,
-                claim_type=claim.side,
-                statement=claim.statement,
-                verdict=claim.verdict,
-                confidence=Decimal(str(claim.confidence)),
-                as_of_at=run.knowledge_cutoff_at,
-                values={
-                    "key": claim.key,
-                    "fact_keys": claim.fact_keys,
-                    "facts": [
-                        facts_by_key[key].model_dump(mode="json")
-                        for key in claim.fact_keys
-                        if key in facts_by_key
-                    ],
-                },
-                verification={"summary": claim.verification, "rule": claim.rule},
-            )
+        claim_row = ResearchClaim(
+            id=uuid.uuid4(),
+            organization_id=run.organization_id,
+            tenant_id=run.tenant_id,
+            market=run.market,
+            run_id=run.id,
+            ordinal=ordinal,
+            claim_type=claim.side,
+            statement=claim.statement,
+            verdict=claim.verdict,
+            confidence=Decimal(str(claim.confidence)),
+            as_of_at=run.knowledge_cutoff_at,
+            values={
+                "key": claim.key,
+                "fact_keys": claim.fact_keys,
+                "facts": [
+                    facts_by_key[key].model_dump(mode="json")
+                    for key in claim.fact_keys
+                    if key in facts_by_key
+                ],
+            },
+            verification={"summary": claim.verification, "rule": claim.rule},
         )
+        session.add(claim_row)
+        persisted_claims.append((claim, claim_row))
+    await session.flush()
+    citation_count = 0
+    for claim, claim_row in persisted_claims:
+        span_ids = list(dict.fromkeys(fact_spans.get(key) for key in claim.fact_keys))
+        if not span_ids or any(span_id is None for span_id in span_ids):
+            missing = sorted(key for key in claim.fact_keys if key not in fact_spans)
+            raise RuntimeError(
+                f"research claim {claim.key} has incomplete evidence lineage: {missing}"
+            )
+        relevance = Decimal("1") / Decimal(len(span_ids))
+        for span_id in span_ids:
+            session.add(
+                ResearchClaimCitation(
+                    claim_id=claim_row.id,
+                    evidence_span_id=span_id,
+                    organization_id=run.organization_id,
+                    tenant_id=run.tenant_id,
+                    market=run.market,
+                    relation="supports",
+                    relevance=relevance,
+                )
+            )
+            citation_count += 1
     for horizon in (5, 20, 60):
         session.add(
             ResearchOutcomeObservation(
@@ -506,6 +569,13 @@ async def execute_company_research(
     run.parameters = {
         **run.parameters,
         "decision": result.model_dump(mode="json", exclude={"stages", "claims"}),
+        "lineage": {
+            "version": "atlas-evidence-v1",
+            "document_count": len(evidence_sources),
+            "fact_count": len(fact_spans),
+            "claim_count": len(persisted_claims),
+            "citation_count": citation_count,
+        },
     }
     run.status = "succeeded"
     run.completed_at = dt.datetime.now(dt.UTC)
@@ -752,7 +822,55 @@ async def load_research_run(
             .order_by(ResearchClaim.ordinal)
         )
     )
-    return ResearchRunOut.from_records(run, steps=steps, claims=claims)
+    citations_by_claim: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    if claims:
+        citation_rows = (
+            await session.execute(
+                select(ResearchClaimCitation, EvidenceSpan, EvidenceDocument)
+                .join(
+                    EvidenceSpan,
+                    (EvidenceSpan.id == ResearchClaimCitation.evidence_span_id)
+                    & (EvidenceSpan.tenant_id == ResearchClaimCitation.tenant_id)
+                    & (EvidenceSpan.market == ResearchClaimCitation.market),
+                )
+                .join(
+                    EvidenceDocument,
+                    (EvidenceDocument.id == EvidenceSpan.document_id)
+                    & (EvidenceDocument.tenant_id == EvidenceSpan.tenant_id)
+                    & (EvidenceDocument.market == EvidenceSpan.market),
+                )
+                .where(
+                    ResearchClaimCitation.claim_id.in_([claim.id for claim in claims]),
+                    ResearchClaimCitation.organization_id == workspace.organization_id,
+                    ResearchClaimCitation.tenant_id == workspace.tenant_id,
+                    ResearchClaimCitation.market == workspace.market,
+                )
+                .order_by(ResearchClaimCitation.claim_id, EvidenceSpan.ordinal)
+            )
+        ).all()
+        for citation, span, document in citation_rows:
+            citations_by_claim.setdefault(citation.claim_id, []).append(
+                {
+                    "evidence_document_id": document.id,
+                    "evidence_span_id": span.id,
+                    "source_type": document.source_type,
+                    "source_record_id": document.source_record_id,
+                    "title": document.title,
+                    "source_url": document.source_url,
+                    "published_at": document.published_at,
+                    "known_at": document.known_at,
+                    "fact_key": span.locator.get("fact_key"),
+                    "text": span.text,
+                    "relation": citation.relation,
+                    "relevance": float(citation.relevance),
+                }
+            )
+    return ResearchRunOut.from_records(
+        run,
+        steps=steps,
+        claims=claims,
+        citations_by_claim=citations_by_claim,
+    )
 
 
 async def list_research_runs(

@@ -12,6 +12,7 @@ from ingestion.research_worker import WorkerSettings as ResearchWorkerSettings
 from ingestion.sec_worker import WorkerSettings as SecWorkerSettings
 from ingestion.us_worker import WorkerSettings as UsWorkerSettings
 from ingestion.worker import (
+    COMPANY_REFRESH_TIMEOUT_SECONDS,
     FINAL_QUOTE_UTC_HOUR,
     FINAL_QUOTE_UTC_MINUTE,
     WorkerSettings,
@@ -58,6 +59,13 @@ def test_final_delayed_quote_poll_recovers_on_startup() -> None:
     assert final_poll.run_at_startup
     assert final_poll.hour == FINAL_QUOTE_UTC_HOUR
     assert final_poll.minute == FINAL_QUOTE_UTC_MINUTE
+
+
+def test_weekly_company_refresh_has_a_realistic_bounded_timeout() -> None:
+    jobs = {job.name: job for job in WorkerSettings.cron_jobs}
+
+    assert jobs["cron:refresh_company"].timeout_s == COMPANY_REFRESH_TIMEOUT_SECONDS
+    assert COMPANY_REFRESH_TIMEOUT_SECONDS == 30 * 60
 
 
 def test_market_date_utc_guard_handles_dhaka_rollover() -> None:
