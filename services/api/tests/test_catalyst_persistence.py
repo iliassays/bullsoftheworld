@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy.dialects import postgresql
 
 from api.institutional_research.catalysts import (
+    _calendar_statement,
     _catalyst_upsert_statement,
     _dse_announcement_url,
     _superseded_us_forecasts_statement,
@@ -93,3 +94,19 @@ def test_us_maintenance_backfills_sources_and_cancels_only_superseded_forecasts(
 
 def test_us_supersession_is_skipped_when_no_current_forecast_exists() -> None:
     assert _superseded_us_forecasts_statement("bullsofwallst", "US", []) is None
+
+
+def test_us_calendar_read_rechecks_current_product_eligibility() -> None:
+    statement = _calendar_statement(
+        tenant_id="bullsofwallst",
+        market="US",
+        earliest=dt.date(2026, 7, 10),
+        latest=dt.date(2026, 8, 10),
+        code=None,
+    )
+    sql = str(statement.compile(dialect=postgresql.dialect())).lower()
+
+    assert "join symbols" in sql
+    assert "join security_master" in sql
+    assert "symbols.is_active is true" in sql
+    assert "security_master.is_product_eligible is true" in sql

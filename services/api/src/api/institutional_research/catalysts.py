@@ -307,6 +307,33 @@ async def load_catalyst_calendar(
     today = dt.datetime.now(dt.UTC).date()
     earliest = today - dt.timedelta(days=CALENDAR_PAST_GRACE_DAYS)
     latest = today + dt.timedelta(days=horizon_days)
+    statement = _calendar_statement(
+        tenant_id=tenant_id,
+        market=market,
+        earliest=earliest,
+        latest=latest,
+        code=code,
+    )
+    events = list(await session.scalars(statement))
+    events.sort(key=lambda event: (event.confirmed_date or event.window_start, event.code))
+    return CatalystCalendarOut(
+        tenant_id=tenant_id,
+        market=market,
+        workspace_id=workspace_id,
+        generated_at=dt.datetime.now(dt.UTC),
+        horizon_days=horizon_days,
+        events=[CatalystEventOut.model_validate(event) for event in events],
+    )
+
+
+def _calendar_statement(
+    *,
+    tenant_id: str,
+    market: str,
+    earliest: dt.date,
+    latest: dt.date,
+    code: str | None,
+):
     conditions = [
         CatalystEvent.tenant_id == tenant_id,
         CatalystEvent.market == market,
@@ -322,16 +349,20 @@ async def load_catalyst_calendar(
     ]
     if code:
         conditions.append(CatalystEvent.code == code.upper())
-    events = list(await session.scalars(select(CatalystEvent).where(*conditions)))
-    events.sort(key=lambda event: (event.confirmed_date or event.window_start, event.code))
-    return CatalystCalendarOut(
-        tenant_id=tenant_id,
-        market=market,
-        workspace_id=workspace_id,
-        generated_at=dt.datetime.now(dt.UTC),
-        horizon_days=horizon_days,
-        events=[CatalystEventOut.model_validate(event) for event in events],
+    statement = (
+        select(CatalystEvent)
+        .join(
+            Symbol,
+            (Symbol.market == CatalystEvent.market) & (Symbol.code == CatalystEvent.code),
+        )
+        .where(
+            *conditions,
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
+            Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
+        )
     )
+    return apply_research_product_scope(statement, market=market)
 
 
 def main() -> None:
