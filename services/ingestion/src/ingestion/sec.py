@@ -455,6 +455,19 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
         ]
 
 
+def _new_filing_sources(
+    code: str,
+    filings,
+    existing_accessions: set[str],
+) -> set[tuple[str, str]]:
+    """Return only filing documents that were not already retained before this refresh."""
+    return {
+        (code, row.accession_number)
+        for row in filings
+        if row.accession_number not in existing_accessions
+    }
+
+
 async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
     selected = await _ready_cik_codes(codes)
     client = SecEdgarClient(_user_agent())
@@ -468,7 +481,7 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
     alerts_delivered = 0
     for index, (code, cik, instrument_type, per_share_compatible) in enumerate(selected, start=1):
         try:
-            existing_filings = await _existing_filing_ids(code) if codes is None else set()
+            existing_filings = await _existing_filing_ids(code)
             submissions, company_facts = await client.fetch_company(cik)
             issuer, filings = parse_submissions(code, submissions, fetched_at=fetched_at)
             fact_observations = parse_company_fact_observations(
@@ -492,7 +505,7 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
             facts_total += fact_count
             completed += 1
             indexed_codes.append(code)
-            filing_sources.update((code, row.accession_number) for row in filings)
+            filing_sources.update(_new_filing_sources(code, filings, existing_filings))
             if codes is None:
                 alerts_delivered += await _publish_filing_alerts(
                     code,

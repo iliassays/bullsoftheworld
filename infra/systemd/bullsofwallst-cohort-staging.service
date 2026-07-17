@@ -9,16 +9,16 @@ User=ubuntu
 WorkingDirectory=/home/ubuntu/bullsofdhaka
 # This bounded batch may need longer statements than the API, but it must remain subordinate to
 # market-data and serving workloads on the shared host.
-Environment=DATABASE_STATEMENT_TIMEOUT_MS=120000
+Environment=DATABASE_STATEMENT_TIMEOUT_MS=180000
 ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.universe_onboarding_nightly
 StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
 StandardError=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
 Nice=15
-CPUQuota=50%
+CPUQuota=100%
 CPUWeight=10
 IOWeight=10
-MemoryHigh=1024M
-MemoryMax=1536M
+MemoryHigh=2048M
+MemoryMax=3072M
 TimeoutStartSec=2h5min
 TimeoutStopSec=2min
 NoNewPrivileges=true

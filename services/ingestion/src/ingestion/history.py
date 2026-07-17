@@ -28,7 +28,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, Symbol
 from bulls.market_data import get_provider
-from bulls.market_data.calendar import to_market_tz
+from bulls.market_data.calendar import most_recent_completed_session, to_market_tz
+from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 from ingestion.cohorts import load_cohort
 from ingestion.lineage import record_daily_bar_observations
 
@@ -217,7 +218,16 @@ async def collect(
         offset=offset,
         limit=limit,
     )
-    end = to_market_tz(dt.datetime.now(dt.UTC), market=market).date()
+    now = dt.datetime.now(dt.UTC)
+    end = (
+        most_recent_completed_session(
+            now,
+            market=market,
+            publication_delay=EOD_PUBLICATION_DELAY,
+        )
+        if market == "US"
+        else to_market_tz(now, market=market).date()
+    )
     start = end - dt.timedelta(days=days)
 
     if include_reference:

@@ -4,6 +4,7 @@ import datetime as dt
 
 from bulls.market_data.providers.us_yahoo import (
     YahooUsEodProvider,
+    completed_history_end,
     parse_yahoo_chart,
     yahoo_symbol,
 )
@@ -58,3 +59,16 @@ def test_parse_yahoo_chart_builds_daily_bars_and_skips_bad_rows() -> None:
 
 def test_parse_yahoo_chart_returns_empty_on_provider_error() -> None:
     assert parse_yahoo_chart({"chart": {"result": None, "error": {"code": "Not Found"}}}, market="US", code="NOPE") == []
+
+
+def test_yahoo_eod_range_excludes_the_still_forming_session() -> None:
+    requested = dt.date(2026, 7, 17)
+
+    assert completed_history_end(
+        requested,
+        now=dt.datetime(2026, 7, 17, 14, 0, tzinfo=dt.UTC),
+    ) == dt.date(2026, 7, 16)
+    assert completed_history_end(
+        requested,
+        now=dt.datetime(2026, 7, 17, 21, 30, tzinfo=dt.UTC),
+    ) == requested

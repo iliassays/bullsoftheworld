@@ -8,7 +8,13 @@ from sqlalchemy.dialects import postgresql
 
 from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
-from ingestion.sec import _profile_row, _sector_from_sic, _ttm_value, _upsert
+from ingestion.sec import (
+    _new_filing_sources,
+    _profile_row,
+    _sector_from_sic,
+    _ttm_value,
+    _upsert,
+)
 from ingestion.sec_13f import (
     MAPPING_SCOPE,
     UPSERT_BATCH_ROWS,
@@ -83,6 +89,15 @@ def test_sic_mapping_produces_comparable_retail_sectors() -> None:
     assert _sector_from_sic("3571", "Electronic Computers") == "Technology"
     assert _sector_from_sic("6021", "National Commercial Banks") == "Financials"
     assert _sector_from_sic("2834", "Pharmaceutical Preparations") == "Health Care"
+
+
+def test_sec_refresh_embeds_only_new_filing_documents() -> None:
+    old = type("Filing", (), {"accession_number": "0000000001-26-000001"})()
+    new = type("Filing", (), {"accession_number": "0000000001-26-000002"})()
+
+    assert _new_filing_sources("TEST", [old, new], {old.accession_number}) == {
+        ("TEST", new.accession_number)
+    }
 
 
 def test_13f_refresh_state_requires_requested_history_depth() -> None:

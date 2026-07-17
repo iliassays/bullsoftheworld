@@ -26,12 +26,8 @@ from bulls.core.config import get_settings
 from bulls.core.db import bind_tenant_context, get_sessionmaker, verify_runtime_database_role
 from bulls.core.markets import US_VERIFIED_CALENDAR_YEARS
 from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
-from bulls.market_data.calendar import (
-    is_trading_day,
-    market_close_on,
-    market_timezone,
-    to_market_tz,
-)
+from bulls.market_data.calendar import most_recent_completed_session
+from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 from ingestion.alerts import check_price_alerts
 from ingestion.analytics import compute_all
 from ingestion.buzz import snapshot_all
@@ -53,7 +49,6 @@ from ingestion.us_options.pipeline import import_option_sentiment
 log = logging.getLogger(__name__)
 MARKET = "US"
 TENANT_ID = "bullsofwallst"
-EOD_PUBLICATION_DELAY = dt.timedelta(minutes=90)
 _COMPLETION_TTL_S = 400 * 24 * 60 * 60
 _CHAIN_VERSION = "v2"
 
@@ -68,23 +63,11 @@ def _completion_key(session_date: dt.date) -> str:
 
 def most_recent_due_session(now: dt.datetime) -> dt.date:
     """Latest US session whose close plus provider-publication delay has elapsed."""
-    local = to_market_tz(now, market=MARKET)
-    candidate = local.date()
-    if is_trading_day(candidate, market=MARKET):
-        due = (
-            dt.datetime.combine(
-                candidate,
-                market_close_on(candidate, MARKET),
-                tzinfo=market_timezone(MARKET),
-            )
-            + EOD_PUBLICATION_DELAY
-        )
-        if local >= due:
-            return candidate
-    candidate -= dt.timedelta(days=1)
-    while not is_trading_day(candidate, market=MARKET):
-        candidate -= dt.timedelta(days=1)
-    return candidate
+    return most_recent_completed_session(
+        now,
+        market=MARKET,
+        publication_delay=EOD_PUBLICATION_DELAY,
+    )
 
 
 async def _coverage(session_date: dt.date) -> tuple[int, int]:

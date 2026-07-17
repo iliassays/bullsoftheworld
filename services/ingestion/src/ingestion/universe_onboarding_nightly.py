@@ -3,9 +3,10 @@
 Runs from a systemd timer (see infra/systemd/bullsofwallst-cohort-staging.*). Each night it walks
 the discovery bands in research-priority order and keeps staging cohorts - `run_batch` skips ones
 already completed, so repeated calls advance through a band's backlog - until either the whole
-backlog is staged, a cohort fails, or the safe runtime budget before the next protected window runs
-out. Publication remains a separate, owner-directed decision; nano and ultra-nano bands are
-excluded because their policy requires an explicit risk review.
+backlog is staged or the safe runtime budget before the next protected window runs out. A failure
+blocks only that band for the current run, so one edge case cannot strand independent bands.
+Publication remains a separate, owner-directed decision; nano and ultra-nano cohorts may be staged
+privately but retain their explicit risk-review publication gate.
 
     uv run python -m ingestion.universe_onboarding_nightly [--index PATH]
 """
@@ -29,7 +30,7 @@ from ingestion.universe_onboarding_batch import run_batch
 
 log = logging.getLogger("universe_onboarding_nightly")
 
-BAND_ORDER = ("small_cap", "micro_cap", "mid_cap")
+BAND_ORDER = ("mid_cap", "small_cap", "micro_cap", "nano_cap", "ultra_nano_cap")
 DEFAULT_UNIVERSE_DIR = Path("var/us-universe")
 MAX_RUN_SECONDS = 2 * 60 * 60
 MIN_RUN_SECONDS = 30 * 60
@@ -93,25 +94,32 @@ async def stage_available_cohorts(
     if progress is None:
         progress = []
     skipped_total = 0
-    for band in bands:
-        while True:
+    active = set(bands)
+    failures: list[dict[str, Any]] = []
+    while active:
+        completed_this_round = 0
+        for band in bands:
+            if band not in active:
+                continue
             summary = await runner(index_path, band=band, max_cohorts=1, fetch=True)
             if summary.get("failed"):
-                return {
-                    "outcome": "failed",
-                    "band": band,
-                    "summary": summary,
-                    "progress": progress,
-                }
+                failures.append({"band": band, "summary": summary})
+                active.remove(band)
+                continue
             if not summary.get("completed"):
                 skipped_total += len(summary.get("skipped", []))
-                break
+                active.remove(band)
+                continue
             progress.extend(summary["completed"])
+            completed_this_round += len(summary["completed"])
+        if completed_this_round == 0:
+            break
     return {
-        "outcome": "backlog_complete",
+        "outcome": "partial_failure" if failures else "backlog_complete",
         "bands": list(bands),
         "skipped": skipped_total,
         "progress": progress,
+        "failures": failures,
     }
 
 
@@ -197,12 +205,12 @@ async def run_nightly(index_path: Path | None) -> int:
         )
         raise
     print(json.dumps({"index": str(index_path), **result}, indent=2, sort_keys=True, default=str))
-    if result["outcome"] == "failed":
-        failures = result["summary"]["failed"]
+    if result["outcome"] == "partial_failure":
+        failures = result["failures"]
         await _send_failure_alert(
-            "US cohort staging failed",
-            f"band {result['band']}: {json.dumps(failures, default=str)} (index: {index_path}; "
-            f"{len(result['progress'])} cohort(s) staged before the failure)",
+            "US cohort staging completed with blocked bands",
+            f"{json.dumps(failures, default=str)} (index: {index_path}; "
+            f"{len(result['progress'])} cohort(s) staged despite the failures)",
         )
         return 1
     return 0

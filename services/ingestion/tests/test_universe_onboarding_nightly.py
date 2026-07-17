@@ -37,10 +37,14 @@ def test_runtime_budget_stops_before_the_next_protected_window() -> None:
     assert runtime_budget_seconds(_utc(12, 30)) == 5 * 60
 
 
-def test_risky_bands_are_not_scheduled() -> None:
-    assert "nano_cap" not in BAND_ORDER
-    assert "ultra_nano_cap" not in BAND_ORDER
-    assert BAND_ORDER[0] == "small_cap"
+def test_private_staging_covers_every_research_band_in_priority_order() -> None:
+    assert BAND_ORDER == (
+        "mid_cap",
+        "small_cap",
+        "micro_cap",
+        "nano_cap",
+        "ultra_nano_cap",
+    )
 
 
 def _band_runner(responses: dict[str, list[dict]]):
@@ -80,10 +84,14 @@ async def test_stages_every_cohort_in_a_band_before_advancing_to_the_next() -> N
         }
     )
 
-    result = await stage_available_cohorts(Path("index.json"), runner=runner)
+    result = await stage_available_cohorts(
+        Path("index.json"),
+        bands=("small_cap", "micro_cap", "mid_cap"),
+        runner=runner,
+    )
 
     assert result["outcome"] == "backlog_complete"
-    assert [c["file"] for c in result["progress"]] == ["small-1", "small-2", "micro-1"]
+    assert [c["file"] for c in result["progress"]] == ["small-1", "micro-1", "small-2"]
     assert calls == {"small_cap": 3, "micro_cap": 2, "mid_cap": 1}
 
 
@@ -100,7 +108,7 @@ async def test_reports_backlog_complete_when_every_band_is_already_done() -> Non
 
 
 @pytest.mark.asyncio
-async def test_failed_cohort_stops_the_run_but_keeps_prior_progress() -> None:
+async def test_failed_cohort_blocks_only_its_band_and_keeps_prior_progress() -> None:
     runner, _ = _band_runner(
         {
             "small_cap": [
@@ -112,8 +120,8 @@ async def test_failed_cohort_stops_the_run_but_keeps_prior_progress() -> None:
 
     result = await stage_available_cohorts(Path("index.json"), bands=("small_cap",), runner=runner)
 
-    assert result["outcome"] == "failed"
-    assert result["band"] == "small_cap"
+    assert result["outcome"] == "partial_failure"
+    assert result["failures"][0]["band"] == "small_cap"
     assert [c["file"] for c in result["progress"]] == ["small-1"]
 
 

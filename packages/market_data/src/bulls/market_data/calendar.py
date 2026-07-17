@@ -73,6 +73,35 @@ def add_trading_days(d: dt.date, n: int, *, market: str | None = "DSE") -> dt.da
     return out
 
 
+def most_recent_completed_session(
+    when: dt.datetime,
+    *,
+    market: str,
+    publication_delay: dt.timedelta = dt.timedelta(),
+) -> dt.date:
+    """Return the latest session whose close and publication delay have elapsed.
+
+    EOD adapters must never treat a still-forming daily candle as a completed bar. The optional
+    delay covers providers that finalize their daily files after the exchange closes.
+    """
+    if publication_delay < dt.timedelta():
+        raise ValueError("publication_delay must not be negative")
+    local = to_market_tz(when, market=market)
+    candidate = local.date()
+    if is_trading_day(candidate, market=market):
+        completed_at = dt.datetime.combine(
+            candidate,
+            market_close_on(candidate, market),
+            tzinfo=market_timezone(market),
+        ) + publication_delay
+        if local >= completed_at:
+            return candidate
+    candidate -= dt.timedelta(days=1)
+    while not is_trading_day(candidate, market=market):
+        candidate -= dt.timedelta(days=1)
+    return candidate
+
+
 def is_trading_hours(
     when: dt.datetime, tz: ZoneInfo | None = None, *, market: str | None = "DSE"
 ) -> bool:

@@ -45,6 +45,8 @@ from bulls.core.models import (
     UniverseOnboardingRun,
     UniverseOnboardingStage,
 )
+from bulls.market_data.calendar import most_recent_completed_session
+from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 
 AUDIT_VERSION = "data-foundation-v2"
 MARKETS = ("DSE", "US")
@@ -138,9 +140,25 @@ async def _market_data_snapshot(
     market: str,
     *,
     ready: int,
+    now: dt.datetime,
 ) -> dict[str, Any]:
+    completed_session = most_recent_completed_session(
+        now,
+        market=market,
+        publication_delay=EOD_PUBLICATION_DELAY if market == "US" else dt.timedelta(),
+    )
+    ready_codes = select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        Symbol.data_status == "ready",
+    )
     latest_bar = await session.scalar(
-        select(func.max(DailyBar.date)).where(DailyBar.market == market)
+        select(func.max(DailyBar.date)).where(
+            DailyBar.market == market,
+            DailyBar.date <= completed_session,
+            DailyBar.code.in_(ready_codes),
+        )
     )
     first_bar = await session.scalar(
         select(func.min(DailyBar.date)).where(DailyBar.market == market)
@@ -158,14 +176,7 @@ async def _market_data_snapshot(
                 select(func.count(func.distinct(DailyBar.code))).where(
                     DailyBar.market == market,
                     DailyBar.date == latest_bar,
-                    DailyBar.code.in_(
-                        select(Symbol.code).where(
-                            Symbol.market == market,
-                            Symbol.is_active.is_(True),
-                            Symbol.is_hidden.is_(False),
-                            Symbol.data_status == "ready",
-                        )
-                    ),
+                    DailyBar.code.in_(ready_codes),
                 )
             )
             or 0
@@ -178,11 +189,24 @@ async def _market_data_snapshot(
                 func.count().filter(TickerAnalytics.cap_tier.is_(None)),
                 func.count().filter(TickerAnalytics.input_fingerprint.isnot(None)),
                 func.count().filter(TickerAnalytics.point_in_time_complete.is_(True)),
-            ).where(TickerAnalytics.market == market)
+            )
+            .join(
+                Symbol,
+                (Symbol.market == TickerAnalytics.market)
+                & (Symbol.code == TickerAnalytics.code),
+            )
+            .where(
+                TickerAnalytics.market == market,
+                TickerAnalytics.as_of_date <= completed_session,
+                Symbol.is_active.is_(True),
+                Symbol.is_hidden.is_(False),
+                Symbol.data_status == "ready",
+            )
         )
     ).one()
     return {
         "bars": {
+            "latest_completed_session": completed_session,
             "rows": bar_count,
             "first_date": first_bar,
             "latest_date": latest_bar,
@@ -552,6 +576,7 @@ async def audit(markets: tuple[str, ...] = MARKETS) -> dict[str, Any]:
                     session,
                     market,
                     ready=symbols["ready"],
+                    now=now,
                 ),
                 "onboarding": await _onboarding_snapshot(session, market, now=now),
                 "sources": await _source_snapshot(session, market),

@@ -16,6 +16,7 @@ from bulls.market_data.calendar import (
     add_trading_days,
     is_trading_day,
     is_trading_hours,
+    most_recent_completed_session,
     session_phase,
     to_market_tz,
 )
@@ -100,3 +101,20 @@ def test_us_calendar_honors_early_close():
 def test_us_add_trading_days_skips_weekends_and_us_holidays():
     # Thu 2026-07-02 + 1 skips the observed Fri holiday and weekend -> Mon 2026-07-06.
     assert add_trading_days(dt.date(2026, 7, 2), 1, market="US") == dt.date(2026, 7, 6)
+
+
+def test_completed_session_waits_for_the_provider_publication_delay() -> None:
+    delay = dt.timedelta(minutes=90)
+
+    assert most_recent_completed_session(
+        _utc(2026, 7, 9, 21, 29), market="US", publication_delay=delay
+    ) == dt.date(2026, 7, 8)
+    assert most_recent_completed_session(
+        _utc(2026, 7, 9, 21, 30), market="US", publication_delay=delay
+    ) == dt.date(2026, 7, 9)
+    with pytest.raises(ValueError, match="negative"):
+        most_recent_completed_session(
+            _utc(2026, 7, 9, 21, 30),
+            market="US",
+            publication_delay=-dt.timedelta(seconds=1),
+        )

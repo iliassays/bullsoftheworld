@@ -71,25 +71,67 @@ async def bootstrap_daily_bars(
     }
 
 
+async def bootstrap_all_daily_bars(
+    market: str,
+    *,
+    after: str | None = None,
+    batch_size: int = 25,
+    pause_ms: int = 100,
+) -> dict[str, int | str | None]:
+    """Run every bounded slice, preserving an explicit cursor after each committed batch."""
+    cursor = after
+    symbols = 0
+    bars_seen = 0
+    observations = 0
+    while True:
+        batch = await bootstrap_daily_bars(
+            market,
+            after=cursor,
+            limit=batch_size,
+            pause_ms=pause_ms,
+        )
+        count = int(batch["symbols"])
+        symbols += count
+        bars_seen += int(batch["bars_seen"])
+        observations += int(batch["observations_inserted"])
+        if count == 0:
+            break
+        cursor = str(batch["next_after"])
+        print(
+            f"[foundation-bootstrap] market={market} symbols={symbols} "
+            f"bars={bars_seen} inserted={observations} next_after={cursor}",
+            flush=True,
+        )
+        if count < batch_size:
+            break
+    return {
+        "market": market.upper(),
+        "symbols": symbols,
+        "bars_seen": bars_seen,
+        "observations_inserted": observations,
+        "next_after": cursor,
+    }
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bootstrap immutable research observations")
     parser.add_argument("market", choices=("DSE", "US"))
     parser.add_argument("--after", help="resume after this symbol (exclusive)")
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--pause-ms", type=int, default=100)
+    parser.add_argument("--all", action="store_true", help="continue until every symbol is done")
     return parser.parse_args(argv)
 
 
 def main() -> None:
     args = _parse_args(sys.argv[1:])
-    stats = asyncio.run(
-        bootstrap_daily_bars(
-            args.market,
-            after=args.after,
-            limit=args.limit,
-            pause_ms=args.pause_ms,
-        )
-    )
+    operation = bootstrap_all_daily_bars if args.all else bootstrap_daily_bars
+    kwargs = {
+        "after": args.after,
+        "pause_ms": args.pause_ms,
+        ("batch_size" if args.all else "limit"): args.limit,
+    }
+    stats = asyncio.run(operation(args.market, **kwargs))
     print(stats)
 
 

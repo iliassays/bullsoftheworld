@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import and_, or_, select
 
 from bulls.core.db import get_sessionmaker
@@ -73,3 +75,12 @@ async def refresh_restricted_market_data() -> dict[str, object]:
         "analytics": analytics,
         "quotes": quotes,
     }
+
+
+def main() -> None:
+    stats = asyncio.run(refresh_restricted_market_data())
+    print(f"[restricted-research] done: {stats}")
+
+
+if __name__ == "__main__":
+    main()

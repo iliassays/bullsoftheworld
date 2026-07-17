@@ -33,6 +33,8 @@ from bulls.core.models import (
     TickerAnalytics,
     TickerPattern,
 )
+from bulls.market_data.calendar import most_recent_completed_session
+from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 from ingestion.lineage import content_sha256
 
 _LOOKBACK = 300  # enough for the 200-day SMA and 12-1 month momentum (needs ~253 bars)
@@ -280,7 +282,28 @@ def analytics_input_fingerprint(
     return content_sha256(payload)
 
 
-def _bar_batch_statement(market: str, codes: list[str]):
+def analytics_cutoff_date(
+    market: str,
+    *,
+    now: dt.datetime | None = None,
+) -> dt.date:
+    """Return the latest session eligible for EOD analytics."""
+    normalized_market = market.upper()
+    return most_recent_completed_session(
+        now or dt.datetime.now(dt.UTC),
+        market=normalized_market,
+        publication_delay=(
+            EOD_PUBLICATION_DELAY if normalized_market == "US" else dt.timedelta()
+        ),
+    )
+
+
+def _bar_batch_statement(
+    market: str,
+    codes: list[str],
+    *,
+    through_date: dt.date | None = None,
+):
     """Build an index-friendly latest-bars query for one bounded symbol batch."""
     requested_codes = (
         values(column("code", String(16)), name="requested_codes")
@@ -300,6 +323,7 @@ def _bar_batch_statement(market: str, codes: list[str]):
         .where(
             DailyBar.market == market,
             DailyBar.code == requested_codes.c.code,
+            DailyBar.date <= through_date if through_date is not None else true(),
         )
         .order_by(DailyBar.date.desc())
         .limit(_LOOKBACK)
@@ -321,9 +345,19 @@ def _bar_batch_statement(market: str, codes: list[str]):
     )
 
 
-async def _load_bar_batch(session, market: str, codes: list[str]) -> dict[str, list]:
+async def _load_bar_batch(
+    session,
+    market: str,
+    codes: list[str],
+    *,
+    through_date: dt.date,
+) -> dict[str, list]:
     """Load the latest lookback per code through the `(market, code, date)` primary-key index."""
-    rows = (await session.execute(_bar_batch_statement(market, codes))).mappings()
+    rows = (
+        await session.execute(
+            _bar_batch_statement(market, codes, through_date=through_date)
+        )
+    ).mappings()
     grouped: dict[str, list] = defaultdict(list)
     for row in rows:
         grouped[row["code"]].append(
@@ -435,10 +469,13 @@ async def compute_all(
     codes: list[str] | None = None,
     include_onboarding: bool = False,
     include_restricted: bool = False,
+    as_of_date: dt.date | None = None,
 ) -> dict[str, int]:
     """Compute + upsert analytics for every symbol with price history. Returns counts."""
     if include_restricted and not codes:
         raise ValueError("include_restricted requires an explicit non-empty code list")
+    market = market.upper()
+    cutoff = as_of_date or analytics_cutoff_date(market)
     sm = get_sessionmaker()
     async with sm() as session:
         statuses = (
@@ -486,7 +523,12 @@ async def compute_all(
     async with sm() as session:
         for start in range(0, len(code_rows), _BATCH_SIZE):
             batch = code_rows[start : start + _BATCH_SIZE]
-            bars_by_code = await _load_bar_batch(session, market, batch)
+            bars_by_code = await _load_bar_batch(
+                session,
+                market,
+                batch,
+                through_date=cutoff,
+            )
             for code in batch:
                 done, patterns = await _persist_symbol_analytics(
                     session,

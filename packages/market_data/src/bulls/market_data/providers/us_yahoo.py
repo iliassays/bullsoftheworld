@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 
+from bulls.market_data.calendar import most_recent_completed_session
 from bulls.market_data.provider import (
     Bar,
     CompanyInfo,
@@ -26,6 +27,7 @@ from bulls.market_data.providers.us_security_master import fetch_us_security_mas
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 _UA = "Mozilla/5.0 BullsOfTheWorld/0.1 us-eod-bars"
+EOD_PUBLICATION_DELAY = dt.timedelta(minutes=90)
 
 # No US security-master field carries a company website (unlike DSE, which publishes one per
 # listing), so only hand-reviewed ETF/fund issuer domains are returned. Inventing `companyname.com`
@@ -81,6 +83,18 @@ def yahoo_symbol(code: str) -> str:
 
 def _period(d: dt.date) -> int:
     return int(dt.datetime.combine(d, dt.time.min, tzinfo=dt.UTC).timestamp())
+
+
+def completed_history_end(end: dt.date, *, now: dt.datetime) -> dt.date:
+    """Cap a requested range at Yahoo's latest safely finalized US session."""
+    return min(
+        end,
+        most_recent_completed_session(
+            now,
+            market="US",
+            publication_delay=EOD_PUBLICATION_DELAY,
+        ),
+    )
 
 
 def parse_yahoo_chart(data: dict[str, Any], *, market: str, code: str) -> list[Bar]:
@@ -180,10 +194,16 @@ class YahooUsEodProvider:
     async def get_daily_bars(self, code: str, start: dt.date, end: dt.date) -> list[Bar]:
         if end < start:
             return []
+        completed_end = completed_history_end(
+            end,
+            now=dt.datetime.now(dt.UTC),
+        )
+        if completed_end < start:
+            return []
         params = {
             "period1": str(_period(start)),
             # Yahoo treats period2 as an exclusive boundary; include the requested end date.
-            "period2": str(_period(end + dt.timedelta(days=1))),
+            "period2": str(_period(completed_end + dt.timedelta(days=1))),
             "interval": "1d",
             "events": "history",
             "includeAdjustedClose": "true",
@@ -196,7 +216,11 @@ class YahooUsEodProvider:
                 if exc.response.status_code == 404:
                     return []
                 raise
-        return parse_yahoo_chart(resp.json(), market=self.market, code=code.upper())
+        return [
+            bar
+            for bar in parse_yahoo_chart(resp.json(), market=self.market, code=code.upper())
+            if start <= bar.date <= completed_end
+        ]
 
     async def get_market_summary(self, start: dt.date, end: dt.date) -> list[MarketSummary]:
         return []
