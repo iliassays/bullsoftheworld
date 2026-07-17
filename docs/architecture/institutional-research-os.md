@@ -396,7 +396,11 @@ accounts are excluded unless deliberately included by an administrator.
   history/analytics, 105 have SEC filing coverage, and 103 have Company Facts coverage. FINRA daily
   short-volume coverage is broad, but it does not compensate for the narrow research-ready universe.
 - US options: no licensed historical options-flow dataset or customer-display chain is integrated.
-  Cboe Option Sentiment, Option EOD Summary, and Open-Close quotes/samples remain prerequisites.
+  A fail-closed Phase A foundation now records platform entitlements, stores immutable raw and
+  normalized artifacts, enforces append-only revision manifests, parses Option Sentiment v1.4,
+  writes versioned Parquet, and retains quality rejection reasons. It is disabled and has loaded no
+  licensed data. Cboe Option Sentiment history, Option EOD Summary/Open-Close samples, production
+  object storage, and approved terms remain prerequisites.
 - Evidence index: 39,120 US chunks but only 1,035 DSE chunks. US filing chunks currently represent
   filing metadata/selected facts rather than full filing bodies and tables.
 
@@ -515,15 +519,17 @@ Atlas. The calendar currently covers decoded DSE announcement dates and inferred
 windows from EDGAR cadence; broader event sources and post-event outcome scoring remain future
 depth. A backtest remains `diagnostic` until history length, breadth, inactive/delisted coverage,
 and execution-count gates pass; the UI does not relabel diagnostics as validated research. US
-options intelligence remains a planned research module and must not appear in production as
-implemented, live, or validated until its separate data, licensing, historical, and forward gates
-pass.
+options intelligence remains unavailable as a product module. Its Phase A ingestion foundation
+must not be represented as live evidence or a validated strategy until the separate data,
+licensing, historical, and forward gates pass.
 
 ## Delivery sequence
 
 1. **Foundation (implemented, licensing incomplete)**: organization tenancy, research
    run/claim/evidence schema, RLS, audit ledger, point-in-time contracts, and fixed tenant builds.
-   Object storage, a complete source registry, and market-data licensing decisions remain.
+   A narrow options entitlement/manifest registry and immutable-storage interface now exist.
+   Production object-storage provisioning, the broader source registry, and market-data licensing
+   decisions remain.
 2. **Data depth**: full filing body/table evidence, insider and beneficial-owner filings, broader
    catalyst sources and outcomes, DSE publication timestamps, broader US onboarding, longer DSE
    history, and the staged US options feasibility work defined in

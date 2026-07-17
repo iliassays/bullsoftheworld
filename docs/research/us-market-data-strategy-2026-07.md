@@ -1,6 +1,7 @@
 # US market-data strategy (research memo, 2026-07-16)
 
-Status: recommendation agreed with the owner on 2026-07-16; implementation not started.
+Status: recommendation agreed with the owner on 2026-07-16. The options Phase A ingestion
+foundation has started; price-provider migration and vendor acquisition remain outstanding.
 Audience: the next engineering session that picks up the provider migration. Read
 `docs/architecture/institutional-research-os.md` (data readiness + licensing sections) first.
 
@@ -72,7 +73,9 @@ The options research contract is
    inactive/delisted-universe gate can pass for US.
 5. **Options schema audit:** obtain Option Sentiment history plus Option EOD Summary and Open-Close
    samples. Reconcile symbol identity, sessions, blank fields, exchange coverage, previous-settlement
-   open interest, adjusted contracts, and delivery times before adding a serving model.
+   open interest, adjusted contracts, and delivery times before adding a serving model. The
+   entitlement gate, immutable manifests, strict Option Sentiment v1.4 parser, normalized Parquet
+   writer, quality report, and manual bounded import are implemented; no licensed data is loaded.
 6. **One licensing review, three source families:** Tiingo commercial terms + Sharadar quote + Cboe/
    OPRA internal, display, derived-data, retention, and redistribution terms, decided together as
    one memo. This also closes the open licensing item from

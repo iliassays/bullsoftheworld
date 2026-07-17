@@ -1,6 +1,9 @@
 # US options-flow research for Bulls Atlas — July 2026
 
-Status: research specification; approved for historical evaluation, not yet implemented.
+Status: research specification approved for historical evaluation. The fail-closed Phase A
+entitlement, immutable-object, strict Option Sentiment v1.4 parser, Parquet normalization, quality
+manifest, and manual import foundation are implemented as of 2026-07-16. No licensed file has been
+loaded and no serving, feature, backtest, or customer-display module is enabled.
 Market: US listed equity options and their US-listed underlying stocks only.
 Product: Bulls Atlas / Bulls of Wall Street.
 
@@ -398,6 +401,12 @@ the slower, cleaner EOD research product rather than market a noisier real-time 
 
 Phase A proves schema, identity, and data quality — it does **not** authorize the strategy backtest,
 whose multi-year history purchase is gated separately (see Backtest design).
+
+Engineering status: the import foundation is implemented and disabled by default. Vendor
+subscription/terms, a production object-storage bucket, an approved entitlement row, the historical
+files, and the completed feasibility report remain outstanding. The resumable historical importer
+and immutable descriptive evaluator are implemented; operational instructions are in
+`docs/runbooks/us-options-phase-a.md`.
 
 - license approximately one year of Cboe Option Sentiment as a low-cost schema/data-quality audit;
 - obtain sample/quote for Option EOD Summary and Open-Close;

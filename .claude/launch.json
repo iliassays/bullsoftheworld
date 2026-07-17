@@ -7,6 +7,15 @@
       "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "atlas-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/research"],
+      "port": 5180,
+      "env": {
+        "VITE_RESEARCH_PREVIEW": "true"
+      }
     }
   ]
 }
