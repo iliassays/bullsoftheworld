@@ -10,8 +10,9 @@ point-in-time complete.
 - Keep long jobs outside DSE polling/EOD windows and the US EOD chain when possible.
 - Use transient systemd units for jobs longer than a few minutes; an SSH disconnect must not stop a
   data transaction.
-- Set `Nice`, `CPUQuota`, `MemoryMax`, and `RuntimeMaxSec`. Check API latency and host load between
-  stages.
+- Set `Nice`, `CPUQuota`, `MemoryMax`, and a wall-clock limit. Use `RuntimeMaxSec` for transient
+  `Type=simple` jobs and `TimeoutStartSec` for repository `Type=oneshot` units. Check API latency
+  and host load between stages.
 - Never manufacture `published_at` or historical `known_at`. Legacy bars remain
   `knowledge_time_quality=legacy_unknown`.
 - Never promote `point_in_time_complete` because a bootstrap finished. That flag requires inactive
@@ -69,7 +70,8 @@ sudo systemd-run \
 ```
 
 `TimeoutStartSec` is not a runtime limit for a `Type=simple` unit: systemd considers that unit
-started as soon as the process is launched. Always use `RuntimeMaxSec` for the wall-clock bound.
+started as soon as the process is launched, so transient jobs use `RuntimeMaxSec`. Repository
+`Type=oneshot` units remain in their start phase until completion and use `TimeoutStartSec`.
 
 Monitor without attaching to the process:
 
