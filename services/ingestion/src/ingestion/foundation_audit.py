@@ -98,6 +98,29 @@ async def _symbol_snapshot(session: AsyncSession, market: str) -> dict[str, Any]
         .where(Symbol.market == market)
         .group_by(Symbol.research_status),
     )
+    if market == "US":
+        # Completion is defined by the guarded product catalog, not by inactive or excluded
+        # historical rows retained in ``symbols`` for identity continuity.
+        active_product_research_status_counts = await _group_counts(
+            session,
+            select(Symbol.research_status, func.count())
+            .join(SecurityMaster, Symbol.security_id == SecurityMaster.security_id)
+            .where(
+                Symbol.market == market,
+                Symbol.is_active.is_(True),
+                SecurityMaster.market == market,
+                SecurityMaster.is_active.is_(True),
+                SecurityMaster.is_product_eligible.is_(True),
+            )
+            .group_by(Symbol.research_status),
+        )
+    else:
+        active_product_research_status_counts = await _group_counts(
+            session,
+            select(Symbol.research_status, func.count())
+            .where(Symbol.market == market, Symbol.is_active.is_(True))
+            .group_by(Symbol.research_status),
+        )
     total = sum(status_counts.values())
     active = int(
         await session.scalar(
@@ -139,6 +162,7 @@ async def _symbol_snapshot(session: AsyncSession, market: str) -> dict[str, Any]
         "ready": ready,
         "by_data_status": status_counts,
         "by_research_status": research_status_counts,
+        "active_product_by_research_status": active_product_research_status_counts,
     }
 
 
@@ -537,8 +561,12 @@ def health_issues(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         issues.append({"severity": "critical", "code": "security_identity_drift"})
     if snapshot["onboarding"]["stale_running"]:
         issues.append({"severity": "critical", "code": "stale_onboarding_run"})
+    research_status_counts = snapshot["symbols"].get(
+        "active_product_by_research_status",
+        snapshot["symbols"].get("by_research_status", {}),
+    )
     unresolved_research = sum(
-        int(snapshot["symbols"].get("by_research_status", {}).get(status, 0))
+        int(research_status_counts.get(status, 0))
         for status in ("reference_only", "onboarding", "degraded")
     )
     if market == "US" and unresolved_research:
