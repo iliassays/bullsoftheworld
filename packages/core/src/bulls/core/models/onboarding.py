@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -101,6 +102,50 @@ class UniverseOnboardingResult(Base):
     evaluated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class UniverseOnboardingStage(Base):
+    """Durable checkpoint for one idempotent acquisition stage within an onboarding run."""
+
+    __tablename__ = "universe_onboarding_stages"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed')",
+            name="ck_universe_onboarding_stage_status",
+        ),
+        CheckConstraint(
+            "input_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_universe_onboarding_stage_input_hash",
+        ),
+        CheckConstraint(
+            "output_fingerprint IS NULL OR output_fingerprint ~ '^[0-9a-f]{64}$'",
+            name="ck_universe_onboarding_stage_output_hash",
+        ),
+        UniqueConstraint("run_id", "stage_key", name="uq_universe_onboarding_stages_run_stage"),
+        Index("ix_universe_onboarding_stages_run_ordinal", "run_id", "ordinal"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("universe_onboarding_runs.id", ondelete="CASCADE"),
+    )
+    stage_key: Mapped[str] = mapped_column(String(48))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    attempts: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    output_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    stats: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class OnDemandResearchJob(Base):

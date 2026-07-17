@@ -122,3 +122,52 @@ def test_named_risk_review_allows_normal_authorization_checks(monkeypatch) -> No
         True,
         _manifest(requires_risk_review=True, risk_review_id="review-2026-001"),
     )
+
+
+@pytest.mark.asyncio
+async def test_completed_onboarding_stage_is_not_executed_again(monkeypatch) -> None:
+    async def begin(*_args, **_kwargs):
+        return True, {"rows": 42}
+
+    async def should_not_run():
+        raise AssertionError("completed stage was executed again")
+
+    monkeypatch.setattr(universe_onboarding, "_begin_stage", begin)
+
+    result = await universe_onboarding._checkpointed_stage(
+        SimpleNamespace(),
+        stage_key="history",
+        ordinal=2,
+        input_fingerprint="a" * 64,
+        operation=should_not_run,
+    )
+
+    assert result == {"rows": 42}
+
+
+@pytest.mark.asyncio
+async def test_failed_onboarding_stage_is_durably_marked(monkeypatch) -> None:
+    marked = []
+
+    async def begin(*_args, **_kwargs):
+        return False, None
+
+    async def fail(_run_id, stage_key, error):
+        marked.append((stage_key, str(error)))
+
+    async def operation():
+        raise RuntimeError("provider timeout")
+
+    monkeypatch.setattr(universe_onboarding, "_begin_stage", begin)
+    monkeypatch.setattr(universe_onboarding, "_fail_stage", fail)
+
+    with pytest.raises(RuntimeError, match="provider timeout"):
+        await universe_onboarding._checkpointed_stage(
+            SimpleNamespace(),
+            stage_key="sec",
+            ordinal=3,
+            input_fingerprint="a" * 64,
+            operation=operation,
+        )
+
+    assert marked == [("sec", "provider timeout")]

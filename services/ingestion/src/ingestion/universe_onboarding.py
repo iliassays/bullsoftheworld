@@ -12,6 +12,7 @@ import asyncio
 import datetime as dt
 import sys
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy import delete, select, update
@@ -24,12 +25,14 @@ from bulls.core.models import (
     Symbol,
     UniverseOnboardingResult,
     UniverseOnboardingRun,
+    UniverseOnboardingStage,
 )
 from bulls.core.symbol_lifecycle import research_publication_status
 from bulls.market_data.calendar import to_market_tz
 from ingestion.analytics import compute_all
 from ingestion.cohorts import CohortManifest, load_cohort
 from ingestion.history import collect as collect_history
+from ingestion.lineage import content_sha256
 from ingestion.onboarding_gates import GateEvidence, evaluate_cohort
 from ingestion.sec import collect as collect_sec
 from ingestion.security_master import collect as collect_security_master
@@ -87,7 +90,11 @@ async def _resume_run(
 ) -> UniverseOnboardingRun:
     sm = get_sessionmaker()
     async with sm() as session:
-        run = await session.get(UniverseOnboardingRun, run_id)
+        run = await session.scalar(
+            select(UniverseOnboardingRun)
+            .where(UniverseOnboardingRun.id == run_id)
+            .with_for_update()
+        )
         if run is None:
             raise ValueError(f"unknown onboarding run {run_id}")
         if run.manifest_sha256 != manifest.manifest_sha256:
@@ -110,6 +117,142 @@ async def _resume_run(
         run.completed_at = None
         await session.commit()
         return run
+
+
+async def _begin_stage(
+    run_id: uuid.UUID,
+    *,
+    stage_key: str,
+    ordinal: int,
+    input_fingerprint: str,
+) -> tuple[bool, Any]:
+    """Start/restart a durable stage, or return its prior result when already complete."""
+    sm = get_sessionmaker()
+    async with sm() as session:
+        await session.execute(
+            pg_insert(UniverseOnboardingStage)
+            .values(
+                run_id=run_id,
+                stage_key=stage_key,
+                ordinal=ordinal,
+                status="running",
+                attempts=0,
+                input_fingerprint=input_fingerprint,
+                output_fingerprint=None,
+                stats={},
+                error=None,
+                started_at=dt.datetime.now(dt.UTC),
+                completed_at=None,
+            )
+            .on_conflict_do_nothing(index_elements=["run_id", "stage_key"])
+        )
+        stage = await session.scalar(
+            select(UniverseOnboardingStage)
+            .where(
+                UniverseOnboardingStage.run_id == run_id,
+                UniverseOnboardingStage.stage_key == stage_key,
+            )
+            .with_for_update()
+        )
+        if stage is None:
+            raise RuntimeError(f"onboarding stage {stage_key} was not persisted")
+        if stage.status == "completed":
+            if stage.input_fingerprint != input_fingerprint:
+                raise ValueError(
+                    f"completed onboarding stage {stage_key} has a different input fingerprint"
+                )
+            return True, stage.stats.get("result")
+        stage.status = "running"
+        stage.attempts += 1
+        stage.error = None
+        stage.input_fingerprint = input_fingerprint
+        stage.output_fingerprint = None
+        stage.started_at = dt.datetime.now(dt.UTC)
+        stage.completed_at = None
+        await session.commit()
+    return False, None
+
+
+async def _finish_stage(run_id: uuid.UUID, stage_key: str, result: Any) -> None:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        stage = await session.scalar(
+            select(UniverseOnboardingStage)
+            .where(
+                UniverseOnboardingStage.run_id == run_id,
+                UniverseOnboardingStage.stage_key == stage_key,
+            )
+            .with_for_update()
+        )
+        if stage is None:
+            raise RuntimeError(f"onboarding stage {stage_key} disappeared")
+        stage.status = "completed"
+        stage.stats = {"result": result}
+        stage.output_fingerprint = content_sha256(result)
+        stage.error = None
+        stage.completed_at = dt.datetime.now(dt.UTC)
+        await session.commit()
+
+
+async def _fail_stage(run_id: uuid.UUID, stage_key: str, error: BaseException) -> None:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        stage = await session.scalar(
+            select(UniverseOnboardingStage)
+            .where(
+                UniverseOnboardingStage.run_id == run_id,
+                UniverseOnboardingStage.stage_key == stage_key,
+            )
+            .with_for_update()
+        )
+        if stage is not None:
+            stage.status = "failed"
+            stage.error = f"{type(error).__name__}: {error}"[:2000]
+            stage.completed_at = dt.datetime.now(dt.UTC)
+            await session.commit()
+
+
+async def _checkpointed_stage(
+    run_id: uuid.UUID,
+    *,
+    stage_key: str,
+    ordinal: int,
+    input_fingerprint: str,
+    operation: Callable[[], Awaitable[Any]],
+) -> Any:
+    completed, result = await _begin_stage(
+        run_id,
+        stage_key=stage_key,
+        ordinal=ordinal,
+        input_fingerprint=input_fingerprint,
+    )
+    if completed:
+        return result
+    try:
+        result = await operation()
+    except asyncio.CancelledError as error:
+        await _fail_stage(run_id, stage_key, error)
+        raise
+    except Exception as error:
+        await _fail_stage(run_id, stage_key, error)
+        raise
+    await _finish_stage(run_id, stage_key, result)
+    return result
+
+
+def _stage_input_fingerprint(
+    run: UniverseOnboardingRun,
+    manifest: CohortManifest,
+    stage_key: str,
+) -> str:
+    return content_sha256(
+        {
+            "run_id": str(run.id),
+            "stage_key": stage_key,
+            "manifest_sha256": manifest.manifest_sha256,
+            "parameters": run.parameters,
+        }
+    )
 
 
 async def _persist_results(
@@ -281,22 +424,52 @@ async def run_onboarding(
     try:
         fetch_stats: dict[str, Any] = {}
         if fetch:
-            fetch_stats["security_master"] = await collect_security_master(manifest.market)
-            fetch_stats["restricted_research_symbols"] = await _stage_restricted_research_symbols(
-                manifest
+            fetch_stats["security_master"] = await _checkpointed_stage(
+                run.id,
+                stage_key="security_master",
+                ordinal=0,
+                input_fingerprint=_stage_input_fingerprint(run, manifest, "security_master"),
+                operation=lambda: collect_security_master(manifest.market),
             )
-            fetch_stats["history"] = await collect_history(
-                manifest.market,
-                days=round(manifest.backfill_years * 365.25),
-                codes=manifest.symbols,
-                include_reference=True,
+            fetch_stats["restricted_research_symbols"] = await _checkpointed_stage(
+                run.id,
+                stage_key="restricted_research_symbols",
+                ordinal=1,
+                input_fingerprint=_stage_input_fingerprint(
+                    run, manifest, "restricted_research_symbols"
+                ),
+                operation=lambda: _stage_restricted_research_symbols(manifest),
             )
-            fetch_stats["sec"] = await collect_sec(codes=list(manifest.symbols))
-            fetch_stats["analytics"] = await compute_all(
-                manifest.market,
-                codes=list(manifest.symbols),
-                include_onboarding=True,
-                include_restricted=manifest.allow_restricted_research,
+            fetch_stats["history"] = await _checkpointed_stage(
+                run.id,
+                stage_key="history",
+                ordinal=2,
+                input_fingerprint=_stage_input_fingerprint(run, manifest, "history"),
+                operation=lambda: collect_history(
+                    manifest.market,
+                    days=round(manifest.backfill_years * 365.25),
+                    codes=manifest.symbols,
+                    include_reference=True,
+                ),
+            )
+            fetch_stats["sec"] = await _checkpointed_stage(
+                run.id,
+                stage_key="sec",
+                ordinal=3,
+                input_fingerprint=_stage_input_fingerprint(run, manifest, "sec"),
+                operation=lambda: collect_sec(codes=list(manifest.symbols)),
+            )
+            fetch_stats["analytics"] = await _checkpointed_stage(
+                run.id,
+                stage_key="analytics",
+                ordinal=4,
+                input_fingerprint=_stage_input_fingerprint(run, manifest, "analytics"),
+                operation=lambda: compute_all(
+                    manifest.market,
+                    codes=list(manifest.symbols),
+                    include_onboarding=True,
+                    include_restricted=manifest.allow_restricted_research,
+                ),
             )
         as_of_date = to_market_tz(dt.datetime.now(dt.UTC), market=manifest.market).date()
         evidence = await evaluate_cohort(

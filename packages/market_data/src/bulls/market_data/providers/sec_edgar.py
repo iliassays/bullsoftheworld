@@ -481,20 +481,21 @@ def _normalized_periods(
     return non_quarterly + list(quarters.values())
 
 
-def parse_company_facts(
+def parse_company_fact_observations(
     code: str,
     cik: int,
     payload: Mapping[str, Any],
     *,
     today: dt.date | None = None,
 ) -> list[SecFinancialFactRecord]:
+    """Parse every retained accession-level fact before current-projection selection."""
     today = today or dt.datetime.now(dt.UTC).date()
     cutoff = years_ago(today, FACT_RETENTION_YEARS)
     facts = payload.get("facts", {})
-    selected: dict[tuple[str, dt.date, str], tuple[int, SecFinancialFactRecord]] = {}
+    observations: list[SecFinancialFactRecord] = []
 
     for spec in METRIC_SPECS:
-        for priority, concept in enumerate(spec.concepts):
+        for concept in spec.concepts:
             taxonomy = facts.get(concept.taxonomy, {}) if isinstance(facts, Mapping) else {}
             concept_payload = (
                 taxonomy.get(concept.concept, {}) if isinstance(taxonomy, Mapping) else {}
@@ -544,14 +545,42 @@ def parse_company_facts(
                         frame=str(raw.get("frame") or "") or None,
                         source_url=filing_index_url(cik, accession),
                     )
-                    key = (spec.metric, end, period_type)
-                    prior = selected.get(key)
-                    rank = (filed.toordinal(), -priority)
-                    prior_rank = (
-                        (prior[1].filed_at.toordinal(), -prior[0]) if prior is not None else None
-                    )
-                    if prior_rank is None or rank > prior_rank:
-                        selected[key] = (priority, record)
+                    observations.append(record)
+    return sorted(
+        observations,
+        key=lambda row: (
+            row.metric,
+            row.period_end,
+            row.period_type,
+            row.filed_at,
+            row.accession_number,
+            row.taxonomy,
+            row.source_concept,
+        ),
+    )
+
+
+def select_company_fact_projection(
+    observations: list[SecFinancialFactRecord],
+) -> list[SecFinancialFactRecord]:
+    """Select the latest preferred concept per period for the operational projection."""
+    concept_priority = {
+        (spec.metric, concept.taxonomy, concept.concept): priority
+        for spec in METRIC_SPECS
+        for priority, concept in enumerate(spec.concepts)
+    }
+    selected: dict[tuple[str, dt.date, str], tuple[int, SecFinancialFactRecord]] = {}
+    for record in observations:
+        priority = concept_priority.get(
+            (record.metric, record.taxonomy, record.source_concept),
+            len(METRIC_SPECS),
+        )
+        key = (record.metric, record.period_end, record.period_type)
+        prior = selected.get(key)
+        rank = (record.filed_at.toordinal(), -priority)
+        prior_rank = (prior[1].filed_at.toordinal(), -prior[0]) if prior is not None else None
+        if prior_rank is None or rank > prior_rank:
+            selected[key] = (priority, record)
 
     by_metric: dict[str, list[SecFinancialFactRecord]] = {}
     for _, record in selected.values():
@@ -562,6 +591,19 @@ def parse_company_facts(
         rows.sort(key=lambda row: (row.period_end, row.filed_at), reverse=True)
         out.extend(rows[:MAX_FACT_PERIODS])
     return sorted(out, key=lambda row: (row.metric, row.period_end, row.period_type))
+
+
+def parse_company_facts(
+    code: str,
+    cik: int,
+    payload: Mapping[str, Any],
+    *,
+    today: dt.date | None = None,
+) -> list[SecFinancialFactRecord]:
+    """Return the bounded latest-fact projection used by portal fundamentals."""
+    return select_company_fact_projection(
+        parse_company_fact_observations(code, cik, payload, today=today)
+    )
 
 
 class SecEdgarClient:

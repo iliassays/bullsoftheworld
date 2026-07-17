@@ -30,6 +30,7 @@ from bulls.core.models import (
     Symbol,
 )
 from bulls.market_data import CompanyInfo, get_provider
+from ingestion.lineage import record_company_data_observations
 
 CONCURRENCY = 3  # gentle on a fragile source; heavier pages than the price endpoints
 RETRIES = 3
@@ -46,6 +47,7 @@ async def _upsert_series(session, model, rows: list[dict], pk: tuple[str, ...]) 
 
 
 async def _persist(session, info: CompanyInfo, fetched_at: dt.datetime) -> int:
+    await record_company_data_observations(session, info, observed_at=fetched_at)
     profile = info.profile.model_dump()
     profile["fetched_at"] = fetched_at
     await _upsert_series(session, CompanyProfile, [profile], ("market", "code"))

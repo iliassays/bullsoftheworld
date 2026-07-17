@@ -17,6 +17,13 @@ from bulls.core.models.company import (
     ShareholdingSnapshot,
 )
 from bulls.core.models.company_logo import CompanyLogo
+from bulls.core.models.data_foundation import (
+    CompanyDataObservation,
+    DailyBarObservation,
+    DataSourceSnapshot,
+    SecFinancialFactObservation,
+    SecurityListingObservation,
+)
 from bulls.core.models.follow import Follow
 from bulls.core.models.growth import BetaFeedback, InstitutionalLead, ProductEvent
 from bulls.core.models.hedge import (
@@ -32,6 +39,7 @@ from bulls.core.models.onboarding import (
     OnDemandResearchRequest,
     UniverseOnboardingResult,
     UniverseOnboardingRun,
+    UniverseOnboardingStage,
 )
 from bulls.core.models.page_view_event import PageViewEvent
 from bulls.core.models.portfolio import PortfolioHolding, PortfolioSnapshot
@@ -93,9 +101,12 @@ __all__ = [
     "BlockTrade",
     "Cashtag",
     "CatalystEvent",
+    "CompanyDataObservation",
     "CompanyLogo",
     "CompanyProfile",
     "DailyBar",
+    "DailyBarObservation",
+    "DataSourceSnapshot",
     "DividendRecord",
     "EvidenceDocument",
     "EvidenceSpan",
@@ -143,8 +154,10 @@ __all__ = [
     "ResearchWorkspaceMembership",
     "SecFiling",
     "SecFinancialFact",
+    "SecFinancialFactObservation",
     "SectorPE",
     "SecurityIdentifier",
+    "SecurityListingObservation",
     "SecurityMaster",
     "ShareholdingSnapshot",
     "ShortVolumeDaily",
@@ -156,6 +169,7 @@ __all__ = [
     "TrendingScore",
     "UniverseOnboardingResult",
     "UniverseOnboardingRun",
+    "UniverseOnboardingStage",
     "User",
     "WatchlistItem",
 ]

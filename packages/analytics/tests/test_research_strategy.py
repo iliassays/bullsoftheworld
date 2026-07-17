@@ -66,6 +66,9 @@ def test_us_backtest_uses_next_session_and_charges_costs() -> None:
     assert max(result.latest_target_weights.values(), default=0) <= 0.10
     assert result.validation_status == "diagnostic"
     assert "Inactive and delisted security history is not complete." in result.failed_gates
+    assert (
+        "Point-in-time input revisions are not complete for the test window." in result.failed_gates
+    )
 
 
 def test_unknown_adv_rejects_orders_instead_of_fabricating_liquidity() -> None:

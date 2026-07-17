@@ -33,9 +33,11 @@ from bulls.core.models import (
     TickerAnalytics,
     TickerPattern,
 )
+from ingestion.lineage import content_sha256
 
 _LOOKBACK = 300  # enough for the 200-day SMA and 12-1 month momentum (needs ~253 bars)
 _BATCH_SIZE = 250
+ANALYTICS_METHODOLOGY_VERSION = "ticker-analytics-v1"
 _FIELDS = (
     "last_close",
     "sma_50",
@@ -228,6 +230,56 @@ def _extra_row(
     return row
 
 
+def analytics_input_fingerprint(
+    *,
+    market: str,
+    code: str,
+    bars: list,
+    profile: CompanyProfile | None,
+    cash_dividend: tuple[float | None, float | None] | None,
+    sector_median_pe: float | None,
+    ownership: dict[str, float | None] | None,
+    eps_growth: float | None,
+) -> str:
+    """Hash exactly the inputs used by the current analytics methodology."""
+    profile_fields = (
+        "sector",
+        "outstanding_shares",
+        "market_cap_mn",
+        "free_float_mcap_mn",
+        "eps",
+        "nav_per_share",
+        "face_value",
+    )
+    payload = {
+        "methodology_version": ANALYTICS_METHODOLOGY_VERSION,
+        "market": market,
+        "code": code,
+        "bars": [
+            {
+                "date": bar.date,
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "adjusted_close": bar.adjusted_close,
+            }
+            for bar in bars
+        ],
+        "profile": (
+            {field: getattr(profile, field) for field in profile_fields}
+            if profile is not None
+            else None
+        ),
+        "cash_dividend": cash_dividend,
+        "sector_median_pe": sector_median_pe,
+        "ownership": ownership,
+        "eps_growth": eps_growth,
+    }
+    return content_sha256(payload)
+
+
 def _bar_batch_statement(market: str, codes: list[str]):
     """Build an index-friendly latest-bars query for one bounded symbol batch."""
     requested_codes = (
@@ -271,9 +323,7 @@ def _bar_batch_statement(market: str, codes: list[str]):
 
 async def _load_bar_batch(session, market: str, codes: list[str]) -> dict[str, list]:
     """Load the latest lookback per code through the `(market, code, date)` primary-key index."""
-    rows = (
-        await session.execute(_bar_batch_statement(market, codes))
-    ).mappings()
+    rows = (await session.execute(_bar_batch_statement(market, codes))).mappings()
     grouped: dict[str, list] = defaultdict(list)
     for row in rows:
         grouped[row["code"]].append(
@@ -325,6 +375,21 @@ async def _persist_symbol_analytics(
             eps_growth,
         )
     )
+    row["computed_at"] = dt.datetime.now(dt.UTC)
+    row["methodology_version"] = ANALYTICS_METHODOLOGY_VERSION
+    row["input_fingerprint"] = analytics_input_fingerprint(
+        market=market,
+        code=code,
+        bars=bars,
+        profile=profile,
+        cash_dividend=cash_dividends.get(code),
+        sector_median_pe=sector_pe.get(profile.sector) if profile and profile.sector else None,
+        ownership=ownership.get(code),
+        eps_growth=eps_growth.get(code),
+    )
+    # Current-universe membership and pre-foundation revisions are not yet complete. This may be
+    # promoted only by a separate audited bootstrap; the ordinary writer must never guess true.
+    row["point_in_time_complete"] = False
 
     stmt = pg_insert(TickerAnalytics).values(row)
     update_cols = {col: getattr(stmt.excluded, col) for col in row if col not in ("market", "code")}

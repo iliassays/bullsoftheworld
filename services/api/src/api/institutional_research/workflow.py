@@ -614,6 +614,7 @@ async def execute_backtest(
         securities=securities,
         initial_capital=request.initial_capital,
         inactive_security_history_complete=False,
+        point_in_time_inputs_complete=False,
     )
     cutoff = dt.datetime.combine(result.end_date or dt.date.today(), dt.time.max, tzinfo=dt.UTC)
     parameters = request.model_dump(mode="json")
@@ -621,7 +622,10 @@ async def execute_backtest(
         workspace=workspace,
         user_id=user_id,
         run_kind="hypothesis",
-        question=f"Evaluate {request.strategy_key} with point-in-time execution and risk controls.",
+        question=(
+            f"Evaluate {request.strategy_key} with best-available historical execution and "
+            "fail-closed point-in-time validation gates."
+        ),
         code=None,
         parameters=parameters,
         idempotency_key=request.idempotency_key,
@@ -630,11 +634,19 @@ async def execute_backtest(
     )
     run.evidence_snapshot_hash = _stable_hash(
         {
-            security.code: [
-                str(security.bars[0].date),
-                str(security.bars[-1].date),
-                len(security.bars),
-            ]
+            security.code: _stable_hash(
+                [
+                    [
+                        str(bar.date),
+                        bar.open,
+                        bar.high,
+                        bar.low,
+                        bar.close,
+                        bar.volume,
+                    ]
+                    for bar in security.bars
+                ]
+            )
             for security in securities
         }
     )
@@ -657,6 +669,7 @@ async def execute_backtest(
             "codes": [security.code for security in securities],
             "inactive_security_history_complete": False,
             "point_in_time_universe_complete": False,
+            "point_in_time_inputs_complete": False,
         },
     )
     _add_step(

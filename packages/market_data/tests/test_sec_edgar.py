@@ -8,6 +8,7 @@ import pytest
 from bulls.market_data.providers.sec_edgar import (
     SecEdgarClient,
     filing_category,
+    parse_company_fact_observations,
     parse_company_facts,
     parse_submissions,
 )
@@ -145,6 +146,7 @@ def test_company_facts_selects_compact_latest_amended_periods() -> None:
     }
 
     rows = parse_company_facts("TEST", 1, payload, today=dt.date(2026, 7, 10))
+    observations = parse_company_fact_observations("TEST", 1, payload, today=dt.date(2026, 7, 10))
     revenue = [row for row in rows if row.metric == "revenue"]
     assets = [row for row in rows if row.metric == "assets"]
 
@@ -155,6 +157,11 @@ def test_company_facts_selects_compact_latest_amended_periods() -> None:
     assert assets[0].period_type == "instant"
     assert assets[0].value == 1000.0
     assert revenue[0].source_url.startswith("https://www.sec.gov/Archives/edgar/data/1/")
+    assert {row.accession_number for row in observations if row.metric == "revenue"} == {
+        "0001-26-000001",
+        "0001-26-000002",
+        "0001-26-000003",
+    }
 
 
 def test_company_facts_derives_only_adjacent_additive_ytd_quarters() -> None:

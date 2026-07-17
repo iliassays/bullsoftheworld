@@ -37,11 +37,13 @@ from bulls.market_data.providers.sec_edgar import (
     SecEdgarClient,
     SecFinancialFactRecord,
     SecIssuerProfile,
-    parse_company_facts,
+    parse_company_fact_observations,
     parse_submissions,
+    select_company_fact_projection,
     years_ago,
 )
 from ingestion.alerts import fan_out_evidence_alert, sec_filing_alert_text
+from ingestion.lineage import record_sec_fact_observations
 
 MARKET = "US"
 SOURCE = "sec_edgar"
@@ -259,11 +261,19 @@ async def _persist_company(
     fetched_at: dt.datetime,
     instrument_type: str,
     per_share_compatible: bool,
+    fact_observations: list[SecFinancialFactRecord] | None = None,
 ) -> tuple[int, int]:
     sm = get_sessionmaker()
     async with sm() as session:
         filing_rows = [row.model_dump() for row in filings]
         fact_rows = [row.model_dump() for row in facts]
+        await record_sec_fact_observations(
+            session,
+            code=code,
+            facts=fact_observations if fact_observations is not None else facts,
+            filings=filings,
+            observed_at=fetched_at,
+        )
         filing_count = await _upsert(
             session, SecFiling, filing_rows, ("market", "code", "accession_number")
         )
@@ -461,7 +471,13 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
             existing_filings = await _existing_filing_ids(code) if codes is None else set()
             submissions, company_facts = await client.fetch_company(cik)
             issuer, filings = parse_submissions(code, submissions, fetched_at=fetched_at)
-            facts = parse_company_facts(code, cik, company_facts, today=fetched_at.date())
+            fact_observations = parse_company_fact_observations(
+                code,
+                cik,
+                company_facts,
+                today=fetched_at.date(),
+            )
+            facts = select_company_fact_projection(fact_observations)
             filing_count, fact_count = await _persist_company(
                 code,
                 issuer,
@@ -470,6 +486,7 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
                 fetched_at,
                 instrument_type,
                 per_share_compatible,
+                fact_observations,
             )
             filings_total += filing_count
             facts_total += fact_count

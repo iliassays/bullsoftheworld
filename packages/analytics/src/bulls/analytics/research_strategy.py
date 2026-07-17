@@ -462,6 +462,7 @@ def run_backtest(
     securities: list[StrategySecurity],
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
+    point_in_time_inputs_complete: bool = False,
 ) -> BacktestResult:
     """Run the registered strategy with next-session execution and deterministic risk gates."""
 
@@ -695,6 +696,8 @@ def run_backtest(
         failed_gates.append("Universe contains fewer than 20 securities.")
     if not inactive_security_history_complete:
         failed_gates.append("Inactive and delisted security history is not complete.")
+    if not point_in_time_inputs_complete:
+        failed_gates.append("Point-in-time input revisions are not complete for the test window.")
     if len(trades) < 30:
         failed_gates.append("Fewer than 30 completed executions are available for inference.")
     validation_status: Literal["diagnostic", "eligible_for_shadow"] = (
@@ -720,6 +723,7 @@ def run_backtest(
         warnings=[
             "Results are research diagnostics, not expected returns or a recommendation.",
             "The benchmark is an equal-weight observable-universe series and shares current-universe bias.",
+            "Fundamental and universe filters are validation-safe only when point-in-time input coverage is complete.",
             "Corporate-action safety depends on adjustment coverage; fills use the next-session open supplied by the point-in-time price adapter.",
             "A missing held-security bar carries the last observable close and records a stale-mark intervention.",
         ],

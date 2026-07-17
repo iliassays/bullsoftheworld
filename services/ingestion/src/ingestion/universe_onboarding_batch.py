@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,23 @@ async def _already_completed(manifest: CohortManifest) -> bool:
     return completed is not None
 
 
+async def _latest_failed_run(manifest: CohortManifest) -> uuid.UUID | None:
+    """Return the newest compatible failed run so durable stages can actually be resumed."""
+    sm = get_sessionmaker()
+    async with sm() as session:
+        return await session.scalar(
+            select(UniverseOnboardingRun.id)
+            .where(
+                UniverseOnboardingRun.market == manifest.market,
+                UniverseOnboardingRun.manifest_sha256 == manifest.manifest_sha256,
+                UniverseOnboardingRun.status == "failed",
+                UniverseOnboardingRun.promotion_requested.is_(False),
+            )
+            .order_by(UniverseOnboardingRun.started_at.desc())
+            .limit(1)
+        )
+
+
 async def run_batch(
     index_path: Path,
     *,
@@ -88,7 +106,13 @@ async def run_batch(
             break
         summary["requested_cohorts"] += 1
         try:
-            result = await run_onboarding(manifest, fetch=fetch, promote=False)
+            resume_id = await _latest_failed_run(manifest)
+            result = await run_onboarding(
+                manifest,
+                resume_id=resume_id,
+                fetch=fetch,
+                promote=False,
+            )
             summary["completed"].append({"file": path.name, **result})
         except Exception as error:
             summary["failed"].append(

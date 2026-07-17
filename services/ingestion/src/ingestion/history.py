@@ -30,6 +30,7 @@ from bulls.core.models import DailyBar, Symbol
 from bulls.market_data import get_provider
 from bulls.market_data.calendar import to_market_tz
 from ingestion.cohorts import load_cohort
+from ingestion.lineage import record_daily_bar_observations
 
 BACKFILL_DAYS = 760  # a bit over 2y; the endpoint caps at ~474 rows anyway
 DAILY_LOOKBACK_DAYS = 10  # re-pull a short window daily to catch late corrections
@@ -49,6 +50,11 @@ _load_cohort = load_cohort
 async def _upsert_bars(session, bars) -> int:
     if not bars:
         return 0
+    await record_daily_bar_observations(
+        session,
+        bars,
+        observed_at=dt.datetime.now(dt.UTC),
+    )
     rows = [b.model_dump() for b in bars]
     stmt = pg_insert(DailyBar).values(rows)
     update_cols = {
@@ -284,8 +290,10 @@ def main() -> None:
         if cohort is not None and mode == "backfill"
         else _default_days(market, mode)
     )
-    codes = list(cohort.symbols) if cohort else (
-        [c.strip() for c in args.codes.split(",")] if args.codes else None
+    codes = (
+        list(cohort.symbols)
+        if cohort
+        else ([c.strip() for c in args.codes.split(",")] if args.codes else None)
     )
     scope = (
         f"cohort={cohort.name} symbols={len(codes or [])}"

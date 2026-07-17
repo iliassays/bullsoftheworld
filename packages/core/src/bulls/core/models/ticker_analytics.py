@@ -18,9 +18,7 @@ from bulls.core.db import Base
 
 class TickerAnalytics(Base):
     __tablename__ = "ticker_analytics"
-    __table_args__ = (
-        Index("ix_ticker_analytics_market_cap_tier", "market", "cap_tier"),
-    )
+    __table_args__ = (Index("ix_ticker_analytics_market_cap_tier", "market", "cap_tier"),)
 
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
@@ -85,4 +83,9 @@ class TickerAnalytics(Base):
 
     computed_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    methodology_version: Mapped[str | None] = mapped_column(String(48))
+    input_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    point_in_time_complete: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
     )
