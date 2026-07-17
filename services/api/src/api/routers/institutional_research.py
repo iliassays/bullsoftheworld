@@ -46,6 +46,7 @@ from api.institutional_research.schemas import (
     StartResearchRequest,
     WorkspaceOut,
 )
+from api.institutional_research.universe import apply_research_product_scope
 from api.institutional_research.workflow import (
     execute_backtest,
     execute_company_research,
@@ -462,14 +463,15 @@ async def company_option_chain(
         permission=ResearchPermission.VIEW_WORKSPACE,
     )
     normalized = code.strip().upper()
+    symbol_statement = select(Symbol.code).where(
+        Symbol.market == "US",
+        Symbol.code == normalized,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
+    )
     symbol = await session.scalar(
-        select(Symbol.code).where(
-            Symbol.market == "US",
-            Symbol.code == normalized,
-            Symbol.is_active.is_(True),
-            Symbol.is_hidden.is_(False),
-            Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
-        )
+        apply_research_product_scope(symbol_statement, market="US")
     )
     if symbol is None:
         raise HTTPException(

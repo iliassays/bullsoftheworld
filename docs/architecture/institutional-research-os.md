@@ -499,6 +499,10 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   train/validation/test reporting, evidence/data fingerprints, and explicit diagnostic gates. The
   current observable universe is not historically point-in-time and therefore cannot pass the
   inactive/delisted-universe gate.
+- **Current-universe eligibility** excludes inactive and hidden symbols. Markets backed by a
+  guarded security master additionally require an active, product-eligible listing across Atlas
+  queues, dossiers, catalysts, option previews, and backtests. Evidence for an excluded listing is
+  retained for audit, but that listing cannot enter current research or paper portfolios.
 - **Portfolio Intelligence** starts no-broker shadow books from completed backtests and persists
   daily NAV, benchmark, cash, exposure, drawdown, holdings, targets, executions, costs, and risk
   interventions. Reconciliation is an idempotent write operation; read endpoints remain

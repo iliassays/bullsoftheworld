@@ -33,6 +33,7 @@ class MarketFeatures:
     institutional_holdings: bool = False
     finra_short_volume: bool = False
     extended_hours: bool = False
+    security_master_product_gate: bool = False
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
             sec_filings=True,
             institutional_holdings=True,
             finra_short_volume=True,
+            security_master_product_gate=True,
         ),
     ),
 }

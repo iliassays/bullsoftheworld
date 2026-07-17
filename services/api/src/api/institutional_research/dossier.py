@@ -21,6 +21,7 @@ from api.institutional_research.schemas import (
     ReportedOwnershipOut,
     ShortActivityOut,
 )
+from api.institutional_research.universe import apply_research_product_scope
 from bulls.core.models import (
     DailyBar,
     InstitutionalHoldingSummary,
@@ -197,24 +198,25 @@ async def build_company_dossier(
     """Compose one point-in-time dossier without crossing the authenticated market boundary."""
 
     normalized_code = code.strip().upper()
-    row = (
-        await session.execute(
-            select(Symbol, TickerAnalytics)
-            .join(
-                TickerAnalytics,
-                (TickerAnalytics.market == Symbol.market)
-                & (TickerAnalytics.code == Symbol.code),
-            )
-            .where(
-                Symbol.market == market,
-                Symbol.code == normalized_code,
-                TickerAnalytics.market == market,
-                TickerAnalytics.code == normalized_code,
-                Symbol.is_active.is_(True),
-                Symbol.is_hidden.is_(False),
-                Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
-            )
+    statement = (
+        select(Symbol, TickerAnalytics)
+        .join(
+            TickerAnalytics,
+            (TickerAnalytics.market == Symbol.market)
+            & (TickerAnalytics.code == Symbol.code),
         )
+        .where(
+            Symbol.market == market,
+            Symbol.code == normalized_code,
+            TickerAnalytics.market == market,
+            TickerAnalytics.code == normalized_code,
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
+            Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
+        )
+    )
+    row = (
+        await session.execute(apply_research_product_scope(statement, market=market))
     ).one_or_none()
     if row is None:
         raise ResearchSecurityNotFound

@@ -18,6 +18,7 @@ from api.institutional_research.lineage import (
     persist_run_evidence,
 )
 from api.institutional_research.schemas import BacktestRequest, ResearchRunOut
+from api.institutional_research.universe import apply_research_product_scope
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
     AutonomousResearchInput,
@@ -607,19 +608,20 @@ async def _backtest_universe(
         conditions.append(Symbol.code.in_([code.upper() for code in request.codes]))
     if request.cap_tier:
         conditions.append(TickerAnalytics.cap_tier == request.cap_tier)
-    rows = (
-        await session.execute(
-            select(Symbol, TickerAnalytics)
-            .join(
-                TickerAnalytics,
-                (TickerAnalytics.market == Symbol.market) & (TickerAnalytics.code == Symbol.code),
-            )
-            .where(*conditions)
-            .order_by(
-                desc(TickerAnalytics.last_close * func.coalesce(TickerAnalytics.avg_volume_20, 0))
-            )
-            .limit(request.universe_limit)
+    statement = (
+        select(Symbol, TickerAnalytics)
+        .join(
+            TickerAnalytics,
+            (TickerAnalytics.market == Symbol.market) & (TickerAnalytics.code == Symbol.code),
         )
+        .where(*conditions)
+        .order_by(
+            desc(TickerAnalytics.last_close * func.coalesce(TickerAnalytics.avg_volume_20, 0))
+        )
+        .limit(request.universe_limit)
+    )
+    rows = (
+        await session.execute(apply_research_product_scope(statement, market=market))
     ).all()
     if not rows:
         return []

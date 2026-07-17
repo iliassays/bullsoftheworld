@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.institutional_research.schemas import CatalystCalendarOut, CatalystEventOut
+from api.institutional_research.universe import apply_research_product_scope
 from api.research_access import bind_research_tenant_context
 from bulls.analytics.catalysts import (
     CatalystDraft,
@@ -130,14 +131,15 @@ def _superseded_us_forecasts_statement(
 
 
 async def _eligible_codes(session: AsyncSession, market: str) -> list[str]:
+    statement = select(Symbol.code).where(
+        Symbol.market == market,
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
+    )
     return list(
         await session.scalars(
-            select(Symbol.code).where(
-                Symbol.market == market,
-                Symbol.is_active.is_(True),
-                Symbol.is_hidden.is_(False),
-                Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
-            )
+            apply_research_product_scope(statement, market=market)
         )
     )
 

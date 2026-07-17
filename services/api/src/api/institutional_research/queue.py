@@ -19,6 +19,7 @@ from api.institutional_research.schemas import (
     ResearchCandidateOut,
     ResearchQueueSnapshotOut,
 )
+from api.institutional_research.universe import apply_research_product_scope
 from bulls.analytics.research_queue import (
     ResearchQueueInputs,
     ResearchQueueScore,
@@ -273,7 +274,7 @@ async def build_research_queue(
             )
         )
 
-    universe_count = await session.scalar(
+    universe_count_statement = (
         select(func.count())
         .select_from(Symbol)
         .join(
@@ -282,14 +283,20 @@ async def build_research_queue(
         )
         .where(*base_conditions)
     )
+    universe_count = await session.scalar(
+        apply_research_product_scope(universe_count_statement, market=market)
+    )
+    rows_statement = (
+        select(Symbol, TickerAnalytics)
+        .join(
+            TickerAnalytics,
+            (TickerAnalytics.market == Symbol.market) & (TickerAnalytics.code == Symbol.code),
+        )
+        .where(*filters)
+    )
     rows = (
         await session.execute(
-            select(Symbol, TickerAnalytics)
-            .join(
-                TickerAnalytics,
-                (TickerAnalytics.market == Symbol.market) & (TickerAnalytics.code == Symbol.code),
-            )
-            .where(*filters)
+            apply_research_product_scope(rows_statement, market=market)
         )
     ).all()
     if not rows:
