@@ -5,17 +5,17 @@ import {
   Building2,
   CalendarClock,
   CheckCircle2,
+  CircleHelp,
   ExternalLink,
   FileCheck2,
   Gauge,
-  Scale,
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import { researchDeployment } from "../../app/deployment";
-import { Button, StatusBadge } from "../../design-system";
+import { AppTooltip, Button, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import { OptionsLens } from "../options-lens/OptionsLens";
 import {
@@ -23,8 +23,9 @@ import {
   useResearchRuns,
   useStartCompanyResearch,
 } from "../autonomous-research/hooks";
-import { autonomousDecision } from "../autonomous-research/model";
+import { autonomousDecision, type AutonomousDecision } from "../autonomous-research/model";
 import { DossierChart } from "./DossierChart";
+import { FACTOR_GUIDANCE, factorReading, METRIC_GUIDANCE, type FactorKey } from "./guidance";
 import type { ResearchCompanyDossier } from "./model";
 import { useCompanyDossier } from "./useCompanyDossier";
 
@@ -54,12 +55,37 @@ function formatCurrency(value: number, currency: "BDT" | "USD", compact = false)
   }).format(value);
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function HelpLabel({ label, help }: { label: string; help?: string }) {
+  return (
+    <span className="dossier-help-label">
+      {label}
+      {help && (
+        <AppTooltip label={help}>
+          <button aria-label={`Explain ${label}`} className="dossier-help" type="button">
+            <CircleHelp aria-hidden="true" size={11} />
+          </button>
+        </AppTooltip>
+      )}
+    </span>
+  );
+}
+
+function Metric({ label, value, detail, help }: { label: string; value: string; detail?: string; help?: string }) {
   return (
     <div className="dossier-metric">
-      <span>{label}</span>
+      <HelpLabel help={help} label={label} />
       <strong className="tnum">{value}</strong>
       {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
+function FundamentalMetric({ label, value, guidance }: { label: string; value: string; guidance: { definition: string; reference: string } }) {
+  return (
+    <div>
+      <dt><HelpLabel help={`${guidance.definition} ${guidance.reference}`} label={label} /></dt>
+      <dd>{value}</dd>
+      <small>{guidance.reference}</small>
     </div>
   );
 }
@@ -67,25 +93,49 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 function FactorMatrix({ dossier }: { dossier: ResearchCompanyDossier }) {
   const factors = dossier.candidate.factors;
   const rows = [
-    ["Quality", factors.quality, false],
-    ["Value", factors.value, false],
-    ["Momentum", factors.momentum, false],
-    ["Risk burden", factors.risk, true],
+    ["quality", "Quality", factors.quality, false],
+    ["value", "Value", factors.value, false],
+    ["momentum", "Momentum", factors.momentum, false],
+    ["risk", "Risk burden", factors.risk, true],
   ] as const;
   return (
     <div className="dossier-factor-matrix">
-      {rows.map(([label, value, risk]) => (
-        <div key={label}>
+      {rows.map(([key, label, value, risk]) => {
+        const detail = dossier.candidate.factorDetails?.[key as FactorKey];
+        const guidance = FACTOR_GUIDANCE[key as FactorKey];
+        return <div key={key}>
           <span>
-            <small>{label}</small>
+            <HelpLabel help={`${detail?.explanation ?? guidance.definition} ${guidance.reference}`} label={label} />
             <strong className={risk ? "value-down tnum" : "tnum"}>{value}</strong>
           </span>
           <span aria-hidden="true">
             <i className={risk ? "dossier-factor-matrix__risk" : ""} style={{ width: `${value}%` }} />
           </span>
-        </div>
-      ))}
+          <small>{factorReading(key as FactorKey, value)}{detail ? ` · ${Math.round(detail.confidence * 100)}% input coverage` : ""}</small>
+        </div>;
+      })}
     </div>
+  );
+}
+
+function ResearchStory({ decision }: { decision: AutonomousDecision }) {
+  const nextEvidence = decision.nextEvidence[0];
+  const viewChanger = nextEvidence?.question
+    ?? decision.invalidationRules[0]
+    ?? "Wait for a new completed-session or official-evidence change before reassessing.";
+  const tradeStatus = decision.strategyKey
+    ? `Attached to ${decision.strategyKey}; portfolio and risk gates still decide whether a paper entry occurs.`
+    : "Research conclusion only. No validated buy or sell strategy is attached.";
+  return (
+    <section className="autonomous-analyst__story" aria-label="Research story">
+      <header><strong>Research story</strong><small>Case → challenge → evidence gap → trade implication</small></header>
+      <div>
+        <article className="research-story__support"><span>01 · What supports the case</span><strong>{decision.headline}</strong><p>{decision.thesis}</p></article>
+        <article className="research-story__challenge"><span>02 · What challenges it</span><strong>Independent skeptic</strong><p>{decision.counterThesis}</p></article>
+        <article><span>03 · What changes the view</span><strong>{nextEvidence?.priority ? `${nextEvidence.priority} priority` : "Next confirmation"}</strong><p>{viewChanger}</p>{nextEvidence?.reason && <small>{nextEvidence.reason}</small>}</article>
+        <article className="research-story__trade"><span>04 · Trade status</span><strong>{decision.strategyKey ? "Strategy candidate attached" : "No trade signal"}</strong><p>{tradeStatus}</p></article>
+      </div>
+    </section>
   );
 }
 
@@ -253,10 +303,10 @@ export function CompanyDossierPage() {
 
       <section className="dossier-key-metrics" aria-label="Company research snapshot">
         <Metric label="Last EOD close" value={formatCurrency(candidate.price, currency)} detail={dossier.marketData.asOfDate} />
-        <Metric label="Research priority" value={`${candidate.priority}/100`} detail="analyst attention, not return" />
+        <Metric help={`${METRIC_GUIDANCE.priority.definition} ${METRIC_GUIDANCE.priority.reference}`} label="Research priority" value={`${candidate.priority}/100`} detail="attention rank, not return" />
         <Metric label="Market capitalization" value={dossier.marketData.marketCapMn === null ? "Not available" : formatCurrency(dossier.marketData.marketCapMn * 1_000_000, currency, true)} detail={candidate.capTier.replace("_", " ")} />
-        <Metric label="Evidence coverage" value={`${candidate.evidence.coveragePct}%`} detail={`${candidate.evidence.sourceCount} official records`} />
-        <Metric label="Implementation capacity" value={candidate.liquidity.capacity} detail={`${candidate.liquidity.exitDays.toFixed(1)}-session exit policy`} />
+        <Metric help={`${METRIC_GUIDANCE.evidenceCoverage.definition} ${METRIC_GUIDANCE.evidenceCoverage.reference}`} label="Evidence coverage" value={`${candidate.evidence.coveragePct}%`} detail={`${candidate.evidence.sourceCount} records · 60% gate`} />
+        <Metric help={`${METRIC_GUIDANCE.capacity.definition} ${METRIC_GUIDANCE.capacity.reference}`} label="Implementation capacity" value={candidate.liquidity.capacity} detail={`${candidate.liquidity.exitDays.toFixed(1)}-session exit policy`} />
       </section>
 
       {dossier.dataQualityNotes.length > 0 && (
@@ -278,8 +328,12 @@ export function CompanyDossierPage() {
         </header>
         {decision ? (
           <div className="autonomous-analyst__body">
-            <div className="autonomous-analyst__verdict"><span>Bounded verdict</span><h2>{decision.headline}</h2><p>{decision.thesis}</p><div className="autonomous-analyst__scores"><span><small>Evidence completeness</small><strong>{decision.evidenceCompletenessPct || candidate.evidence.coveragePct}%</strong></span><span><small>Thesis support</small><strong>{decision.thesisStrength}</strong></span><span><small>Outcome probability</small><strong>Uncalibrated</strong></span></div></div>
-            <div className="autonomous-analyst__counter"><span><Scale size={13} /> Independent skeptic</span><p>{decision.counterThesis}</p></div>
+            <ResearchStory decision={decision} />
+            <div className="autonomous-analyst__scores">
+              <span><HelpLabel help="How much of the required market-specific evidence was available to this immutable research run." label="Evidence completeness" /><strong>{decision.evidenceCompletenessPct || candidate.evidence.coveragePct}%</strong><small>60% plus official evidence is the minimum qualification gate.</small></span>
+              <span><HelpLabel help="A qualitative evidence rubric based on verified supporting and counter claims. It is not expected return." label="Thesis support" /><strong>{decision.thesisStrength}</strong><small>Strength of the evidence case, not price upside.</small></span>
+              <span><HelpLabel help="Atlas has not yet observed enough independent 5, 20 and 60-session outcomes to estimate a reliable success probability." label="Outcome probability" /><strong>Uncalibrated</strong><small>No win-rate claim is being manufactured.</small></span>
+            </div>
             {decision.lenses.length > 0 && (
               <div className="autonomous-analyst__lenses">
                 <div className="autonomous-analyst__section-title"><strong>Financial reasoning</strong><small>Registered rules over the current fact ledger</small></div>
@@ -338,10 +392,10 @@ export function CompanyDossierPage() {
             <DossierChart points={dossier.priceHistory} />
             <div className="dossier-chart-stats">
               <Metric label="52-week range" value={`${formatNumber(dossier.marketData.week52Low, 2)} – ${formatNumber(dossier.marketData.week52High, 2)}`} />
-              <Metric label="Relative volume" value={dossier.marketData.relativeVolume === null ? "Not available" : `${dossier.marketData.relativeVolume.toFixed(2)}x`} />
-              <Metric label="CMF / OBV slope" value={`${formatNumber(dossier.marketData.cmf20, 2)} / ${formatNumber(dossier.marketData.obvSlope, 2)}`} detail="price-volume confirmation" />
-              <Metric label="RSI (14)" value={formatNumber(dossier.marketData.rsi14, 1)} />
-              <Metric label="Annualized volatility" value={dossier.marketData.volatilityPct === null ? "Not available" : `${dossier.marketData.volatilityPct.toFixed(1)}%`} />
+              <Metric help={`${METRIC_GUIDANCE.relativeVolume.definition} ${METRIC_GUIDANCE.relativeVolume.reference}`} label="Relative volume" value={dossier.marketData.relativeVolume === null ? "Not available" : `${dossier.marketData.relativeVolume.toFixed(2)}x`} detail="1.00x normal · <0.80x weak" />
+              <Metric help={`${METRIC_GUIDANCE.cmfObv.definition} ${METRIC_GUIDANCE.cmfObv.reference}`} label="CMF / OBV slope" value={`${formatNumber(dossier.marketData.cmf20, 2)} / ${formatNumber(dossier.marketData.obvSlope, 2)}`} detail="0 neutral · both negative warns" />
+              <Metric help={`${METRIC_GUIDANCE.rsi.definition} ${METRIC_GUIDANCE.rsi.reference}`} label="RSI (14)" value={formatNumber(dossier.marketData.rsi14, 1)} detail="75+ timing risk" />
+              <Metric help={`${METRIC_GUIDANCE.volatility.definition} ${METRIC_GUIDANCE.volatility.reference}`} label="Annualized volatility" value={dossier.marketData.volatilityPct === null ? "Not available" : `${dossier.marketData.volatilityPct.toFixed(1)}%`} detail="compare with same cap tier" />
             </div>
           </section>
 
@@ -385,12 +439,12 @@ export function CompanyDossierPage() {
           <section className="dossier-panel">
             <header className="dossier-panel__header"><span><Gauge aria-hidden="true" size={15} /><strong>Fundamental snapshot</strong></span><small>As of {dossier.marketData.asOfDate}</small></header>
             <dl className="dossier-fundamentals">
-              <div><dt>P/E</dt><dd>{formatNumber(dossier.fundamentals.peRatio, 2)}</dd></div>
-              <div><dt>P/B</dt><dd>{formatNumber(dossier.fundamentals.pbRatio, 2)}</dd></div>
-              <div><dt>ROE</dt><dd>{dossier.fundamentals.roePct === null ? "Not available" : `${dossier.fundamentals.roePct.toFixed(1)}%`}</dd></div>
-              <div><dt>EPS growth YoY</dt><dd>{dossier.fundamentals.epsGrowthYoyPct === null ? "Not available" : `${dossier.fundamentals.epsGrowthYoyPct.toFixed(1)}%`}</dd></div>
-              <div><dt>Dividend yield</dt><dd>{dossier.fundamentals.dividendYieldPct === null ? "Not available" : `${dossier.fundamentals.dividendYieldPct.toFixed(1)}%`}</dd></div>
-              <div><dt>P/E vs sector</dt><dd>{dossier.fundamentals.peVsSector === null ? "Not available" : `${dossier.fundamentals.peVsSector.toFixed(2)}x`}</dd></div>
+              <FundamentalMetric guidance={METRIC_GUIDANCE.pe} label="P/E" value={formatNumber(dossier.fundamentals.peRatio, 2)} />
+              <FundamentalMetric guidance={METRIC_GUIDANCE.pb} label="P/B" value={formatNumber(dossier.fundamentals.pbRatio, 2)} />
+              <FundamentalMetric guidance={METRIC_GUIDANCE.roe} label="ROE" value={dossier.fundamentals.roePct === null ? "Not available" : `${dossier.fundamentals.roePct.toFixed(1)}%`} />
+              <FundamentalMetric guidance={METRIC_GUIDANCE.epsGrowth} label="EPS growth YoY" value={dossier.fundamentals.epsGrowthYoyPct === null ? "Not available" : `${dossier.fundamentals.epsGrowthYoyPct.toFixed(1)}%`} />
+              <FundamentalMetric guidance={METRIC_GUIDANCE.dividendYield} label="Dividend yield" value={dossier.fundamentals.dividendYieldPct === null ? "Not available" : `${dossier.fundamentals.dividendYieldPct.toFixed(1)}%`} />
+              <FundamentalMetric guidance={METRIC_GUIDANCE.peVsSector} label="P/E vs sector" value={dossier.fundamentals.peVsSector === null ? "Not available" : `${dossier.fundamentals.peVsSector.toFixed(2)}x`} />
             </dl>
             <p className="dossier-interpretation">These are descriptive normalized inputs, not a valuation conclusion or target price.</p>
           </section>

@@ -617,61 +617,105 @@
 
   .autonomous-analyst__body {
     display: grid;
-    grid-template-columns: 1.3fr 1fr;
+    grid-template-columns: 1fr;
   }
 
-  .autonomous-analyst__verdict,
-  .autonomous-analyst__counter {
-    min-height: 120px;
-    padding: 14px 16px;
-  }
-
-  .autonomous-analyst__counter {
-    border-left: 1px solid var(--border);
-    background: color-mix(in srgb, var(--warning-soft) 35%, var(--surface));
-  }
-
-  .autonomous-analyst__verdict > span,
-  .autonomous-analyst__counter > span {
+  .autonomous-analyst__story > header {
     display: flex;
+    min-height: 38px;
     align-items: center;
-    gap: 5px;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-subtle);
+    padding: 8px 16px;
+  }
+
+  .autonomous-analyst__story > header strong {
+    color: var(--text);
+    font-size: 10px;
+  }
+
+  .autonomous-analyst__story > header small {
     color: var(--text-faint);
     font-size: 9px;
-    font-weight: 720;
+  }
+
+  .autonomous-analyst__story > div {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .autonomous-analyst__story article {
+    min-width: 0;
+    min-height: 150px;
+    border-right: 1px solid var(--border);
+    padding: 14px 15px;
+  }
+
+  .autonomous-analyst__story article:last-child {
+    border-right: 0;
+  }
+
+  .autonomous-analyst__story article > span {
+    color: var(--text-faint);
+    font-size: 8px;
+    font-weight: 760;
     text-transform: uppercase;
   }
 
-  .autonomous-analyst__verdict h2 {
+  .autonomous-analyst__story article > strong {
+    display: block;
     margin-top: 7px;
     color: var(--text);
-    font-size: 16px;
+    font-size: 11px;
+    line-height: 1.35;
   }
 
-  .autonomous-analyst__verdict p,
-  .autonomous-analyst__counter p {
+  .autonomous-analyst__story article p {
     margin-top: 7px;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1.5;
+  }
+
+  .autonomous-analyst__story article > small {
+    display: block;
+    margin-top: 7px;
+    color: var(--text-faint);
+    font-size: 8px;
+    line-height: 1.4;
+  }
+
+  .research-story__challenge {
+    background: color-mix(in srgb, var(--warning-soft) 35%, var(--surface));
+  }
+
+  .research-story__trade {
+    background: color-mix(in srgb, var(--info-soft) 30%, var(--surface));
   }
 
   .autonomous-analyst__scores {
     display: grid;
+    grid-column: 1 / -1;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 12px;
+    border-top: 1px solid var(--border);
   }
 
   .autonomous-analyst__scores > span {
     display: grid;
-    gap: 3px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--surface-subtle);
-    padding: 7px 8px;
+    min-height: 78px;
+    align-content: center;
+    gap: 4px;
+    border-right: 1px solid var(--border);
+    padding: 10px 14px;
   }
 
+  .autonomous-analyst__scores > span:last-child {
+    border-right: 0;
+  }
+
+  .autonomous-analyst__scores .dossier-help-label,
   .autonomous-analyst__scores small {
     color: var(--text-faint);
     font-size: 8px;
@@ -975,6 +1019,21 @@
       grid-template-columns: 1fr;
     }
 
+    .autonomous-analyst__story > div {
+      grid-template-columns: 1fr;
+    }
+
+    .autonomous-analyst__story article,
+    .autonomous-analyst__story article:last-child {
+      min-height: 0;
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .autonomous-analyst__story article:last-child {
+      border-bottom: 0;
+    }
+
     .autonomous-analyst__lenses > div:last-child,
     .autonomous-analyst__scenarios > div:last-child {
       grid-template-columns: 1fr;
@@ -982,6 +1041,16 @@
 
     .autonomous-analyst__scores {
       grid-template-columns: 1fr;
+    }
+
+    .autonomous-analyst__scores > span,
+    .autonomous-analyst__scores > span:last-child {
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .autonomous-analyst__scores > span:last-child {
+      border-bottom: 0;
     }
 
     .autonomous-analyst__lenses article,
@@ -995,7 +1064,6 @@
       border-bottom: 0;
     }
 
-    .autonomous-analyst__counter,
     .autonomous-analyst__columns > div + div {
       border-top: 1px solid var(--border);
       border-left: 0;
