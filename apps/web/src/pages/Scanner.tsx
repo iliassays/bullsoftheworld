@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EvidenceChip, evidenceExplain } from "../components/EvidenceChip";
+import { SizeChips } from "../components/SizeChips";
 import { FreshnessTag } from "../components/FreshnessTag";
 import { Link } from "../lib/nav";
 import { Empty, Pct, Spinner } from "../components/ui";
@@ -668,13 +669,14 @@ export function Scanner() {
             : "Each list is a rule-based research shortlist calculated after a completed session. Green/red percentages are that session's price move, not a forecast."}
         </p>
       </div>
-      {tier !== ALL_UNIVERSE && (
-        <div className="rounded-lg border border-accent/35 bg-accent/8 px-3 py-2 text-[10px] font-semibold text-accent">
-          {lang === "bn"
-            ? `আইডিয়া ইউনিভার্স: ${t(`tier.${tier}`)}`
-            : `Ideas universe: ${t(`tier.${tier}`)}`}
-        </div>
-      )}
+      {/* The size filter sits ON the boards it scopes — placement is jurisdiction. */}
+      <SizeChips
+        scopeNote={
+          lang === "bn"
+            ? "শুধু নিচের বোর্ডগুলো ফিল্টার হয়।"
+            : "Filters the boards below."
+        }
+      />
 
       {/* Pinned below the app header while boards scroll — switching tabs never needs a
           scroll back to the top. -mx-3/px-3 stretches the backdrop across the page gutter. */}

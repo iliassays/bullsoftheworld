@@ -4,10 +4,8 @@ import { api, type MarketStatus } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { usePageViewTracking } from "../lib/analytics";
 import { type Lang, SUPPORTED, useLang } from "../lib/i18n";
-import { Link, NavLink, useNavigate, useSwitchLang } from "../lib/nav";
+import { Link, NavLink, useSwitchLang } from "../lib/nav";
 import { useTenantConfig } from "../lib/tenant";
-import { useUniverse } from "../lib/universe";
-import { ALL_UNIVERSE, type UniverseTier } from "../lib/universe-policy";
 import { SearchBar } from "./SearchBar";
 
 // Live, holiday-aware market status + the delay note — a pulsing green dot while open.
@@ -122,51 +120,6 @@ function LanguageSelect() {
   );
 }
 
-function UniverseSelect() {
-  const { t } = useLang();
-  const { config } = useTenantConfig();
-  const { tier, setTier } = useUniverse();
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const choose = (next: UniverseTier) => {
-    setTier(next);
-    const path = location.pathname.replace(/^\/(bn|en)(?=\/|$)/, "") || "/";
-    if (path.startsWith("/markets/")) {
-      const params = new URLSearchParams(location.search);
-      if (next === ALL_UNIVERSE) params.delete("size");
-      else params.set("size", next);
-      const query = params.toString();
-      navigate(`${path}${query ? `?${query}` : ""}`, { replace: true });
-      return;
-    }
-    if (path === "/markets" || path === "/ideas") return;
-    navigate(next === ALL_UNIVERSE ? "/markets" : `/size/${next}`);
-  };
-
-  return (
-    <label className="flex h-[34px] w-[120px] shrink-0 cursor-pointer flex-col justify-center rounded-xl border border-border bg-card px-2 focus-within:border-accent">
-      <span className="text-[8px] font-semibold uppercase leading-none text-muted">
-        {t("tier.universe")}
-      </span>
-      <select
-        aria-label={t("tier.universe")}
-        title={t("tier.universe")}
-        value={tier}
-        onChange={(event) => choose(event.target.value as UniverseTier)}
-        className="w-full cursor-pointer bg-transparent pt-0.5 text-[11px] font-bold leading-none text-text outline-none"
-      >
-        <option value={ALL_UNIVERSE}>{t("tier.all")}</option>
-        {config.cap_tiers.map((name) => (
-          <option key={name} value={name}>
-            {t(`tier.${name}`)}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 export function Shell() {
   const { lang, t } = useLang();
   const { config } = useTenantConfig();
@@ -219,12 +172,9 @@ export function Shell() {
             <LanguageSelect />
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <SearchBar />
-          </div>
-          <UniverseSelect />
-        </div>
+        {/* The size filter moved onto the sections it actually scopes (Markets/Ideas boards);
+            a header-global selector implied filtering on pages it never touched. */}
+        <SearchBar />
       </header>
 
       {config.research_beta && (

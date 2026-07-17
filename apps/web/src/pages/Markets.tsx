@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
 import { EarningsWeek } from "../components/EarningsWeek";
+import { SizeChips } from "../components/SizeChips";
 import { useSeo } from "../components/Seo";
 import { EvidenceNote } from "../components/EvidenceChip";
 import { Link } from "../lib/nav";
@@ -1723,18 +1724,6 @@ export function Markets() {
           {t("tier.browseTitle")} →
         </Link>
       </div>
-      {tier !== ALL_UNIVERSE && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-accent/35 bg-accent/8 px-3 py-2 text-[10px]">
-          <span className="font-semibold text-accent">
-            {lang === "bn"
-              ? `স্ক্রিন তালিকা: ${t(`tier.${tier}`)}`
-              : `Screen universe: ${t(`tier.${tier}`)}`}
-          </span>
-          <span className="text-right text-muted">
-            {lang === "bn" ? "বাজারের সারাংশ: সব শেয়ার" : "Market overview: all stocks"}
-          </span>
-        </div>
-      )}
       <FreshnessTag
         asOf={data.as_of}
         quoteAsOf={data.quote_as_of}
@@ -1758,6 +1747,15 @@ export function Markets() {
           </button>
         </div>
       )}
+
+      {/* The size filter sits ON the board lists it scopes; everything above it is whole-market. */}
+      <SizeChips
+        scopeNote={
+          lang === "bn"
+            ? "শুধু নিচের তালিকাগুলো ফিল্টার হয় — উপরের বাজার-সারাংশ সব শেয়ারের।"
+            : "Filters the board lists below — the market overview above stays whole-market."
+        }
+      />
 
       {isFocus
         ? focusScreens.map((s) => <ScreenCard key={s.key} s={s} />)
