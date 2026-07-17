@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, type MoodIndex } from "../lib/api";
 import { useLang } from "../lib/i18n";
+import { useUniverse } from "../lib/universe";
+import { ALL_UNIVERSE } from "../lib/universe-policy";
 
 // Dhaka Mood Index — a descriptive market-wide fear/greed gauge. The score, band label, caption and
 // component/context strings all arrive localized from the API; this just draws them. No advice.
@@ -24,7 +26,8 @@ function bandText(band: MoodIndex["band"]): string {
 }
 
 export function DhakaMood() {
-  const { lang } = useLang();
+  const { lang, t } = useLang();
+  const { tier } = useUniverse();
   const [mood, setMood] = useState<MoodIndex | null>(null);
 
   // The quote worker writes every 15 minutes. Match that cadence and refresh immediately when a
@@ -87,11 +90,26 @@ export function DhakaMood() {
           : "Latest close";
   const displayAsOf = mood.data_status === "official_close" ? mood.as_of_date : quoteTime;
 
+  // The mood composite is always market-wide (see /market-mood — no size parameter). The header's
+  // sticky Universe filter does NOT scope this card, so say so explicitly — and pointedly when a
+  // size filter is active, because that is the exact moment the scope would be misread.
+  const scope =
+    tier === ALL_UNIVERSE
+      ? bn
+        ? "পুরো বাজারের চিত্র · সব DSE শেয়ার"
+        : "Whole market · every DSE security"
+      : bn
+        ? `পুরো বাজারের চিত্র — শুধু ${t(`tier.${tier}`)} নয়`
+        : `Whole market — not only ${t(`tier.${tier}`)}`;
+
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="text-sm font-extrabold">
-          {bn ? "ঢাকা মুড ইনডেক্স" : "Dhaka Mood Index"}
+        <div className="min-w-0">
+          <div className="text-sm font-extrabold">
+            {bn ? "ঢাকা মুড ইনডেক্স" : "Dhaka Mood Index"}
+          </div>
+          <div className="mt-0.5 text-[10px] leading-snug text-muted">{scope}</div>
         </div>
         {mood.as_of_date && (
           <div className="shrink-0 text-right text-[10px] leading-relaxed" aria-live="polite">
