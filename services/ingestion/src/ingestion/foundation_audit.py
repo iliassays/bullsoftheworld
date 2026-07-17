@@ -364,6 +364,15 @@ async def _lineage_snapshot(session: AsyncSession, market: str) -> dict[str, Any
         .where(DataSourceSnapshot.market == market)
         .group_by(DataSourceSnapshot.dataset_key),
     )
+    unknown_code_versions = await _group_counts(
+        session,
+        select(DataSourceSnapshot.dataset_key, func.count())
+        .where(
+            DataSourceSnapshot.market == market,
+            DataSourceSnapshot.code_version == "unknown",
+        )
+        .group_by(DataSourceSnapshot.dataset_key),
+    )
     observed_bar_keys = (
         select(DailyBarObservation.code, DailyBarObservation.date)
         .where(DailyBarObservation.market == market)
@@ -406,6 +415,7 @@ async def _lineage_snapshot(session: AsyncSession, market: str) -> dict[str, Any
     ).one()
     return {
         "source_snapshots_by_dataset": snapshot_counts,
+        "unknown_code_versions_by_dataset": unknown_code_versions,
         "daily_bar_observations": int(bar_revisions or 0),
         "daily_bars_with_observation": int(observed_bars or 0),
         "daily_bar_projection_rows": int(bars or 0),
@@ -525,6 +535,8 @@ def health_issues(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     if analytics["unclassified_cap_tier"]:
         issues.append({"severity": "warning", "code": "unclassified_market_cap"})
     lineage = snapshot.get("lineage") or {}
+    if lineage.get("unknown_code_versions_by_dataset"):
+        issues.append({"severity": "critical", "code": "source_release_lineage_unknown"})
     if bars["rows"] and (lineage.get("daily_bar_observation_ratio") or 0) < 0.99:
         issues.append({"severity": "critical", "code": "bar_revision_ledger_incomplete"})
     if analytics["rows"] and analytics["fingerprinted"] != analytics["rows"]:

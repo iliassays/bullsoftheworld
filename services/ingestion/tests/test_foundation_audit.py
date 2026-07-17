@@ -38,6 +38,7 @@ def _snapshot(market: str = "US") -> dict:
             {"sec_financial_facts": 1_000} if market == "US" else {"company_profiles": 100}
         ),
         "lineage": {
+            "unknown_code_versions_by_dataset": {},
             "daily_bar_observation_ratio": 1.0,
             "security_listing_observations": 100 if market == "US" else 0,
             "sec_fact_observations": 1_000 if market == "US" else 0,
@@ -94,3 +95,17 @@ def test_foundation_audit_rejects_incomplete_revision_ledger() -> None:
         "security_listing_history_missing",
         "sec_fact_revision_history_missing",
     }
+
+
+def test_foundation_audit_rejects_unknown_source_release_lineage() -> None:
+    snapshot = _snapshot()
+    snapshot["lineage"]["unknown_code_versions_by_dataset"] = {
+        "daily_bars": 100,
+        "sec_company_facts": 3,
+    }
+
+    issues = health_issues(snapshot)
+
+    assert [(item["severity"], item["code"]) for item in issues] == [
+        ("critical", "source_release_lineage_unknown")
+    ]
