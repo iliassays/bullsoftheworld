@@ -154,7 +154,7 @@ export function MarketPulse() {
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="font-bold text-sm">{t("marketPulse.title")}</div>
+        <div className="font-semibold text-sm">{t("marketPulse.title")}</div>
         <span
           className={`shrink-0 border rounded-full px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap ${riskClass[pulse.risk_mode]}`}
         >

@@ -62,7 +62,7 @@ export function WatchToday({ asOf }: { asOf?: string | null } = {}) {
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-center gap-2">
         <span aria-hidden>🔥</span>
-        <span className="font-bold text-sm">{t("watch.title")}</span>
+        <span className="font-semibold text-sm">{t("watch.title")}</span>
         <InfoTip text={t("watch.subtitle")} lessonId="active_today" />
         {asOf && <FreshnessTag asOf={asOf} className="ml-auto" />}
       </div>
