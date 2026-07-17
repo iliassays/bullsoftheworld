@@ -5,10 +5,13 @@ defines a separate authenticated research product. It does not extend the public
 it does not authorize commercial use of unlicensed market data.
 
 The next US research-data module is options intelligence. It is approved for historical feasibility
-work, not implemented or licensed for customer display. The governing specification is
-`docs/research/us-options-flow-research-2026-07.md`: options evidence must distinguish directional
-delta, volatility demand, position lifecycle, abnormality, liquidity, and confirmation instead of
-turning large call prints into trade recommendations.
+work, not licensed for customer display. Cboe confirmed on July 17, 2026 that its Options Sentiment
+product is discontinued, so the dormant parser/evaluation foundation is not an acquisition plan.
+The active evaluation path starts with a representative licensed EOD option-chain sample and may
+add Open-Close evidence only if its incremental value justifies the cost. The governing
+specification is `docs/research/us-options-flow-research-2026-07.md`: options evidence must
+distinguish directional delta, volatility demand, position lifecycle, abnormality, liquidity, and
+confirmation instead of turning large call prints into trade recommendations.
 
 The implemented foundation includes tenant-bound organizations and workspaces, least-privilege
 authorization policy, point-in-time research runs and steps, shared official evidence within one
@@ -305,13 +308,14 @@ call trade is bullish.
 
 The staged data design is:
 
-1. Cboe Option Sentiment for underlying-level EOD delta, premium, volatility, skew, vega, implied
-   borrow, participant, tenor, moneyness, size, and baseline research;
-2. a licensed EOD chain source for contract quotes, volume, previous-settlement open interest,
-   implied volatility, Greeks, and explicit stale/illiquid states;
-3. Cboe Open-Close evidence for participant, buy/sell, and open/close labels, with its partial-market
-   exchange coverage exposed;
-4. full-market OPRA trade/NBBO inference only after it is benchmarked against exact labels.
+1. a representative licensed EOD chain sample for contract quotes, volume, previous-settlement
+   open interest, implied volatility, Greeks, and explicit stale/illiquid states;
+2. a one-year quality and feasibility evaluation without shrinking the registered multi-year
+   temporal research design to fit the sample;
+3. Cboe Open-Close evidence for participant, buy/sell, and open/close labels only if the chain-only
+   evaluation exposes a decision-relevant gap, with partial-exchange coverage stated explicitly;
+4. multi-year purchase and full-market OPRA trade/NBBO inference only after data-quality,
+   licensing, and out-of-sample promotion gates pass.
 
 The Research Queue may use transparent options dimensions to prioritize analyst attention. The
 Company Dossier must show directional and volatility interpretations, false-positive explanations,
@@ -396,11 +400,12 @@ accounts are excluded unless deliberately included by an administrator.
   history/analytics, 105 have SEC filing coverage, and 103 have Company Facts coverage. FINRA daily
   short-volume coverage is broad, but it does not compensate for the narrow research-ready universe.
 - US options: no licensed historical options-flow dataset or customer-display chain is integrated.
-  A fail-closed Phase A foundation now records platform entitlements, stores immutable raw and
-  normalized artifacts, enforces append-only revision manifests, parses Option Sentiment v1.4,
-  writes versioned Parquet, and retains quality rejection reasons. It is disabled and has loaded no
-  licensed data. Cboe Option Sentiment history, Option EOD Summary/Open-Close samples, production
-  object storage, and approved terms remain prerequisites.
+  A fail-closed Phase A foundation records platform entitlements, stores immutable raw and
+  normalized artifacts, enforces append-only revision manifests, writes versioned Parquet, and
+  retains quality rejection reasons. It is disabled and has loaded no licensed data. The existing
+  Option Sentiment v1.4 parser is retained only for reproducibility because Cboe discontinued that
+  product. An Option EOD Summary or equivalent chain sample, approved terms, and production object
+  storage remain prerequisites; Open-Close is a separately gated enhancement.
 - Evidence index: 39,120 US chunks but only 1,035 DSE chunks. US filing chunks currently represent
   filing metadata/selected facts rather than full filing bodies and tables.
 

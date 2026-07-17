@@ -9,6 +9,8 @@ from sqlalchemy.dialects import postgresql
 from bulls.core.models import SecFiling
 from bulls.market_data.providers.sec_edgar import SecFinancialFactRecord, SecIssuerProfile
 from ingestion.sec import (
+    _args,
+    _codes_without_snapshots,
     _new_filing_sources,
     _profile_row,
     _sector_from_sic,
@@ -98,6 +100,24 @@ def test_sec_refresh_embeds_only_new_filing_documents() -> None:
     assert _new_filing_sources("TEST", [old, new], {old.accession_number}) == {
         ("TEST", new.accession_number)
     }
+
+
+def test_sec_lineage_resume_selects_only_codes_without_a_source_manifest() -> None:
+    selected = [
+        ("AAPL", 320193, "common_stock", True),
+        ("MSFT", 789019, "common_stock", True),
+    ]
+
+    assert _codes_without_snapshots(selected, {"AAPL"}) == ["MSFT"]
+    assert _codes_without_snapshots(selected, {"AAPL", "MSFT"}) == []
+
+
+def test_sec_cli_keeps_explicit_and_missing_lineage_modes_mutually_exclusive() -> None:
+    assert _args(["--missing-lineage"]).missing_lineage
+    assert _args(["--codes", "AAPL,MSFT"]).codes == "AAPL,MSFT"
+
+    with pytest.raises(SystemExit):
+        _args(["--missing-lineage", "--codes", "AAPL"])
 
 
 def test_13f_refresh_state_requires_requested_history_depth() -> None:

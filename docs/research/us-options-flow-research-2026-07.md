@@ -2,8 +2,10 @@
 
 Status: research specification approved for historical evaluation. The fail-closed Phase A
 entitlement, immutable-object, strict Option Sentiment v1.4 parser, Parquet normalization, quality
-manifest, and manual import foundation are implemented as of 2026-07-16. No licensed file has been
-loaded and no serving, feature, backtest, or customer-display module is enabled.
+manifest, and manual import foundation were implemented on 2026-07-16. Cboe then confirmed on
+2026-07-17 that Option Sentiment is discontinued. The parser remains a reproducibility artifact,
+not an acquisition plan. No licensed file has been loaded and no serving, feature, backtest, or
+customer-display module is enabled.
 Market: US listed equity options and their US-listed underlying stocks only.
 Product: Bulls Atlas / Bulls of Wall Street.
 
@@ -97,10 +99,9 @@ confidence, and reasons for abstention.
 Options intelligence needs three data layers. One vendor product does not automatically satisfy all
 three.
 
-### 1. Underlying-level EOD sentiment
+### 1. Underlying-level EOD sentiment (unavailable)
 
-Cboe Option Sentiment is the preferred first historical evaluation feed because it supplies one
-daily underlying-level record with fields including:
+Cboe Option Sentiment would have supplied one daily underlying-level record with fields including:
 
 - net option delta for directional trades;
 - call and put premium bought and sold;
@@ -114,8 +115,10 @@ daily underlying-level record with fields including:
 - normalized 30-day 25-delta skew;
 - size, days-to-expiration, and moneyness buckets and recent baselines.
 
-This is suitable for a first cross-sectional stock-selection test. It is not a substitute for a
-full option chain and does not by itself provide exact customer buy/sell/open/close records.
+That product is discontinued and cannot be the Phase A source. Its schema remains useful for
+understanding the desired normalized feature contract, but Atlas must not imply that these fields
+are available. The first purchase/evaluation now starts with an EOD option-chain sample. It is not
+a substitute for exact customer buy/sell/open/close records.
 
 ### 2. EOD option-chain snapshot
 
@@ -341,11 +344,11 @@ Use temporal, untouched evaluation:
 - then at least 8–12 weeks of forward paper observation.
 
 **This design requires ~7 years of history and therefore exceeds the Phase A data purchase.**
-Phase A's ~1-year Option Sentiment order is a schema/data-quality feasibility audit only — it cannot
-run this temporal design. The multi-year history purchase needed for the registered experiment is a
-separate, explicitly gated decision taken after Phase A passes and after the full Cboe cost stack
-(Sentiment history + Option EOD Summary + Open-Close) has been priced in the combined licensing
-review. Do not shrink the temporal design to fit one year of data.
+Phase A's representative EOD chain sample is a schema/data-quality feasibility audit only; it
+cannot run this temporal design. The multi-year history purchase needed for the registered
+experiment is a separate, explicitly gated decision taken after Phase A passes and after chain
+history plus any separately justified Open-Close evidence has been priced in the licensing review.
+Do not shrink the temporal design to fit one year of data.
 
 The initial universe should be common stocks only, excluding indices, ETFs, preferreds, warrants,
 funds, adjusted/nonstandard contracts, and names that fail the registered stock and option
@@ -408,8 +411,8 @@ files, and the completed feasibility report remain outstanding. The resumable hi
 and immutable descriptive evaluator are implemented; operational instructions are in
 `docs/runbooks/us-options-phase-a.md`.
 
-- license approximately one year of Cboe Option Sentiment as a low-cost schema/data-quality audit;
-- obtain sample/quote for Option EOD Summary and Open-Close;
+- obtain and evaluate a representative Option EOD Summary or equivalent chain sample;
+- obtain Open-Close pricing/sample separately, without treating it as a Phase A prerequisite;
 - reconcile symbols, sessions, blank fields, corporate actions, and coverage;
 - build an immutable Parquet research set outside the API database;
 - run descriptive distributions before any strategy test.
@@ -484,7 +487,7 @@ Academic:
 
 Market data and risk:
 
-- Cboe Option Sentiment specification:
+- Discontinued Cboe Option Sentiment specification (historical schema reference only):
   https://datashop.cboe.com/Documents/Cboe_OptionSentiment_Specs.pdf
 - Cboe Open-Close Volume Summary:
   https://datashop.cboe.com/cboe-options-open-close-volume-summary

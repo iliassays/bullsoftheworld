@@ -304,8 +304,6 @@ async def record_sec_fact_observations(
     filings: Sequence,
     observed_at: dt.datetime,
 ) -> int:
-    if not facts:
-        return 0
     normalized = [fact.model_dump(mode="json") for fact in facts]
     snapshot_id = await persist_source_snapshot(
         session,

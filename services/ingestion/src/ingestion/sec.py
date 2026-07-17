@@ -25,6 +25,7 @@ from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
     AnnualFinancial,
     CompanyProfile,
+    DataSourceSnapshot,
     DividendRecord,
     RegulatoryDataState,
     SecFiling,
@@ -391,6 +392,8 @@ async def _publish_filing_alerts(code: str, filings: list) -> int:
 
 
 async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, int, str, bool]]:
+    if codes is not None and not codes:
+        return []
     sm = get_sessionmaker()
     async with sm() as session:
         stmt = (
@@ -406,7 +409,7 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
             )
             .order_by(Symbol.code)
         )
-        if codes:
+        if codes is not None:
             stmt = stmt.where(
                 Symbol.code.in_(codes),
                 Symbol.data_status.in_(("onboarding", "ready", "research_only", "degraded")),
@@ -453,6 +456,31 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
             )
             for code, cik, instrument_type in rows
         ]
+
+
+def _codes_without_snapshots(
+    selected: list[tuple[str, int, str, bool]],
+    snapshotted: set[str],
+) -> list[str]:
+    return [code for code, _, _, _ in selected if code not in snapshotted]
+
+
+async def missing_sec_lineage_codes() -> list[str]:
+    """Return current research symbols with no accepted Company Facts source manifest."""
+
+    selected = await _ready_cik_codes()
+    sm = get_sessionmaker()
+    async with sm() as session:
+        snapshotted = set(
+            await session.scalars(
+                select(DataSourceSnapshot.scope_key).where(
+                    DataSourceSnapshot.market == MARKET,
+                    DataSourceSnapshot.dataset_key == "sec_company_facts",
+                    DataSourceSnapshot.status == "accepted",
+                )
+            )
+        )
+    return _codes_without_snapshots(selected, snapshotted)
 
 
 def _new_filing_sources(
@@ -575,18 +603,34 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
     }
 
 
-def _args() -> argparse.Namespace:
+def _args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest normalized SEC evidence")
     parser.add_argument("--market", default=MARKET, choices=[MARKET])
-    parser.add_argument("--codes", help="comma-separated ready symbol codes")
-    return parser.parse_args()
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--codes", help="comma-separated ready symbol codes")
+    selection.add_argument(
+        "--missing-lineage",
+        action="store_true",
+        help="refresh only current research symbols with no Company Facts source manifest",
+    )
+    return parser.parse_args(argv)
+
+
+async def _run(args: argparse.Namespace) -> dict[str, int]:
+    if args.missing_lineage:
+        codes = await missing_sec_lineage_codes()
+    else:
+        codes = [code.strip().upper() for code in args.codes.split(",")] if args.codes else None
+    print(
+        f"[sec] refreshing {args.market} filings and Company Facts"
+        + (f" for {len(codes)} selected symbols" if codes is not None else "")
+    )
+    return await collect(codes=codes)
 
 
 def main() -> None:
     args = _args()
-    codes = [code.strip().upper() for code in args.codes.split(",")] if args.codes else None
-    print(f"[sec] refreshing {args.market} filings and Company Facts")
-    stats = asyncio.run(collect(codes=codes))
+    stats = asyncio.run(_run(args))
     print(f"[sec] done: {stats}")
 
 

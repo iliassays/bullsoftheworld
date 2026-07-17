@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ from ingestion.lineage import (
     _insert_observation_batches,
     canonical_json,
     content_sha256,
+    record_sec_fact_observations,
     sec_fact_known_at,
 )
 
@@ -86,3 +88,34 @@ async def test_observation_writes_are_batched_below_driver_parameter_limits() ->
 
     assert session.calls == 3
     assert inserted == len(rows)
+
+
+@pytest.mark.asyncio
+async def test_empty_sec_fact_delivery_still_persists_an_accepted_source_manifest(
+    monkeypatch,
+) -> None:
+    calls: dict[str, object] = {}
+
+    async def fake_snapshot(_session, **kwargs):
+        calls["normalized_records"] = kwargs["normalized_records"]
+        return uuid.uuid4()
+
+    async def fake_insert(_session, _model, rows, *, index_elements):
+        calls["rows"] = rows
+        calls["index_elements"] = index_elements
+        return 0
+
+    monkeypatch.setattr("ingestion.lineage.persist_source_snapshot", fake_snapshot)
+    monkeypatch.setattr("ingestion.lineage._insert_observation_batches", fake_insert)
+
+    inserted = await record_sec_fact_observations(
+        object(),
+        code="EMPTY",
+        facts=[],
+        filings=[],
+        observed_at=dt.datetime(2026, 7, 17, tzinfo=dt.UTC),
+    )
+
+    assert inserted == 0
+    assert calls["normalized_records"] == []
+    assert calls["rows"] == []

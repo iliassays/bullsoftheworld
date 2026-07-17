@@ -1,7 +1,7 @@
 # Bulls Research Data Foundation
 
-Status: foundation implementation complete in repository; production migration/bootstrap pending,
-July 2026.
+Status: production migration and forward-lineage activation complete; bounded legacy-bar bootstrap
+in progress, July 17, 2026.
 
 This document governs data onboarding for Bulls of Dhaka, Bulls of Wall Street, and Bulls Atlas.
 It distinguishes an operational market-data product from a point-in-time research platform. A
@@ -60,7 +60,7 @@ an explicit absence state that can fail a validation gate.
 | DSE company fundamentals | Yes | Forward-safe after first refresh | Source publication time is unavailable, so ingestion time is the conservative upper bound |
 | DSE shareholding | Yes | Forward-safe after first refresh | Historical public release times are not invented |
 | Ticker analytics | Yes | Reproducible current snapshot | Methodology/input hashes are stored; historical PIT completeness remains false until proven |
-| Atlas research runs | Yes | Fail-closed | Revision and inactive-universe gaps force diagnostic status |
+| Atlas research runs | Yes | Forward-safe for current runs | Immutable fact packs and claim citations are live; historical validation remains diagnostic |
 
 The US options module is the reference implementation: entitlement gate, bounded input, immutable
 content-addressed raw object, normalized Parquet, hashes, schema and identity versions,
@@ -199,6 +199,14 @@ Migration `f6d8a0c2e4b7` adds:
 - an Atlas validation gate that remains diagnostic while revision or inactive-universe history is
   incomplete.
 
+Application release `dbd30da` activates the previously dormant Atlas evidence schema. Each new
+company-research run persists the complete registered fact pack as immutable evidence documents and
+fact spans, links the selected documents to the run, and requires every generated claim to cite its
+registered spans. Missing lineage fails the transaction. Production smoke runs on July 17 verified
+this path independently for `bullsofdhaka/DSE/BSC` and `bullsofwallst/US/NXTC` through forced RLS;
+the cross-tenant lineage mismatch count was zero. Older successful runs without a `lineage` summary
+remain identifiable legacy records and are not assigned fabricated citations.
+
 The migration is intentionally schema-only. It does not bulk-copy a large production table while
 the constrained server is serving traffic.
 
@@ -214,6 +222,26 @@ the constrained server is serving traffic.
 6. Recompute DSE and US analytics so every current row receives a methodology/input fingerprint.
 7. Run the strict audit again. Do not enable Atlas validation until critical lineage findings are
    zero.
+
+## Production activation record: July 17, 2026
+
+- The upgraded host has 4 vCPU, 16 GiB RAM, and sufficient disk headroom. DSE and US APIs, market
+  workers, SEC worker, research worker, AI worker, and Atlas lifecycle worker are active.
+- The DSE weekly company sweep previously hit ARQ's 300-second default at 296 symbols. The cron now
+  has a tested 30-minute bound; the recovery completed 395 source-available profiles, 395 distinct
+  immutable company lineages, and 18 sector P/E rows. The one absent profile remains an explicit
+  source gap.
+- A guarded US security-master refresh accepted 13,057 current listing additions and two removals,
+  producing 13,059 immutable listing events after universe-size, duplicate, source-file, CIK, and
+  identity-continuity checks passed.
+- DSE analytics were recomputed for 396/396 ready symbols and US analytics for 367/367; every row
+  now carries the current methodology version and input fingerprint.
+- Ten still-forming July 17 US daily candles were removed from mutable bars, analytics, and pattern
+  projections. Restricted research was rebuilt for all ten names through the latest completed
+  session. Their source observations remain auditable and cannot enter a completed-session query.
+- The SEC Company Facts revision baseline and bounded legacy-bar bootstrap are operator jobs, not
+  release-time migrations. Their final counts must be copied into the strict audit record when each
+  unit completes.
 
 ## Longer-term migration order
 
@@ -250,7 +278,6 @@ the constrained server is serving traffic.
 - Atlas backtest universe selection uses current active symbols, current cap tier, and current
   liquidity ranking. The engine correctly labels point-in-time universe completeness false, but
   those metrics are not institutional validation evidence.
-- Production database state could not be inspected because SSH timed out. Lightsail reported the
-  instance running with its firewall open, but CPU was pinned at the 30% burst baseline, burst
-  capacity was effectively zero, and status checks intermittently failed. Recover the host and run
-  the foundation audit before production readiness is claimed.
+- The shared host also runs a separate trading stack. Long baselines therefore run as bounded,
+  low-priority transient systemd units and are sequenced rather than launched concurrently. API
+  latency and load are checked between stages; a transport disconnect must not cancel a data job.
