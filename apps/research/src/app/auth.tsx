@@ -17,6 +17,7 @@ const PREVIEW_USER: ResearchUser = {
   id: 0,
   name: "Preview analyst",
   handle: "preview",
+  role: "admin",
 };
 
 export function ResearchAuthProvider({ children }: { children: ReactNode }) {

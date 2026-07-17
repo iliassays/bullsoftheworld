@@ -17,6 +17,7 @@ import { Link, useParams } from "react-router-dom";
 import { researchDeployment } from "../../app/deployment";
 import { Button, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
+import { OptionsLens } from "../options-lens/OptionsLens";
 import {
   useResearchRun,
   useResearchRuns,
@@ -395,6 +396,7 @@ export function CompanyDossierPage() {
           <OwnershipPanel dossier={dossier} />
           <InstitutionalPanel dossier={dossier} />
           <ShortActivityPanel dossier={dossier} />
+          <OptionsLens workspaceId={workspace.id} code={candidate.ticker} />
           <section className="dossier-panel dossier-panel--policy">
             <header className="dossier-panel__header"><span><CalendarClock aria-hidden="true" size={15} /><strong>Research record</strong></span></header>
             <p>Generated {formatTimestamp(dossier.generatedAt)} for the {researchDeployment.exchangeName} workspace.</p>

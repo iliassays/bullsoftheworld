@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from api.deps import CurrentTenant, CurrentUser, DbSession
@@ -17,6 +19,10 @@ from api.institutional_research.lifecycle import (
     automation_policy_out,
     get_automation_policy,
     upsert_automation_policy,
+)
+from api.institutional_research.options import (
+    OptionChainPreviewOut,
+    load_option_chain_preview,
 )
 from api.institutional_research.portfolio import (
     create_shadow_portfolio,
@@ -57,8 +63,13 @@ from api.research_access import (
     authorize_research_workspace,
     bind_research_tenant_context,
 )
+from bulls.core.models import Symbol
 from bulls.core.research_access import ResearchPermission
 from bulls.core.tenancy import Tenant
+from bulls.market_data.providers.us_yahoo_options import (
+    OptionChainProviderError,
+    OptionChainUnavailable,
+)
 
 router = APIRouter(prefix="/institutional-research", tags=["institutional-research"])
 
@@ -66,6 +77,15 @@ router = APIRouter(prefix="/institutional-research", tags=["institutional-resear
 def _require_research_access(tenant: Tenant) -> None:
     if tenant.research_access != "authenticated":
         raise HTTPException(status_code=403, detail="Research access is not enabled")
+
+
+def _require_options_preview_access(tenant: Tenant, user) -> None:
+    """Fail closed before any provider call; DSE never reveals whether a US chain exists."""
+
+    if tenant.market != "US":
+        raise HTTPException(status_code=404, detail="Options are not available for this market")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Owner options preview access required")
 
 
 async def _authorized_workspace(
@@ -414,6 +434,78 @@ async def company_dossier(
         attributes={"knowledge_cutoff_at": dossier.knowledge_cutoff_at.isoformat()},
     )
     return dossier
+
+
+@router.get("/workspaces/{workspace_id}/companies/{code}/options-chain")
+async def company_option_chain(
+    workspace_id: uuid.UUID,
+    code: str,
+    request: Request,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    expiration: Annotated[dt.date | None, Query()] = None,
+) -> OptionChainPreviewOut:
+    """Load one delayed US chain without coupling it to the core company dossier."""
+
+    _require_research_access(tenant)
+    _require_options_preview_access(tenant, user)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    normalized = code.strip().upper()
+    symbol = await session.scalar(
+        select(Symbol.code).where(
+            Symbol.market == "US",
+            Symbol.code == normalized,
+            Symbol.is_active.is_(True),
+            Symbol.is_hidden.is_(False),
+            Symbol.data_status.in_(("ready", "research_only")),
+        )
+    )
+    if symbol is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Security is not available in this research tenant",
+        )
+
+    try:
+        preview = await load_option_chain_preview(
+            tenant_id=tenant.name,
+            workspace_id=workspace_id,
+            code=normalized,
+            expiration=expiration,
+        )
+    except OptionChainUnavailable as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except OptionChainProviderError:
+        raise HTTPException(
+            status_code=503,
+            detail="The experimental option-chain source is temporarily unavailable",
+        ) from None
+
+    record_research_audit_event(
+        session,
+        workspace=authorized.workspace,
+        actor_user_id=user.id,
+        event_type="option_chain_preview_viewed",
+        resource_type="security",
+        resource_id=f"US:{normalized}",
+        request_id=getattr(request.state, "request_id", None),
+        attributes={
+            "expiration": preview.expiration.isoformat(),
+            "provider": preview.provider,
+            "quality": preview.metrics.quality,
+        },
+    )
+    return preview
 
 
 @router.post(

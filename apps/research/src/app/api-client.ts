@@ -1,12 +1,14 @@
 import { researchDeployment, tenantRequestHeaders } from "./deployment";
 import type { ResearchCompanyDossier } from "../features/company-dossier/model";
 import type { CatalystCalendar } from "../features/catalyst-calendar/model";
+import type { OptionChainPreview } from "../features/options-lens/model";
 import type { ResearchQueueSnapshot } from "../features/research-queue/model";
 
 export interface ResearchUser {
   id: number;
   name: string;
   handle: string;
+  role: "user" | "admin";
 }
 
 export interface ResearchWorkspace {
@@ -299,6 +301,23 @@ function assertDossierBoundary(
   return dossier;
 }
 
+function assertOptionChainBoundary(
+  chain: OptionChainPreview,
+  workspaceId: string,
+  ticker: string,
+): OptionChainPreview {
+  if (
+    researchDeployment.market !== "US" ||
+    chain.tenantId !== researchDeployment.tenant ||
+    chain.market !== "US" ||
+    chain.workspaceId !== workspaceId ||
+    chain.code !== ticker
+  ) {
+    throw new ResearchApiError(502, "The API returned option data outside this tenant boundary");
+  }
+  return chain;
+}
+
 function assertRunBoundary(run: ResearchRun, workspaceId: string): ResearchRun {
   if (
     run.tenantId !== researchDeployment.tenant ||
@@ -401,6 +420,22 @@ export const researchApi = {
       { signal },
     );
     return assertDossierBoundary(dossier, workspaceId, normalizedTicker);
+  },
+  async optionChain(
+    workspaceId: string,
+    ticker: string,
+    expiration?: string,
+    signal?: AbortSignal,
+  ): Promise<OptionChainPreview> {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    const parameters = new URLSearchParams();
+    if (expiration) parameters.set("expiration", expiration);
+    const queryString = parameters.size ? `?${parameters.toString()}` : "";
+    const chain = await request<OptionChainPreview>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/companies/${encodeURIComponent(normalizedTicker)}/options-chain${queryString}`,
+      { signal },
+    );
+    return assertOptionChainBoundary(chain, workspaceId, normalizedTicker);
   },
   async catalystCalendar(
     workspaceId: string,
