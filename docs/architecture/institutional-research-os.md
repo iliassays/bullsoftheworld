@@ -89,6 +89,22 @@ The visible application is organized around six workspaces:
 
 Chat is a command surface inside these workflows, not the product's home page.
 
+## Three independent evaluation loops
+
+Atlas deliberately keeps three concepts separate:
+
+1. **Company research** ranks attention, builds a cited thesis and counter-thesis, and records a
+   bounded `qualified`, `monitor`, `rejected`, or `abstained` conclusion. Qualification authorizes
+   further testing only; it never creates an order.
+2. **Strategy experiments** run registered deterministic rules over point-in-time market data and
+   maintain forward EOD shadow books. Their holdings are not presented as analyst recommendations.
+3. **Outcome calibration** measures research conclusions at 5/20/60 completed-session horizons and
+   evaluates strategy books against their benchmark, costs, drawdown, capacity, and promotion gates.
+
+Research displays evidence completeness and an ordinal thesis-support rubric separately. Neither
+is a return probability. Outcome probability remains explicitly `uncalibrated` until enough forward
+observations mature to support an out-of-sample calibration estimate.
+
 ## Research queue
 
 Market capitalization is a mandate/filter, not an investment verdict. Queue construction evaluates

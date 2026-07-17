@@ -270,7 +270,7 @@ export function CompanyDossierPage() {
         <header className="dossier-panel__header">
           <span><BrainCircuit aria-hidden="true" size={15} /><strong>Autonomous analyst loop</strong></span>
           <span className="autonomous-analyst__action">
-            {decision && <StatusBadge tone={decision.status === "qualified" ? "positive" : decision.status === "monitor" ? "warning" : "negative"} dot>{decision.status} · {(decision.confidence * 100).toFixed(0)}% claim support</StatusBadge>}
+            {decision && <StatusBadge tone={decision.status === "qualified" ? "positive" : decision.status === "monitor" ? "warning" : "negative"} dot>{decision.status} · {decision.thesisStrength} thesis</StatusBadge>}
             <Button isDisabled={startResearch.isPending} onPress={() => startResearch.mutate(candidate.ticker)} variant="primary">
               <BrainCircuit aria-hidden="true" size={14} />{startResearch.isPending ? "Running analyst, skeptic, verifier…" : decision ? "Re-run with current evidence" : "Run autonomous analyst"}
             </Button>
@@ -278,7 +278,7 @@ export function CompanyDossierPage() {
         </header>
         {decision ? (
           <div className="autonomous-analyst__body">
-            <div className="autonomous-analyst__verdict"><span>Bounded verdict</span><h2>{decision.headline}</h2><p>{decision.thesis}</p></div>
+            <div className="autonomous-analyst__verdict"><span>Bounded verdict</span><h2>{decision.headline}</h2><p>{decision.thesis}</p><div className="autonomous-analyst__scores"><span><small>Evidence completeness</small><strong>{decision.evidenceCompletenessPct || candidate.evidence.coveragePct}%</strong></span><span><small>Thesis support</small><strong>{decision.thesisStrength}</strong></span><span><small>Outcome probability</small><strong>Uncalibrated</strong></span></div></div>
             <div className="autonomous-analyst__counter"><span><Scale size={13} /> Independent skeptic</span><p>{decision.counterThesis}</p></div>
             {decision.lenses.length > 0 && (
               <div className="autonomous-analyst__lenses">
@@ -339,6 +339,7 @@ export function CompanyDossierPage() {
             <div className="dossier-chart-stats">
               <Metric label="52-week range" value={`${formatNumber(dossier.marketData.week52Low, 2)} – ${formatNumber(dossier.marketData.week52High, 2)}`} />
               <Metric label="Relative volume" value={dossier.marketData.relativeVolume === null ? "Not available" : `${dossier.marketData.relativeVolume.toFixed(2)}x`} />
+              <Metric label="CMF / OBV slope" value={`${formatNumber(dossier.marketData.cmf20, 2)} / ${formatNumber(dossier.marketData.obvSlope, 2)}`} detail="price-volume confirmation" />
               <Metric label="RSI (14)" value={formatNumber(dossier.marketData.rsi14, 1)} />
               <Metric label="Annualized volatility" value={dossier.marketData.volatilityPct === null ? "Not available" : `${dossier.marketData.volatilityPct.toFixed(1)}%`} />
             </div>

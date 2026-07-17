@@ -42,6 +42,23 @@ export function PortfolioIntelligencePage() {
   const selected = useMemo(() => portfolios.data?.find((item) => item.id === selectedId) ?? portfolios.data?.[0], [portfolios.data, selectedId]);
   const executions = useMemo(() => shadowExecutions(selected), [selected]);
   const latest = selected?.snapshots.at(-1);
+  const positionPlan = useMemo(() => {
+    if (!latest) return [];
+    return [...new Set([...Object.keys(latest.positions), ...Object.keys(latest.targetWeights)])]
+      .sort((left, right) => (latest.targetWeights[right] ?? 0) - (latest.targetWeights[left] ?? 0) || left.localeCompare(right))
+      .map((code) => {
+        const position = latest.positions[code];
+        const target = latest.targetWeights[code] ?? 0;
+        return {
+          code,
+          shares: position?.shares ?? 0,
+          averageCost: position?.average_cost ?? null,
+          target,
+          state: position && target > 0 ? "Held / rebalance" : position ? "Exit queued" : "Entry queued",
+          stateKey: position && target > 0 ? "held" : position ? "exit" : "entry",
+        };
+      });
+  }, [latest]);
   const initial = selected?.snapshots[0];
   const totalReturn = latest && initial ? (latest.nav / initial.nav - 1) * 100 : 0;
   const benchmarkReturn = latest && initial ? (latest.benchmarkNav / initial.benchmarkNav - 1) * 100 : 0;
@@ -60,7 +77,7 @@ export function PortfolioIntelligencePage() {
   return (
     <div className="atlas-page">
       <header className="atlas-page-header">
-        <div><span className="atlas-page-header__eyebrow">Forward-only paper portfolios · deterministic risk authority</span><h1>Portfolio intelligence</h1><p>Observe real post-research behavior, implementation costs, concentration, drawdown, and every risk intervention.</p></div>
+        <div><span className="atlas-page-header__eyebrow">Forward-only strategy experiment · deterministic risk authority</span><h1>Portfolio intelligence</h1><p>This systematic paper book is independent from company-research verdicts. Observe implementation costs, concentration, drawdown, and every risk intervention.</p></div>
         {selected && <SelectField label="Shadow book" onChange={setSelectedId} options={(portfolios.data ?? []).map((item) => ({ value: item.id, label: item.name }))} value={selected.id} />}
       </header>
 
@@ -85,10 +102,10 @@ export function PortfolioIntelligencePage() {
 
           <div className="portfolio-grid">
             <section className="atlas-panel">
-              <header><Activity size={16} /><span><strong>Current holdings</strong><small>Marked at completed EOD · {latest.asOfDate}</small></span></header>
+              <header><Activity size={16} /><span><strong>Positions and next-session targets</strong><small>Targets formed after {latest.asOfDate} close · execution remains risk-gated</small></span></header>
               <div className="portfolio-table">
-                <div><span>Ticker</span><span>Shares</span><span>Average cost</span><span>Next target</span></div>
-                {Object.keys(latest.positions).length === 0 ? <p>Cash only. The next completed rebalance may create targets.</p> : Object.entries(latest.positions).map(([code, position]) => <div key={code}><strong>{code}</strong><span>{position.shares.toLocaleString()}</span><span>{position.average_cost.toFixed(2)}</span><span>{((latest.targetWeights[code] ?? 0) * 100).toFixed(1)}%</span></div>)}
+                <div><span>Ticker</span><span>Shares</span><span>Average cost</span><span>Next target</span><span>State</span></div>
+                {positionPlan.length === 0 ? <p>Cash only. The next completed rebalance may create targets.</p> : positionPlan.map((item) => <div key={item.code}><strong>{item.code}</strong><span>{item.shares.toLocaleString()}</span><span>{item.averageCost === null ? "—" : item.averageCost.toFixed(2)}</span><span>{(item.target * 100).toFixed(1)}%</span><span className={`target-state target-state--${item.stateKey}`}>{item.state}</span></div>)}
               </div>
             </section>
             <section className="atlas-panel">

@@ -2,7 +2,7 @@
 
 The loop turns an already tenant-scoped evidence/calculation pack into a typed thesis, an explicit
 counter-thesis, claim verification, and a bounded research decision. It performs no I/O and makes
-no portfolio decision. Deterministic portfolio and risk code consumes only qualified hypotheses.
+no portfolio decision. Company-research verdicts and strategy shadow books remain independent.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from bulls.analytics.financial_reasoning import (
     build_financial_reasoning,
 )
 
-METHODOLOGY_VERSION = "atlas-finance-reasoner-v2"
+METHODOLOGY_VERSION = "atlas-finance-reasoner-v3"
 
 
 class ResearchFact(BaseModel):
@@ -86,6 +86,9 @@ class AutonomousResearchResult(BaseModel):
     evidence_fingerprint: str
     status: Literal["qualified", "monitor", "rejected", "abstained"]
     confidence: float = Field(ge=0, le=1)
+    evidence_completeness_pct: int = Field(ge=0, le=100)
+    thesis_strength: Literal["weak", "mixed", "moderate", "strong"]
+    outcome_calibration: Literal["uncalibrated"] = "uncalibrated"
     headline: str
     thesis: str
     counter_thesis: str
@@ -244,7 +247,7 @@ def run_autonomous_research(payload: AutonomousResearchInput) -> AutonomousResea
         max(
             0.0,
             min(
-                1.0,
+                0.9,
                 coverage_confidence * 0.35
                 + factor_confidence * 0.25
                 + claim_verification * 0.25
@@ -257,6 +260,18 @@ def run_autonomous_research(payload: AutonomousResearchInput) -> AutonomousResea
         confidence = min(confidence, 0.4)
     elif payload.official_evidence_count == 0:
         confidence = min(confidence, 0.65)
+
+    net_support = support_strength - counter_strength
+    if status in {"rejected", "abstained"} or supported_bulls == 0:
+        thesis_strength: Literal["weak", "mixed", "moderate", "strong"] = "weak"
+    elif counter_strength >= support_strength * 0.75:
+        thesis_strength = "mixed"
+    elif supported_bulls >= 3 and net_support >= 1.5 and counter_strength < 1.0:
+        thesis_strength = "strong"
+    elif supported_bulls >= 2 and net_support >= 0.5:
+        thesis_strength = "moderate"
+    else:
+        thesis_strength = "mixed"
 
     best_support = max(supporting, key=lambda claim: claim.confidence, default=None)
     strongest_risk = max(counter, key=lambda claim: claim.confidence, default=None)
@@ -350,7 +365,10 @@ def run_autonomous_research(payload: AutonomousResearchInput) -> AutonomousResea
             summary=headline_by_status[status],
             output={
                 "status": status,
-                "confidence": confidence,
+                "decision_support_score": confidence,
+                "evidence_completeness_pct": payload.evidence_coverage_pct,
+                "thesis_strength": thesis_strength,
+                "outcome_calibration": "uncalibrated",
                 "strategy_key": strategy_key,
                 "invalidation_rules": invalidation_rules,
                 "scenarios": [scenario.model_dump() for scenario in reasoning.scenarios],
@@ -362,6 +380,9 @@ def run_autonomous_research(payload: AutonomousResearchInput) -> AutonomousResea
         evidence_fingerprint=_fingerprint(payload),
         status=status,
         confidence=confidence,
+        evidence_completeness_pct=payload.evidence_coverage_pct,
+        thesis_strength=thesis_strength,
+        outcome_calibration="uncalibrated",
         headline=headline_by_status[status],
         thesis=thesis,
         counter_thesis=counter_thesis,
@@ -376,6 +397,8 @@ def run_autonomous_research(payload: AutonomousResearchInput) -> AutonomousResea
         limitations=[
             "This provider-free finance reasoner interprets registered evidence and calculations; it does not predict prices.",
             "Qualification permits hypothesis testing only and is not a trade instruction.",
+            "Thesis strength is an evidence rubric, not a return probability or price forecast.",
+            "Outcome probability remains uncalibrated until sufficient forward observations mature.",
             "Historical strategy validation is a separate gate with separate data requirements.",
             "The engine does not infer document meaning beyond normalized facts and registered disclosure context.",
         ],

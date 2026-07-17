@@ -42,7 +42,7 @@ from bulls.core.models import (
 )
 from bulls.market_data.calendar import is_trading_day, market_close_on, market_timezone
 
-LIFECYCLE_VERSION = "atlas-lifecycle-v1"
+LIFECYCLE_VERSION = "atlas-lifecycle-v2"
 _POST_CLOSE_DELAYS = {
     "DSE": dt.timedelta(hours=5),
     "US": dt.timedelta(hours=3, minutes=30),
@@ -257,7 +257,7 @@ async def execute_research_lifecycle(
     research_records: list[dict[str, Any]] = []
     for candidate in selected:
         fingerprint = _research_fingerprint(candidate)
-        research_key = f"auto-r2:{candidate.ticker}:{fingerprint[:40]}"
+        research_key = f"auto-r3:{candidate.ticker}:{fingerprint[:40]}"
         previous = await _existing_run(session, workspace=workspace, idempotency_key=research_key)
         try:
             child = await execute_company_research(
@@ -273,7 +273,8 @@ async def execute_research_lifecycle(
                     "ticker": candidate.ticker,
                     "run_id": str(child.id),
                     "status": decision.get("status", child.status),
-                    "confidence": decision.get("confidence"),
+                    "evidence_completeness_pct": decision.get("evidence_completeness_pct"),
+                    "thesis_strength": decision.get("thesis_strength"),
                     "action": "unchanged" if previous is not None else "researched",
                 }
             )

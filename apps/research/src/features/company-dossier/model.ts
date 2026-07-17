@@ -30,6 +30,8 @@ export interface ResearchCompanyDossier {
     nearestResistance: number | null;
     averageVolume20: number | null;
     relativeVolume: number | null;
+    cmf20: number | null;
+    obvSlope: number | null;
     rsi14: number | null;
     volatilityPct: number | null;
   };

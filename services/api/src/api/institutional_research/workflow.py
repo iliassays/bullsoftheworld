@@ -128,6 +128,18 @@ def _research_input(dossier) -> AutonomousResearchInput:
             unit="x",
         ),
         _fact(
+            "cmf_20",
+            dossier.market_data.cmf_20,
+            cutoff=cutoff,
+            source_kind="market_data",
+        ),
+        _fact(
+            "obv_slope",
+            dossier.market_data.obv_slope,
+            cutoff=cutoff,
+            source_kind="market_data",
+        ),
+        _fact(
             "rsi_14",
             dossier.market_data.rsi_14,
             cutoff=cutoff,
@@ -478,7 +490,7 @@ async def execute_company_research(
         idempotency_key=idempotency_key,
         cutoff=_utc(dossier.knowledge_cutoff_at),
         code_version=METHODOLOGY_VERSION,
-        model="finance-reasoner-v2",
+        model="finance-reasoner-v3",
     )
     run.evidence_snapshot_hash = result.evidence_fingerprint
     await _persist_run_parent(session, run)

@@ -330,7 +330,7 @@
 
   .portfolio-table > div {
     min-width: 0;
-    grid-template-columns: 1.4fr repeat(3, 1fr);
+    grid-template-columns: 1.2fr repeat(3, 0.9fr) 1.2fr;
   }
 
   .calibration-table > div {
@@ -656,6 +656,49 @@
     line-height: 1.5;
   }
 
+  .autonomous-analyst__scores {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .autonomous-analyst__scores > span {
+    display: grid;
+    gap: 3px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface-subtle);
+    padding: 7px 8px;
+  }
+
+  .autonomous-analyst__scores small {
+    color: var(--text-faint);
+    font-size: 8px;
+  }
+
+  .autonomous-analyst__scores strong {
+    color: var(--text);
+    font-size: 10px;
+    text-transform: capitalize;
+  }
+
+  .target-state {
+    font-size: 9px;
+  }
+
+  .target-state--held {
+    color: var(--info);
+  }
+
+  .target-state--entry {
+    color: var(--positive);
+  }
+
+  .target-state--exit {
+    color: var(--negative);
+  }
+
   .autonomous-analyst__lenses,
   .autonomous-analyst__scenarios {
     grid-column: 1 / -1;
@@ -934,6 +977,10 @@
 
     .autonomous-analyst__lenses > div:last-child,
     .autonomous-analyst__scenarios > div:last-child {
+      grid-template-columns: 1fr;
+    }
+
+    .autonomous-analyst__scores {
       grid-template-columns: 1fr;
     }
 

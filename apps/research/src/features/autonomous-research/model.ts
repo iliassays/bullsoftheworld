@@ -17,6 +17,9 @@ export interface ShadowExecution {
 export interface AutonomousDecision {
   status: "qualified" | "monitor" | "rejected" | "abstained";
   confidence: number;
+  evidenceCompletenessPct: number;
+  thesisStrength: "weak" | "mixed" | "moderate" | "strong" | "unrated";
+  outcomeCalibration: "uncalibrated";
   headline: string;
   thesis: string;
   counterThesis: string;
@@ -214,9 +217,15 @@ export function autonomousDecision(run: ResearchRun | undefined): AutonomousDeci
   if (!decision) return null;
   const status = text(decision.status);
   if (!["qualified", "monitor", "rejected", "abstained"].includes(status)) return null;
+  const thesisStrength = text(decision.thesis_strength);
   return {
     status: status as AutonomousDecision["status"],
     confidence: numeric(decision.confidence),
+    evidenceCompletenessPct: numeric(decision.evidence_completeness_pct),
+    thesisStrength: ["weak", "mixed", "moderate", "strong"].includes(thesisStrength)
+      ? thesisStrength as AutonomousDecision["thesisStrength"]
+      : "unrated",
+    outcomeCalibration: "uncalibrated",
     headline: text(decision.headline, "Autonomous review completed"),
     thesis: text(decision.thesis, "No supported thesis was produced."),
     counterThesis: text(decision.counter_thesis, "No counter-thesis was produced."),

@@ -101,7 +101,7 @@ export function LifecycleControlPage() {
   return (
     <div className="atlas-page">
       <header className="atlas-page-header">
-        <div><span className="atlas-page-header__eyebrow">Registered process · completed market sessions only</span><h1>Lifecycle control</h1><p>Queue, research, backtest, forward paper book, calibration, and objective promotion gates.</p></div>
+        <div><span className="atlas-page-header__eyebrow">Registered process · completed market sessions only</span><h1>Lifecycle control</h1><p>Queue and company research are evaluated independently from the systematic strategy paper book. Both feed objective outcome calibration without creating research-driven orders.</p></div>
         <StatusBadge tone={statusTone(policy.data?.lastRunStatus)} dot>{policy.data?.lastRunStatus ?? "not configured"}</StatusBadge>
       </header>
 

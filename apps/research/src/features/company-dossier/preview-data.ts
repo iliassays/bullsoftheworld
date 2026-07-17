@@ -37,6 +37,8 @@ export function previewDossier(workspaceId: string, ticker: string): ResearchCom
       nearestResistance: candidate.price * 1.08,
       averageVolume20: 320_000,
       relativeVolume: 1.34,
+      cmf20: 0.14,
+      obvSlope: 0.22,
       rsi14: 61,
       volatilityPct: isDse ? 43 : 78,
     },

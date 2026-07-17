@@ -32,6 +32,9 @@ describe("autonomous research JSON adapters", () => {
         decision: {
           status: "qualified",
           confidence: 0.82,
+          evidence_completeness_pct: 85,
+          thesis_strength: "moderate",
+          outcome_calibration: "uncalibrated",
           headline: "Bounded hypothesis",
           thesis: "Supported",
           counter_thesis: "Fragile",
@@ -49,6 +52,9 @@ describe("autonomous research JSON adapters", () => {
     expect(decision).toMatchObject({
       status: "qualified",
       confidence: 0.82,
+      evidenceCompletenessPct: 85,
+      thesisStrength: "moderate",
+      outcomeCalibration: "uncalibrated",
       counterThesis: "Fragile",
       missingEvidence: [],
       lenses: [{ key: "valuation", assessment: "balanced" }],

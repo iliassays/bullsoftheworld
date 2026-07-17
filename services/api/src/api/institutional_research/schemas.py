@@ -143,6 +143,8 @@ class DossierMarketDataOut(ApiModel):
     nearest_resistance: float | None
     average_volume_20: float | None
     relative_volume: float | None
+    cmf_20: float | None
+    obv_slope: float | None
     rsi_14: float | None
     volatility_pct: float | None
 

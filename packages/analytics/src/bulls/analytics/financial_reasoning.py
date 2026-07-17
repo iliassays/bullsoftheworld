@@ -136,8 +136,29 @@ def _fundamental_lens(facts: dict[str, Any], claims: list[ClaimDraft]) -> Financ
                 rule="roe_pct >= 10 and eps_growth_yoy_pct >= 10",
             )
         )
-        assessment = "constructive"
-        summary = "Profitability and earnings growth currently reinforce each other."
+        if growth >= 80:
+            claims.append(
+                ClaimDraft(
+                    key="extreme_growth_requires_confirmation",
+                    side="counter",
+                    statement=(
+                        f"Normalized EPS growth of {_fmt(growth)}% is unusually large; the "
+                        "prior-period base and operating cash-flow direction must be checked "
+                        "before treating it as durable."
+                    ),
+                    fact_keys=("eps_growth_yoy_pct",),
+                    confidence=0.75,
+                    rule="eps_growth_yoy_pct >= 80",
+                )
+            )
+            assessment = "balanced"
+            summary = (
+                "Profitability and earnings growth align, but the unusually large growth rate "
+                "requires base-effect and cash-flow confirmation."
+            )
+        else:
+            assessment = "constructive"
+            summary = "Profitability and earnings growth currently reinforce each other."
     elif (growth is not None and growth < 0) or (roe is not None and roe < 0):
         assessment = "caution"
         summary = "At least one normalized earnings-quality measure is deteriorating."
@@ -232,6 +253,10 @@ def _market_structure_lens(facts: dict[str, Any], claims: list[ClaimDraft]) -> F
     momentum_3m = _number(facts, "mom_3_1_pct")
     rsi = _number(facts, "rsi_14")
     relative_volume = _number(facts, "relative_volume")
+    last_price = _number(facts, "last_price")
+    resistance = _number(facts, "nearest_resistance")
+    cmf = _number(facts, "cmf_20")
+    obv = _number(facts, "obv_slope")
     keys = [
         key
         for key, value in (
@@ -240,6 +265,10 @@ def _market_structure_lens(facts: dict[str, Any], claims: list[ClaimDraft]) -> F
             ("mom_3_1_pct", momentum_3m),
             ("rsi_14", rsi),
             ("relative_volume", relative_volume),
+            ("last_price", last_price),
+            ("nearest_resistance", resistance),
+            ("cmf_20", cmf),
+            ("obv_slope", obv),
         )
         if value is not None
     ]
@@ -279,6 +308,62 @@ def _market_structure_lens(facts: dict[str, Any], claims: list[ClaimDraft]) -> F
                 rule="rsi_14 >= 75",
             )
         )
+    weak_participation = (
+        constructive and relative_volume is not None and relative_volume < 0.8
+    )
+    if weak_participation:
+        claims.append(
+            ClaimDraft(
+                key="weak_participation",
+                side="counter",
+                statement=(
+                    f"The trend is constructive, but completed-session volume is only "
+                    f"{_fmt(relative_volume, 2)}x its 20-session average; participation does not "
+                    "yet confirm the move."
+                ),
+                fact_keys=("above_sma_50", "above_sma_200", "relative_volume"),
+                confidence=0.8,
+                rule="constructive trend and relative_volume < 0.8",
+            )
+        )
+    distribution_pressure = cmf is not None and obv is not None and cmf <= -0.05 and obv < 0
+    if distribution_pressure:
+        claims.append(
+            ClaimDraft(
+                key="distribution_pressure",
+                side="counter",
+                statement=(
+                    f"Price-volume confirmation is weak: CMF is {_fmt(cmf, 2)} and OBV slope is "
+                    f"{_fmt(obv, 2)}, both consistent with distribution rather than accumulation."
+                ),
+                fact_keys=("cmf_20", "obv_slope"),
+                confidence=0.85,
+                rule="cmf_20 <= -0.05 and obv_slope < 0",
+            )
+        )
+    near_resistance = (
+        last_price is not None
+        and resistance is not None
+        and resistance >= last_price
+        and last_price > 0
+        and resistance / last_price - 1 <= 0.03
+        and rsi is not None
+        and rsi >= 65
+    )
+    if near_resistance:
+        claims.append(
+            ClaimDraft(
+                key="crowded_near_resistance",
+                side="counter",
+                statement=(
+                    f"Price is within 3% of resistance near {_fmt(resistance, 2)} while RSI is "
+                    f"{_fmt(rsi)}; entry timing is crowded until participation confirms a break."
+                ),
+                fact_keys=("last_price", "nearest_resistance", "rsi_14"),
+                confidence=0.8,
+                rule="0 <= nearest_resistance / last_price - 1 <= 0.03 and rsi_14 >= 65",
+            )
+        )
     if above_50 is False and above_200 is False and momentum_3m is not None and momentum_3m < 0:
         claims.append(
             ClaimDraft(
@@ -293,7 +378,13 @@ def _market_structure_lens(facts: dict[str, Any], claims: list[ClaimDraft]) -> F
                 rule="not above_sma_50 and not above_sma_200 and mom_3_1_pct < 0",
             )
         )
-    if constructive:
+    if distribution_pressure or near_resistance:
+        assessment = "caution"
+        summary = "Trend strength is offset by weak price-volume confirmation or crowded timing."
+    elif constructive and weak_participation:
+        assessment = "balanced"
+        summary = "Trend alignment is constructive, but current participation is below normal."
+    elif constructive:
         assessment = "constructive"
         summary = "Trend alignment is constructive on completed sessions."
     elif rsi is not None and rsi >= 75:
@@ -632,6 +723,18 @@ def _evidence_requests(
     *, market: Literal["DSE", "US"], facts: dict[str, Any], official_count: int
 ) -> tuple[EvidenceRequest, ...]:
     requests: list[EvidenceRequest] = []
+    growth = _number(facts, "eps_growth_yoy_pct")
+    if growth is not None and growth >= 80:
+        requests.append(
+            EvidenceRequest(
+                priority="high",
+                question="Do the prior-period EPS base and operating cash flow confirm the reported growth rate?",
+                reason=(
+                    "An unusually large percentage increase can reflect a weak comparison base and "
+                    "must not be treated as durable growth without cash-flow confirmation."
+                ),
+            )
+        )
     if _number(facts, "roe_pct") is None and _number(facts, "eps_growth_yoy_pct") is None:
         requests.append(
             EvidenceRequest(
@@ -678,6 +781,18 @@ def _evidence_requests(
                 priority="routine",
                 question="Has the latest FINRA short-volume file been matched to this ticker?",
                 reason="The data is contextual market-mechanics evidence, not a thesis gate.",
+            )
+        )
+    relative_volume = _number(facts, "relative_volume")
+    if relative_volume is not None and relative_volume < 0.8:
+        requests.append(
+            EvidenceRequest(
+                priority="medium",
+                question="Does price-volume participation improve before the next review?",
+                reason=(
+                    "A constructive price trend on below-normal volume is weaker confirmation than "
+                    "a broadly participated move."
+                ),
             )
         )
     if not requests:

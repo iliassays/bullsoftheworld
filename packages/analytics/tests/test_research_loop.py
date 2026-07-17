@@ -48,6 +48,7 @@ def _payload(**updates) -> AutonomousResearchInput:
                 "risk_score": 42,
                 "evidence_coverage": 85,
                 "cap_tier": "small",
+                "last_price": 13.0,
                 "latest_official_evidence": "10-Q filed",
                 "latest_official_evidence_date": "2026-07-14",
                 "roe_pct": 18.0,
@@ -60,6 +61,8 @@ def _payload(**updates) -> AutonomousResearchInput:
                 "above_sma_200": True,
                 "rsi_14": 60.0,
                 "relative_volume": 1.3,
+                "cmf_20": 0.12,
+                "obv_slope": 0.2,
                 "average_daily_value_mn": 5.0,
                 "volatility_pct": 42.0,
                 "nearest_support": 10.5,
@@ -88,6 +91,10 @@ def test_qualified_research_has_verified_claims_and_strategy() -> None:
     assert len(result.lenses) == 6
     assert {scenario.key for scenario in result.scenarios} == {"base", "upside", "downside"}
     assert result.next_evidence[0].priority == "routine"
+    assert result.evidence_completeness_pct == 85
+    assert result.thesis_strength == "strong"
+    assert result.outcome_calibration == "uncalibrated"
+    assert result.confidence <= 0.9
 
 
 def test_missing_evidence_abstains_instead_of_guessing() -> None:
@@ -171,6 +178,41 @@ def test_sector_discount_with_contracting_earnings_is_flagged_as_possible_value_
     assert valuation.assessment == "caution"
     assert "value trap" in valuation.summary.lower()
     assert {"relative_valuation_support", "earnings_contraction"} <= claim_keys
+
+
+def test_extreme_growth_requires_base_and_cash_flow_confirmation() -> None:
+    facts = [
+        fact.model_copy(update={"value": 134.6}) if fact.key == "eps_growth_yoy_pct" else fact
+        for fact in _payload().facts
+    ]
+
+    result = run_autonomous_research(_payload(facts=facts))
+    claim_keys = {claim.key for claim in result.claims}
+    fundamentals = next(lens for lens in result.lenses if lens.key == "fundamentals")
+
+    assert "extreme_growth_requires_confirmation" in claim_keys
+    assert fundamentals.assessment == "balanced"
+    assert any("operating cash flow" in item.question.lower() for item in result.next_evidence)
+
+
+def test_skeptic_challenges_weak_participation_distribution_and_crowded_entry() -> None:
+    updates = {
+        "relative_volume": 0.45,
+        "cmf_20": -0.12,
+        "obv_slope": -0.04,
+        "last_price": 126.4,
+        "nearest_resistance": 126.7,
+        "rsi_14": 70.8,
+    }
+    facts = [fact.model_copy(update={"value": updates[fact.key]}) if fact.key in updates else fact for fact in _payload().facts]
+
+    result = run_autonomous_research(_payload(facts=facts))
+    claim_keys = {claim.key for claim in result.claims}
+    structure = next(lens for lens in result.lenses if lens.key == "market_structure")
+
+    assert {"weak_participation", "distribution_pressure", "crowded_near_resistance"} <= claim_keys
+    assert structure.assessment == "caution"
+    assert result.thesis_strength in {"mixed", "moderate"}
 
 
 def test_dse_ownership_never_claims_observed_buying() -> None:

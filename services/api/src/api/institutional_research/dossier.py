@@ -316,6 +316,8 @@ async def build_company_dossier(
             nearest_resistance=analytics.nearest_resistance,
             average_volume_20=analytics.avg_volume_20,
             relative_volume=analytics.relative_volume,
+            cmf_20=analytics.cmf_20,
+            obv_slope=analytics.obv_slope,
             rsi_14=analytics.rsi_14,
             volatility_pct=analytics.volatility,
         ),
