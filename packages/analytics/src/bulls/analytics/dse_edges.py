@@ -32,6 +32,9 @@ class EdgeSpec:
         "panic_reclaim",
         "activity_reclaim",
         "regime_limit_continuation",
+        "quality_value_daily",
+        "defensive_low_vol_daily",
+        "momentum_daily_control",
     ]
     name: str
     holding_sessions: int
