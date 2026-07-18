@@ -8,7 +8,9 @@ Type=oneshot
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bullsofdhaka
 Environment=DATABASE_STATEMENT_TIMEOUT_MS=180000
-ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.full_universe_nightly
+# The full-catalog and research-priority cohort jobs share one resource envelope. A lock conflict
+# exits successfully so the already-running checkpointed job remains the sole writer.
+ExecStart=/usr/bin/flock --nonblock --conflict-exit-code 0 /run/lock/bulls-us-onboarding.lock /home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.full_universe_nightly
 StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/full-universe.log
 StandardError=append:/home/ubuntu/bullsofdhaka/var/log/full-universe.log
 Nice=15

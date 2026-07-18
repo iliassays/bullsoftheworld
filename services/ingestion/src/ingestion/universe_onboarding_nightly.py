@@ -37,7 +37,8 @@ MIN_RUN_SECONDS = 30 * 60
 PROTECTED_WINDOW_SAFETY_SECONDS = 10 * 60
 
 # The staging job must never compete with the DSE morning watch/session polling or the EOD chain
-# on the shared 2-core host. Windows are UTC (server clock), end-exclusive.
+# on the shared host. Windows are UTC (server clock), end-exclusive, and apply only Monday-Friday.
+# Both exchanges are closed at weekends, so those days can use the full bounded runtime.
 PROTECTED_UTC_WINDOWS = (
     (dt.time(3, 15), dt.time(9, 0)),
     (dt.time(12, 45), dt.time(14, 15)),
@@ -47,7 +48,10 @@ RunBatch = Callable[..., Awaitable[dict[str, Any]]]
 
 
 def in_protected_window(now: dt.datetime) -> bool:
-    moment = now.astimezone(dt.UTC).time()
+    utc_now = now.astimezone(dt.UTC)
+    if utc_now.weekday() >= 5:
+        return False
+    moment = utc_now.time()
     return any(start <= moment < end for start, end in PROTECTED_UTC_WINDOWS)
 
 
@@ -55,8 +59,12 @@ def runtime_budget_seconds(now: dt.datetime) -> int:
     """Return a bounded budget that ends before the next protected market window."""
     utc_now = now.astimezone(dt.UTC)
     starts: list[dt.datetime] = []
-    for day_offset in (0, 1):
+    # Search through the following working week. A Friday-night or weekend run must not invent
+    # a Saturday/Sunday market window, but it still needs a bounded answer before Monday.
+    for day_offset in range(8):
         day = utc_now.date() + dt.timedelta(days=day_offset)
+        if day.weekday() >= 5:
+            continue
         for start, _ in PROTECTED_UTC_WINDOWS:
             candidate = dt.datetime.combine(day, start, tzinfo=dt.UTC)
             if candidate > utc_now:

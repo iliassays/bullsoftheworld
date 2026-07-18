@@ -10,7 +10,7 @@ WorkingDirectory=/home/ubuntu/bullsofdhaka
 # This bounded batch may need longer statements than the API, but it must remain subordinate to
 # market-data and serving workloads on the shared host.
 Environment=DATABASE_STATEMENT_TIMEOUT_MS=180000
-ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.universe_onboarding_nightly
+ExecStart=/usr/bin/flock --nonblock --conflict-exit-code 0 /run/lock/bulls-us-onboarding.lock /home/ubuntu/bullsofdhaka/.venv/bin/python -m ingestion.universe_onboarding_nightly
 StandardOutput=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
 StandardError=append:/home/ubuntu/bullsofdhaka/var/log/cohort-staging.log
 Nice=15

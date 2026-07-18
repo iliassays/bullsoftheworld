@@ -22,6 +22,10 @@ def _utc(hour: int, minute: int) -> dt.datetime:
     return dt.datetime(2026, 7, 17, hour, minute, tzinfo=dt.UTC)
 
 
+def _weekend_utc(hour: int, minute: int) -> dt.datetime:
+    return dt.datetime(2026, 7, 18, hour, minute, tzinfo=dt.UTC)
+
+
 def test_protected_windows_cover_session_and_eod() -> None:
     assert in_protected_window(_utc(4, 0))  # DSE intraday polling
     assert in_protected_window(_utc(8, 30))  # session tail
@@ -35,6 +39,13 @@ def test_runtime_budget_stops_before_the_next_protected_window() -> None:
     assert runtime_budget_seconds(_utc(0, 45)) == 2 * 60 * 60
     assert runtime_budget_seconds(_utc(2, 10)) == 55 * 60
     assert runtime_budget_seconds(_utc(12, 30)) == 5 * 60
+
+
+def test_weekend_uses_full_bounded_runtime_without_market_windows() -> None:
+    assert not in_protected_window(_weekend_utc(4, 0))
+    assert not in_protected_window(_weekend_utc(13, 20))
+    assert runtime_budget_seconds(_weekend_utc(4, 0)) == 2 * 60 * 60
+    assert runtime_budget_seconds(_weekend_utc(23, 0)) == 2 * 60 * 60
 
 
 def test_private_staging_covers_every_research_band_in_priority_order() -> None:
