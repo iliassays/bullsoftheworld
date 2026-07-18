@@ -12,6 +12,9 @@ export interface ShadowExecution {
   fee: number;
   cashImpact: number;
   reason: string;
+  portfolioId: string | null;
+  bookName: string | null;
+  strategyKey: string | null;
 }
 
 export interface LifecycleRunDelta {
@@ -29,6 +32,9 @@ export interface LifecycleRunDelta {
     action: "entry_target" | "exit_target" | "increase_target" | "reduce_target";
     date: string;
     sessionNumber: number;
+    portfolioId: string | null;
+    bookName: string | null;
+    strategyKey: string | null;
   }>;
   riskInterventions: number;
   calibrationMatured: number;
@@ -171,6 +177,9 @@ function execution(
     fee,
     cashImpact: side === "buy" ? -(grossValue + fee) : grossValue - fee,
     reason: text(trade.reason, "Systematic target rebalance"),
+    portfolioId: text(trade.portfolio_id) || null,
+    bookName: text(trade.book_name) || null,
+    strategyKey: text(trade.strategy_key) || null,
   };
 }
 
@@ -239,6 +248,9 @@ export function lifecycleRunDelta(run: ResearchRun | undefined): LifecycleRunDel
           action: action as LifecycleRunDelta["targetChanges"][number]["action"],
           date: text(item.date),
           sessionNumber: numeric(item.session_number),
+          portfolioId: text(item.portfolio_id) || null,
+          bookName: text(item.book_name) || null,
+          strategyKey: text(item.strategy_key) || null,
         }];
       })
     : [];

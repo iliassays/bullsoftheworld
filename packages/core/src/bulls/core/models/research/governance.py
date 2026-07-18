@@ -233,7 +233,7 @@ class ResearchStrategyTrial(Base):
 
 
 class ResearchDecisionEvent(Base):
-    """Append-only event linking strategy intent to constrained paper outcomes."""
+    """Append-only audit projection derived from an accepted shadow snapshot."""
 
     __tablename__ = "research_decision_events"
     __table_args__ = (
@@ -323,6 +323,99 @@ class ResearchDecisionEvent(Base):
     event_state: Mapped[str] = mapped_column(String(16))
     code: Mapped[str | None] = mapped_column(String(32))
     effective_date: Mapped[dt.date] = mapped_column(Date)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    recorded_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ResearchAccountingEvent(Base):
+    """Append-only event authority for paper cash, positions, fees, and settlement."""
+
+    __tablename__ = "research_accounting_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "tenant_id",
+            "market",
+            name="uq_research_accounting_events_security_scope",
+        ),
+        UniqueConstraint(
+            "portfolio_id", "sequence", name="uq_research_accounting_events_sequence"
+        ),
+        UniqueConstraint(
+            "portfolio_id", "event_key", name="uq_research_accounting_events_key"
+        ),
+        CheckConstraint("sequence >= 0", name="ck_research_accounting_events_sequence"),
+        CheckConstraint(
+            "session_number >= 0", name="ck_research_accounting_events_session_number"
+        ),
+        CheckConstraint(
+            "event_type IN ('opening_balance', 'methodology_boundary', "
+            "'settlement_release', 'fill', 'valuation')",
+            name="ck_research_accounting_events_type",
+        ),
+        CheckConstraint("event_key <> ''", name="ck_research_accounting_events_key"),
+        CheckConstraint("engine_version <> ''", name="ck_research_accounting_events_engine"),
+        CheckConstraint(
+            "payload_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_research_accounting_events_payload_hash",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "organization_id", "tenant_id", "market"],
+            [
+                "research_workspaces.id",
+                "research_workspaces.organization_id",
+                "research_workspaces.tenant_id",
+                "research_workspaces.market",
+            ],
+            name="fk_research_accounting_events_workspace",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["portfolio_id", "workspace_id", "organization_id", "tenant_id", "market"],
+            [
+                "research_shadow_portfolios.id",
+                "research_shadow_portfolios.workspace_id",
+                "research_shadow_portfolios.organization_id",
+                "research_shadow_portfolios.tenant_id",
+                "research_shadow_portfolios.market",
+            ],
+            name="fk_research_accounting_events_portfolio",
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_research_accounting_events_workspace_recorded",
+            "workspace_id",
+            "recorded_at",
+        ),
+        Index(
+            "ix_research_accounting_events_portfolio_effective",
+            "portfolio_id",
+            "effective_date",
+            "sequence",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, server_default=func.gen_random_uuid()
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    market: Mapped[str] = mapped_column(String(8))
+    portfolio_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    sequence: Mapped[int] = mapped_column(Integer)
+    session_number: Mapped[int] = mapped_column(Integer)
+    event_key: Mapped[str] = mapped_column(String(160))
+    event_type: Mapped[str] = mapped_column(String(32))
+    code: Mapped[str | None] = mapped_column(String(32))
+    effective_date: Mapped[dt.date] = mapped_column(Date)
+    engine_version: Mapped[str] = mapped_column(String(64))
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )

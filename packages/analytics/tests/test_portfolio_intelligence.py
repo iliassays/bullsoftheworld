@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from bulls.analytics.portfolio_intelligence import (
@@ -74,7 +76,89 @@ def test_cash_only_book_has_explicit_non_applicable_risk_state() -> None:
 
     assert report.gross_exposure_pct == 0
     assert report.breached_limits == []
+    assert report.data_complete
     assert "fully in cash" in report.data_quality_notes[0]
+
+
+def test_missing_held_position_history_makes_exposure_and_stress_unavailable() -> None:
+    report = analyze_portfolio_risk(
+        nav=100_000,
+        cash=50_000,
+        drawdown_pct=1,
+        mandate=mandate(),
+        positions=[],
+        unavailable_position_codes=["HELD"],
+    )
+
+    assert not report.data_complete
+    assert {"gross_exposure", "single_name", "sector_concentration"} <= set(
+        report.unavailable_limits
+    )
+    assert all(item.status == "unavailable" for item in report.stress_scenarios)
+    assert all(item.estimated_loss_pct is None for item in report.stress_scenarios)
+    assert "fail closed" in report.data_quality_notes[0]
+
+
+def test_correlation_uses_shared_market_dates_instead_of_array_tail_position() -> None:
+    dates = [dt.date(2026, 1, 1) + dt.timedelta(days=index) for index in range(25)]
+    shared = {
+        date: (-1 if index % 3 == 0 else 1) * (index + 1) / 10_000
+        for index, date in enumerate(dates)
+    }
+    report = analyze_portfolio_risk(
+        nav=100_000,
+        cash=80_000,
+        drawdown_pct=0,
+        mandate=mandate(),
+        positions=[
+            PositionRiskInput(
+                code="AAA",
+                shares=1_000,
+                price=10,
+                average_daily_volume=100_000,
+                returns=[0.01] * 25,
+                return_observations=shared,
+            ),
+            PositionRiskInput(
+                code="BBB",
+                shares=1_000,
+                price=10,
+                average_daily_volume=100_000,
+                returns=[-0.01] * 25,
+                return_observations=shared,
+            ),
+        ],
+    )
+
+    assert report.maximum_pair_correlation == pytest.approx(1)
+
+
+def test_correlation_is_unavailable_when_return_dates_do_not_overlap() -> None:
+    first_dates = [dt.date(2026, 1, 1) + dt.timedelta(days=index) for index in range(25)]
+    second_dates = [dt.date(2026, 3, 1) + dt.timedelta(days=index) for index in range(25)]
+    positions = [
+        PositionRiskInput(
+            code=code,
+            shares=1_000,
+            price=10,
+            average_daily_volume=100_000,
+            returns=[index / 10_000 for index in range(25)],
+            return_observations={
+                date: index / 10_000 for index, date in enumerate(observation_dates)
+            },
+        )
+        for code, observation_dates in (("AAA", first_dates), ("BBB", second_dates))
+    ]
+
+    report = analyze_portfolio_risk(
+        nav=100_000,
+        cash=80_000,
+        drawdown_pct=0,
+        mandate=mandate(),
+        positions=positions,
+    )
+
+    assert report.maximum_pair_correlation is None
 
 
 def test_attribution_reconciles_beta_proxy_active_residual_and_exact_costs() -> None:

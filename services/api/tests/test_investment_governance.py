@@ -110,6 +110,8 @@ def test_nested_portfolio_analytics_serialize_with_camel_case_contract() -> None
                 }
             ],
             "breached_limits": [],
+            "unavailable_limits": [],
+            "data_complete": True,
             "data_quality_notes": [],
         }
     ).model_dump(mode="json", by_alias=True)

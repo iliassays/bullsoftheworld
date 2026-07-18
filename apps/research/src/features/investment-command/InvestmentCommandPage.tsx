@@ -129,7 +129,7 @@ export function InvestmentCommandPage() {
     [catalysts.data?.events],
   );
   const observedBreaches = operating.data?.portfolios.reduce(
-    (total, portfolio) => total + portfolio.risk.breachedLimits.length,
+    (total, portfolio) => total + portfolio.risk.breachedLimits.length + portfolio.risk.unavailableLimits.length,
     0,
   ) ?? 0;
   const reviewCount = Math.max(

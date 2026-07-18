@@ -26,6 +26,11 @@ from api.institutional_research.lineage import (
 )
 from api.institutional_research.schemas import BacktestRequest, ResearchRunOut
 from api.institutional_research.universe import apply_research_product_scope
+from bulls.analytics.leader_capture import (
+    LEADER_METRICS,
+    LeaderFinancialFact,
+    build_leader_evidence,
+)
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
     AutonomousResearchInput,
@@ -34,9 +39,9 @@ from bulls.analytics.research_loop import (
 )
 from bulls.analytics.research_strategy import (
     ENGINE_VERSION,
-    STRATEGIES,
     StrategyBar,
     StrategySecurity,
+    get_strategy_definition,
     run_backtest,
 )
 from bulls.core.models import (
@@ -49,6 +54,7 @@ from bulls.core.models import (
     ResearchRun,
     ResearchRunStep,
     ResearchWorkspace,
+    SecFinancialFactObservation,
     Symbol,
     TickerAnalytics,
 )
@@ -674,12 +680,53 @@ async def _backtest_universe(
                 volume=int(bar.volume),
             )
         )
+    evidence_by_code = {}
+    strategy = get_strategy_definition(request.strategy_key)
+    if strategy.required_evidence:
+        fact_start = start_date - dt.timedelta(days=800)
+        fact_cutoff = dt.datetime.combine(end_date, dt.time.max, tzinfo=dt.UTC)
+        facts = list(
+            await session.scalars(
+                select(SecFinancialFactObservation)
+                .where(
+                    SecFinancialFactObservation.market == market,
+                    SecFinancialFactObservation.code.in_(list(symbols)),
+                    SecFinancialFactObservation.metric.in_(LEADER_METRICS),
+                    SecFinancialFactObservation.period_type == "quarter",
+                    SecFinancialFactObservation.period_end >= fact_start,
+                    SecFinancialFactObservation.period_end <= end_date,
+                    SecFinancialFactObservation.known_at <= fact_cutoff,
+                )
+                .order_by(
+                    SecFinancialFactObservation.code,
+                    SecFinancialFactObservation.known_at,
+                    SecFinancialFactObservation.period_end,
+                )
+            )
+        )
+        evidence_by_code = build_leader_evidence(
+            LeaderFinancialFact(
+                code=fact.code,
+                metric=fact.metric,
+                value=float(fact.value),
+                period_start=fact.period_start,
+                period_end=fact.period_end,
+                period_type=fact.period_type,
+                form=fact.form,
+                accession_number=fact.accession_number,
+                source_url=fact.source_url,
+                known_at=fact.known_at,
+                normalization_version=fact.normalization_version,
+            )
+            for fact in facts
+        )
     return [
         StrategySecurity(
             code=code,
             sector=symbols[code].sector or "Unclassified",
             cap_tier=analytics[code].cap_tier or "unclassified",
             bars=grouped[code],
+            evidence=evidence_by_code.get(code, []),
         )
         for code in symbols
         if grouped[code]
@@ -698,7 +745,7 @@ async def execute_backtest(
     )
     if existing is not None:
         return await load_research_run(session, workspace=workspace, run_id=existing.id)
-    strategy = STRATEGIES[request.strategy_key]
+    strategy = get_strategy_definition(request.strategy_key)
     if strategy.market != workspace.market:
         raise ValueError(f"Strategy {strategy.key} is not registered for {workspace.market}")
     mandate = await get_active_mandate(session, workspace=workspace)
@@ -772,19 +819,24 @@ async def execute_backtest(
         )
     run.evidence_snapshot_hash = _stable_hash(
         {
-            security.code: _stable_hash(
-                [
+            security.code: {
+                "bars": _stable_hash(
                     [
-                        str(bar.date),
-                        bar.open,
-                        bar.high,
-                        bar.low,
-                        bar.close,
-                        bar.volume,
+                        [
+                            str(bar.date),
+                            bar.open,
+                            bar.high,
+                            bar.low,
+                            bar.close,
+                            bar.volume,
+                        ]
+                        for bar in security.bars
                     ]
-                    for bar in security.bars
-                ]
-            )
+                ),
+                "evidence": _stable_hash(
+                    [item.model_dump(mode="json") for item in security.evidence]
+                ),
+            }
             for security in securities
         }
     )
@@ -808,6 +860,12 @@ async def execute_backtest(
         output={
             "security_count": len(securities),
             "bar_count": sum(len(security.bars) for security in securities),
+            "point_in_time_evidence_observations": sum(
+                len(security.evidence) for security in securities
+            ),
+            "securities_with_point_in_time_evidence": sum(
+                bool(security.evidence) for security in securities
+            ),
             "codes": [security.code for security in securities],
             "inactive_security_history_complete": False,
             "point_in_time_universe_complete": False,

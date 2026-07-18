@@ -1,10 +1,10 @@
-import { AlertTriangle, FileLock2, FlaskConical, Play, ShieldCheck, TestTube2, WalletCards } from "lucide-react";
+import { AlertTriangle, Database, FileLock2, FlaskConical, Play, ShieldCheck, TestTube2, WalletCards } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { researchDeployment } from "../../app/deployment";
 import { Button, SelectField, StatusBadge, type SelectOption } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
-import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest } from "./hooks";
+import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest, useStrategyCatalog, useStrategyDataReadiness } from "./hooks";
 import { backtestResult } from "./model";
 import { PerformanceChart } from "./PerformanceChart";
 
@@ -20,8 +20,10 @@ function value(value: number | null, suffix = ""): string {
 export function HypothesisLabPage() {
   const workspaces = useResearchWorkspaces();
   const workspace = workspaces.data?.[0];
+  const strategies = useStrategyCatalog(workspace?.id);
   const runs = useResearchRuns(workspace?.id);
   const operating = useInvestmentOperatingView(workspace?.id);
+  const readiness = useStrategyDataReadiness(workspace?.id);
   const latestSummary = runs.data?.find((run) => run.runKind === "hypothesis");
   const latest = useResearchRun(workspace?.id, latestSummary?.id);
   const runBacktest = useRunBacktest(workspace?.id);
@@ -35,10 +37,17 @@ export function HypothesisLabPage() {
   const [capTier, setCapTier] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [universeLimit, setUniverseLimit] = useState(25);
+  const [universeLimit, setUniverseLimit] = useState(researchDeployment.market === "US" ? 100 : 25);
   const [capital, setCapital] = useState(100_000);
   const [bookName, setBookName] = useState(`${researchDeployment.market} systematic shadow`);
-  const strategyKey = researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_breakout_v1";
+  const [strategyKey, setStrategyKey] = useState(
+    researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_leader_capture_v1",
+  );
+  const selectedStrategy = strategies.data?.find((strategy) => strategy.key === strategyKey);
+  const strategyOptions = (strategies.data ?? []).map((strategy) => ({
+    value: strategy.key,
+    label: `${strategy.name} · ${strategy.horizon.replace(/_/g, " ")}`,
+  }));
 
   const submit = () => runBacktest.mutate({
     strategy_key: strategyKey,
@@ -56,16 +65,45 @@ export function HypothesisLabPage() {
         <StatusBadge tone="info" dot>{strategyKey}</StatusBadge>
       </header>
 
+      {researchDeployment.market === "DSE" && (
+        <section className="atlas-panel trial-registration">
+          <header>
+            <Database aria-hidden="true" size={16} />
+            <span><strong>Next hypothesis · intraday trend pullback</strong><small>Data collection only · no signal, target, or shadow book exists</small></span>
+            <StatusBadge tone="warning">{readiness.data?.state === "ready_for_specification" ? "Ready to specify" : "Data blocked"}</StatusBadge>
+          </header>
+          {readiness.data ? (
+            <>
+              <div>
+                <span><small>Complete sessions</small><strong>{readiness.data.completeSessions} / {readiness.data.requiredCompleteSessions}</strong></span>
+                <span><small>Immutable observations</small><strong>{readiness.data.observationCount.toLocaleString()}</strong></span>
+                <span><small>Sampled bars</small><strong>{readiness.data.barCount.toLocaleString()}</strong></span>
+                <span><small>Latest session</small><strong>{readiness.data.latestSession ?? "Not captured"}</strong></span>
+              </div>
+              {readiness.data.latestQuality && (
+                <p className="portfolio-data-note">Latest capture: {readiness.data.latestQuality.observedSlots}/{readiness.data.latestQuality.expectedSlots} slots, {readiness.data.latestQuality.symbolCompletenessPct.toFixed(1)}% symbol coverage, {readiness.data.latestQuality.vwapCoveragePct.toFixed(1)}% session-VWAP coverage. Prices are delayed sampled observations with ingestion-time bounds.</p>
+              )}
+              <div className="validation-gates"><strong>Admission blockers</strong>{readiness.data.blockers.map((blocker) => <span key={blocker}><AlertTriangle size={12} />{blocker}</span>)}</div>
+            </>
+          ) : readiness.isError ? (
+            <p className="atlas-error"><AlertTriangle size={13} />{readiness.error.message}</p>
+          ) : (
+            <p className="portfolio-data-note">Loading the market-bound capture audit…</p>
+          )}
+        </section>
+      )}
+
       <div className="lab-layout">
         <aside className="atlas-panel lab-config">
           <header><FlaskConical aria-hidden="true" size={16} /><span><strong>Experiment specification</strong><small>Inputs are stored with the run</small></span></header>
-          <label>Registered strategy<input disabled value={strategyKey} /></label>
+          <label>Registered strategy<SelectField label="Registered strategy" onChange={setStrategyKey} options={strategyOptions} value={strategyKey} /></label>
+          {selectedStrategy && <p className="lab-config__policy">{selectedStrategy.description} Registry state: {selectedStrategy.researchState.replace(/_/g, " ")}. {selectedStrategy.automationEligible ? "Automation permitted by registry." : "Research only; automation is blocked."}</p>}
           <label>Capitalization mandate<SelectField label="Capitalization mandate" onChange={setCapTier} options={CAP_OPTIONS} value={capTier} /></label>
           <span className="lab-config__split">
             <label>Start date<input onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} /></label>
             <label>End date<input onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} /></label>
           </span>
-          <label>Universe limit<input max="30" min="5" onChange={(event) => setUniverseLimit(Number(event.target.value))} type="number" value={universeLimit} /></label>
+          <label>Universe limit<input max="500" min="5" onChange={(event) => setUniverseLimit(Number(event.target.value))} type="number" value={universeLimit} /></label>
           <label>Initial capital ({researchDeployment.currency})<input min="1" onChange={(event) => setCapital(Number(event.target.value))} type="number" value={capital} /></label>
           <Button isDisabled={!workspace || runBacktest.isPending} onPress={submit} variant="primary"><Play aria-hidden="true" size={14} />{runBacktest.isPending ? "Running portfolio simulation…" : "Run registered backtest"}</Button>
           {runBacktest.isError && <p className="atlas-error"><AlertTriangle size={13} />{runBacktest.error.message}</p>}

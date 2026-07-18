@@ -96,6 +96,7 @@ describe("autonomous research JSON adapters", () => {
           { date: "2026-07-16", code: "GP", side: "sell", quantity: 10, fill_price: 300, gross_value: 3_000, fee: 15, reason: "prior-close shadow target" },
           { date: "bad", code: "INVALID", side: "buy", quantity: 0, fill_price: 0, gross_value: 0, fee: 0 },
         ],
+        pendingSettlements: [],
         riskInterventions: [],
       }],
     };

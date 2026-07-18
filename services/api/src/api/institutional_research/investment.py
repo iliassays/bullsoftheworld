@@ -1,4 +1,4 @@
-"""Atlas investment mandate, trial registry, decision lineage, risk, and attribution."""
+"""Atlas investment mandate, trial registry, decision audit, risk, and attribution."""
 
 from __future__ import annotations
 
@@ -59,6 +59,11 @@ _ECONOMIC_HYPOTHESES = {
     "us_breakout_v1": (
         "Liquid US securities with persistent positive trend, participation confirmation, and "
         "limited extension may continue as slower capital adjusts to improving price information."
+    ),
+    "us_leader_capture_v1": (
+        "US companies with accelerating reported revenue and improving earnings may compound "
+        "while persistent price leadership reflects gradual institutional recognition; requiring "
+        "both point-in-time filing evidence and trend confirmation aims to avoid narrative-only bets."
     ),
 }
 
@@ -383,7 +388,10 @@ async def record_snapshot_decision_events(
     snapshot: ResearchShadowSnapshot,
     previous: ResearchShadowSnapshot | None,
 ) -> None:
-    """Append an idempotent causal ledger for one persisted shadow snapshot."""
+    """Append an idempotent audit projection derived from one accepted shadow snapshot.
+
+    These events explain the snapshot but do not replace the independent accounting ledger.
+    """
 
     existing_keys = set(
         await session.scalars(
@@ -430,32 +438,6 @@ async def record_snapshot_decision_events(
             }
         )
 
-    prior_targets = previous.target_weights if previous is not None else {}
-    for change in _target_changes(prior_targets, snapshot.target_weights):
-        code = change["code"]
-        signal_key = f"s{snapshot.session_number}:signal:{code}:{change['action']}"
-        target_key = f"s{snapshot.session_number}:target:{code}:{change['action']}"
-        append(
-            signal_key,
-            "signal",
-            "observed",
-            {
-                "strategy_key": portfolio.strategy_key,
-                "source_run_id": str(portfolio.source_run_id),
-                "qualification": change["action"],
-                "knowledge_date": snapshot.as_of_date.isoformat(),
-            },
-            code=code,
-        )
-        append(
-            target_key,
-            "target",
-            "intended",
-            change,
-            code=code,
-            caused_by=signal_key,
-        )
-
     prior_target_events = list(
         await session.scalars(
             select(ResearchDecisionEvent)
@@ -475,6 +457,68 @@ async def record_snapshot_decision_events(
         if event.code and event.code not in latest_target_by_code:
             latest_target_by_code[event.code] = event.event_key
 
+    risk_target_causes: dict[str, str] = {}
+    portfolio_target_cause: str | None = None
+    for index, intervention in enumerate(snapshot.risk_interventions):
+        code_value = intervention.get("code")
+        code = str(code_value).upper() if code_value else None
+        rule = str(intervention.get("rule", "unknown"))
+        event_type = (
+            "rejection" if rule in {"cash_limit", "missing_bar", "liquidity_unknown"} else "risk"
+        )
+        event_key = f"s{snapshot.session_number}:{event_type}:{index}:{code or 'portfolio'}:{rule}"
+        append(
+            event_key,
+            event_type,
+            "constrained",
+            intervention,
+            code=code,
+            caused_by=latest_target_by_code.get(code) if code else None,
+        )
+        if rule == "position_stop" and code:
+            risk_target_causes[code] = event_key
+        elif rule == "portfolio_drawdown_brake":
+            portfolio_target_cause = event_key
+
+    prior_targets = previous.target_weights if previous is not None else {}
+    for change in _target_changes(prior_targets, snapshot.target_weights):
+        code = change["code"]
+        target_key = f"s{snapshot.session_number}:target:{code}:{change['action']}"
+        risk_cause = risk_target_causes.get(code)
+        if change["action"] in {"exit", "reduce"} and portfolio_target_cause is not None:
+            risk_cause = risk_cause or portfolio_target_cause
+        if risk_cause is not None:
+            append(
+                target_key,
+                "target",
+                "intended",
+                {**change, "origin": "risk_policy"},
+                code=code,
+                caused_by=risk_cause,
+            )
+            continue
+        signal_key = f"s{snapshot.session_number}:signal:{code}:{change['action']}"
+        append(
+            signal_key,
+            "signal",
+            "observed",
+            {
+                "strategy_key": portfolio.strategy_key,
+                "source_run_id": str(portfolio.source_run_id),
+                "qualification": change["action"],
+                "knowledge_date": snapshot.as_of_date.isoformat(),
+            },
+            code=code,
+        )
+        append(
+            target_key,
+            "target",
+            "intended",
+            {**change, "origin": "strategy"},
+            code=code,
+            caused_by=signal_key,
+        )
+
     for index, trade in enumerate(snapshot.trades):
         code = str(trade.get("code", "")).upper()
         order_key = f"s{snapshot.session_number}:order:{index}:{code}"
@@ -492,21 +536,6 @@ async def record_snapshot_decision_events(
             caused_by=latest_target_by_code.get(code),
         )
         append(fill_key, "fill", "executed", trade, code=code, caused_by=order_key)
-
-    for index, intervention in enumerate(snapshot.risk_interventions):
-        code_value = intervention.get("code")
-        code = str(code_value).upper() if code_value else None
-        rule = str(intervention.get("rule", "unknown"))
-        state = "constrained"
-        event_type = "rejection" if rule in {"cash_limit", "missing_bar"} else "risk"
-        append(
-            f"s{snapshot.session_number}:{event_type}:{index}:{code or 'portfolio'}:{rule}",
-            event_type,
-            state,
-            intervention,
-            code=code,
-            caused_by=latest_target_by_code.get(code) if code else None,
-        )
 
     before_positions = previous.positions if previous is not None else {}
     for code in sorted(set(before_positions) | set(snapshot.positions)):
@@ -537,6 +566,7 @@ async def record_snapshot_decision_events(
         "outcome",
         "measured",
         {
+            "projection_role": "snapshot_audit_only",
             "nav": float(snapshot.nav),
             "benchmark_nav": float(snapshot.benchmark_nav),
             "cash": float(snapshot.cash),
@@ -626,10 +656,10 @@ async def _position_risk_inputs(
     *,
     portfolio: ResearchShadowPortfolio,
     snapshot: ResearchShadowSnapshot,
-) -> list[PositionRiskInput]:
+) -> tuple[list[PositionRiskInput], list[str]]:
     codes = sorted(snapshot.positions)
     if not codes:
-        return []
+        return [], []
     sectors = dict(
         (
             await session.execute(
@@ -656,9 +686,15 @@ async def _position_risk_inputs(
     for bar in bars:
         by_code.setdefault(bar.code, []).append(bar)
     inputs: list[PositionRiskInput] = []
+    unavailable_codes: list[str] = []
     for code in codes:
+        position = snapshot.positions[code]
+        shares = int(position.get("shares", 0))
+        if shares <= 0:
+            continue
         history = by_code.get(code, [])
-        if not history:
+        if not history or history[-1].date != snapshot.as_of_date:
+            unavailable_codes.append(code)
             continue
         closes = [
             float(bar.adjusted_close if bar.adjusted_close is not None else bar.close)
@@ -669,11 +705,12 @@ async def _position_risk_inputs(
             for index in range(1, len(closes))
             if closes[index - 1] > 0
         ]
+        return_observations = {
+            history[index].date: closes[index] / closes[index - 1] - 1
+            for index in range(1, len(closes))
+            if closes[index - 1] > 0
+        }
         volumes = [float(bar.volume) for bar in history[-20:] if bar.volume > 0]
-        position = snapshot.positions[code]
-        shares = int(position.get("shares", 0))
-        if shares <= 0:
-            continue
         inputs.append(
             PositionRiskInput(
                 code=code,
@@ -682,9 +719,10 @@ async def _position_risk_inputs(
                 price=closes[-1],
                 average_daily_volume=(sum(volumes) / len(volumes) if volumes else None),
                 returns=returns,
+                return_observations=return_observations,
             )
         )
-    return inputs
+    return inputs, unavailable_codes
 
 
 async def load_investment_operating_view(
@@ -730,10 +768,10 @@ async def load_investment_operating_view(
                 else None
             ),
         )
-        inputs = (
+        inputs, unavailable_position_codes = (
             await _position_risk_inputs(session, portfolio=portfolio, snapshot=latest)
             if latest is not None
-            else []
+            else ([], [])
         )
         risk = analyze_portfolio_risk(
             nav=float(latest.nav) if latest else float(portfolio.initial_capital),
@@ -741,6 +779,7 @@ async def load_investment_operating_view(
             drawdown_pct=float(latest.drawdown_pct) if latest else 0,
             positions=inputs,
             mandate=limits,
+            unavailable_position_codes=unavailable_position_codes,
         )
         events = list(
             await session.scalars(

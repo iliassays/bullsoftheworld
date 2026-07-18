@@ -142,9 +142,8 @@ export function PortfolioIntelligencePage() {
         };
       });
   }, [latest]);
-  const initial = selected?.snapshots[0];
-  const totalReturn = latest && initial ? (latest.nav / initial.nav - 1) * 100 : 0;
-  const benchmarkReturn = latest && initial ? (latest.benchmarkNav / initial.benchmarkNav - 1) * 100 : 0;
+  const totalReturn = latest && selected && selected.initialCapital > 0 ? (latest.nav / selected.initialCapital - 1) * 100 : 0;
+  const benchmarkReturn = latest && selected && selected.initialCapital > 0 ? (latest.benchmarkNav / selected.initialCapital - 1) * 100 : 0;
   const promotion = object(selected?.configuration.promotion);
   const promotionStatus = typeof promotion?.status === "string" ? promotion.status : "not evaluated";
   const promotionChecks = Array.isArray(promotion?.checks)
@@ -205,7 +204,7 @@ export function PortfolioIntelligencePage() {
               <header>
                 <Landmark aria-hidden="true" size={16} />
                 <span><strong>Investment mandate</strong><small>Version {selectedAnalytics.mandateVersion} · {selectedAnalytics.mandateBinding === "pinned" ? "pinned at book inception" : "legacy book evaluated against the active mandate"}</small></span>
-                <StatusBadge tone={selectedAnalytics.risk.breachedLimits.length ? "negative" : "positive"}>{selectedAnalytics.risk.breachedLimits.length ? `${selectedAnalytics.risk.breachedLimits.length} breached` : "Within observed limits"}</StatusBadge>
+                <StatusBadge tone={selectedAnalytics.risk.breachedLimits.length ? "negative" : selectedAnalytics.risk.dataComplete ? "positive" : "warning"}>{selectedAnalytics.risk.breachedLimits.length ? `${selectedAnalytics.risk.breachedLimits.length} breached` : selectedAnalytics.risk.dataComplete ? "Within observed limits" : "Risk data incomplete"}</StatusBadge>
                 <Button onPress={() => setEditingMandate((value) => !value)} variant="quiet"><Settings2 aria-hidden="true" size={13} />{editingMandate ? "Close" : "Edit"}</Button>
               </header>
               <p>{selectedAnalytics.mandate.objective}</p>
@@ -317,11 +316,11 @@ export function PortfolioIntelligencePage() {
             <section className="atlas-panel decision-lineage">
               <header>
                 <GitBranch aria-hidden="true" size={16} />
-                <span><strong>Decision lineage</strong><small>Immutable strategy intent, constraints, fills, positions, and measured outcomes</small></span>
-                <span className="execution-ledger__model">Append-only</span>
+                <span><strong>Decision audit</strong><small>Append-only explanation projected from accepted snapshots; accounting remains independent</small></span>
+                <span className="execution-ledger__model">Audit projection</span>
               </header>
               {selectedAnalytics.recentEvents.length === 0 ? (
-                <p className="execution-ledger__empty">This book predates the decision ledger. Its historical snapshots remain visible; causal events begin with the next reconciled session.</p>
+                <p className="execution-ledger__empty">This book predates the decision audit. Historical snapshots remain visible; no event-first history is invented.</p>
               ) : (
                 <div className="decision-lineage__list">
                   {selectedAnalytics.recentEvents.slice(0, 30).map((event) => (

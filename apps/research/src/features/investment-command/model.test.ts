@@ -38,6 +38,7 @@ const portfolio: ShadowPortfolio = {
       positions: {},
       targetWeights: {},
       trades: [],
+      pendingSettlements: [],
       riskInterventions: [],
     },
     {
@@ -55,6 +56,7 @@ const portfolio: ShadowPortfolio = {
       positions: { AAA: { shares: 10, average_cost: 20 } },
       targetWeights: { BBB: 0.1 },
       trades: [{ code: "AAA" }],
+      pendingSettlements: [],
       riskInterventions: [{ rule: "cash_constraint" }],
     },
   ],
@@ -121,6 +123,19 @@ describe("investment command model", () => {
     expect(book!.promotionStatus).toBe("diagnostic");
   });
 
+  it("reports inception return even when the API snapshot window starts later", () => {
+    const [book] = summarizeStrategyBooks([{
+      ...portfolio,
+      snapshots: [
+        { ...portfolio.snapshots[0]!, nav: 1005, benchmarkNav: 1002 },
+        portfolio.snapshots[1]!,
+      ],
+    }]);
+
+    expect(book!.netReturnPct).toBeCloseTo(1);
+    expect(book!.benchmarkReturnPct).toBeCloseTo(0.5);
+  });
+
   it("orders risk review before future targets and completed fills", () => {
     const actions = buildDecisionActions(run, summarizeStrategyBooks([portfolio]));
 
@@ -130,6 +145,30 @@ describe("investment command model", () => {
       "completed",
     ]);
     expect(actions[1]!.title).toBe("Entry target formed");
+  });
+
+  it("keeps same-session actions from separate books distinct", () => {
+    const multiBookRun: ResearchRun = {
+      ...run,
+      steps: [{
+        ...run.steps[0]!,
+        output: {
+          target_changes: [
+            { code: "AAA", previous_weight: 0, target_weight: 0.1, action: "entry_target", date: "2026-07-18", session_number: 2, portfolio_id: "book-1", book_name: "Core book" },
+            { code: "AAA", previous_weight: 0, target_weight: 0.08, action: "entry_target", date: "2026-07-18", session_number: 2, portfolio_id: "book-2", book_name: "Challenger book" },
+          ],
+          new_executions: [],
+          new_risk_interventions: [],
+        },
+      }],
+    };
+
+    const targets = buildDecisionActions(multiBookRun, []).filter((action) => action.kind === "target");
+    expect(new Set(targets.map((action) => action.id)).size).toBe(2);
+    expect(targets.map((action) => action.detail)).toEqual(expect.arrayContaining([
+      expect.stringContaining("Core book:"),
+      expect.stringContaining("Challenger book:"),
+    ]));
   });
 
   it("selects the newest lifecycle rather than a newer company run", () => {

@@ -89,6 +89,7 @@ export interface ShadowSnapshot {
   cumulativeFees: number;
   cumulativeTurnover: number;
   positions: Record<string, { shares: number; average_cost: number }>;
+  pendingSettlements: Array<{ release_session: number; amount: number }>;
   targetWeights: Record<string, number>;
   trades: Array<Record<string, unknown>>;
   riskInterventions: Array<Record<string, unknown>>;
@@ -108,6 +109,60 @@ export interface ShadowPortfolio {
   lastEvaluatedOn: string | null;
   configuration: Record<string, unknown>;
   snapshots: ShadowSnapshot[];
+}
+
+export interface StrategyDataReadiness {
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE";
+  strategyKey: "dse_trend_pullback_intraday_v1";
+  state: "data_blocked" | "ready_for_specification";
+  barKind: "sampled_delayed_quote";
+  timeQuality: "ingestion_upper_bound";
+  capturedSessions: number;
+  completeSessions: number;
+  eligibleCaptureSessions: number;
+  requiredCompleteSessions: number;
+  observationCount: number;
+  barCount: number;
+  firstSession: string | null;
+  latestSession: string | null;
+  historicalDiagnosticEligible: boolean;
+  blockers: string[];
+  latestQuality: {
+    sessionDate: string;
+    status: "collecting" | "complete" | "incomplete";
+    observedSlots: number;
+    expectedSlots: number;
+    observedSymbols: number;
+    expectedSymbols: number;
+    slotCompletenessPct: number;
+    symbolCompletenessPct: number;
+    vwapCoveragePct: number;
+    counterRegressions: number;
+    latestObservedAt: string | null;
+    captureAgeMinutes: number | null;
+    researchEligible: boolean;
+    blockers: string[];
+  } | null;
+}
+
+export interface ResearchStrategy {
+  key: string;
+  market: "DSE" | "US";
+  name: string;
+  family: string;
+  horizon: string;
+  selectionKey: string;
+  sizingKey: string;
+  methodologyVersion: string;
+  minimumLookback: number;
+  rebalanceSessions: number;
+  maximumPositions: number;
+  requiredEvidence: string[];
+  researchState: "diagnostic" | "candidate" | "eligible_for_shadow" | "data_blocked";
+  automationEligible: boolean;
+  description: string;
 }
 
 export interface CalibrationObservation {
@@ -270,11 +325,13 @@ export interface PortfolioOperatingAnalytics {
       key: string;
       label: string;
       shockPct: number;
-      estimatedLossPct: number;
-      status: "within_limit" | "breached";
+      estimatedLossPct: number | null;
+      status: "within_limit" | "breached" | "unavailable";
       methodology: string;
     }>;
     breachedLimits: string[];
+    unavailableLimits: string[];
+    dataComplete: boolean;
     dataQualityNotes: string[];
   };
   attribution: {
@@ -611,7 +668,7 @@ export const researchApi = {
   async backtest(
     workspaceId: string,
     payload: {
-      strategy_key: "dse_reversal_v1" | "us_breakout_v1";
+      strategy_key: string;
       start_date?: string;
       end_date?: string;
       cap_tier?: string;
@@ -627,6 +684,29 @@ export const researchApi = {
       },
     );
     return assertRunBoundary(run, workspaceId);
+  },
+  async strategies(workspaceId: string): Promise<ResearchStrategy[]> {
+    const strategies = await request<ResearchStrategy[]>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/strategies`,
+    );
+    if (strategies.some((strategy) => strategy.market !== researchDeployment.market)) {
+      throw new ResearchApiError(502, "The API returned a strategy outside this market boundary");
+    }
+    return strategies;
+  },
+  async strategyDataReadiness(workspaceId: string): Promise<StrategyDataReadiness> {
+    const readiness = await request<StrategyDataReadiness>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/strategy-data-readiness`,
+    );
+    if (
+      readiness.workspaceId !== workspaceId ||
+      readiness.tenantId !== researchDeployment.tenant ||
+      readiness.market !== "DSE" ||
+      readiness.strategyKey !== "dse_trend_pullback_intraday_v1"
+    ) {
+      throw new ResearchApiError(502, "The API returned strategy readiness outside this tenant boundary");
+    }
+    return readiness;
   },
   async runs(workspaceId: string): Promise<ResearchRun[]> {
     const runs = await request<ResearchRun[]>(
@@ -712,7 +792,7 @@ export const researchApi = {
         !Number.isFinite(portfolio.risk.largestSectorPct) ||
         !Number.isFinite(portfolio.risk.effectivePositions) ||
         portfolio.risk.stressScenarios.some(
-          (scenario) => !Number.isFinite(scenario.estimatedLossPct),
+          (scenario) => scenario.estimatedLossPct !== null && !Number.isFinite(scenario.estimatedLossPct),
         ) ||
         portfolio.attribution.components.some(
           (component) => component.contributionPct !== null &&

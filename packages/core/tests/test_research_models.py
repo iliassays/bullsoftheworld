@@ -5,6 +5,7 @@ from sqlalchemy import ForeignKeyConstraint
 from bulls.core.models import (
     EvidenceDocument,
     EvidenceSpan,
+    ResearchAccountingEvent,
     ResearchAuditEvent,
     ResearchAutomationPolicy,
     ResearchClaim,
@@ -50,6 +51,7 @@ def test_research_private_tables_have_non_nullable_full_security_scope() -> None
         ResearchInvestmentMandate,
         ResearchStrategyTrial,
         ResearchDecisionEvent,
+        ResearchAccountingEvent,
     ):
         for column_name in ("organization_id", "tenant_id", "market"):
             assert not model.__table__.c[column_name].nullable, model.__tablename__
@@ -276,6 +278,18 @@ def test_investment_governance_cannot_cross_workspace_market_or_portfolio() -> N
             "research_shadow_portfolios.market",
         ),
     ) in event_constraints
+
+    accounting_constraints = _composite_foreign_keys(ResearchAccountingEvent)
+    assert (
+        ("portfolio_id", "workspace_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_shadow_portfolios.id",
+            "research_shadow_portfolios.workspace_id",
+            "research_shadow_portfolios.organization_id",
+            "research_shadow_portfolios.tenant_id",
+            "research_shadow_portfolios.market",
+        ),
+    ) in accounting_constraints
     assert (
         ("snapshot_id", "organization_id", "tenant_id", "market"),
         (
@@ -300,3 +314,21 @@ def test_decision_events_have_idempotent_ordered_lineage_contract() -> None:
         "payload_hash",
         "effective_date",
     } <= set(ResearchDecisionEvent.__table__.c.keys())
+
+
+def test_accounting_events_have_independent_idempotent_ordered_contract() -> None:
+    constraints = {constraint.name for constraint in ResearchAccountingEvent.__table__.constraints}
+
+    assert "uq_research_accounting_events_sequence" in constraints
+    assert "uq_research_accounting_events_key" in constraints
+    assert {
+        "portfolio_id",
+        "sequence",
+        "session_number",
+        "event_key",
+        "event_type",
+        "engine_version",
+        "payload_hash",
+        "effective_date",
+    } <= set(ResearchAccountingEvent.__table__.c.keys())
+    assert "snapshot_id" not in ResearchAccountingEvent.__table__.c

@@ -1,14 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { researchApi } from "../../app/api-client";
-import { isResearchPreview } from "../../app/deployment";
+import { isResearchPreview, researchDeployment } from "../../app/deployment";
 import {
   previewAutomationPolicy,
   previewInvestmentOperatingView,
   previewInvestmentMandate,
   previewResearchRuns,
   previewShadowPortfolios,
+  previewStrategies,
+  previewStrategyDataReadiness,
 } from "./preview-data";
+
+export function useStrategyCatalog(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["research", "strategies", workspaceId],
+    queryFn: () => isResearchPreview ? previewStrategies : researchApi.strategies(workspaceId!),
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+  });
+}
 
 export function useResearchRuns(workspaceId: string | undefined) {
   return useQuery({
@@ -26,6 +37,17 @@ export function useResearchRun(workspaceId: string | undefined, runId: string | 
       ? previewResearchRuns.find((run) => run.id === runId) ?? Promise.reject(new Error("Preview run not found"))
       : researchApi.run(workspaceId!, runId!),
     enabled: Boolean(workspaceId && runId),
+  });
+}
+
+export function useStrategyDataReadiness(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["research", "strategy-data-readiness", workspaceId],
+    queryFn: () => isResearchPreview
+      ? previewStrategyDataReadiness
+      : researchApi.strategyDataReadiness(workspaceId!),
+    enabled: Boolean(workspaceId && researchDeployment.market === "DSE"),
+    refetchInterval: 30_000,
   });
 }
 

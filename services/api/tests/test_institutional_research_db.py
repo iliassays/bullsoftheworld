@@ -51,6 +51,7 @@ async def test_research_tables_force_tenant_market_row_security() -> None:
             "research_investment_mandates",
             "research_strategy_trials",
             "research_decision_events",
+            "research_accounting_events",
         }
         lineage_scope = {
             "research_run_steps": "research_runs",

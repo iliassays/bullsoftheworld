@@ -37,6 +37,7 @@ from api.institutional_research.portfolio import (
     reconcile_shadow_portfolios,
 )
 from api.institutional_research.queue import build_research_queue
+from api.institutional_research.readiness import load_trend_pullback_data_readiness
 from api.institutional_research.schemas import (
     AutomationPolicyOut,
     AutomationPolicyUpdate,
@@ -53,6 +54,8 @@ from api.institutional_research.schemas import (
     ResearchRunOut,
     ResearchShadowPortfolioOut,
     StartResearchRequest,
+    StrategyCatalogItemOut,
+    StrategyDataReadinessOut,
     WorkspaceOut,
 )
 from api.institutional_research.universe import apply_research_product_scope
@@ -73,6 +76,7 @@ from api.research_access import (
     authorize_research_workspace,
     bind_research_tenant_context,
 )
+from bulls.analytics.research_strategy import registered_strategies
 from bulls.core.models import Symbol
 from bulls.core.research_access import ResearchPermission
 from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
@@ -170,6 +174,61 @@ async def automation_policy(
     )
     policy = await get_automation_policy(session, workspace=authorized.workspace)
     return automation_policy_out(policy) if policy is not None else None
+
+
+@router.get("/workspaces/{workspace_id}/strategy-data-readiness")
+async def strategy_data_readiness(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> StrategyDataReadinessOut:
+    """Expose the data gates for blocked market-specific Atlas hypotheses."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    try:
+        return await load_trend_pullback_data_readiness(
+            session,
+            workspace=authorized.workspace,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+@router.get("/workspaces/{workspace_id}/strategies")
+async def strategy_catalog(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> list[StrategyCatalogItemOut]:
+    """Return the market-owned registry; callers never infer scorer ownership."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    return [
+        StrategyCatalogItemOut.model_validate(strategy.model_dump(mode="json"))
+        for strategy in registered_strategies(market=authorized.workspace.market)
+    ]
 
 
 @router.put("/workspaces/{workspace_id}/automation")

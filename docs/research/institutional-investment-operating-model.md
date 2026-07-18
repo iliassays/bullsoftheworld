@@ -116,18 +116,26 @@ Implemented foundations:
 - market-bound deployments, authorization, RLS and tenant assertions;
 - point-in-time evidence contracts and source-linked company research;
 - registered deterministic backtests with next-session fills, costs, capacity, stops and brakes;
+- a market-owned, fail-closed strategy registry that assigns scorer, holding/selection, sizing,
+  horizon and point-in-time evidence contracts instead of hard-coded market fallbacks;
+- a parked US Leader Capture research prototype that is not part of the DSE release sequence;
 - no-broker shadow books with persisted NAV, targets, fills, fees and interventions;
 - autonomous evidence review, skeptic/verifier stages and immutable outcome observations;
 - versioned investment mandates pinned to each trial and paper book, so later policy changes do not
   rewrite historical decisions;
 - preregistered strategy trials with immutable specifications, family attempt sequencing, and an
   explicit diagnostic gate for repeated testing;
-- append-only decision lineage for new reconciled sessions, from strategy intent through target,
-  constraint, fill, position and measured outcome;
+- an append-only snapshot-derived decision audit projection for new reconciled sessions, from
+  strategy intent through target, constraint, fill, position and measured outcome; this is not the
+  authoritative cash and position ledger;
 - point-in-time concentration, liquidity, correlation and deterministic stress diagnostics against
   each book's pinned mandate;
 - performance attribution that labels exact, proxy and unavailable components rather than
   manufacturing precision;
+- a deployed partitioned DSE observation foundation for forward-only listing lineage, delayed quote
+  observations, sampled 15-minute bars, session-VWAP coverage and per-session quality audits; the
+  first five completed sessions still require reconciliation and the dependent trend hypothesis
+  remains blocked;
 - a default Investment Command screen that composes current books, lifecycle decisions, catalysts,
   and the research inbox without collapsing their meanings.
 
@@ -136,6 +144,8 @@ Material gaps before Atlas is an institution-grade investment system:
 - no Atlas strategy has passed all historical and forward promotion gates;
 - DSE adjusted prices, inactive/delisted history, intraday history and multi-regime depth are not
   complete;
+- US daily and filing depth is substantial, but historical eligible-universe and inactive/delisted
+  membership is not complete enough to promote the Leader Capture diagnostic;
 - portfolio risk now includes observed correlation, capacity and deterministic stresses, but does
   not yet include a validated market/sector/style factor model or covariance shrinkage;
 - attribution measures portfolio, benchmark, fees and compounding exactly and provides a market
@@ -146,6 +156,8 @@ Material gaps before Atlas is an institution-grade investment system:
   implemented;
 - historical causal lineage is not invented for old books; their append-only ledger begins on the
   next reconciled session;
+- snapshot-derived decision events are an audit projection and cannot be used as authoritative
+  accounting until independent event-first accounting and replay are deployed;
 - there is no broker execution and no authorization to represent paper results as investable.
 
 ## Next validation order
@@ -164,3 +176,6 @@ Material gaps before Atlas is an institution-grade investment system:
 
 New pages or models must strengthen this loop. Do not add isolated widgets, unregistered signals,
 unexplained scores, or automated orders.
+
+System authority, the Hedge freeze, release sequencing and operational acceptance are governed by
+`docs/architecture/atlas-investment-authority.md`.

@@ -6,6 +6,7 @@ inputs assembled by the API and return typed read models that can be tested with
 
 from __future__ import annotations
 
+import datetime as dt
 import statistics
 from itertools import pairwise
 from typing import Literal
@@ -32,6 +33,7 @@ class PositionRiskInput(BaseModel):
     price: float = Field(gt=0)
     average_daily_volume: float | None = Field(default=None, gt=0)
     returns: list[float] = Field(default_factory=list)
+    return_observations: dict[dt.date, float] = Field(default_factory=dict)
 
 
 class RiskLimitCheck(BaseModel):
@@ -47,8 +49,8 @@ class StressScenario(BaseModel):
     key: str
     label: str
     shock_pct: float
-    estimated_loss_pct: float
-    status: Literal["within_limit", "breached"]
+    estimated_loss_pct: float | None
+    status: Literal["within_limit", "breached", "unavailable"]
     methodology: str
 
 
@@ -65,6 +67,8 @@ class PortfolioRiskReport(BaseModel):
     limit_checks: list[RiskLimitCheck]
     stress_scenarios: list[StressScenario]
     breached_limits: list[str]
+    unavailable_limits: list[str]
+    data_complete: bool
     data_quality_notes: list[str]
 
 
@@ -92,12 +96,17 @@ class PerformanceAttribution(BaseModel):
     methodology_version: str = "atlas-additive-attribution-v1"
 
 
-def _correlation(left: list[float], right: list[float]) -> float | None:
-    sample = min(len(left), len(right), 60)
-    if sample < 20:
+def _correlation(left: PositionRiskInput, right: PositionRiskInput) -> float | None:
+    common_dates = sorted(set(left.return_observations) & set(right.return_observations))[-60:]
+    if left.return_observations or right.return_observations:
+        x = [left.return_observations[date] for date in common_dates]
+        y = [right.return_observations[date] for date in common_dates]
+    else:
+        sample = min(len(left.returns), len(right.returns), 60)
+        x = left.returns[-sample:]
+        y = right.returns[-sample:]
+    if len(x) < 20:
         return None
-    x = left[-sample:]
-    y = right[-sample:]
     if statistics.pstdev(x) == 0 or statistics.pstdev(y) == 0:
         return None
     covariance = statistics.fmean(
@@ -113,12 +122,14 @@ def analyze_portfolio_risk(
     drawdown_pct: float,
     positions: list[PositionRiskInput],
     mandate: MandateLimits,
+    unavailable_position_codes: list[str] | None = None,
 ) -> PortfolioRiskReport:
     """Evaluate observable portfolio risk against one market-bound mandate."""
 
     if nav <= 0 or cash < 0:
         raise ValueError("portfolio risk requires positive NAV and non-negative cash")
 
+    unavailable_position_codes = sorted(set(unavailable_position_codes or []))
     position_values = {item.code: item.shares * item.price for item in positions}
     weights = {code: value / nav * 100 for code, value in position_values.items()}
     gross_exposure = sum(weights.values())
@@ -137,7 +148,7 @@ def analyze_portfolio_risk(
     correlation_rows: list[tuple[float, float]] = []
     for index, left in enumerate(positions):
         for right in positions[index + 1 :]:
-            correlation = _correlation(left.returns, right.returns)
+            correlation = _correlation(left, right)
             if correlation is None:
                 continue
             pair_weight = weights[left.code] * weights[right.code]
@@ -176,10 +187,11 @@ def analyze_portfolio_risk(
             status = "within_limit"
         return RiskLimitCheck(key=key, status=status, actual=actual, limit=limit, detail=detail)
 
+    positions_complete = not unavailable_position_codes
     checks = [
         check(
             "gross_exposure",
-            gross_exposure,
+            gross_exposure if positions_complete else None,
             mandate.max_gross_exposure_pct,
             "Total invested weight versus the mandate ceiling.",
         ),
@@ -192,13 +204,13 @@ def analyze_portfolio_risk(
         ),
         check(
             "single_name",
-            largest_position,
+            largest_position if positions_complete else None,
             mandate.max_position_weight_pct,
             "Largest observable security weight.",
         ),
         check(
             "sector_concentration",
-            largest_sector,
+            largest_sector if positions_complete else None,
             mandate.max_sector_weight_pct,
             "Largest observable sector weight.",
         ),
@@ -224,35 +236,57 @@ def analyze_portfolio_risk(
             key="broad_market_down_10",
             label="Broad market -10%",
             shock_pct=-10,
-            estimated_loss_pct=round(broad_market_loss, 3),
-            status="breached"
-            if broad_market_loss > mandate.stress_loss_limit_pct
-            else "within_limit",
+            estimated_loss_pct=round(broad_market_loss, 3) if positions_complete else None,
+            status=(
+                "unavailable"
+                if not positions_complete
+                else "breached"
+                if broad_market_loss > mandate.stress_loss_limit_pct
+                else "within_limit"
+            ),
             methodology="Applies a simultaneous -10% price shock to current gross exposure; no diversification benefit.",
         ),
         StressScenario(
             key="largest_sector_down_15",
             label="Largest sector -15%",
             shock_pct=-15,
-            estimated_loss_pct=round(sector_loss, 3),
-            status="breached" if sector_loss > mandate.stress_loss_limit_pct else "within_limit",
+            estimated_loss_pct=round(sector_loss, 3) if positions_complete else None,
+            status=(
+                "unavailable"
+                if not positions_complete
+                else "breached"
+                if sector_loss > mandate.stress_loss_limit_pct
+                else "within_limit"
+            ),
             methodology="Applies a -15% shock to the largest observed sector allocation.",
         ),
         StressScenario(
             key="illiquid_positions_gap_20",
             label="Illiquid holdings -20% gap",
             shock_pct=-20,
-            estimated_loss_pct=round(liquidity_gap_loss, 3),
-            status="breached"
-            if liquidity_gap_loss > mandate.stress_loss_limit_pct
-            else "within_limit",
+            estimated_loss_pct=round(liquidity_gap_loss, 3) if positions_complete else None,
+            status=(
+                "unavailable"
+                if not positions_complete
+                else "breached"
+                if liquidity_gap_loss > mandate.stress_loss_limit_pct
+                else "within_limit"
+            ),
             methodology="Applies a -20% gap to holdings requiring more than two mandate-sized ADV days; missing liquidity is treated as exposed.",
         ),
     ]
     breached = [item.key for item in checks if item.status == "breached"] + [
         item.key for item in stresses if item.status == "breached"
     ]
+    unavailable = [item.key for item in checks if item.status == "unavailable"] + [
+        item.key for item in stresses if item.status == "unavailable"
+    ]
     notes: list[str] = []
+    if unavailable_position_codes:
+        notes.append(
+            "Held-position market history is unavailable or stale for: "
+            f"{', '.join(unavailable_position_codes)}. Exposure and stress limits fail closed."
+        )
     if missing_liquidity:
         notes.append(
             f"Average-volume history is unavailable for: {', '.join(sorted(missing_liquidity))}."
@@ -283,6 +317,8 @@ def analyze_portfolio_risk(
         limit_checks=checks,
         stress_scenarios=stresses,
         breached_limits=breached,
+        unavailable_limits=unavailable,
+        data_complete=not unavailable_position_codes,
         data_quality_notes=notes,
     )
 

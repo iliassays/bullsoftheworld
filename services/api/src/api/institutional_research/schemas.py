@@ -5,7 +5,9 @@ import uuid
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from bulls.analytics.research_strategy import get_strategy_definition
 
 
 def _to_camel(value: str) -> str:
@@ -224,13 +226,37 @@ class StartResearchRequest(ApiModel):
 
 class BacktestRequest(ApiModel):
     idempotency_key: str = Field(min_length=8, max_length=96)
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"]
+    strategy_key: str = Field(min_length=3, max_length=96)
     start_date: dt.date | None = None
     end_date: dt.date | None = None
     cap_tier: Literal["mega", "large", "mid", "small", "micro", "penny"] | None = None
-    codes: list[str] = Field(default_factory=list, max_length=30)
-    universe_limit: int = Field(default=25, ge=5, le=30)
+    codes: list[str] = Field(default_factory=list, max_length=500)
+    universe_limit: int = Field(default=25, ge=5, le=500)
     initial_capital: float = Field(default=100_000, gt=0, le=100_000_000)
+
+    @field_validator("strategy_key")
+    @classmethod
+    def strategy_must_be_registered(cls, value: str) -> str:
+        get_strategy_definition(value)
+        return value
+
+
+class StrategyCatalogItemOut(ApiModel):
+    key: str
+    market: Literal["DSE", "US"]
+    name: str
+    family: str
+    horizon: str
+    selection_key: str
+    sizing_key: str
+    methodology_version: str
+    minimum_lookback: int
+    rebalance_sessions: int
+    maximum_positions: int
+    required_evidence: list[str] = Field(default_factory=list)
+    research_state: Literal["diagnostic", "candidate", "eligible_for_shadow", "data_blocked"]
+    automation_eligible: bool
+    description: str
 
 
 class AutomationPolicyUpdate(ApiModel):
@@ -402,6 +428,7 @@ class ResearchShadowSnapshotOut(ApiModel):
     cumulative_fees: float
     cumulative_turnover: float
     positions: dict[str, Any]
+    pending_settlements: list[dict[str, Any]]
     target_weights: dict[str, Any]
     trades: list[dict[str, Any]]
     risk_interventions: list[dict[str, Any]]
@@ -421,6 +448,44 @@ class ResearchShadowPortfolioOut(ApiModel):
     last_evaluated_on: dt.date | None
     configuration: dict[str, Any]
     snapshots: list[ResearchShadowSnapshotOut]
+
+
+class IntradaySessionQualityOut(ApiModel):
+    session_date: dt.date
+    status: Literal["collecting", "complete", "incomplete"]
+    observed_slots: int
+    expected_slots: int
+    observed_symbols: int
+    expected_symbols: int
+    slot_completeness_pct: float
+    symbol_completeness_pct: float
+    vwap_coverage_pct: float
+    counter_regressions: int
+    latest_observed_at: dt.datetime | None
+    capture_age_minutes: float | None
+    research_eligible: bool
+    blockers: list[str]
+
+
+class StrategyDataReadinessOut(ApiModel):
+    workspace_id: uuid.UUID
+    tenant_id: str
+    market: Literal["DSE"]
+    strategy_key: Literal["dse_trend_pullback_intraday_v1"]
+    state: Literal["data_blocked", "ready_for_specification"]
+    bar_kind: Literal["sampled_delayed_quote"]
+    time_quality: Literal["ingestion_upper_bound"]
+    captured_sessions: int
+    complete_sessions: int
+    eligible_capture_sessions: int
+    required_complete_sessions: int
+    observation_count: int
+    bar_count: int
+    first_session: dt.date | None
+    latest_session: dt.date | None
+    historical_diagnostic_eligible: bool
+    blockers: list[str]
+    latest_quality: IntradaySessionQualityOut | None
 
 
 class InvestmentMandateUpdate(ApiModel):
@@ -507,8 +572,8 @@ class PortfolioStressScenarioOut(ApiModel):
     key: str
     label: str
     shock_pct: float
-    estimated_loss_pct: float
-    status: Literal["within_limit", "breached"]
+    estimated_loss_pct: float | None
+    status: Literal["within_limit", "breached", "unavailable"]
     methodology: str
 
 
@@ -525,6 +590,8 @@ class PortfolioRiskReportOut(ApiModel):
     limit_checks: list[PortfolioRiskLimitCheckOut]
     stress_scenarios: list[PortfolioStressScenarioOut]
     breached_limits: list[str]
+    unavailable_limits: list[str]
+    data_complete: bool
     data_quality_notes: list[str]
 
 

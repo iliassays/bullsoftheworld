@@ -16,6 +16,7 @@ from bulls.core.models.research.evidence import (
     ResearchRunEvidence,
 )
 from bulls.core.models.research.governance import (
+    ResearchAccountingEvent,
     ResearchDecisionEvent,
     ResearchInvestmentMandate,
     ResearchStrategyTrial,
@@ -37,6 +38,7 @@ __all__ = [
     "CatalystEvent",
     "EvidenceDocument",
     "EvidenceSpan",
+    "ResearchAccountingEvent",
     "ResearchAuditEvent",
     "ResearchAutomationPolicy",
     "ResearchClaim",

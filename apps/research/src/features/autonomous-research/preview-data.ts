@@ -4,7 +4,9 @@ import type {
   InvestmentMandate,
   InvestmentOperatingView,
   ResearchRun,
+  ResearchStrategy,
   ShadowPortfolio,
+  StrategyDataReadiness,
 } from "../../app/api-client";
 
 function sessionDate(daysAgo: number): string {
@@ -21,6 +23,107 @@ const initialCapital = isDse ? 10_000_000 : 100_000;
 const primaryShares = isDse ? 7300 : 1180;
 const primaryFillPrice = isDse ? 142.4 : 8.42;
 const primaryGrossValue = primaryShares * primaryFillPrice;
+
+export const previewStrategies: ResearchStrategy[] = isDse
+  ? [
+      {
+        key: "dse_reversal_v1",
+        market: "DSE",
+        name: "DSE liquid reversal",
+        family: "reversal",
+        horizon: "eod_swing",
+        selectionKey: "top_ranked",
+        sizingKey: "inverse_volatility",
+        methodologyVersion: "dse-liquid-reversal-v1",
+        minimumLookback: 126,
+        rebalanceSessions: 5,
+        maximumPositions: 8,
+        requiredEvidence: [],
+        researchState: "diagnostic",
+        automationEligible: true,
+        description: "Liquid drawdown recoveries with participation confirmation.",
+      },
+    ]
+  : [
+      {
+        key: "us_breakout_v1",
+        market: "US",
+        name: "US liquid trend participation",
+        family: "trend",
+        horizon: "eod_swing",
+        selectionKey: "top_ranked",
+        sizingKey: "inverse_volatility",
+        methodologyVersion: "us-liquid-trend-v1",
+        minimumLookback: 200,
+        rebalanceSessions: 5,
+        maximumPositions: 10,
+        requiredEvidence: [],
+        researchState: "diagnostic",
+        automationEligible: true,
+        description: "Liquid positive trends with participation and extension control.",
+      },
+      {
+        key: "us_leader_capture_v1",
+        market: "US",
+        name: "US leader capture",
+        family: "leader_capture",
+        horizon: "multi_month",
+        selectionKey: "rank_buffer_2x",
+        sizingKey: "equal_weight_full_gross",
+        methodologyVersion: "us-leader-capture-v1",
+        minimumLookback: 252,
+        rebalanceSessions: 20,
+        maximumPositions: 10,
+        requiredEvidence: [
+          "revenue_growth_yoy_pct",
+          "revenue_acceleration_pct",
+          "reported_earnings_confirmation",
+        ],
+        researchState: "candidate",
+        automationEligible: false,
+        description: "Persistent price leadership confirmed by point-in-time SEC acceleration.",
+      },
+    ];
+
+export const previewStrategyDataReadiness: StrategyDataReadiness = {
+  workspaceId: "00000000-0000-0000-0000-000000000001",
+  tenantId: "bullsofdhaka",
+  market: "DSE",
+  strategyKey: "dse_trend_pullback_intraday_v1",
+  state: "data_blocked",
+  barKind: "sampled_delayed_quote",
+  timeQuality: "ingestion_upper_bound",
+  capturedSessions: 3,
+  completeSessions: 2,
+  eligibleCaptureSessions: 2,
+  requiredCompleteSessions: 60,
+  observationCount: 23_640,
+  barCount: 23_640,
+  firstSession: sessionDate(4),
+  latestSession: sessionDate(0),
+  historicalDiagnosticEligible: false,
+  blockers: [
+    "Only 2 complete intraday sessions are retained; the preregistration floor is 60.",
+    "Inactive and delisted DSE history is not yet complete.",
+    "The intraday trend-pullback experiment specification has not been frozen.",
+  ],
+  latestQuality: {
+    sessionDate: sessionDate(0),
+    status: "complete",
+    observedSlots: 20,
+    expectedSlots: 20,
+    observedSymbols: 394,
+    expectedSymbols: 396,
+    slotCompletenessPct: 100,
+    symbolCompletenessPct: 99.495,
+    vwapCoveragePct: 98.7,
+    counterRegressions: 0,
+    latestObservedAt: new Date().toISOString(),
+    captureAgeMinutes: 18,
+    researchEligible: true,
+    blockers: [],
+  },
+};
 
 export const previewInvestmentMandate: InvestmentMandate = {
   id: "00000000-0000-0000-0000-000000000601",
@@ -84,6 +187,7 @@ export const previewShadowPortfolios: ShadowPortfolio[] = [
         positions: {},
         targetWeights: { [primaryCode]: 0.1 },
         trades: [],
+        pendingSettlements: [],
         riskInterventions: [],
       },
       {
@@ -113,6 +217,7 @@ export const previewShadowPortfolios: ShadowPortfolio[] = [
             reason: "prior-close shadow target",
           },
         ],
+        pendingSettlements: [],
         riskInterventions: [
           {
             rule: "cash_constraint",
@@ -262,6 +367,8 @@ export const previewInvestmentOperatingView: InvestmentOperatingView = {
           { key: "broad_market_down_10", label: "Broad market -10%", shockPct: -10, estimatedLossPct: 1.1, status: "within_limit", methodology: "Applies the shock to current gross exposure." },
         ],
         breachedLimits: [],
+        unavailableLimits: [],
+        dataComplete: true,
         dataQualityNotes: ["At least 20 aligned return observations are required for correlation diagnostics."],
       },
       attribution: {

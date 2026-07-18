@@ -22,6 +22,7 @@ from api.institutional_research.schemas import (
     BacktestRequest,
     CreateShadowPortfolioRequest,
     ResearchRunOut,
+    ResearchShadowPortfolioOut,
 )
 from api.institutional_research.workflow import (
     _add_step,
@@ -35,7 +36,6 @@ from api.institutional_research.workflow import (
 )
 from bulls.analytics.research_strategy import STRATEGIES
 from bulls.core.models import (
-    DailyBar,
     ResearchAutomationPolicy,
     ResearchOutcomeObservation,
     ResearchShadowPortfolio,
@@ -110,9 +110,7 @@ def next_lifecycle_run_at(market: str, *, now: dt.datetime | None = None) -> dt.
     raise RuntimeError(f"No verified {market} session was found in the scheduling window")
 
 
-def expected_lifecycle_session(
-    market: str, *, now: dt.datetime | None = None
-) -> dt.date | None:
+def expected_lifecycle_session(market: str, *, now: dt.datetime | None = None) -> dt.date | None:
     """Latest session whose first data-gated research attempt has elapsed."""
 
     current = (now or dt.datetime.now(dt.UTC)).astimezone(dt.UTC)
@@ -336,30 +334,58 @@ async def execute_research_lifecycle(
         },
     )
 
-    latest_market_date = await session.scalar(
-        select(func.max(DailyBar.date)).where(DailyBar.market == workspace.market)
+    strategy_portfolios = list(
+        await session.scalars(
+            select(ResearchShadowPortfolio).where(
+                ResearchShadowPortfolio.workspace_id == workspace.id,
+                ResearchShadowPortfolio.organization_id == workspace.organization_id,
+                ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
+                ResearchShadowPortfolio.market == workspace.market,
+                ResearchShadowPortfolio.strategy_key == policy.strategy_key,
+                ResearchShadowPortfolio.status != "archived",
+            )
+        )
+    )
+    managed_portfolio = next(
+        (
+            item
+            for item in strategy_portfolios
+            if item.configuration.get("managed_by") == "atlas_lifecycle"
+        ),
+        None,
     )
     backtest_key = (
-        f"auto-bt:{policy.strategy_key}:{latest_market_date or 'none'}:"
+        f"auto-bt:{policy.strategy_key}:"
         f"{_stable_hash([policy.cap_tier, policy.universe_limit, policy.initial_capital])[:20]}"
     )
     backtest: ResearchRunOut | None = None
     backtest_error: str | None = None
-    try:
-        backtest = await execute_backtest(
-            session,
-            workspace=workspace,
-            user_id=policy.requested_by_user_id,
-            request=BacktestRequest(
-                idempotency_key=backtest_key,
-                strategy_key=policy.strategy_key,
-                cap_tier=policy.cap_tier,
-                universe_limit=policy.universe_limit,
-                initial_capital=float(policy.initial_capital),
-            ),
-        )
-    except ValueError as exc:
-        backtest_error = str(exc)
+    backtest_reused = managed_portfolio is not None
+    if managed_portfolio is not None:
+        try:
+            backtest = await load_research_run(
+                session,
+                workspace=workspace,
+                run_id=managed_portfolio.source_run_id,
+            )
+        except LookupError as exc:
+            backtest_error = str(exc)
+    else:
+        try:
+            backtest = await execute_backtest(
+                session,
+                workspace=workspace,
+                user_id=policy.requested_by_user_id,
+                request=BacktestRequest(
+                    idempotency_key=backtest_key,
+                    strategy_key=policy.strategy_key,
+                    cap_tier=policy.cap_tier,
+                    universe_limit=policy.universe_limit,
+                    initial_capital=float(policy.initial_capital),
+                ),
+            )
+        except ValueError as exc:
+            backtest_error = str(exc)
     summary = backtest.parameters.get("result_summary", {}) if backtest else {}
     _add_step(
         session,
@@ -372,31 +398,13 @@ async def execute_research_lifecycle(
             "run_id": str(backtest.id) if backtest else None,
             "validation_status": summary.get("validation_status"),
             "failed_gates": summary.get("failed_gates", []),
+            "reused": backtest_reused,
             "error": backtest_error,
         },
     )
 
     shadow_created = False
     shadow_error: str | None = None
-    strategy_portfolios = list(
-        await session.scalars(
-            select(ResearchShadowPortfolio).where(
-                ResearchShadowPortfolio.workspace_id == workspace.id,
-                ResearchShadowPortfolio.organization_id == workspace.organization_id,
-                ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
-                ResearchShadowPortfolio.market == workspace.market,
-                ResearchShadowPortfolio.strategy_key == policy.strategy_key,
-            )
-        )
-    )
-    managed_portfolio = next(
-        (
-            item
-            for item in strategy_portfolios
-            if item.configuration.get("managed_by") == "atlas_lifecycle"
-        ),
-        None,
-    )
     if managed_portfolio is None and backtest is not None:
         try:
             created = await create_shadow_portfolio(
@@ -418,12 +426,23 @@ async def execute_research_lifecycle(
             shadow_created = True
         except (LookupError, ValueError) as exc:
             shadow_error = str(exc)
-    previous_snapshot = None
-    if managed_portfolio is not None:
-        previous_snapshot = await session.scalar(
+    active_portfolios = list(
+        await session.scalars(
+            select(ResearchShadowPortfolio).where(
+                ResearchShadowPortfolio.workspace_id == workspace.id,
+                ResearchShadowPortfolio.organization_id == workspace.organization_id,
+                ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
+                ResearchShadowPortfolio.market == workspace.market,
+                ResearchShadowPortfolio.status == "active",
+            )
+        )
+    )
+    previous_snapshots: dict[uuid.UUID, ResearchShadowSnapshot] = {}
+    for portfolio in active_portfolios:
+        previous = await session.scalar(
             select(ResearchShadowSnapshot)
             .where(
-                ResearchShadowSnapshot.portfolio_id == managed_portfolio.id,
+                ResearchShadowSnapshot.portfolio_id == portfolio.id,
                 ResearchShadowSnapshot.organization_id == workspace.organization_id,
                 ResearchShadowSnapshot.tenant_id == workspace.tenant_id,
                 ResearchShadowSnapshot.market == workspace.market,
@@ -431,6 +450,11 @@ async def execute_research_lifecycle(
             .order_by(ResearchShadowSnapshot.as_of_date.desc())
             .limit(1)
         )
+        if previous is not None:
+            previous_snapshots[portfolio.id] = previous
+    previous_snapshot = (
+        previous_snapshots.get(managed_portfolio.id) if managed_portfolio is not None else None
+    )
     matured_before = int(
         await session.scalar(
             select(func.count())
@@ -457,28 +481,40 @@ async def execute_research_lifecycle(
         ),
         None,
     )
-    new_snapshots: list[ResearchShadowSnapshot] = []
-    if managed is not None and previous_snapshot is not None:
-        new_snapshots = list(
+    advanced_snapshots: list[
+        tuple[ResearchShadowPortfolioOut, ResearchShadowSnapshot, ResearchShadowSnapshot]
+    ] = []
+    for portfolio in portfolios:
+        previous = previous_snapshots.get(portfolio.id)
+        if previous is None:
+            continue
+        snapshots = list(
             await session.scalars(
                 select(ResearchShadowSnapshot)
                 .where(
-                    ResearchShadowSnapshot.portfolio_id == managed.id,
+                    ResearchShadowSnapshot.portfolio_id == portfolio.id,
                     ResearchShadowSnapshot.organization_id == workspace.organization_id,
                     ResearchShadowSnapshot.tenant_id == workspace.tenant_id,
                     ResearchShadowSnapshot.market == workspace.market,
-                    ResearchShadowSnapshot.as_of_date > previous_snapshot.as_of_date,
+                    ResearchShadowSnapshot.as_of_date > previous.as_of_date,
                 )
                 .order_by(ResearchShadowSnapshot.as_of_date)
             )
         )
+        prior = previous
+        for snapshot in snapshots:
+            advanced_snapshots.append((portfolio, prior, snapshot))
+            prior = snapshot
     new_executions = [
         {
             **trade,
             "date": str(trade.get("date") or snapshot.as_of_date.isoformat()),
             "session_number": snapshot.session_number,
+            "portfolio_id": str(portfolio.id),
+            "book_name": portfolio.name,
+            "strategy_key": portfolio.strategy_key,
         }
-        for snapshot in new_snapshots
+        for portfolio, _, snapshot in advanced_snapshots
         for trade in snapshot.trades
     ]
     new_risk_interventions = [
@@ -486,22 +522,26 @@ async def execute_research_lifecycle(
             **intervention,
             "date": snapshot.as_of_date.isoformat(),
             "session_number": snapshot.session_number,
+            "portfolio_id": str(portfolio.id),
+            "book_name": portfolio.name,
+            "strategy_key": portfolio.strategy_key,
         }
-        for snapshot in new_snapshots
+        for portfolio, _, snapshot in advanced_snapshots
         for intervention in snapshot.risk_interventions
     ]
-    target_changes: list[dict[str, Any]] = []
-    prior_targets = previous_snapshot.target_weights if previous_snapshot is not None else {}
-    for snapshot in new_snapshots:
-        target_changes.extend(
-            {
-                **change,
-                "date": snapshot.as_of_date.isoformat(),
-                "session_number": snapshot.session_number,
-            }
-            for change in target_weight_changes(prior_targets, snapshot.target_weights)
-        )
-        prior_targets = snapshot.target_weights
+    target_changes = [
+        {
+            **change,
+            "date": snapshot.as_of_date.isoformat(),
+            "session_number": snapshot.session_number,
+            "portfolio_id": str(portfolio.id),
+            "book_name": portfolio.name,
+            "strategy_key": portfolio.strategy_key,
+        }
+        for portfolio, prior, snapshot in advanced_snapshots
+        for change in target_weight_changes(prior.target_weights, snapshot.target_weights)
+    ]
+    books_advanced = len({portfolio.id for portfolio, _, _ in advanced_snapshots})
     _add_step(
         session,
         run=run,
@@ -520,7 +560,8 @@ async def execute_research_lifecycle(
             "previous_evaluated_on": (
                 previous_snapshot.as_of_date.isoformat() if previous_snapshot else None
             ),
-            "sessions_advanced": len(new_snapshots),
+            "sessions_advanced": len(advanced_snapshots),
+            "books_advanced": books_advanced,
             "new_execution_count": len(new_executions),
             "new_executions": new_executions,
             "target_changes": target_changes,
@@ -552,7 +593,8 @@ async def execute_research_lifecycle(
             "research_decisions": decision_counts,
             "backtest_validation_status": summary.get("validation_status"),
             "shadow_portfolio_id": str(managed.id) if managed else None,
-            "shadow_sessions_advanced": len(new_snapshots),
+            "shadow_sessions_advanced": len(advanced_snapshots),
+            "shadow_books_advanced": books_advanced,
             "new_paper_executions": len(new_executions),
             "target_changes": len(target_changes),
             "promotion_status": (

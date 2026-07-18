@@ -10,11 +10,11 @@ import datetime as dt
 import math
 import statistics
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-ENGINE_VERSION = "atlas-portfolio-engine-v1"
+ENGINE_VERSION = "atlas-portfolio-engine-v2"
 
 
 class StrategyBar(BaseModel):
@@ -26,21 +26,40 @@ class StrategyBar(BaseModel):
     volume: int = Field(ge=0)
 
 
+class StrategyEvidenceObservation(BaseModel):
+    """A feature snapshot that may only be used on or after ``known_at``."""
+
+    known_at: dt.datetime
+    effective_date: dt.date
+    features: dict[str, float | bool | str | None]
+    sources: list[str] = Field(default_factory=list)
+    normalization_version: str
+
+
 class StrategySecurity(BaseModel):
     code: str
     sector: str = "Unclassified"
     cap_tier: str = "unclassified"
     bars: list[StrategyBar]
+    evidence: list[StrategyEvidenceObservation] = Field(default_factory=list)
 
 
 class StrategyDefinition(BaseModel):
-    key: Literal["dse_reversal_v1", "us_breakout_v1"]
+    key: str
     market: Literal["DSE", "US"]
     name: str
+    family: str
+    horizon: str
+    scorer_key: str
+    selection_key: str
+    sizing_key: str
     methodology_version: str
     minimum_lookback: int
     rebalance_sessions: int
     maximum_positions: int
+    required_evidence: tuple[str, ...] = ()
+    research_state: Literal["diagnostic", "candidate", "eligible_for_shadow", "data_blocked"]
+    automation_eligible: bool = False
     description: str
 
 
@@ -56,6 +75,7 @@ class PortfolioRiskPolicy(BaseModel):
     portfolio_drawdown_brake: float
     fee_rate: float
     slippage_rate: float
+    settlement_sessions: int = Field(ge=0)
 
 
 class BacktestTrade(BaseModel):
@@ -124,13 +144,33 @@ class ShadowPosition(BaseModel):
     average_cost: float = Field(ge=0)
 
 
+class CashSettlement(BaseModel):
+    receivable_key: str = Field(min_length=1, max_length=160)
+    release_session: int = Field(ge=0)
+    amount: float = Field(gt=0)
+
+
 class ShadowState(BaseModel):
     cash: float = Field(ge=0)
     positions: dict[str, ShadowPosition] = Field(default_factory=dict)
+    pending_settlements: list[CashSettlement] = Field(default_factory=list)
     peak_nav: float = Field(gt=0)
     benchmark_nav: float = Field(gt=0)
     cumulative_fees: float = Field(default=0, ge=0)
     cumulative_turnover: float = Field(default=0, ge=0)
+
+
+class ShadowAccountingEvent(BaseModel):
+    """One deterministic cash, position, settlement, or valuation transition."""
+
+    event_key: str = Field(min_length=1, max_length=160)
+    session_number: int = Field(ge=0)
+    effective_date: dt.date
+    event_type: Literal[
+        "opening_balance", "methodology_boundary", "settlement_release", "fill", "valuation"
+    ]
+    code: str | None = None
+    payload: dict[str, Any]
 
 
 class ShadowAdvanceResult(BaseModel):
@@ -142,6 +182,7 @@ class ShadowAdvanceResult(BaseModel):
     trades: list[BacktestTrade]
     risk_interventions: list[RiskIntervention]
     next_target_weights: dict[str, float]
+    accounting_events: list[ShadowAccountingEvent]
 
 
 class PromotionCheck(BaseModel):
@@ -250,10 +291,17 @@ STRATEGIES = {
         key="dse_reversal_v1",
         market="DSE",
         name="DSE liquid reversal",
+        family="reversal",
+        horizon="eod_swing",
+        scorer_key="dse_liquid_reversal",
+        selection_key="top_ranked",
+        sizing_key="inverse_volatility",
         methodology_version="dse-liquid-reversal-v1",
         minimum_lookback=126,
         rebalance_sessions=5,
         maximum_positions=8,
+        research_state="diagnostic",
+        automation_eligible=True,
         description=(
             "Ranks liquid drawdown recoveries using completed price and participation data. "
             "It does not use historically unavailable fundamental snapshots."
@@ -263,15 +311,67 @@ STRATEGIES = {
         key="us_breakout_v1",
         market="US",
         name="US liquid trend participation",
+        family="trend",
+        horizon="eod_swing",
+        scorer_key="us_liquid_trend",
+        selection_key="top_ranked",
+        sizing_key="inverse_volatility",
         methodology_version="us-liquid-trend-v1",
         minimum_lookback=200,
         rebalance_sessions=5,
         maximum_positions=10,
+        research_state="diagnostic",
+        automation_eligible=True,
         description=(
             "Ranks liquid positive trends with participation confirmation and extension control."
         ),
     ),
+    "us_leader_capture_v1": StrategyDefinition(
+        key="us_leader_capture_v1",
+        market="US",
+        name="US leader capture",
+        family="leader_capture",
+        horizon="multi_month",
+        scorer_key="us_price_fundamental_acceleration",
+        selection_key="rank_buffer_2x",
+        sizing_key="equal_weight_full_gross",
+        methodology_version="us-leader-capture-v1",
+        minimum_lookback=252,
+        rebalance_sessions=20,
+        maximum_positions=10,
+        required_evidence=(
+            "revenue_growth_yoy_pct",
+            "revenue_acceleration_pct",
+            "reported_earnings_confirmation",
+        ),
+        research_state="candidate",
+        automation_eligible=False,
+        description=(
+            "Ranks persistent US price leaders only when point-in-time SEC filings confirm "
+            "accelerating reported revenue and improving earnings. Missing or future evidence "
+            "forces abstention."
+        ),
+    ),
 }
+
+
+def get_strategy_definition(strategy_key: str) -> StrategyDefinition:
+    """Resolve a registered strategy and fail closed for every unknown key."""
+
+    strategy = STRATEGIES.get(strategy_key)
+    if strategy is None:
+        raise ValueError(f"Unknown registered strategy: {strategy_key}")
+    return strategy
+
+
+def registered_strategies(
+    *, market: Literal["DSE", "US"] | None = None
+) -> list[StrategyDefinition]:
+    """Return the deterministic catalog rather than duplicating strategy keys in callers."""
+
+    return [
+        strategy for strategy in STRATEGIES.values() if market is None or strategy.market == market
+    ]
 
 
 RISK_POLICIES = {
@@ -287,6 +387,7 @@ RISK_POLICIES = {
         portfolio_drawdown_brake=0.15,
         fee_rate=0.0040,
         slippage_rate=0.0025,
+        settlement_sessions=2,
     ),
     "US": PortfolioRiskPolicy(
         market="US",
@@ -300,6 +401,7 @@ RISK_POLICIES = {
         portfolio_drawdown_brake=0.18,
         fee_rate=0.0005,
         slippage_rate=0.0015,
+        settlement_sessions=1,
     ),
 }
 
@@ -308,6 +410,508 @@ RISK_POLICIES = {
 class _Position:
     shares: int
     average_cost: float
+
+
+@dataclass(frozen=True)
+class _PlannedOrder:
+    code: str
+    bar: StrategyBar
+    side: Literal["buy", "sell"]
+    quantity: int
+    intended_quantity: int
+    constraint_notes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _AccountingFill:
+    trade: BacktestTrade
+    cash_delta: float
+    settlement: CashSettlement | None
+    fee: float
+    turnover: float
+    position_after: _Position | None
+
+
+def _release_settlements(
+    settlements: list[CashSettlement], *, session_number: int
+) -> tuple[float, list[CashSettlement]]:
+    released = sum(item.amount for item in settlements if item.release_session <= session_number)
+    pending = [item for item in settlements if item.release_session > session_number]
+    return released, pending
+
+
+def opening_accounting_events(
+    *, initial_capital: float, effective_date: dt.date
+) -> list[ShadowAccountingEvent]:
+    """Create the event-first opening state for a new paper book."""
+
+    if initial_capital <= 0:
+        raise ValueError("initial_capital must be positive")
+    return [
+        ShadowAccountingEvent(
+            event_key="s0:opening_balance",
+            session_number=0,
+            effective_date=effective_date,
+            event_type="opening_balance",
+            payload={
+                "cash": round(initial_capital, 4),
+                "peak_nav": round(initial_capital, 4),
+                "benchmark_nav": round(initial_capital, 4),
+                "cumulative_fees": 0.0,
+                "cumulative_turnover": 0.0,
+            },
+        )
+    ]
+
+
+def methodology_boundary_accounting_events(
+    *,
+    state: ShadowState,
+    session_number: int,
+    effective_date: dt.date,
+    source_snapshot_id: str,
+) -> list[ShadowAccountingEvent]:
+    """Start event-first accounting from an explicitly reconstructed legacy boundary."""
+
+    return [
+        ShadowAccountingEvent(
+            event_key=f"s{session_number}:methodology_boundary",
+            session_number=session_number,
+            effective_date=effective_date,
+            event_type="methodology_boundary",
+            payload={
+                "state": state.model_dump(mode="json"),
+                "source_snapshot_id": source_snapshot_id,
+                "origin": "accepted_pre_accounting_snapshot",
+                "event_first_history_before_boundary": False,
+            },
+        )
+    ]
+
+
+def replay_accounting_events(
+    previous: ShadowState | None,
+    events: list[ShadowAccountingEvent],
+) -> ShadowState:
+    """Replay accounting events without using a shadow snapshot as an input projection."""
+
+    if previous is None:
+        initialized = False
+        cash = 0.0
+        positions: dict[str, ShadowPosition] = {}
+        pending_settlements: list[CashSettlement] = []
+        peak_nav = 0.0
+        benchmark_nav = 0.0
+        cumulative_fees = 0.0
+        cumulative_turnover = 0.0
+    else:
+        initialized = True
+        cash = previous.cash
+        positions = {
+            code: position.model_copy(deep=True) for code, position in previous.positions.items()
+        }
+        pending_settlements = [
+            settlement.model_copy(deep=True) for settlement in previous.pending_settlements
+        ]
+        peak_nav = previous.peak_nav
+        benchmark_nav = previous.benchmark_nav
+        cumulative_fees = previous.cumulative_fees
+        cumulative_turnover = previous.cumulative_turnover
+
+    for event in events:
+        payload = event.payload
+        if event.event_type == "opening_balance":
+            if initialized:
+                raise ValueError("opening_balance can only initialize a new accounting ledger")
+            cash = float(payload["cash"])
+            peak_nav = float(payload["peak_nav"])
+            benchmark_nav = float(payload["benchmark_nav"])
+            cumulative_fees = float(payload.get("cumulative_fees", 0.0))
+            cumulative_turnover = float(payload.get("cumulative_turnover", 0.0))
+            initialized = True
+            continue
+        if event.event_type == "methodology_boundary":
+            if initialized:
+                raise ValueError("methodology_boundary can only initialize a new accounting ledger")
+            state = ShadowState.model_validate(payload["state"])
+            cash = state.cash
+            positions = {
+                code: position.model_copy(deep=True) for code, position in state.positions.items()
+            }
+            pending_settlements = [
+                settlement.model_copy(deep=True) for settlement in state.pending_settlements
+            ]
+            peak_nav = state.peak_nav
+            benchmark_nav = state.benchmark_nav
+            cumulative_fees = state.cumulative_fees
+            cumulative_turnover = state.cumulative_turnover
+            initialized = True
+            continue
+        if not initialized:
+            raise ValueError("accounting ledger must begin with opening_balance")
+        if event.event_type == "settlement_release":
+            receivable_key = str(payload["receivable_key"])
+            release_session = int(payload["release_session"])
+            amount = float(payload["amount"])
+            match = next(
+                (
+                    index
+                    for index, item in enumerate(pending_settlements)
+                    if item.receivable_key == receivable_key
+                    and item.release_session == release_session
+                    and math.isclose(item.amount, amount, abs_tol=0.00005)
+                ),
+                None,
+            )
+            if match is None:
+                raise ValueError("settlement release does not match an open receivable")
+            pending_settlements.pop(match)
+            cash += amount
+            continue
+        if event.event_type == "fill":
+            if not event.code:
+                raise ValueError("fill accounting event requires a security code")
+            cash += float(payload["cash_delta"])
+            settlement_payload = payload.get("settlement")
+            if settlement_payload is not None:
+                pending_settlements.append(CashSettlement.model_validate(settlement_payload))
+            position_after = payload.get("position_after")
+            if position_after is None:
+                positions.pop(event.code, None)
+            else:
+                positions[event.code] = ShadowPosition.model_validate(position_after)
+            cumulative_fees += float(payload["fee"])
+            cumulative_turnover += float(payload["turnover"])
+            continue
+        if event.event_type == "valuation":
+            closing_cash = float(payload["cash"])
+            closing_fees = float(payload["cumulative_fees"])
+            closing_turnover = float(payload["cumulative_turnover"])
+            if not math.isclose(round(cash, 4), closing_cash, abs_tol=0.00005):
+                raise ValueError("valuation cash does not reconcile accounting events")
+            if not math.isclose(round(cumulative_fees, 4), closing_fees, abs_tol=0.00005):
+                raise ValueError("valuation fees do not reconcile accounting events")
+            if not math.isclose(round(cumulative_turnover, 4), closing_turnover, abs_tol=0.00005):
+                raise ValueError("valuation turnover does not reconcile accounting events")
+            cash = closing_cash
+            cumulative_fees = closing_fees
+            cumulative_turnover = closing_turnover
+            peak_nav = float(payload["peak_nav"])
+            benchmark_nav = float(payload["benchmark_nav"])
+
+    if not initialized:
+        raise ValueError("accounting replay requires an opening balance or previous state")
+    if cash < -0.00005:
+        raise ValueError("accounting replay produced negative settled cash")
+    return ShadowState(
+        cash=round(max(cash, 0.0), 4),
+        positions=positions,
+        pending_settlements=pending_settlements,
+        peak_nav=round(peak_nav, 4),
+        benchmark_nav=round(benchmark_nav, 4),
+        cumulative_fees=round(cumulative_fees, 4),
+        cumulative_turnover=round(cumulative_turnover, 4),
+    )
+
+
+def _advance_accounting_events(
+    *,
+    date: dt.date,
+    session_number: int,
+    released_settlements: list[CashSettlement],
+    fills: list[_AccountingFill],
+    state: ShadowState,
+    nav: float,
+    gross_exposure_pct: float,
+    drawdown_pct: float,
+) -> list[ShadowAccountingEvent]:
+    events = [
+        ShadowAccountingEvent(
+            event_key=f"s{session_number}:settlement_release:{index}",
+            session_number=session_number,
+            effective_date=date,
+            event_type="settlement_release",
+            payload=settlement.model_dump(mode="json"),
+        )
+        for index, settlement in enumerate(released_settlements)
+    ]
+    for index, fill in enumerate(fills):
+        events.append(
+            ShadowAccountingEvent(
+                event_key=(f"s{session_number}:fill:{index}:{fill.trade.code}:{fill.trade.side}"),
+                session_number=session_number,
+                effective_date=date,
+                event_type="fill",
+                code=fill.trade.code,
+                payload={
+                    "trade": fill.trade.model_dump(mode="json"),
+                    "cash_delta": fill.cash_delta,
+                    "settlement": (
+                        fill.settlement.model_dump(mode="json")
+                        if fill.settlement is not None
+                        else None
+                    ),
+                    "fee": fill.fee,
+                    "turnover": fill.turnover,
+                    "position_after": (
+                        {
+                            "shares": fill.position_after.shares,
+                            "average_cost": fill.position_after.average_cost,
+                        }
+                        if fill.position_after is not None
+                        else None
+                    ),
+                },
+            )
+        )
+    events.append(
+        ShadowAccountingEvent(
+            event_key=f"s{session_number}:valuation",
+            session_number=session_number,
+            effective_date=date,
+            event_type="valuation",
+            payload={
+                "cash": state.cash,
+                "cumulative_fees": state.cumulative_fees,
+                "cumulative_turnover": state.cumulative_turnover,
+                "peak_nav": state.peak_nav,
+                "benchmark_nav": state.benchmark_nav,
+                "nav": round(nav, 2),
+                "gross_exposure_pct": round(gross_exposure_pct, 3),
+                "drawdown_pct": round(drawdown_pct, 3),
+            },
+        )
+    )
+    return events
+
+
+def _execute_target_weights(
+    *,
+    date: dt.date,
+    session_number: int,
+    opening_nav: float,
+    settled_cash: float,
+    pending_settlements: list[CashSettlement],
+    positions: dict[str, _Position],
+    target_weights: dict[str, float],
+    bars: dict[str, StrategyBar | None],
+    average_volumes: dict[str, float | None],
+    policy: PortfolioRiskPolicy,
+    reason: str,
+) -> tuple[
+    float,
+    list[CashSettlement],
+    list[BacktestTrade],
+    list[RiskIntervention],
+    float,
+    float,
+    list[_AccountingFill],
+]:
+    """Execute one target set without allowing symbol order or unsettled proceeds to fund buys."""
+
+    planned: list[_PlannedOrder] = []
+    interventions: list[RiskIntervention] = []
+    for code in sorted(set(positions) | set(target_weights)):
+        current_shares = positions.get(code, _Position(0, 0)).shares
+        target_weight = target_weights.get(code, 0.0)
+        bar = bars.get(code)
+        if bar is None:
+            if current_shares > 0 or target_weight > 0:
+                interventions.append(
+                    RiskIntervention(
+                        date=date,
+                        code=code,
+                        rule="missing_bar",
+                        detail="Order rejected because no current observable execution bar was available.",
+                    )
+                )
+            continue
+        desired_shares = int(opening_nav * target_weight / bar.open)
+        raw_quantity = desired_shares - current_shares
+        if raw_quantity == 0:
+            continue
+        intended_quantity = abs(raw_quantity)
+        average_volume = average_volumes.get(code)
+        if average_volume is None or average_volume <= 0:
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=code,
+                    rule="liquidity_unknown",
+                    detail="Order rejected because a completed ADV baseline was unavailable.",
+                )
+            )
+            continue
+        maximum_quantity = int(average_volume * policy.max_adv_participation)
+        constrained_quantity = max(-maximum_quantity, min(maximum_quantity, raw_quantity))
+        notes: list[str] = []
+        if abs(constrained_quantity) < intended_quantity:
+            notes.append("adv_capacity")
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=code,
+                    rule="adv_capacity",
+                    detail=(
+                        f"Order constrained from {intended_quantity} to "
+                        f"{abs(constrained_quantity)} shares by the mandate ADV participation ceiling."
+                    ),
+                )
+            )
+        if constrained_quantity == 0:
+            continue
+        planned.append(
+            _PlannedOrder(
+                code=code,
+                bar=bar,
+                side="buy" if constrained_quantity > 0 else "sell",
+                quantity=abs(constrained_quantity),
+                intended_quantity=intended_quantity,
+                constraint_notes=tuple(notes),
+            )
+        )
+
+    trades: list[BacktestTrade] = []
+    fees_paid = 0.0
+    traded_gross = 0.0
+    accounting_fills: list[_AccountingFill] = []
+    for order in (item for item in planned if item.side == "sell"):
+        current = positions.get(order.code)
+        quantity = min(order.quantity, current.shares if current else 0)
+        if quantity <= 0:
+            continue
+        fill_price = order.bar.open * (1 - policy.slippage_rate)
+        gross = quantity * fill_price
+        fee = gross * policy.fee_rate
+        proceeds = gross - fee
+        remaining = current.shares - quantity
+        if remaining:
+            current.shares = remaining
+        else:
+            positions.pop(order.code, None)
+        settlement: CashSettlement | None = None
+        cash_delta = 0.0
+        if policy.settlement_sessions == 0:
+            settled_cash += proceeds
+            cash_delta = proceeds
+        else:
+            settlement = CashSettlement(
+                receivable_key=f"s{session_number}:receivable:{order.code}",
+                release_session=session_number + policy.settlement_sessions,
+                amount=round(proceeds, 4),
+            )
+            pending_settlements.append(settlement)
+        fees_paid += fee
+        traded_gross += gross
+        trade = BacktestTrade(
+            date=date,
+            code=order.code,
+            side="sell",
+            quantity=quantity,
+            fill_price=round(fill_price, 4),
+            gross_value=round(gross, 2),
+            fee=round(fee, 2),
+            reason=reason,
+            intended_quantity=order.intended_quantity,
+            constraint_notes=list(order.constraint_notes),
+        )
+        trades.append(trade)
+        position_after = positions.get(order.code)
+        accounting_fills.append(
+            _AccountingFill(
+                trade=trade,
+                cash_delta=cash_delta,
+                settlement=settlement,
+                fee=fee,
+                turnover=gross,
+                position_after=(
+                    _Position(position_after.shares, position_after.average_cost)
+                    if position_after is not None
+                    else None
+                ),
+            )
+        )
+
+    buys = [item for item in planned if item.side == "buy"]
+    full_cost = sum(
+        item.quantity * item.bar.open * (1 + policy.slippage_rate) * (1 + policy.fee_rate)
+        for item in buys
+    )
+    cash_scale = min(1.0, settled_cash / full_cost) if full_cost > 0 else 1.0
+    for order in buys:
+        quantity = int(order.quantity * cash_scale)
+        notes = list(order.constraint_notes)
+        if quantity < order.quantity:
+            notes.append("cash_capacity")
+            rule = "cash_limit" if quantity <= 0 else "cash_capacity"
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=order.code,
+                    rule=rule,
+                    detail=(
+                        "Buy rejected because settled cash was insufficient."
+                        if quantity <= 0
+                        else (
+                            f"Order constrained from {order.quantity} to {quantity} shares "
+                            "by settled cash allocated across the complete buy basket."
+                        )
+                    ),
+                )
+            )
+        if quantity <= 0:
+            continue
+        fill_price = order.bar.open * (1 + policy.slippage_rate)
+        gross = quantity * fill_price
+        fee = gross * policy.fee_rate
+        total_cost = gross + fee
+        if total_cost > settled_cash + 1e-8:
+            raise RuntimeError("batch cash allocation exceeded settled cash")
+        old = positions.get(order.code, _Position(0, 0.0))
+        new_shares = old.shares + quantity
+        positions[order.code] = _Position(
+            shares=new_shares,
+            average_cost=(old.average_cost * old.shares + total_cost) / new_shares,
+        )
+        settled_cash -= total_cost
+        fees_paid += fee
+        traded_gross += gross
+        trade = BacktestTrade(
+            date=date,
+            code=order.code,
+            side="buy",
+            quantity=quantity,
+            fill_price=round(fill_price, 4),
+            gross_value=round(gross, 2),
+            fee=round(fee, 2),
+            reason=reason,
+            intended_quantity=order.intended_quantity,
+            constraint_notes=notes,
+        )
+        trades.append(trade)
+        position_after = positions[order.code]
+        accounting_fills.append(
+            _AccountingFill(
+                trade=trade,
+                cash_delta=-total_cost,
+                settlement=None,
+                fee=fee,
+                turnover=gross,
+                position_after=_Position(
+                    position_after.shares,
+                    position_after.average_cost,
+                ),
+            )
+        )
+    return (
+        settled_cash,
+        pending_settlements,
+        trades,
+        interventions,
+        fees_paid,
+        traded_gross,
+        accounting_fills,
+    )
 
 
 def _returns(values: list[float]) -> list[float]:
@@ -338,11 +942,12 @@ def _rsi(values: list[float], period: int = 14) -> float | None:
     return 100.0 - 100.0 / (1.0 + gains / losses)
 
 
-def _feature_score(
-    strategy: StrategyDefinition, history: list[StrategyBar]
-) -> tuple[float, float, float] | None:
-    if len(history) < strategy.minimum_lookback:
-        return None
+FeatureScore = tuple[float, float, float]
+
+
+def _price_inputs(history: list[StrategyBar]) -> tuple[list[float], float, float, float] | None:
+    """Return common observable price inputs shared by registered scorers."""
+
     closes = [bar.close for bar in history]
     volumes = [bar.volume for bar in history]
     volatility = _annualized_volatility(closes)
@@ -351,27 +956,173 @@ def _feature_score(
     average_volume = statistics.fmean(volumes[-20:])
     long_volume = statistics.fmean(volumes[-60:]) if len(volumes) >= 60 else average_volume
     relative_volume = average_volume / long_volume if long_volume > 0 else 0.0
-    if strategy.key == "dse_reversal_v1":
-        peak = max(closes[-126:])
-        drawdown = closes[-1] / peak - 1.0
-        return_5 = closes[-1] / closes[-6] - 1.0
-        rsi = _rsi(closes) or 50.0
-        if drawdown > -0.12 or return_5 <= 0 or rsi > 58 or relative_volume < 0.90:
-            return None
-        score = abs(drawdown) * 100 + return_5 * 120 + relative_volume * 8 - max(0, rsi - 50)
-    else:
-        sma_50 = statistics.fmean(closes[-50:])
-        sma_200 = statistics.fmean(closes[-200:])
-        momentum_63 = closes[-1] / closes[-64] - 1.0
-        high_20 = max(closes[-20:])
-        extension = closes[-1] / sma_50 - 1.0
-        if closes[-1] <= sma_50 or sma_50 <= sma_200 or momentum_63 <= 0 or relative_volume < 0.90:
-            return None
-        if extension > 0.25:
-            return None
-        proximity = closes[-1] / high_20
-        score = momentum_63 * 100 + proximity * 20 + relative_volume * 8 - volatility * 10
+    return closes, volatility, average_volume, relative_volume
+
+
+def _score_dse_liquid_reversal(
+    strategy: StrategyDefinition,
+    history: list[StrategyBar],
+    evidence: StrategyEvidenceObservation | None,
+) -> FeatureScore | None:
+    del evidence
+    if len(history) < strategy.minimum_lookback:
+        return None
+    inputs = _price_inputs(history)
+    if inputs is None:
+        return None
+    closes, volatility, average_volume, relative_volume = inputs
+    peak = max(closes[-126:])
+    drawdown = closes[-1] / peak - 1.0
+    return_5 = closes[-1] / closes[-6] - 1.0
+    rsi = _rsi(closes) or 50.0
+    if drawdown > -0.12 or return_5 <= 0 or rsi > 58 or relative_volume < 0.90:
+        return None
+    score = abs(drawdown) * 100 + return_5 * 120 + relative_volume * 8 - max(0, rsi - 50)
     return score, volatility, average_volume
+
+
+def _score_us_liquid_trend(
+    strategy: StrategyDefinition,
+    history: list[StrategyBar],
+    evidence: StrategyEvidenceObservation | None,
+) -> FeatureScore | None:
+    del evidence
+    if len(history) < strategy.minimum_lookback:
+        return None
+    inputs = _price_inputs(history)
+    if inputs is None:
+        return None
+    closes, volatility, average_volume, relative_volume = inputs
+    sma_50 = statistics.fmean(closes[-50:])
+    sma_200 = statistics.fmean(closes[-200:])
+    momentum_63 = closes[-1] / closes[-64] - 1.0
+    high_20 = max(closes[-20:])
+    extension = closes[-1] / sma_50 - 1.0
+    if closes[-1] <= sma_50 or sma_50 <= sma_200 or momentum_63 <= 0 or relative_volume < 0.90:
+        return None
+    if extension > 0.25:
+        return None
+    proximity = closes[-1] / high_20
+    score = momentum_63 * 100 + proximity * 20 + relative_volume * 8 - volatility * 10
+    return score, volatility, average_volume
+
+
+def _numeric_feature(
+    evidence: StrategyEvidenceObservation,
+    key: str,
+) -> float | None:
+    value = evidence.features.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def _score_us_price_fundamental_acceleration(
+    strategy: StrategyDefinition,
+    history: list[StrategyBar],
+    evidence: StrategyEvidenceObservation | None,
+) -> FeatureScore | None:
+    """Capture durable leaders only when reported acceleration was already public."""
+
+    if len(history) < strategy.minimum_lookback or evidence is None:
+        return None
+    signal_date = history[-1].date
+    if evidence.effective_date > signal_date or (signal_date - evidence.effective_date).days > 160:
+        return None
+    revenue_growth = _numeric_feature(evidence, "revenue_growth_yoy_pct")
+    revenue_acceleration = _numeric_feature(evidence, "revenue_acceleration_pct")
+    earnings_growth = _numeric_feature(evidence, "net_income_growth_yoy_pct")
+    earnings_acceleration = _numeric_feature(evidence, "net_income_acceleration_pct")
+    earnings_turnaround = evidence.features.get("net_income_turnaround") is True
+    if revenue_growth is None or revenue_acceleration is None:
+        return None
+    if revenue_growth < 8.0 or revenue_acceleration <= 0:
+        return None
+    earnings_confirmed = (
+        earnings_turnaround
+        or (earnings_growth is not None and earnings_growth > 0)
+        or (earnings_acceleration is not None and earnings_acceleration > 0)
+    )
+    if not earnings_confirmed:
+        return None
+
+    inputs = _price_inputs(history)
+    if inputs is None:
+        return None
+    closes, volatility, average_volume, relative_volume = inputs
+    sma_50 = statistics.fmean(closes[-50:])
+    sma_200 = statistics.fmean(closes[-200:])
+    momentum_63 = closes[-1] / closes[-64] - 1.0
+    momentum_126 = closes[-1] / closes[-127] - 1.0
+    proximity_252 = closes[-1] / max(closes[-252:])
+    extension = closes[-1] / sma_50 - 1.0
+    if (
+        closes[-1] <= sma_50
+        or sma_50 <= sma_200
+        or momentum_63 <= 0
+        or momentum_126 < 0.10
+        or proximity_252 < 0.80
+        or relative_volume < 0.75
+        or extension > 0.25
+    ):
+        return None
+    earnings_component = max(
+        earnings_growth or 0.0,
+        earnings_acceleration or 0.0,
+        25.0 if earnings_turnaround else 0.0,
+    )
+    score = (
+        momentum_63 * 35
+        + momentum_126 * 55
+        + proximity_252 * 15
+        + min(revenue_growth, 100.0) * 0.12
+        + min(revenue_acceleration, 75.0) * 0.16
+        + min(earnings_component, 100.0) * 0.06
+        + relative_volume * 4
+        - volatility * 12
+        - max(extension, 0) * 12
+    )
+    return score, volatility, average_volume
+
+
+_SCORERS = {
+    "dse_liquid_reversal": _score_dse_liquid_reversal,
+    "us_liquid_trend": _score_us_liquid_trend,
+    "us_price_fundamental_acceleration": _score_us_price_fundamental_acceleration,
+}
+
+
+def _observable_evidence(
+    security: StrategySecurity,
+    *,
+    signal_date: dt.date,
+) -> StrategyEvidenceObservation | None:
+    cutoff = dt.datetime.combine(signal_date, dt.time.max, tzinfo=dt.UTC)
+
+    def known_at(item: StrategyEvidenceObservation) -> dt.datetime:
+        value = item.known_at
+        return value.replace(tzinfo=dt.UTC) if value.tzinfo is None else value.astimezone(dt.UTC)
+
+    eligible = [
+        item
+        for item in security.evidence
+        if known_at(item) <= cutoff and item.effective_date <= signal_date
+    ]
+    return max(eligible, key=lambda item: (known_at(item), item.effective_date), default=None)
+
+
+def _feature_score(
+    strategy: StrategyDefinition,
+    security: StrategySecurity,
+    history: list[StrategyBar],
+) -> FeatureScore | None:
+    scorer = _SCORERS.get(strategy.scorer_key)
+    if scorer is None:
+        raise RuntimeError(
+            f"Strategy {strategy.key} owns unregistered scorer {strategy.scorer_key}; refusing to run"
+        )
+    evidence = _observable_evidence(security, signal_date=history[-1].date) if history else None
+    return scorer(strategy, history, evidence)
 
 
 def _target_weights(
@@ -379,10 +1130,12 @@ def _target_weights(
     policy: PortfolioRiskPolicy,
     histories: dict[str, list[StrategyBar]],
     securities: dict[str, StrategySecurity],
+    *,
+    current_weights: dict[str, float] | None = None,
 ) -> dict[str, float]:
     ranked: list[tuple[float, str, float]] = []
     for code, history in histories.items():
-        feature = _feature_score(strategy, history)
+        feature = _feature_score(strategy, securities[code], history)
         if feature is None:
             continue
         score, volatility, average_volume = feature
@@ -392,17 +1145,53 @@ def _target_weights(
         ranked.append((score, code, volatility))
     ranked.sort(reverse=True)
 
+    if strategy.selection_key == "top_ranked":
+        selected = ranked[: strategy.maximum_positions]
+    elif strategy.selection_key == "rank_buffer_2x":
+        rank_by_code = {code: rank for rank, (_, code, _) in enumerate(ranked)}
+        incumbents = [
+            item
+            for item in ranked
+            if item[1] in (current_weights or {})
+            and rank_by_code[item[1]] < strategy.maximum_positions * 2
+        ]
+        incumbent_codes = {item[1] for item in incumbents}
+        selected = incumbents[: strategy.maximum_positions]
+        for item in ranked:
+            if len(selected) >= strategy.maximum_positions:
+                break
+            if item[1] not in incumbent_codes:
+                selected.append(item)
+    else:
+        raise RuntimeError(
+            f"Strategy {strategy.key} owns unregistered selection policy "
+            f"{strategy.selection_key}; refusing to run"
+        )
+
     weights: dict[str, float] = {}
     sector_weights: dict[str, float] = {}
     remaining = policy.max_gross_exposure
-    for _, code, volatility in ranked[: strategy.maximum_positions]:
+    for _, code, volatility in selected:
         if remaining <= 0:
             break
         sector = securities[code].sector
-        volatility_weight = policy.target_annualized_volatility / max(volatility, 0.05)
+        if strategy.sizing_key == "inverse_volatility":
+            desired_weight = (
+                policy.max_gross_exposure
+                / strategy.maximum_positions
+                * policy.target_annualized_volatility
+                / max(volatility, 0.05)
+            )
+        elif strategy.sizing_key == "equal_weight_full_gross":
+            desired_weight = policy.max_gross_exposure / strategy.maximum_positions
+        else:
+            raise RuntimeError(
+                f"Strategy {strategy.key} owns unregistered sizing policy "
+                f"{strategy.sizing_key}; refusing to run"
+            )
         desired = min(
             policy.max_position_weight,
-            policy.max_gross_exposure / strategy.maximum_positions * volatility_weight,
+            desired_weight,
             policy.max_sector_weight - sector_weights.get(sector, 0.0),
             remaining,
         )
@@ -460,7 +1249,7 @@ def _performance_slice(
 def run_backtest(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"],
+    strategy_key: str,
     securities: list[StrategySecurity],
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
@@ -471,7 +1260,7 @@ def run_backtest(
 
     if initial_capital <= 0:
         raise ValueError("initial_capital must be positive")
-    strategy = STRATEGIES[strategy_key]
+    strategy = get_strategy_definition(strategy_key)
     if strategy.market != market:
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
     policy = risk_policy or RISK_POLICIES[market]
@@ -486,6 +1275,7 @@ def run_backtest(
     histories: dict[str, list[StrategyBar]] = {code: [] for code in bars_by_code}
     positions: dict[str, _Position] = {}
     cash = initial_capital
+    pending_settlements: list[CashSettlement] = []
     pending_weights: dict[str, float] | None = None
     pending_reason = "scheduled rebalance"
     trades: list[BacktestTrade] = []
@@ -499,99 +1289,49 @@ def run_backtest(
 
     for session_index, date in enumerate(dates):
         current = {code: bars.get(date) for code, bars in bars_by_code.items()}
+        released_cash, pending_settlements = _release_settlements(
+            pending_settlements,
+            session_number=session_index,
+        )
+        cash += released_cash
 
         if pending_weights is not None:
-            opening_nav = cash
+            opening_nav = cash + sum(item.amount for item in pending_settlements)
             for code, position in positions.items():
                 bar = current.get(code)
                 if bar is not None:
                     opening_nav += position.shares * bar.open
                 elif histories[code]:
                     opening_nav += position.shares * histories[code][-1].close
-            all_codes = set(positions) | set(pending_weights)
-            for code in sorted(all_codes):
-                bar = current.get(code)
-                if bar is None:
-                    continue
-                current_shares = positions.get(code, _Position(0, 0.0)).shares
-                desired_value = opening_nav * pending_weights.get(code, 0.0)
-                desired_shares = int(desired_value / bar.open)
-                quantity = desired_shares - current_shares
-                history = histories[code]
-                average_volume = (
-                    statistics.fmean(item.volume for item in history[-20:]) if history else 0.0
-                )
-                max_quantity = int(average_volume * policy.max_adv_participation)
-                if max_quantity <= 0 and quantity != 0:
-                    interventions.append(
-                        RiskIntervention(
-                            date=date,
-                            code=code,
-                            rule="liquidity_unknown",
-                            detail="Order rejected because a completed ADV baseline was unavailable.",
-                        )
-                    )
-                    continue
-                quantity = max(-max_quantity, min(max_quantity, quantity))
-                if quantity == 0:
-                    continue
-                side: Literal["buy", "sell"] = "buy" if quantity > 0 else "sell"
-                fill_price = bar.open * (
-                    1 + policy.slippage_rate if side == "buy" else 1 - policy.slippage_rate
-                )
-                absolute_quantity = abs(quantity)
-                gross = absolute_quantity * fill_price
-                fee = gross * policy.fee_rate
-                if side == "buy":
-                    affordable = int(cash / (fill_price * (1 + policy.fee_rate)))
-                    absolute_quantity = min(absolute_quantity, affordable)
-                    if absolute_quantity <= 0:
-                        interventions.append(
-                            RiskIntervention(
-                                date=date,
-                                code=code,
-                                rule="cash_limit",
-                                detail="Buy was rejected because settled cash was insufficient.",
-                            )
-                        )
-                        continue
-                    gross = absolute_quantity * fill_price
-                    fee = gross * policy.fee_rate
-                    old = positions.get(code, _Position(0, 0.0))
-                    new_shares = old.shares + absolute_quantity
-                    average_cost = (
-                        (old.average_cost * old.shares + gross + fee) / new_shares
-                        if new_shares
-                        else 0.0
-                    )
-                    positions[code] = _Position(new_shares, average_cost)
-                    cash -= gross + fee
-                else:
-                    absolute_quantity = min(absolute_quantity, current_shares)
-                    if absolute_quantity <= 0:
-                        continue
-                    gross = absolute_quantity * fill_price
-                    fee = gross * policy.fee_rate
-                    remaining = current_shares - absolute_quantity
-                    cash += gross - fee
-                    if remaining:
-                        positions[code].shares = remaining
-                    else:
-                        positions.pop(code, None)
-                fees_paid += fee
-                traded_gross += gross
-                trades.append(
-                    BacktestTrade(
-                        date=date,
-                        code=code,
-                        side=side,
-                        quantity=absolute_quantity,
-                        fill_price=round(fill_price, 4),
-                        gross_value=round(gross, 2),
-                        fee=round(fee, 2),
-                        reason=pending_reason,
-                    )
-                )
+            average_volumes = {
+                code: (statistics.fmean(item.volume for item in history[-20:]) if history else None)
+                for code, history in histories.items()
+            }
+            (
+                cash,
+                pending_settlements,
+                session_trades,
+                session_interventions,
+                session_fees,
+                session_gross,
+                _,
+            ) = _execute_target_weights(
+                date=date,
+                session_number=session_index,
+                opening_nav=opening_nav,
+                settled_cash=cash,
+                pending_settlements=pending_settlements,
+                positions=positions,
+                target_weights=pending_weights,
+                bars=current,
+                average_volumes=average_volumes,
+                policy=policy,
+                reason=pending_reason,
+            )
+            trades.extend(session_trades)
+            interventions.extend(session_interventions)
+            fees_paid += session_fees
+            traded_gross += session_gross
             pending_weights = None
 
         previous_closes: list[float] = []
@@ -613,13 +1353,18 @@ def run_backtest(
                 if previous_close > 0
             )
 
-        nav = cash
+        nav = cash + sum(item.amount for item in pending_settlements)
+        position_value = 0.0
         for code, position in positions.items():
             bar = current.get(code)
             if bar is not None:
-                nav += position.shares * bar.close
+                marked_value = position.shares * bar.close
+                nav += marked_value
+                position_value += marked_value
             elif histories[code]:
-                nav += position.shares * histories[code][-1].close
+                marked_value = position.shares * histories[code][-1].close
+                nav += marked_value
+                position_value += marked_value
                 interventions.append(
                     RiskIntervention(
                         date=date,
@@ -633,7 +1378,7 @@ def run_backtest(
                 )
         peak_nav = max(peak_nav, nav)
         drawdown = 1.0 - nav / peak_nav if peak_nav > 0 else 0.0
-        gross_exposure = (nav - cash) / nav if nav > 0 else 0.0
+        gross_exposure = position_value / nav if nav > 0 else 0.0
         curve.append(
             EquityPoint(
                 date=date,
@@ -681,7 +1426,13 @@ def run_backtest(
             and session_index % strategy.rebalance_sessions == 0
             and pending_weights is None
         ):
-            latest_target_weights = _target_weights(strategy, policy, histories, security_by_code)
+            latest_target_weights = _target_weights(
+                strategy,
+                policy,
+                histories,
+                security_by_code,
+                current_weights=latest_target_weights,
+            )
             pending_weights = latest_target_weights
             pending_reason = "scheduled point-in-time rebalance"
 
@@ -739,7 +1490,7 @@ def run_backtest(
 def advance_shadow_portfolio(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"],
+    strategy_key: str,
     securities: list[StrategySecurity],
     previous: ShadowState,
     target_weights: dict[str, float],
@@ -752,7 +1503,7 @@ def advance_shadow_portfolio(
     session's adjusted open and the function forms the next target only after observing this close.
     """
 
-    strategy = STRATEGIES[strategy_key]
+    strategy = get_strategy_definition(strategy_key)
     if strategy.market != market:
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
     if not securities:
@@ -765,127 +1516,76 @@ def advance_shadow_portfolio(
     if policy.market != market:
         raise ValueError("risk policy belongs to another market")
     by_code = {security.code: security for security in securities}
+    missing_held_codes = sorted(set(previous.positions) - set(by_code))
+    if missing_held_codes:
+        raise ValueError(
+            "shadow portfolio cannot advance without current history for held positions: "
+            + ", ".join(missing_held_codes)
+        )
     positions = {
         code: _Position(position.shares, position.average_cost)
         for code, position in previous.positions.items()
     }
-    cash = previous.cash
-    trades: list[BacktestTrade] = []
-    interventions: list[RiskIntervention] = []
-    session_fees = 0.0
-    session_turnover = 0.0
-
-    opening_nav = cash + sum(
-        position.shares * by_code[code].bars[-1].open
-        for code, position in positions.items()
-        if code in by_code
+    released_settlements = [
+        settlement
+        for settlement in previous.pending_settlements
+        if settlement.release_session <= session_number
+    ]
+    released_cash, pending_settlements = _release_settlements(
+        previous.pending_settlements,
+        session_number=session_number,
     )
-    for code in sorted(set(positions) | set(target_weights)):
-        security = by_code.get(code)
-        if security is None or len(security.bars) < 21:
-            continue
-        bar = security.bars[-1]
-        current_shares = positions.get(code, _Position(0, 0)).shares
-        desired_shares = int(opening_nav * target_weights.get(code, 0.0) / bar.open)
-        quantity = desired_shares - current_shares
-        intended_quantity = abs(quantity)
-        average_volume = statistics.fmean(item.volume for item in security.bars[-21:-1])
-        maximum_quantity = int(average_volume * policy.max_adv_participation)
-        quantity = max(-maximum_quantity, min(maximum_quantity, quantity))
-        constraint_notes: list[str] = []
-        if abs(quantity) < intended_quantity:
-            constraint_notes.append("adv_capacity")
-            interventions.append(
-                RiskIntervention(
-                    date=date,
-                    code=code,
-                    rule="adv_capacity",
-                    detail=(
-                        f"Order constrained from {intended_quantity} to {abs(quantity)} shares "
-                        "by the mandate ADV participation ceiling."
-                    ),
-                )
-            )
-        if quantity == 0:
-            continue
-        side: Literal["buy", "sell"] = "buy" if quantity > 0 else "sell"
-        fill_price = bar.open * (
-            1 + policy.slippage_rate if side == "buy" else 1 - policy.slippage_rate
-        )
-        absolute_quantity = abs(quantity)
-        if side == "buy":
-            affordable = int(cash / (fill_price * (1 + policy.fee_rate)))
-            before_cash_constraint = absolute_quantity
-            absolute_quantity = min(absolute_quantity, affordable)
-            if absolute_quantity <= 0:
-                interventions.append(
-                    RiskIntervention(
-                        date=date,
-                        code=code,
-                        rule="cash_limit",
-                        detail="Buy rejected because settled shadow cash was insufficient.",
-                    )
-                )
-                continue
-            if absolute_quantity < before_cash_constraint:
-                constraint_notes.append("cash_capacity")
-                interventions.append(
-                    RiskIntervention(
-                        date=date,
-                        code=code,
-                        rule="cash_capacity",
-                        detail=(
-                            f"Order constrained from {before_cash_constraint} to "
-                            f"{absolute_quantity} shares by settled shadow cash."
-                        ),
-                    )
-                )
-            gross = absolute_quantity * fill_price
-            fee = gross * policy.fee_rate
-            old = positions.get(code, _Position(0, 0))
-            new_shares = old.shares + absolute_quantity
-            positions[code] = _Position(
-                shares=new_shares,
-                average_cost=(old.average_cost * old.shares + gross + fee) / new_shares,
-            )
-            cash -= gross + fee
-        else:
-            absolute_quantity = min(absolute_quantity, current_shares)
-            if absolute_quantity <= 0:
-                continue
-            gross = absolute_quantity * fill_price
-            fee = gross * policy.fee_rate
-            cash += gross - fee
-            remaining = current_shares - absolute_quantity
-            if remaining:
-                positions[code].shares = remaining
-            else:
-                positions.pop(code, None)
-        session_fees += fee
-        session_turnover += gross
-        trades.append(
-            BacktestTrade(
-                date=date,
-                code=code,
-                side=side,
-                quantity=absolute_quantity,
-                fill_price=round(fill_price, 4),
-                gross_value=round(gross, 2),
-                fee=round(fee, 2),
-                reason="prior-close shadow target",
-                intended_quantity=intended_quantity,
-                constraint_notes=constraint_notes,
-            )
-        )
+    cash = previous.cash + released_cash
 
-    nav = cash + sum(
+    opening_nav = (
+        cash
+        + sum(item.amount for item in pending_settlements)
+        + sum(
+            position.shares * by_code[code].bars[-1].open
+            for code, position in positions.items()
+            if code in by_code
+        )
+    )
+    current_bars = {code: security.bars[-1] for code, security in by_code.items() if security.bars}
+    average_volumes = {
+        code: (
+            statistics.fmean(item.volume for item in security.bars[-21:-1])
+            if len(security.bars) >= 21
+            else None
+        )
+        for code, security in by_code.items()
+    }
+    (
+        cash,
+        pending_settlements,
+        trades,
+        interventions,
+        session_fees,
+        session_turnover,
+        accounting_fills,
+    ) = _execute_target_weights(
+        date=date,
+        session_number=session_number,
+        opening_nav=opening_nav,
+        settled_cash=cash,
+        pending_settlements=pending_settlements,
+        positions=positions,
+        target_weights=target_weights,
+        bars=current_bars,
+        average_volumes=average_volumes,
+        policy=policy,
+        reason="prior-close shadow target",
+    )
+
+    position_value = sum(
         position.shares * by_code[code].bars[-1].close
         for code, position in positions.items()
         if code in by_code
     )
+    nav = cash + sum(item.amount for item in pending_settlements) + position_value
     peak_nav = max(previous.peak_nav, nav)
     drawdown = 1 - nav / peak_nav if peak_nav > 0 else 0.0
-    gross_exposure = (nav - cash) / nav if nav > 0 else 0.0
+    gross_exposure = position_value / nav if nav > 0 else 0.0
     benchmark_returns = [
         security.bars[-1].close / security.bars[-2].close - 1
         for security in securities
@@ -896,7 +1596,13 @@ def advance_shadow_portfolio(
     )
     histories = {security.code: security.bars for security in securities}
     next_targets = (
-        _target_weights(strategy, policy, histories, by_code)
+        _target_weights(
+            strategy,
+            policy,
+            histories,
+            by_code,
+            current_weights=target_weights,
+        )
         if session_number % strategy.rebalance_sessions == 0
         else target_weights.copy()
     )
@@ -930,10 +1636,21 @@ def advance_shadow_portfolio(
             code: ShadowPosition(shares=position.shares, average_cost=position.average_cost)
             for code, position in positions.items()
         },
+        pending_settlements=pending_settlements,
         peak_nav=round(peak_nav, 4),
         benchmark_nav=round(benchmark_nav, 4),
         cumulative_fees=round(previous.cumulative_fees + session_fees, 4),
         cumulative_turnover=round(previous.cumulative_turnover + session_turnover, 4),
+    )
+    accounting_events = _advance_accounting_events(
+        date=date,
+        session_number=session_number,
+        released_settlements=released_settlements,
+        fills=accounting_fills,
+        state=state,
+        nav=nav,
+        gross_exposure_pct=gross_exposure * 100,
+        drawdown_pct=drawdown * 100,
     )
     return ShadowAdvanceResult(
         date=date,
@@ -944,4 +1661,5 @@ def advance_shadow_portfolio(
         trades=trades,
         risk_interventions=interventions,
         next_target_weights=next_targets,
+        accounting_events=accounting_events,
     )

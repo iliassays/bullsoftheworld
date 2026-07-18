@@ -163,6 +163,24 @@ describe("research API tenant boundary", () => {
     });
   });
 
+  it("rejects a strategy catalog crossing the market boundary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse([
+          {
+            key: "us_leader_capture_v1",
+            market: "US",
+          },
+        ]),
+      ),
+    );
+
+    await expect(researchApi.strategies("workspace-dse")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
   it("rejects a shadow portfolio crossing the market boundary", async () => {
     vi.stubGlobal(
       "fetch",
@@ -347,6 +365,38 @@ describe("research API tenant boundary", () => {
         method: "PUT",
         body: expect.stringContaining('"strategy_key":"dse_reversal_v1"'),
       }),
+    );
+  });
+
+  it("loads only the DSE-bound intraday strategy readiness contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      workspaceId: "workspace-dse",
+      tenantId: "bullsofdhaka",
+      market: "DSE",
+      strategyKey: "dse_trend_pullback_intraday_v1",
+      state: "data_blocked",
+      barKind: "sampled_delayed_quote",
+      timeQuality: "ingestion_upper_bound",
+      capturedSessions: 1,
+      completeSessions: 0,
+      eligibleCaptureSessions: 0,
+      requiredCompleteSessions: 60,
+      observationCount: 396,
+      barCount: 396,
+      firstSession: "2026-07-19",
+      latestSession: "2026-07-19",
+      historicalDiagnosticEligible: false,
+      blockers: ["More history is required."],
+      latestQuality: null,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const readiness = await researchApi.strategyDataReadiness("workspace-dse");
+
+    expect(readiness.historicalDiagnosticEligible).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/workspaces/workspace-dse/strategy-data-readiness"),
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 });

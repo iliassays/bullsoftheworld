@@ -54,7 +54,6 @@ export function summarizeStrategyBooks(
   portfolios: readonly ShadowPortfolio[],
 ): StrategyBookSummary[] {
   return portfolios.map((portfolio) => {
-    const initial = portfolio.snapshots[0];
     const latest = portfolio.snapshots.at(-1);
     const positions = latest?.positions ?? {};
     const targets = latest?.targetWeights ?? {};
@@ -64,11 +63,11 @@ export function summarizeStrategyBooks(
     const queuedExits = Object.keys(positions).filter(
       (code) => (targets[code] ?? 0) <= 0,
     ).length;
-    const netReturnPct = latest && initial && initial.nav > 0
-      ? (latest.nav / initial.nav - 1) * 100
+    const netReturnPct = latest && portfolio.initialCapital > 0
+      ? (latest.nav / portfolio.initialCapital - 1) * 100
       : 0;
-    const benchmarkReturnPct = latest && initial && initial.benchmarkNav > 0
-      ? (latest.benchmarkNav / initial.benchmarkNav - 1) * 100
+    const benchmarkReturnPct = latest && portfolio.initialCapital > 0
+      ? (latest.benchmarkNav / portfolio.initialCapital - 1) * 100
       : 0;
 
     return {
@@ -120,12 +119,12 @@ export function buildDecisionActions(
           ? "Increase"
           : "Reduce";
     actions.push({
-      id: `target:${target.sessionNumber}:${target.code}:${target.action}`,
+      id: `target:${target.portfolioId ?? "book"}:${target.sessionNumber}:${target.code}:${target.action}`,
       kind: "target",
       state: "next_session",
       code: target.code,
       title: `${verb} target formed`,
-      detail: `${(target.previousWeight * 100).toFixed(1)}% to ${(target.targetWeight * 100).toFixed(1)}% portfolio weight. This is an instruction for the next eligible paper fill, not a completed trade.`,
+      detail: `${target.bookName ? `${target.bookName}: ` : ""}${(target.previousWeight * 100).toFixed(1)}% to ${(target.targetWeight * 100).toFixed(1)}% portfolio weight. This is an instruction for the next eligible paper fill, not a completed trade.`,
       date: target.date || null,
     });
   }
@@ -137,7 +136,7 @@ export function buildDecisionActions(
       state: "completed",
       code: execution.code,
       title: `${execution.side === "buy" ? "Buy" : "Sell"} paper fill completed`,
-      detail: `${execution.quantity.toLocaleString("en-US")} shares at ${execution.fillPrice.toFixed(2)}, including a recorded fee of ${execution.fee.toFixed(2)}.`,
+      detail: `${execution.bookName ? `${execution.bookName}: ` : ""}${execution.quantity.toLocaleString("en-US")} shares at ${execution.fillPrice.toFixed(2)}, including a recorded fee of ${execution.fee.toFixed(2)}.`,
       date: execution.date,
     });
   }
