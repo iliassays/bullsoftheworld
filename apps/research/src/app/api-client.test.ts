@@ -220,6 +220,68 @@ describe("research API tenant boundary", () => {
     });
   });
 
+  it("rejects a nested strategy trial crossing the investment boundary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          workspaceId: "workspace-dse",
+          tenantId: "bullsofdhaka",
+          market: "DSE",
+          mandate: {
+            workspaceId: "workspace-dse",
+            tenantId: "bullsofdhaka",
+            market: "DSE",
+          },
+          trials: [
+            {
+              workspaceId: "workspace-us",
+              tenantId: "bullsofwallst",
+              market: "US",
+            },
+          ],
+          portfolios: [],
+        }),
+      ),
+    );
+
+    await expect(researchApi.investmentOperatingView("workspace-dse")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
+  it("rejects a portfolio mandate crossing the investment boundary", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          workspaceId: "workspace-dse",
+          tenantId: "bullsofdhaka",
+          market: "DSE",
+          mandate: {
+            workspaceId: "workspace-dse",
+            tenantId: "bullsofdhaka",
+            market: "DSE",
+          },
+          trials: [],
+          portfolios: [
+            {
+              mandate: {
+                workspaceId: "workspace-us",
+                tenantId: "bullsofwallst",
+                market: "US",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(researchApi.investmentOperatingView("workspace-dse")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
   it("sends a complete bounded automation policy to the workspace endpoint", async () => {
     const body = {
       id: "policy-dse",

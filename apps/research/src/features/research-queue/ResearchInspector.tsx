@@ -113,7 +113,7 @@ export function ResearchInspector({ candidate }: { candidate: ResearchCandidate 
           </span>
         </div>
         <span className="research-inspector__priority">
-          <small>Research priority</small>
+          <small>Research urgency</small>
           <strong className="tnum">{candidate.priority}</strong>
           {candidate.methodologyVersion && <small>{candidate.methodologyVersion}</small>}
         </span>

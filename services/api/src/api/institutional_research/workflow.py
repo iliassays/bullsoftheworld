@@ -13,6 +13,13 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.institutional_research.dossier import build_company_dossier
+from api.institutional_research.investment import (
+    complete_strategy_trial,
+    get_active_mandate,
+    mandate_snapshot,
+    register_strategy_trial,
+    risk_policy_from_mandate,
+)
 from api.institutional_research.lineage import (
     build_evidence_source_snapshots,
     persist_run_evidence,
@@ -27,6 +34,7 @@ from bulls.analytics.research_loop import (
 )
 from bulls.analytics.research_strategy import (
     ENGINE_VERSION,
+    STRATEGIES,
     StrategyBar,
     StrategySecurity,
     run_backtest,
@@ -632,9 +640,7 @@ async def _backtest_universe(
         )
         .limit(request.universe_limit)
     )
-    rows = (
-        await session.execute(apply_research_product_scope(statement, market=market))
-    ).all()
+    rows = (await session.execute(apply_research_product_scope(statement, market=market))).all()
     if not rows:
         return []
     symbols = {symbol.code: symbol for symbol, _ in rows}
@@ -692,17 +698,34 @@ async def execute_backtest(
     )
     if existing is not None:
         return await load_research_run(session, workspace=workspace, run_id=existing.id)
-    securities = await _backtest_universe(session, market=workspace.market, request=request)
-    result = run_backtest(
-        market=workspace.market,
-        strategy_key=request.strategy_key,
-        securities=securities,
-        initial_capital=request.initial_capital,
-        inactive_security_history_complete=False,
-        point_in_time_inputs_complete=False,
+    strategy = STRATEGIES[request.strategy_key]
+    if strategy.market != workspace.market:
+        raise ValueError(f"Strategy {strategy.key} is not registered for {workspace.market}")
+    mandate = await get_active_mandate(session, workspace=workspace)
+    if mandate is None:
+        raise ValueError("An active investment mandate is required before testing a strategy")
+    latest_market_date = request.end_date or await session.scalar(
+        select(func.max(DailyBar.date)).where(DailyBar.market == workspace.market)
     )
-    cutoff = dt.datetime.combine(result.end_date or dt.date.today(), dt.time.max, tzinfo=dt.UTC)
+    cutoff = dt.datetime.combine(latest_market_date or dt.date.today(), dt.time.max, tzinfo=dt.UTC)
     parameters = request.model_dump(mode="json")
+    risk_policy = risk_policy_from_mandate(mandate)
+    frozen_specification = {
+        "request": parameters,
+        "strategy": strategy.model_dump(mode="json"),
+        "risk_policy": risk_policy.model_dump(mode="json"),
+        "mandate": mandate_snapshot(mandate),
+        "execution": {
+            "signal_cutoff": "completed session close",
+            "earliest_fill": "next observable session open",
+            "long_only": True,
+        },
+        "validation": {
+            "chronological_splits": ["train", "validation", "test"],
+            "inactive_history_required_for_promotion": True,
+            "point_in_time_inputs_required_for_promotion": True,
+        },
+    }
     run = _new_run(
         workspace=workspace,
         user_id=user_id,
@@ -717,6 +740,36 @@ async def execute_backtest(
         cutoff=cutoff,
         code_version=ENGINE_VERSION,
     )
+    await _persist_run_parent(session, run)
+    trial = await register_strategy_trial(
+        session,
+        workspace=workspace,
+        run=run,
+        user_id=user_id,
+        strategy=strategy,
+        specification=frozen_specification,
+    )
+    securities = await _backtest_universe(session, market=workspace.market, request=request)
+    result = run_backtest(
+        market=workspace.market,
+        strategy_key=request.strategy_key,
+        securities=securities,
+        initial_capital=request.initial_capital,
+        inactive_security_history_complete=False,
+        point_in_time_inputs_complete=False,
+        risk_policy=risk_policy,
+    )
+    if trial.trial_sequence > 1:
+        family_gate = (
+            f"Strategy family attempt {trial.trial_sequence} requires an explicit "
+            "multiple-testing adjustment before promotion."
+        )
+        result = result.model_copy(
+            update={
+                "validation_status": "diagnostic",
+                "failed_gates": [*result.failed_gates, family_gate],
+            }
+        )
     run.evidence_snapshot_hash = _stable_hash(
         {
             security.code: _stable_hash(
@@ -735,13 +788,17 @@ async def execute_backtest(
             for security in securities
         }
     )
-    await _persist_run_parent(session, run)
     _add_step(
         session,
         run=run,
         ordinal=0,
         kind="experiment_plan",
-        output={"request": parameters, "engine_version": ENGINE_VERSION},
+        output={
+            "frozen_specification": frozen_specification,
+            "specification_hash": trial.specification_hash,
+            "registered_at": trial.registered_at.isoformat(),
+            "engine_version": ENGINE_VERSION,
+        },
     )
     _add_step(
         session,
@@ -792,6 +849,12 @@ async def execute_backtest(
     }
     run.status = "succeeded"
     run.completed_at = dt.datetime.now(dt.UTC)
+    await complete_strategy_trial(
+        session,
+        trial=trial,
+        validation_status=result.validation_status,
+        outcome=run.parameters["result_summary"],
+    )
     await session.flush()
     return await load_research_run(session, workspace=workspace, run_id=run.id)
 

@@ -12,11 +12,14 @@ from bulls.core.models import (
     ResearchDataEntitlement,
     ResearchDatasetEvaluation,
     ResearchDatasetSnapshot,
+    ResearchDecisionEvent,
+    ResearchInvestmentMandate,
     ResearchOutcomeObservation,
     ResearchRun,
     ResearchRunEvidence,
     ResearchShadowPortfolio,
     ResearchShadowSnapshot,
+    ResearchStrategyTrial,
     ResearchWorkspace,
 )
 
@@ -44,6 +47,9 @@ def test_research_private_tables_have_non_nullable_full_security_scope() -> None
         ResearchShadowPortfolio,
         ResearchShadowSnapshot,
         ResearchOutcomeObservation,
+        ResearchInvestmentMandate,
+        ResearchStrategyTrial,
+        ResearchDecisionEvent,
     ):
         for column_name in ("organization_id", "tenant_id", "market"):
             assert not model.__table__.c[column_name].nullable, model.__tablename__
@@ -235,3 +241,62 @@ def test_automation_policy_is_bound_to_workspace_and_requester_scope() -> None:
             "research_organization_memberships.market",
         ),
     ) in constraints
+
+
+def test_investment_governance_cannot_cross_workspace_market_or_portfolio() -> None:
+    mandate_constraints = _composite_foreign_keys(ResearchInvestmentMandate)
+    assert (
+        ("workspace_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_workspaces.id",
+            "research_workspaces.organization_id",
+            "research_workspaces.tenant_id",
+            "research_workspaces.market",
+        ),
+    ) in mandate_constraints
+
+    trial_constraints = _composite_foreign_keys(ResearchStrategyTrial)
+    assert (
+        ("source_run_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_runs.id",
+            "research_runs.organization_id",
+            "research_runs.tenant_id",
+            "research_runs.market",
+        ),
+    ) in trial_constraints
+
+    event_constraints = _composite_foreign_keys(ResearchDecisionEvent)
+    assert (
+        ("portfolio_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_shadow_portfolios.id",
+            "research_shadow_portfolios.organization_id",
+            "research_shadow_portfolios.tenant_id",
+            "research_shadow_portfolios.market",
+        ),
+    ) in event_constraints
+    assert (
+        ("snapshot_id", "organization_id", "tenant_id", "market"),
+        (
+            "research_shadow_snapshots.id",
+            "research_shadow_snapshots.organization_id",
+            "research_shadow_snapshots.tenant_id",
+            "research_shadow_snapshots.market",
+        ),
+    ) in event_constraints
+
+
+def test_decision_events_have_idempotent_ordered_lineage_contract() -> None:
+    constraints = {constraint.name for constraint in ResearchDecisionEvent.__table__.constraints}
+
+    assert "uq_research_decision_events_sequence" in constraints
+    assert "uq_research_decision_events_key" in constraints
+    assert {
+        "correlation_id",
+        "sequence",
+        "event_key",
+        "caused_by_event_key",
+        "payload_hash",
+        "effective_date",
+    } <= set(ResearchDecisionEvent.__table__.c.keys())

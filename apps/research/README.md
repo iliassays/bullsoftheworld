@@ -22,6 +22,11 @@ official dates and point-in-time US filing-cadence windows with explicit confide
 and lifecycle status. The existing organization schema does not imply that team invitations or
 administration are already available.
 
+The default `Today` screen is the portfolio-manager command surface. It composes risk
+interventions, next-session targets, completed paper fills, strategy-book posture, catalysts, and
+research attention while preserving their distinct meanings. The normative workflow is
+`../../docs/research/institutional-investment-operating-model.md`.
+
 US options intelligence is a planned, unimplemented Atlas evidence module. Its specification is
 `../../docs/research/us-options-flow-research-2026-07.md`. It must separate directional delta,
 volatility demand, opening/closing evidence, abnormality, liquidity, and stock/catalyst confirmation;
@@ -112,7 +117,8 @@ npm audit --audit-level=moderate
 
 ## Product guardrails
 
-- Queue priority ranks analyst attention, not expected return.
+- Queue urgency ranks which security to investigate sooner; new evidence and higher risk can both
+  raise it. It is not expected return, strategy eligibility, or a buy score.
 - Conclusions must retain primary evidence, counter-evidence, and a knowledge cutoff.
 - DSE and US share code and workflow contracts, but run as separate tenant-bound deployments with
   market-specific evidence adapters and server-side authorization.

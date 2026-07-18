@@ -15,6 +15,12 @@ from api.institutional_research.dossier import (
     ResearchSecurityNotFound,
     build_company_dossier,
 )
+from api.institutional_research.investment import (
+    get_active_mandate,
+    load_investment_operating_view,
+    mandate_out,
+    replace_active_mandate,
+)
 from api.institutional_research.lifecycle import (
     automation_policy_out,
     get_automation_policy,
@@ -39,6 +45,9 @@ from api.institutional_research.schemas import (
     CatalystCalendarOut,
     CompanyDossierOut,
     CreateShadowPortfolioRequest,
+    InvestmentMandateOut,
+    InvestmentMandateUpdate,
+    InvestmentOperatingViewOut,
     LifecycleDispatchOut,
     ResearchQueueSnapshotOut,
     ResearchRunOut,
@@ -240,6 +249,105 @@ async def configure_automation(
             status_code=503, detail="Research automation queue unavailable"
         ) from None
     return automation_policy_out(policy)
+
+
+@router.get("/workspaces/{workspace_id}/investment-mandate")
+async def investment_mandate(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> InvestmentMandateOut:
+    """Return the active, versioned portfolio authority for this market workspace."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    mandate = await get_active_mandate(session, workspace=authorized.workspace)
+    if mandate is None:
+        raise HTTPException(status_code=409, detail="Investment mandate is not configured")
+    return mandate_out(mandate)
+
+
+@router.put("/workspaces/{workspace_id}/investment-mandate")
+async def configure_investment_mandate(
+    workspace_id: uuid.UUID,
+    payload: InvestmentMandateUpdate,
+    request: Request,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> InvestmentMandateOut:
+    """Create a new mandate version; existing paper books retain their pinned version."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.MANAGE_RISK,
+    )
+    try:
+        mandate = await replace_active_mandate(
+            session,
+            workspace=authorized.workspace,
+            user_id=user.id,
+            payload=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    record_research_audit_event(
+        session,
+        workspace=authorized.workspace,
+        actor_user_id=user.id,
+        event_type="investment_mandate_replaced",
+        resource_type="investment_mandate",
+        resource_id=str(mandate.id),
+        request_id=getattr(request.state, "request_id", None),
+        attributes={
+            "version": mandate.version,
+            "specification_hash": mandate.specification_hash,
+        },
+    )
+    return mandate
+
+
+@router.get("/workspaces/{workspace_id}/investment-operating-view")
+async def investment_operating_view(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> InvestmentOperatingViewOut:
+    """Compose mandate, trial, risk, attribution, and decision-lineage read models."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    try:
+        return await load_investment_operating_view(session, workspace=authorized.workspace)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 @router.post("/workspaces/{workspace_id}/automation/run", status_code=202)
@@ -470,9 +578,7 @@ async def company_option_chain(
         Symbol.is_hidden.is_(False),
         Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
     )
-    symbol = await session.scalar(
-        apply_research_product_scope(symbol_statement, market="US")
-    )
+    symbol = await session.scalar(apply_research_product_scope(symbol_statement, market="US"))
     if symbol is None:
         raise HTTPException(
             status_code=404,

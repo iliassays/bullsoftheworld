@@ -9,6 +9,13 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.institutional_research.investment import (
+    get_active_mandate,
+    mandate_snapshot,
+    mark_trial_shadow,
+    record_snapshot_decision_events,
+    risk_policy_from_snapshot,
+)
 from api.institutional_research.schemas import (
     BacktestRequest,
     CalibrationObservationOut,
@@ -28,6 +35,7 @@ from bulls.core.models import (
     ResearchOutcomeObservation,
     ResearchShadowPortfolio,
     ResearchShadowSnapshot,
+    ResearchStrategyTrial,
     ResearchWorkspace,
 )
 
@@ -126,6 +134,10 @@ async def create_shadow_portfolio(
     # liquid names on every reconciliation would introduce survivorship and universe drift.
     backtest_request["codes"] = observable_codes
     backtest_request["universe_limit"] = max(5, min(30, len(observable_codes) or 5))
+    mandate = await get_active_mandate(session, workspace=workspace)
+    if mandate is None:
+        raise ValueError("An active investment mandate is required before starting a shadow book")
+    pinned_mandate = mandate_snapshot(mandate)
     portfolio = ResearchShadowPortfolio(
         id=uuid.uuid4(),
         organization_id=workspace.organization_id,
@@ -146,33 +158,41 @@ async def create_shadow_portfolio(
             "source_validation_status": result["validation_status"],
             "source_failed_gates": result["failed_gates"],
             "engine_version": result["engine_version"],
+            "mandate": pinned_mandate,
+            "mandate_binding": "pinned_at_inception",
         },
     )
     session.add(portfolio)
-    session.add(
-        ResearchShadowSnapshot(
-            id=uuid.uuid4(),
-            portfolio_id=portfolio.id,
-            organization_id=workspace.organization_id,
-            tenant_id=workspace.tenant_id,
-            market=workspace.market,
-            as_of_date=portfolio.inception_date,
-            session_number=0,
-            nav=initial_capital,
-            cash=initial_capital,
-            benchmark_nav=initial_capital,
-            peak_nav=initial_capital,
-            gross_exposure_pct=Decimal("0"),
-            drawdown_pct=Decimal("0"),
-            cumulative_fees=Decimal("0"),
-            cumulative_turnover=Decimal("0"),
-            positions={},
-            target_weights=result["latest_target_weights"],
-            trades=[],
-            risk_interventions=[],
-        )
+    initial_snapshot = ResearchShadowSnapshot(
+        id=uuid.uuid4(),
+        portfolio_id=portfolio.id,
+        organization_id=workspace.organization_id,
+        tenant_id=workspace.tenant_id,
+        market=workspace.market,
+        as_of_date=portfolio.inception_date,
+        session_number=0,
+        nav=initial_capital,
+        cash=initial_capital,
+        benchmark_nav=initial_capital,
+        peak_nav=initial_capital,
+        gross_exposure_pct=Decimal("0"),
+        drawdown_pct=Decimal("0"),
+        cumulative_fees=Decimal("0"),
+        cumulative_turnover=Decimal("0"),
+        positions={},
+        target_weights=result["latest_target_weights"],
+        trades=[],
+        risk_interventions=[],
     )
+    session.add(initial_snapshot)
     await session.flush()
+    await record_snapshot_decision_events(
+        session,
+        portfolio=portfolio,
+        snapshot=initial_snapshot,
+        previous=None,
+    )
+    await mark_trial_shadow(session, source_run_id=run.id, workspace=workspace)
     await _evaluate_portfolio_promotion(session, portfolio=portfolio)
     return await _portfolio_out(session, portfolio)
 
@@ -208,6 +228,23 @@ async def _evaluate_portfolio_promotion(
             "capital_action": "none",
         },
     }
+    trial = await session.scalar(
+        select(ResearchStrategyTrial).where(
+            ResearchStrategyTrial.source_run_id == portfolio.source_run_id,
+            ResearchStrategyTrial.workspace_id == portfolio.workspace_id,
+            ResearchStrategyTrial.organization_id == portfolio.organization_id,
+            ResearchStrategyTrial.tenant_id == portfolio.tenant_id,
+            ResearchStrategyTrial.market == portfolio.market,
+        )
+    )
+    if trial is not None:
+        trial.status = (
+            "eligible"
+            if decision.status == "eligible"
+            else "rejected"
+            if decision.status == "rejected"
+            else "shadow"
+        )
     await session.flush()
 
 
@@ -237,6 +274,19 @@ async def _refresh_shadow_portfolio(
     )
     if latest_market_date is None or latest_market_date <= latest.as_of_date:
         return
+    pinned_mandate = portfolio.configuration.get("mandate")
+    if not isinstance(pinned_mandate, dict):
+        portfolio.status = "paused"
+        portfolio.configuration = {
+            **portfolio.configuration,
+            "refresh_error": (
+                "Shadow advancement stopped because this legacy book has no pinned investment "
+                "mandate. Recreate it from its registered trial."
+            ),
+        }
+        await session.flush()
+        return
+    risk_policy = risk_policy_from_snapshot(pinned_mandate, portfolio.market)
     request_data = dict(portfolio.configuration.get("backtest_request", {}))
     request_data.update(
         {
@@ -273,6 +323,7 @@ async def _refresh_shadow_portfolio(
                 ),
             }
             break
+        previous_snapshot = latest
         previous = ShadowState(
             cash=float(latest.cash),
             positions=latest.positions,
@@ -288,6 +339,7 @@ async def _refresh_shadow_portfolio(
             previous=previous,
             target_weights={key: float(value) for key, value in latest.target_weights.items()},
             session_number=latest.session_number + 1,
+            risk_policy=risk_policy,
         )
         latest = ResearchShadowSnapshot(
             id=uuid.uuid4(),
@@ -318,6 +370,12 @@ async def _refresh_shadow_portfolio(
         session.add(latest)
         portfolio.last_evaluated_on = advanced.date
         await session.flush()
+        await record_snapshot_decision_events(
+            session,
+            portfolio=portfolio,
+            snapshot=latest,
+            previous=previous_snapshot,
+        )
     await _evaluate_portfolio_promotion(session, portfolio=portfolio)
 
 
@@ -352,7 +410,7 @@ async def reconcile_shadow_portfolios(
                 ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
                 ResearchShadowPortfolio.market == workspace.market,
                 ResearchShadowPortfolio.status == "active",
-            )
+            ).with_for_update()
         )
     )
     for portfolio in portfolios:

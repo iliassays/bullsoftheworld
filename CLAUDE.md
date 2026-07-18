@@ -37,6 +37,14 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
     account count or impressions. Retail activation is starting a watchlist (any number of
     stocks — no fixed pick-count target as of 2026-07-15) plus a later research action.
     Institutional enquiries are a separate consented, tenant-scoped funnel. Never market returns.
+11. **Atlas investment mandate.** Capital preservation, reproducibility and honest abstention come
+    before strategy count or headline returns. The owner prefers strong-trend continuation after a
+    controlled micro-pullback, but has delegated strategy adoption to evidence rather than taste.
+    Run only a small set of independent, preregistered paper experiments; keep each book, score,
+    benchmark and rejection reason separate. A weak or untestable strategy must remain parked.
+    Read `docs/research/atlas-investment-mandate.md` before changing Atlas strategies, paper books,
+    execution assumptions or promotion gates, and read
+    `docs/research/institutional-investment-operating-model.md` before changing its product loop.
 
 ## Stack
 

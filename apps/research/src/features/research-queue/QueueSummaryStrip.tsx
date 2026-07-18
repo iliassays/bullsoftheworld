@@ -8,7 +8,7 @@ import {
 import type { QueueSummary } from "./model";
 
 const items = [
-  { key: "total", label: "Ranked shortlist", icon: ListChecks, tone: "neutral" },
+  { key: "total", label: "Research backlog", icon: ListChecks, tone: "neutral" },
   { key: "newEvidence", label: "Recent records", icon: FileDiff, tone: "info" },
   { key: "needsReview", label: "Needs review", icon: AlertTriangle, tone: "warning" },
   { key: "catalystSevenDays", label: "Catalysts · 7d", icon: CalendarClock, tone: "positive" },

@@ -257,6 +257,16 @@ Every autonomous conclusion records:
 
 ### Strategy, backtest and shadow-book contract
 
+The owner mandate, bounded DSE strategy portfolio, admission process, and trend-pullback research
+decision are maintained in `docs/research/atlas-investment-mandate.md`. That document is normative
+for strategy additions: architecture work must not bypass its data, validation, forward-evidence,
+multiple-testing, or naming boundaries.
+
+The product loop and information architecture are maintained in
+`docs/research/institutional-investment-operating-model.md`. Atlas is portfolio-first: the default
+surface must connect signal, evidence, target, constraint, execution, position, outcome, and
+attribution without collapsing those states.
+
 A strategy is immutable, versioned configuration over registered signals and risk policies. Natural
 language may compile into this contract later, but arbitrary generated Python is never executed.
 The same signal, portfolio-construction, cost and risk functions run in historical and shadow modes.
@@ -274,8 +284,9 @@ The same signal, portfolio-construction, cost and risk functions run in historic
   costs, capacity, data coverage, and known limitations. It cannot receive a `validated` label while
   survivorship, delisting, corporate-action, point-in-time, sample-length, or holdout gates fail.
 
-Research priority, autonomous thesis confidence, strategy performance, and portfolio risk are four
-different quantities. The UI and API must not collapse them into one score.
+Research urgency, autonomous thesis confidence, strategy performance, and portfolio risk are four
+different quantities. Urgency can increase because evidence is new or risk is high; it is not a buy
+rank. The UI and API must not collapse these quantities into one score.
 
 ### Model strategy
 

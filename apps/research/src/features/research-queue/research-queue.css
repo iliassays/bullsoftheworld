@@ -150,7 +150,6 @@
   }
 
   .queue-summary__coverage-track,
-  .queue-priority__track,
   .inspector-factor__track {
     display: block;
     height: 4px;
@@ -489,14 +488,10 @@
     font-size: 13px;
   }
 
-  .queue-priority__track {
-    width: 44px;
-  }
-
-  .queue-priority__track > span {
-    display: block;
-    height: 100%;
-    background: var(--accent);
+  .queue-priority small {
+    color: var(--text-faint);
+    font-size: 8px;
+    white-space: nowrap;
   }
 
   .queue-empty {

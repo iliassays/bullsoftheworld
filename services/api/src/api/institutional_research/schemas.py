@@ -423,6 +423,123 @@ class ResearchShadowPortfolioOut(ApiModel):
     snapshots: list[ResearchShadowSnapshotOut]
 
 
+class InvestmentMandateUpdate(ApiModel):
+    objective: str = Field(min_length=20, max_length=1000)
+    benchmark_key: str = Field(min_length=3, max_length=64, pattern="^[a-z0-9_]+$")
+    max_gross_exposure_pct: float = Field(gt=0, le=100)
+    min_cash_reserve_pct: float = Field(ge=0, lt=100)
+    max_position_weight_pct: float = Field(gt=0, le=100)
+    max_sector_weight_pct: float = Field(gt=0, le=100)
+    max_adv_participation_pct: float = Field(gt=0, le=100)
+    portfolio_drawdown_brake_pct: float = Field(gt=0, le=100)
+    stress_loss_limit_pct: float = Field(gt=0, le=100)
+
+    @model_validator(mode="after")
+    def retain_cash_inside_total_capital(self) -> InvestmentMandateUpdate:
+        if self.max_gross_exposure_pct + self.min_cash_reserve_pct > 100:
+            raise ValueError("gross exposure plus minimum cash reserve cannot exceed 100%")
+        if self.max_position_weight_pct > self.max_gross_exposure_pct:
+            raise ValueError("single-position limit cannot exceed gross-exposure limit")
+        if self.max_sector_weight_pct < self.max_position_weight_pct:
+            raise ValueError("sector limit cannot be smaller than single-position limit")
+        return self
+
+
+class InvestmentMandateOut(InvestmentMandateUpdate):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    version: int
+    status: Literal["active", "superseded"]
+    specification_hash: str
+    effective_at: dt.datetime
+    superseded_at: dt.datetime | None
+
+
+class StrategyTrialOut(ApiModel):
+    id: uuid.UUID
+    source_run_id: uuid.UUID
+    workspace_id: uuid.UUID
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    strategy_key: str
+    strategy_version: str
+    status: str
+    registration_state: Literal["preregistered", "legacy_reconstructed"]
+    trial_sequence: int
+    multiple_testing_policy: str
+    economic_hypothesis: str
+    specification: dict[str, Any]
+    specification_hash: str
+    outcome: dict[str, Any]
+    registered_at: dt.datetime
+    completed_at: dt.datetime | None
+
+
+class DecisionEventOut(ApiModel):
+    id: uuid.UUID
+    portfolio_id: uuid.UUID
+    snapshot_id: uuid.UUID
+    correlation_id: uuid.UUID
+    sequence: int
+    event_key: str
+    caused_by_event_key: str | None
+    event_type: str
+    event_state: str
+    code: str | None
+    effective_date: dt.date
+    payload: dict[str, Any]
+    payload_hash: str
+    recorded_at: dt.datetime
+
+
+class PortfolioRiskReportOut(ApiModel):
+    gross_exposure_pct: float
+    cash_reserve_pct: float
+    largest_position_pct: float
+    largest_sector_pct: float
+    concentration_hhi: float
+    effective_positions: float
+    weighted_average_correlation: float | None
+    maximum_pair_correlation: float | None
+    maximum_exit_days: float | None
+    limit_checks: list[dict[str, Any]]
+    stress_scenarios: list[dict[str, Any]]
+    breached_limits: list[str]
+    data_quality_notes: list[str]
+
+
+class PerformanceAttributionOut(ApiModel):
+    portfolio_return_pct: float
+    benchmark_return_pct: float
+    excess_return_pct: float
+    components: list[dict[str, Any]]
+    rejected_actions: int
+    methodology_version: str
+
+
+class PortfolioOperatingAnalyticsOut(ApiModel):
+    portfolio_id: uuid.UUID
+    as_of_date: dt.date | None
+    mandate: InvestmentMandateOut
+    mandate_version: int
+    mandate_binding: Literal["pinned", "legacy_active_fallback"]
+    risk: PortfolioRiskReportOut
+    attribution: PerformanceAttributionOut
+    recent_events: list[DecisionEventOut]
+
+
+class InvestmentOperatingViewOut(ApiModel):
+    workspace_id: uuid.UUID
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    generated_at: dt.datetime
+    mandate: InvestmentMandateOut
+    trials: list[StrategyTrialOut]
+    portfolios: list[PortfolioOperatingAnalyticsOut]
+
+
 class CalibrationObservationOut(ApiModel):
     id: uuid.UUID
     run_id: uuid.UUID

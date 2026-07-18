@@ -1,10 +1,10 @@
-import { AlertTriangle, FlaskConical, Play, ShieldCheck, TestTube2, WalletCards } from "lucide-react";
+import { AlertTriangle, FileLock2, FlaskConical, Play, ShieldCheck, TestTube2, WalletCards } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { researchDeployment } from "../../app/deployment";
 import { Button, SelectField, StatusBadge, type SelectOption } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
-import { useCreateShadowPortfolio, useResearchRun, useResearchRuns, useRunBacktest } from "./hooks";
+import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest } from "./hooks";
 import { backtestResult } from "./model";
 import { PerformanceChart } from "./PerformanceChart";
 
@@ -21,12 +21,17 @@ export function HypothesisLabPage() {
   const workspaces = useResearchWorkspaces();
   const workspace = workspaces.data?.[0];
   const runs = useResearchRuns(workspace?.id);
+  const operating = useInvestmentOperatingView(workspace?.id);
   const latestSummary = runs.data?.find((run) => run.runKind === "hypothesis");
   const latest = useResearchRun(workspace?.id, latestSummary?.id);
   const runBacktest = useRunBacktest(workspace?.id);
   const createShadow = useCreateShadowPortfolio(workspace?.id);
   const activeRun = runBacktest.data ?? latest.data;
   const result = useMemo(() => backtestResult(activeRun), [activeRun]);
+  const trial = useMemo(
+    () => operating.data?.trials.find((item) => item.sourceRunId === activeRun?.id),
+    [activeRun?.id, operating.data?.trials],
+  );
   const [capTier, setCapTier] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -72,6 +77,24 @@ export function HypothesisLabPage() {
             <section className="atlas-empty"><TestTube2 aria-hidden="true" size={28} /><h2>No completed experiment</h2><p>Run the market-bound registered strategy. Atlas will retain every input, result, failure gate, and evidence fingerprint.</p></section>
           ) : (
             <>
+              <section className="atlas-panel trial-registration">
+                <header>
+                  <FileLock2 aria-hidden="true" size={16} />
+                  <span><strong>Trial registration</strong><small>Frozen before simulation; failures remain in the registry</small></span>
+                  <StatusBadge tone={trial?.registrationState === "preregistered" ? "positive" : "warning"}>{trial?.registrationState === "preregistered" ? "Preregistered" : "Legacy reconstructed"}</StatusBadge>
+                </header>
+                {trial ? (
+                  <div>
+                    <span><small>Economic mechanism</small><strong>{trial.economicHypothesis}</strong></span>
+                    <span><small>Method version</small><strong>{trial.strategyVersion}</strong></span>
+                    <span><small>Specification hash</small><strong title={trial.specificationHash}>{trial.specificationHash.slice(0, 14)}…</strong></span>
+                    <span><small>Registry state</small><strong>{trial.status} · family attempt {trial.trialSequence}</strong></span>
+                  </div>
+                ) : (
+                  <p className="portfolio-data-note">This result predates the strategy-trial registry. It cannot be represented as preregistered.</p>
+                )}
+              </section>
+
               <section className="atlas-panel result-overview">
                 <header><span><strong>{result.strategy.name}</strong><small>{result.startDate ?? "No first session"} to {result.endDate ?? "No last session"}</small></span><StatusBadge tone={result.validationStatus === "eligible_for_shadow" ? "positive" : "warning"} dot>{result.validationStatus === "eligible_for_shadow" ? "Shadow eligible" : "Diagnostic only"}</StatusBadge></header>
                 <div className="atlas-kpis">

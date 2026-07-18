@@ -36,6 +36,13 @@
     line-height: 1.45;
   }
 
+  .atlas-page-header__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
   .atlas-panel {
     overflow: hidden;
     border: 1px solid var(--border);
@@ -408,6 +415,46 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
     margin-top: 14px;
+  }
+
+  .strategy-selection-guide {
+    margin-bottom: 14px;
+  }
+
+  .strategy-selection-guide > header {
+    justify-content: flex-start;
+  }
+
+  .strategy-selection-guide > div {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .strategy-selection-guide > div > span {
+    display: flex;
+    min-height: 94px;
+    flex-direction: column;
+    gap: 7px;
+    border-right: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .strategy-selection-guide > div > span:last-child {
+    border-right: 0;
+  }
+
+  .strategy-selection-guide small {
+    color: var(--accent-strong);
+    font-size: 9px;
+    font-weight: 740;
+    text-transform: uppercase;
+  }
+
+  .strategy-selection-guide strong {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 580;
+    line-height: 1.5;
   }
 
   .portfolio-stop {
@@ -1004,10 +1051,28 @@
       flex-direction: column;
     }
 
+    .atlas-page-header__actions {
+      width: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
     .lab-layout,
     .portfolio-grid,
     .memory-grid {
       grid-template-columns: 1fr;
+    }
+
+    .strategy-selection-guide > div {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .strategy-selection-guide > div > span:nth-child(2) {
+      border-right: 0;
+    }
+
+    .strategy-selection-guide > div > span:nth-child(-n + 2) {
+      border-bottom: 1px solid var(--border);
     }
 
     .lab-config {
@@ -1084,6 +1149,21 @@
   }
 
   @media (max-width: 560px) {
+    .strategy-selection-guide > div {
+      grid-template-columns: 1fr;
+    }
+
+    .strategy-selection-guide > div > span,
+    .strategy-selection-guide > div > span:nth-child(2) {
+      min-height: 0;
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .strategy-selection-guide > div > span:last-child {
+      border-bottom: 0;
+    }
+
     .atlas-kpis,
     .portfolio-command .atlas-kpis {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1114,6 +1194,452 @@
 
     .autonomous-analyst footer {
       overflow-x: auto;
+    }
+  }
+}
+
+@layer components {
+  .trial-registration > header {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .trial-registration > header > span:nth-child(2) {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .trial-registration > header .ds-status {
+    margin-left: auto;
+  }
+
+  .trial-registration > div {
+    display: grid;
+    grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 0.65fr));
+    margin-top: 12px;
+    border-block: 1px solid var(--border);
+  }
+
+  .trial-registration > div > span {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    border-right: 1px solid var(--border);
+    padding: 11px;
+  }
+
+  .trial-registration > div > span:last-child {
+    border-right: 0;
+  }
+
+  .trial-registration small {
+    color: var(--text-faint);
+    font-size: 8px;
+  }
+
+  .trial-registration strong {
+    overflow-wrap: anywhere;
+    font-size: 9px;
+    line-height: 1.45;
+  }
+
+  .mandate-control > header,
+  .portfolio-risk-report > header,
+  .performance-attribution > header,
+  .decision-lineage > header {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .mandate-control > header > span:nth-child(2),
+  .portfolio-risk-report > header > span,
+  .performance-attribution > header > span,
+  .decision-lineage > header > span:nth-child(2) {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .mandate-control > header .ds-status,
+  .decision-lineage > header .execution-ledger__model {
+    margin-left: auto;
+  }
+
+  .mandate-control > p {
+    max-width: 920px;
+    margin-top: 14px;
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 1.55;
+  }
+
+  .mandate-control > div {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    margin-top: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .mandate-control > div > span,
+  .portfolio-risk-kpis > span,
+  .attribution-summary > span {
+    display: grid;
+    min-width: 0;
+    align-content: center;
+    gap: 4px;
+    border-right: 1px solid var(--border);
+    padding: 11px 12px;
+  }
+
+  .mandate-control > div > span:last-child,
+  .portfolio-risk-kpis > span:last-child,
+  .attribution-summary > span:last-child {
+    border-right: 0;
+  }
+
+  .mandate-control small,
+  .portfolio-risk-report small,
+  .performance-attribution small,
+  .decision-lineage small {
+    color: var(--text-faint);
+    font-size: 8px;
+    line-height: 1.4;
+  }
+
+  .mandate-control > div strong {
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    text-transform: capitalize;
+    white-space: nowrap;
+  }
+
+  .mandate-editor {
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+
+  .mandate-editor > header {
+    display: grid;
+    gap: 2px;
+  }
+
+  .mandate-editor > label,
+  .mandate-editor > div label {
+    display: grid;
+    gap: 5px;
+    color: var(--text-muted);
+    font-size: 8px;
+    font-weight: 650;
+  }
+
+  .mandate-editor > label {
+    margin-top: 12px;
+  }
+
+  .mandate-editor textarea,
+  .mandate-editor input {
+    width: 100%;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    outline: 0;
+    background: var(--surface-subtle);
+    color: var(--text);
+    padding: 8px 9px;
+    font: inherit;
+    font-size: 9px;
+    font-weight: 500;
+  }
+
+  .mandate-editor textarea {
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  .mandate-editor textarea:focus,
+  .mandate-editor input:focus {
+    border-color: var(--accent);
+  }
+
+  .mandate-editor > div {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .mandate-editor footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .portfolio-analytics-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    gap: 14px;
+  }
+
+  .portfolio-analytics-grid .atlas-panel {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .portfolio-risk-kpis {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-top: 14px;
+    border-block: 1px solid var(--border);
+  }
+
+  .portfolio-risk-kpis > span {
+    padding-inline: 9px;
+  }
+
+  .portfolio-risk-kpis strong {
+    overflow-wrap: anywhere;
+    font-size: 12px;
+  }
+
+  .portfolio-risk-kpis em {
+    color: var(--text-faint);
+    font-size: 7px;
+    font-style: normal;
+  }
+
+  .stress-list,
+  .attribution-components,
+  .decision-lineage__list {
+    display: grid;
+    margin-top: 12px;
+  }
+
+  .stress-list article,
+  .attribution-components article {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 1px solid var(--border);
+    padding: 10px 0;
+  }
+
+  .stress-list article:first-child,
+  .attribution-components article:first-child {
+    border-top: 0;
+  }
+
+  .stress-list article > span:first-child,
+  .attribution-components article > span:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+  }
+
+  .stress-list article > span:last-child {
+    flex: 0 0 auto;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  .portfolio-data-note {
+    margin-top: 8px;
+    border-left: 2px solid var(--warning);
+    color: var(--text-muted);
+    padding-left: 8px;
+    font-size: 8px;
+    line-height: 1.45;
+  }
+
+  .attribution-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 14px;
+    border-block: 1px solid var(--border);
+  }
+
+  .attribution-summary strong {
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .attribution-components article > span:last-child {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .decision-lineage__list article {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 72px minmax(150px, 0.65fr) minmax(200px, 1fr);
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    padding: 9px 0;
+  }
+
+  .decision-lineage__list article > span:not(.decision-event) {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .decision-lineage__list article > span:last-child small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .decision-event {
+    display: inline-flex;
+    width: fit-content;
+    min-width: 58px;
+    justify-content: center;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    padding: 4px 6px;
+    font-size: 7px;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
+
+  .decision-event--rejection,
+  .decision-event--risk {
+    border-color: color-mix(in srgb, var(--negative) 40%, var(--border));
+    background: var(--negative-soft);
+    color: var(--negative);
+  }
+
+  .decision-event--fill,
+  .decision-event--position {
+    border-color: color-mix(in srgb, var(--positive) 40%, var(--border));
+    background: var(--positive-soft);
+    color: var(--positive);
+  }
+
+  .decision-event--target,
+  .decision-event--order {
+    border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+
+  @media (max-width: 1050px) {
+    .mandate-editor > div {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .portfolio-analytics-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .mandate-control > div {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .mandate-control > div > span:nth-child(3) {
+      border-right: 0;
+    }
+
+    .mandate-control > div > span:nth-child(-n + 3) {
+      border-bottom: 1px solid var(--border);
+    }
+  }
+
+  @media (max-width: 680px) {
+    .trial-registration > header {
+      flex-wrap: wrap;
+    }
+
+    .trial-registration > header .ds-status {
+      width: 100%;
+      margin-left: 25px;
+    }
+
+    .trial-registration > div {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .trial-registration > div > span {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .trial-registration > div > span:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .trial-registration > div > span:nth-last-child(-n + 2) {
+      border-bottom: 0;
+    }
+
+    .mandate-control > header,
+    .decision-lineage > header {
+      flex-wrap: wrap;
+    }
+
+    .mandate-control > header .ds-status {
+      margin-left: 25px;
+    }
+
+    .mandate-control > header .ds-button {
+      margin-left: auto;
+    }
+
+    .mandate-editor > div {
+      grid-template-columns: 1fr;
+    }
+
+    .mandate-control > div,
+    .portfolio-risk-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .mandate-control > div > span,
+    .mandate-control > div > span:nth-child(3),
+    .portfolio-risk-kpis > span {
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mandate-control > div > span:nth-child(2n),
+    .portfolio-risk-kpis > span:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .mandate-control > div > span:nth-last-child(-n + 2),
+    .portfolio-risk-kpis > span:last-child {
+      border-bottom: 0;
+    }
+
+    .portfolio-risk-kpis > span:last-child {
+      grid-column: 1 / -1;
+      border-right: 0;
+    }
+
+    .decision-lineage__list article {
+      grid-template-columns: 70px minmax(0, 1fr);
+    }
+
+    .decision-lineage__list article > span:last-child {
+      grid-column: 1 / -1;
+      padding-left: 80px;
+    }
+
+    .decision-lineage__list article > span:last-child small {
+      white-space: normal;
     }
   }
 }

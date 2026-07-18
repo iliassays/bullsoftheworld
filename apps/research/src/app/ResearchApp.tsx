@@ -10,6 +10,7 @@ import { HypothesisLabPage } from "../features/autonomous-research/HypothesisLab
 import { LifecycleControlPage } from "../features/autonomous-research/LifecycleControlPage";
 import { PortfolioIntelligencePage } from "../features/autonomous-research/PortfolioIntelligencePage";
 import { ResearchMemoryPage } from "../features/autonomous-research/ResearchMemoryPage";
+import { InvestmentCommandPage } from "../features/investment-command/InvestmentCommandPage";
 import { useResearchAuth } from "./auth";
 
 export function ResearchApp() {
@@ -23,15 +24,17 @@ export function ResearchApp() {
   return (
     <Routes>
       <Route element={<ResearchShell />}>
+        <Route path="/today" element={<InvestmentCommandPage />} />
         <Route path="/queue" element={<ResearchQueuePage />} />
         <Route path="/companies" element={<CompanyDossierLibraryPage />} />
         <Route path="/companies/:ticker" element={<CompanyDossierPage />} />
         <Route path="/catalysts" element={<CatalystCalendarPage />} />
         <Route path="/hypotheses" element={<HypothesisLabPage />} />
-        <Route path="/lifecycle" element={<LifecycleControlPage />} />
+        <Route path="/operations" element={<LifecycleControlPage />} />
+        <Route path="/lifecycle" element={<Navigate to="/operations" replace />} />
         <Route path="/portfolio" element={<PortfolioIntelligencePage />} />
         <Route path="/memory" element={<ResearchMemoryPage />} />
-        <Route path="*" element={<Navigate to="/queue" replace />} />
+        <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
   );

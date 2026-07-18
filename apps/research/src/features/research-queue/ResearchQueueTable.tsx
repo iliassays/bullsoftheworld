@@ -182,14 +182,12 @@ export function ResearchQueueTable({
       },
       {
         id: "priority",
-        header: "Priority",
+        header: "Research urgency",
         accessorKey: "priority",
         cell: ({ row }) => (
           <span className="queue-priority">
             <strong className="tnum">{row.original.priority}</strong>
-            <span aria-hidden="true" className="queue-priority__track">
-              <span style={{ width: `${row.original.priority}%` }} />
-            </span>
+            <small>investigate sooner</small>
           </span>
         ),
       },

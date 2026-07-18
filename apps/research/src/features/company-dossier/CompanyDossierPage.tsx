@@ -312,7 +312,7 @@ export function CompanyDossierPage() {
 
       <section className="dossier-key-metrics" aria-label="Company research snapshot">
         <Metric label="Last EOD close" value={formatCurrency(candidate.price, currency)} detail={dossier.marketData.asOfDate} />
-        <Metric help={`${METRIC_GUIDANCE.priority.definition} ${METRIC_GUIDANCE.priority.reference}`} label="Research priority" value={`${candidate.priority}/100`} detail="attention rank, not return" />
+        <Metric help={`${METRIC_GUIDANCE.priority.definition} ${METRIC_GUIDANCE.priority.reference}`} label="Research urgency" value={`${candidate.priority}/100`} detail="investigate sooner, not buy sooner" />
         <Metric label="Market capitalization" value={dossier.marketData.marketCapMn === null ? "Not available" : formatCurrency(dossier.marketData.marketCapMn * 1_000_000, currency, true)} detail={candidate.capTier.replace("_", " ")} />
         <Metric help={`${METRIC_GUIDANCE.evidenceCoverage.definition} ${METRIC_GUIDANCE.evidenceCoverage.reference}`} label="Evidence coverage" value={`${candidate.evidence.coveragePct}%`} detail={`${candidate.evidence.sourceCount} records · 60% gate`} />
         <Metric help={`${METRIC_GUIDANCE.capacity.definition} ${METRIC_GUIDANCE.capacity.reference}`} label="Implementation capacity" value={candidate.liquidity.capacity} detail={`${candidate.liquidity.exitDays.toFixed(1)}-session exit policy`} />

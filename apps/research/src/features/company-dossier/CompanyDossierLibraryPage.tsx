@@ -48,7 +48,7 @@ export function CompanyDossierLibraryPage() {
             <span className={`queue-security__market queue-security__market--${candidate.market.toLowerCase()}`}>{candidate.market}</span>
             <span className="dossier-library-list__identity"><strong>{candidate.ticker}</strong><small>{candidate.company} · {candidate.sector}</small></span>
             <StatusBadge tone={candidate.evidence.freshness === "fresh" ? "positive" : candidate.evidence.freshness === "aging" ? "warning" : "negative"} dot>{candidate.evidence.freshness}</StatusBadge>
-            <span className="dossier-library-list__priority"><small>Priority</small><strong className="tnum">{candidate.priority}</strong></span>
+            <span className="dossier-library-list__priority"><small>Urgency</small><strong className="tnum">{candidate.priority}</strong></span>
           </Link>
         ))}
         {candidates.length === 0 && (

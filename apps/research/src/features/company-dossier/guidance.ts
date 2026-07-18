@@ -7,8 +7,8 @@ export interface MetricGuidance {
 
 export const METRIC_GUIDANCE = {
   priority: {
-    definition: "Ranks where analyst attention is most useful. It is not an expected-return score.",
-    reference: "Higher means research sooner, not buy sooner.",
+    definition: "Ranks where analyst investigation is most urgent. New evidence and higher risk can both increase it; it is not an expected-return score.",
+    reference: "Higher means investigate sooner, not buy sooner.",
   },
   evidenceCoverage: {
     definition: "Share of the market-specific evidence requirements currently present and usable.",

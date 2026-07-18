@@ -4,7 +4,7 @@ import {
   ChartNoAxesCombined,
   FileSearch,
   FlaskConical,
-  Library,
+  LayoutDashboard,
   LogOut,
   Menu,
   Moon,
@@ -29,14 +29,29 @@ interface NavItem {
   href?: string;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: "Research queue", icon: BookOpenCheck, href: "/queue" },
-  { label: "Company dossiers", icon: FileSearch, href: "/companies" },
-  { label: "Lifecycle control", icon: Workflow, href: "/lifecycle" },
-  { label: "Catalyst calendar", icon: CalendarDays, href: "/catalysts" },
-  { label: "Hypothesis lab", icon: FlaskConical, href: "/hypotheses" },
-  { label: "Portfolio intelligence", icon: ChartNoAxesCombined, href: "/portfolio" },
-  { label: "Research memory", icon: Library, href: "/memory" },
+const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "Investment",
+    items: [
+      { label: "Today", icon: LayoutDashboard, href: "/today" },
+      { label: "Portfolio & risk", icon: ChartNoAxesCombined, href: "/portfolio" },
+      { label: "Strategy lab", icon: FlaskConical, href: "/hypotheses" },
+    ],
+  },
+  {
+    label: "Research",
+    items: [
+      { label: "Research inbox", icon: BookOpenCheck, href: "/queue" },
+      { label: "Company research", icon: FileSearch, href: "/companies" },
+      { label: "Catalysts", icon: CalendarDays, href: "/catalysts" },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { label: "Automation & audit", icon: Workflow, href: "/operations" },
+    ],
+  },
 ];
 
 function initialTheme(): Theme {
@@ -78,38 +93,30 @@ export function ResearchShell() {
         </div>
 
         <nav aria-label="Research workspace" className="research-nav">
-          <span className="research-nav__label">Workspace</span>
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            if (item.href) {
-              return (
-                <NavLink
-                  className={({ isActive }) =>
-                    `research-nav__item ${isActive ? "research-nav__item--active" : ""}`
-                  }
-                  key={item.label}
-                  onClick={() => setNavOpen(false)}
-                  to={item.href}
-                >
-                  <Icon aria-hidden="true" size={17} strokeWidth={1.8} />
-                  <span>{item.label}</span>
-                </NavLink>
-              );
-            }
-            return (
-              <AppTooltip key={item.label} label="Not enabled in this foundation build">
-                <span
-                  aria-disabled="true"
-                  className="research-nav__item research-nav__item--disabled"
-                  role="link"
-                  tabIndex={0}
-                >
-                  <Icon aria-hidden="true" size={17} strokeWidth={1.8} />
-                  <span>{item.label}</span>
-                </span>
-              </AppTooltip>
-            );
-          })}
+          {NAV_GROUPS.map((group) => (
+            <div className="research-nav__group" key={group.label}>
+              <span className="research-nav__label">{group.label}</span>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                if (item.href) {
+                  return (
+                    <NavLink
+                      className={({ isActive }) =>
+                        `research-nav__item ${isActive ? "research-nav__item--active" : ""}`
+                      }
+                      key={item.label}
+                      onClick={() => setNavOpen(false)}
+                      to={item.href}
+                    >
+                      <Icon aria-hidden="true" size={17} strokeWidth={1.8} />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="research-sidebar__footer">

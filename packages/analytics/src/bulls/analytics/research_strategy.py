@@ -67,6 +67,8 @@ class BacktestTrade(BaseModel):
     gross_value: float
     fee: float
     reason: str
+    intended_quantity: int | None = Field(default=None, gt=0)
+    constraint_notes: list[str] = Field(default_factory=list)
 
 
 class EquityPoint(BaseModel):
@@ -463,6 +465,7 @@ def run_backtest(
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
     point_in_time_inputs_complete: bool = False,
+    risk_policy: PortfolioRiskPolicy | None = None,
 ) -> BacktestResult:
     """Run the registered strategy with next-session execution and deterministic risk gates."""
 
@@ -471,7 +474,9 @@ def run_backtest(
     strategy = STRATEGIES[strategy_key]
     if strategy.market != market:
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
-    policy = RISK_POLICIES[market]
+    policy = risk_policy or RISK_POLICIES[market]
+    if policy.market != market:
+        raise ValueError("risk policy belongs to another market")
     security_by_code = {security.code: security for security in securities}
     bars_by_code = {
         security.code: {bar.date: bar for bar in sorted(security.bars, key=lambda item: item.date)}
@@ -739,6 +744,7 @@ def advance_shadow_portfolio(
     previous: ShadowState,
     target_weights: dict[str, float],
     session_number: int,
+    risk_policy: PortfolioRiskPolicy | None = None,
 ) -> ShadowAdvanceResult:
     """Advance one real-time shadow book by one completed market session.
 
@@ -755,7 +761,9 @@ def advance_shadow_portfolio(
     if len(dates) != 1:
         raise ValueError("shadow portfolio securities must share one completed session date")
     date = dates.pop()
-    policy = RISK_POLICIES[market]
+    policy = risk_policy or RISK_POLICIES[market]
+    if policy.market != market:
+        raise ValueError("risk policy belongs to another market")
     by_code = {security.code: security for security in securities}
     positions = {
         code: _Position(position.shares, position.average_cost)
@@ -780,9 +788,24 @@ def advance_shadow_portfolio(
         current_shares = positions.get(code, _Position(0, 0)).shares
         desired_shares = int(opening_nav * target_weights.get(code, 0.0) / bar.open)
         quantity = desired_shares - current_shares
+        intended_quantity = abs(quantity)
         average_volume = statistics.fmean(item.volume for item in security.bars[-21:-1])
         maximum_quantity = int(average_volume * policy.max_adv_participation)
         quantity = max(-maximum_quantity, min(maximum_quantity, quantity))
+        constraint_notes: list[str] = []
+        if abs(quantity) < intended_quantity:
+            constraint_notes.append("adv_capacity")
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=code,
+                    rule="adv_capacity",
+                    detail=(
+                        f"Order constrained from {intended_quantity} to {abs(quantity)} shares "
+                        "by the mandate ADV participation ceiling."
+                    ),
+                )
+            )
         if quantity == 0:
             continue
         side: Literal["buy", "sell"] = "buy" if quantity > 0 else "sell"
@@ -792,6 +815,7 @@ def advance_shadow_portfolio(
         absolute_quantity = abs(quantity)
         if side == "buy":
             affordable = int(cash / (fill_price * (1 + policy.fee_rate)))
+            before_cash_constraint = absolute_quantity
             absolute_quantity = min(absolute_quantity, affordable)
             if absolute_quantity <= 0:
                 interventions.append(
@@ -803,6 +827,19 @@ def advance_shadow_portfolio(
                     )
                 )
                 continue
+            if absolute_quantity < before_cash_constraint:
+                constraint_notes.append("cash_capacity")
+                interventions.append(
+                    RiskIntervention(
+                        date=date,
+                        code=code,
+                        rule="cash_capacity",
+                        detail=(
+                            f"Order constrained from {before_cash_constraint} to "
+                            f"{absolute_quantity} shares by settled shadow cash."
+                        ),
+                    )
+                )
             gross = absolute_quantity * fill_price
             fee = gross * policy.fee_rate
             old = positions.get(code, _Position(0, 0))
@@ -836,6 +873,8 @@ def advance_shadow_portfolio(
                 gross_value=round(gross, 2),
                 fee=round(fee, 2),
                 reason="prior-close shadow target",
+                intended_quantity=intended_quantity,
+                constraint_notes=constraint_notes,
             )
         )
 

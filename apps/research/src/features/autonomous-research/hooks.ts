@@ -1,11 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { researchApi } from "../../app/api-client";
+import { isResearchPreview } from "../../app/deployment";
+import {
+  previewAutomationPolicy,
+  previewInvestmentOperatingView,
+  previewInvestmentMandate,
+  previewResearchRuns,
+  previewShadowPortfolios,
+} from "./preview-data";
 
 export function useResearchRuns(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["research", "runs", workspaceId],
-    queryFn: () => researchApi.runs(workspaceId!),
+    queryFn: () => isResearchPreview ? previewResearchRuns : researchApi.runs(workspaceId!),
     enabled: Boolean(workspaceId),
     refetchInterval: 15_000,
   });
@@ -14,7 +22,9 @@ export function useResearchRuns(workspaceId: string | undefined) {
 export function useResearchRun(workspaceId: string | undefined, runId: string | undefined) {
   return useQuery({
     queryKey: ["research", "run", workspaceId, runId],
-    queryFn: () => researchApi.run(workspaceId!, runId!),
+    queryFn: () => isResearchPreview
+      ? previewResearchRuns.find((run) => run.id === runId) ?? Promise.reject(new Error("Preview run not found"))
+      : researchApi.run(workspaceId!, runId!),
     enabled: Boolean(workspaceId && runId),
   });
 }
@@ -46,9 +56,58 @@ export function useRunBacktest(workspaceId: string | undefined) {
 export function useShadowPortfolios(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["research", "portfolios", workspaceId],
-    queryFn: () => researchApi.shadowPortfolios(workspaceId!),
+    queryFn: () => isResearchPreview
+      ? previewShadowPortfolios
+      : researchApi.shadowPortfolios(workspaceId!),
     enabled: Boolean(workspaceId),
     refetchInterval: 30_000,
+  });
+}
+
+export function useInvestmentOperatingView(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["research", "investment-operating-view", workspaceId],
+    queryFn: () => isResearchPreview
+      ? previewInvestmentOperatingView
+      : researchApi.investmentOperatingView(workspaceId!),
+    enabled: Boolean(workspaceId),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useConfigureInvestmentMandate(workspaceId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof researchApi.configureInvestmentMandate>[1]) => {
+      if (!isResearchPreview) return researchApi.configureInvestmentMandate(workspaceId!, payload);
+      return Promise.resolve({
+        ...previewInvestmentMandate,
+        id: "00000000-0000-0000-0000-000000000602",
+        version: previewInvestmentMandate.version + 1,
+        objective: payload.objective,
+        benchmarkKey: payload.benchmark_key,
+        maxGrossExposurePct: payload.max_gross_exposure_pct,
+        minCashReservePct: payload.min_cash_reserve_pct,
+        maxPositionWeightPct: payload.max_position_weight_pct,
+        maxSectorWeightPct: payload.max_sector_weight_pct,
+        maxAdvParticipationPct: payload.max_adv_participation_pct,
+        portfolioDrawdownBrakePct: payload.portfolio_drawdown_brake_pct,
+        stressLossLimitPct: payload.stress_loss_limit_pct,
+        effectiveAt: new Date().toISOString(),
+      });
+    },
+    onSuccess: (mandate) => {
+      if (isResearchPreview) {
+        client.setQueryData(
+          ["research", "investment-operating-view", workspaceId],
+          { ...previewInvestmentOperatingView, mandate },
+        );
+        return;
+      }
+      void client.invalidateQueries({
+        queryKey: ["research", "investment-operating-view", workspaceId],
+      });
+    },
   });
 }
 
@@ -74,7 +133,9 @@ export function useCalibration(workspaceId: string | undefined) {
 export function useAutomationPolicy(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["research", "automation", workspaceId],
-    queryFn: () => researchApi.automationPolicy(workspaceId!),
+    queryFn: () => isResearchPreview
+      ? previewAutomationPolicy
+      : researchApi.automationPolicy(workspaceId!),
     enabled: Boolean(workspaceId),
     refetchInterval: 15_000,
   });

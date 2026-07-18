@@ -118,6 +118,15 @@
     margin-top: 20px;
   }
 
+  .research-nav__group {
+    display: grid;
+    gap: 3px;
+  }
+
+  .research-nav__group + .research-nav__group {
+    margin-top: 12px;
+  }
+
   .research-nav__label {
     margin: 0 9px 7px;
     color: #6f777d;

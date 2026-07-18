@@ -15,6 +15,11 @@ from bulls.core.models.research.evidence import (
     ResearchClaimCitation,
     ResearchRunEvidence,
 )
+from bulls.core.models.research.governance import (
+    ResearchDecisionEvent,
+    ResearchInvestmentMandate,
+    ResearchStrategyTrial,
+)
 from bulls.core.models.research.portfolio import (
     ResearchOutcomeObservation,
     ResearchShadowPortfolio,
@@ -39,6 +44,8 @@ __all__ = [
     "ResearchDataEntitlement",
     "ResearchDatasetEvaluation",
     "ResearchDatasetSnapshot",
+    "ResearchDecisionEvent",
+    "ResearchInvestmentMandate",
     "ResearchOrganization",
     "ResearchOrganizationMembership",
     "ResearchOutcomeObservation",
@@ -47,6 +54,7 @@ __all__ = [
     "ResearchRunStep",
     "ResearchShadowPortfolio",
     "ResearchShadowSnapshot",
+    "ResearchStrategyTrial",
     "ResearchWorkspace",
     "ResearchWorkspaceMembership",
 ]

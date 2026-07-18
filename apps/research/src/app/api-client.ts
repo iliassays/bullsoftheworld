@@ -172,6 +172,138 @@ export interface AutomationPolicyInput {
   initial_capital: number;
 }
 
+export interface InvestmentMandate {
+  id: string;
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  version: number;
+  status: "active" | "superseded";
+  objective: string;
+  benchmarkKey: string;
+  maxGrossExposurePct: number;
+  minCashReservePct: number;
+  maxPositionWeightPct: number;
+  maxSectorWeightPct: number;
+  maxAdvParticipationPct: number;
+  portfolioDrawdownBrakePct: number;
+  stressLossLimitPct: number;
+  specificationHash: string;
+  effectiveAt: string;
+  supersededAt: string | null;
+}
+
+export interface InvestmentMandateInput {
+  objective: string;
+  benchmark_key: string;
+  max_gross_exposure_pct: number;
+  min_cash_reserve_pct: number;
+  max_position_weight_pct: number;
+  max_sector_weight_pct: number;
+  max_adv_participation_pct: number;
+  portfolio_drawdown_brake_pct: number;
+  stress_loss_limit_pct: number;
+}
+
+export interface StrategyTrial {
+  id: string;
+  sourceRunId: string;
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  strategyKey: string;
+  strategyVersion: string;
+  status: string;
+  registrationState: "preregistered" | "legacy_reconstructed";
+  trialSequence: number;
+  multipleTestingPolicy: string;
+  economicHypothesis: string;
+  specification: Record<string, unknown>;
+  specificationHash: string;
+  outcome: Record<string, unknown>;
+  registeredAt: string;
+  completedAt: string | null;
+}
+
+export interface DecisionEvent {
+  id: string;
+  portfolioId: string;
+  snapshotId: string;
+  correlationId: string;
+  sequence: number;
+  eventKey: string;
+  causedByEventKey: string | null;
+  eventType: "signal" | "target" | "order" | "rejection" | "fill" | "position" | "risk" | "outcome";
+  eventState: string;
+  code: string | null;
+  effectiveDate: string;
+  payload: Record<string, unknown>;
+  payloadHash: string;
+  recordedAt: string;
+}
+
+export interface PortfolioOperatingAnalytics {
+  portfolioId: string;
+  asOfDate: string | null;
+  mandate: InvestmentMandate;
+  mandateVersion: number;
+  mandateBinding: "pinned" | "legacy_active_fallback";
+  risk: {
+    grossExposurePct: number;
+    cashReservePct: number;
+    largestPositionPct: number;
+    largestSectorPct: number;
+    concentrationHhi: number;
+    effectivePositions: number;
+    weightedAverageCorrelation: number | null;
+    maximumPairCorrelation: number | null;
+    maximumExitDays: number | null;
+    limitChecks: Array<{
+      key: string;
+      status: "within_limit" | "breached" | "unavailable";
+      actual: number | null;
+      limit: number;
+      unit: "pct" | "days";
+      detail: string;
+    }>;
+    stressScenarios: Array<{
+      key: string;
+      label: string;
+      shockPct: number;
+      estimatedLossPct: number;
+      status: "within_limit" | "breached";
+      methodology: string;
+    }>;
+    breachedLimits: string[];
+    dataQualityNotes: string[];
+  };
+  attribution: {
+    portfolioReturnPct: number;
+    benchmarkReturnPct: number;
+    excessReturnPct: number;
+    components: Array<{
+      key: string;
+      label: string;
+      contributionPct: number | null;
+      quality: "exact" | "proxy" | "unavailable";
+      explanation: string;
+    }>;
+    rejectedActions: number;
+    methodologyVersion: string;
+  };
+  recentEvents: DecisionEvent[];
+}
+
+export interface InvestmentOperatingView {
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  generatedAt: string;
+  mandate: InvestmentMandate;
+  trials: StrategyTrial[];
+  portfolios: PortfolioOperatingAnalytics[];
+}
+
 export interface LifecycleDispatch {
   accepted: boolean;
   jobId: string;
@@ -555,6 +687,49 @@ export const researchApi = {
       `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/automation`,
     );
     return policy ? assertAutomationBoundary(policy, workspaceId) : null;
+  },
+  async investmentOperatingView(workspaceId: string): Promise<InvestmentOperatingView> {
+    const view = await request<InvestmentOperatingView>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/investment-operating-view`,
+    );
+    if (
+      view.workspaceId !== workspaceId ||
+      view.tenantId !== researchDeployment.tenant ||
+      view.market !== researchDeployment.market ||
+      view.mandate.workspaceId !== workspaceId ||
+      view.mandate.tenantId !== researchDeployment.tenant ||
+      view.mandate.market !== researchDeployment.market ||
+      view.trials.some((trial) =>
+        trial.workspaceId !== workspaceId ||
+        trial.tenantId !== researchDeployment.tenant ||
+        trial.market !== researchDeployment.market
+      ) ||
+      view.portfolios.some((portfolio) =>
+        portfolio.mandate.workspaceId !== workspaceId ||
+        portfolio.mandate.tenantId !== researchDeployment.tenant ||
+        portfolio.mandate.market !== researchDeployment.market
+      )
+    ) {
+      throw new ResearchApiError(502, "The API returned investment data outside this tenant boundary");
+    }
+    return view;
+  },
+  async configureInvestmentMandate(
+    workspaceId: string,
+    payload: InvestmentMandateInput,
+  ): Promise<InvestmentMandate> {
+    const mandate = await request<InvestmentMandate>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/investment-mandate`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    );
+    if (
+      mandate.workspaceId !== workspaceId ||
+      mandate.tenantId !== researchDeployment.tenant ||
+      mandate.market !== researchDeployment.market
+    ) {
+      throw new ResearchApiError(502, "The API returned a mandate outside this tenant boundary");
+    }
+    return mandate;
   },
   async configureAutomation(
     workspaceId: string,

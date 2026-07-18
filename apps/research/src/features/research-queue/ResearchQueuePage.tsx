@@ -1,5 +1,6 @@
-import { CircleAlert, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { BriefcaseBusiness, CircleAlert, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { isResearchPreview, researchDeployment } from "../../app/deployment";
 import {
@@ -56,6 +57,7 @@ function formatCutoff(timestamp: string): string {
 }
 
 export function ResearchQueuePage() {
+  const navigate = useNavigate();
   const workspaces = useResearchWorkspaces();
   const workspace = workspaces.data?.[0];
   const [status, setStatus] = useState<QueueStatusFilter>("all");
@@ -130,9 +132,13 @@ export function ResearchQueuePage() {
             {workspace.organizationName} · {researchDeployment.exchangeName}
           </span>
           <h1>Research queue</h1>
-          <p>Ranked for research attention from traceable evidence, factors, and implementation risk.</p>
+          <p>Ranked by investigation urgency from traceable evidence, factor changes, and implementation risk.</p>
         </div>
         <div className="queue-page-header__actions">
+          <Button onPress={() => navigate("/portfolio")} variant="secondary">
+            <BriefcaseBusiness aria-hidden="true" size={14} />
+            Open strategy book
+          </Button>
           <span className="queue-page-header__cutoff">
             Knowledge cutoff
             <strong>{queue.data ? formatCutoff(queue.data.knowledgeCutoffAt) : "—"}</strong>
@@ -186,7 +192,7 @@ export function ResearchQueuePage() {
           <StatusBadge tone={isResearchPreview ? "warning" : "positive"} dot>
             {isResearchPreview ? "Illustrative preview" : "Tenant-verified data"}
           </StatusBadge>
-          Priority ranks research work, not expected return.
+          Urgency can rise because evidence is new or risk is high. It is not a buy score.
         </span>
       </div>
 

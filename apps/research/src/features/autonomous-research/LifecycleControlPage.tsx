@@ -10,6 +10,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { researchDeployment } from "../../app/deployment";
 import { Button, SelectField, StatusBadge } from "../../design-system";
@@ -65,6 +66,7 @@ function targetAction(value: string): string {
 }
 
 export function LifecycleControlPage() {
+  const navigate = useNavigate();
   const workspace = useResearchWorkspaces().data?.[0];
   const policy = useAutomationPolicy(workspace?.id);
   const runs = useResearchRuns(workspace?.id);
@@ -125,14 +127,17 @@ export function LifecycleControlPage() {
   });
 
   if (failed) {
-    return <section className="research-unavailable"><DatabaseZap size={26} /><h1>Lifecycle control unavailable</h1><p>The tenant-bound automation policy or run ledger could not be loaded.</p><Button onPress={() => { void policy.refetch(); void runs.refetch(); }}><RefreshCw size={14} />Retry</Button></section>;
+    return <section className="research-unavailable"><DatabaseZap size={26} /><h1>Automation and audit unavailable</h1><p>The tenant-bound automation policy or run ledger could not be loaded.</p><Button onPress={() => { void policy.refetch(); void runs.refetch(); }}><RefreshCw size={14} />Retry</Button></section>;
   }
 
   return (
     <div className="atlas-page">
       <header className="atlas-page-header">
-        <div><span className="atlas-page-header__eyebrow">Registered process · completed market sessions only</span><h1>Lifecycle control</h1><p>Queue and company research are evaluated independently from the systematic strategy paper book. Both feed objective outcome calibration without creating research-driven orders.</p></div>
-        <StatusBadge tone={statusTone(policy.data?.lastRunStatus)} dot>{policy.data?.lastRunStatus ?? "not configured"}</StatusBadge>
+        <div><span className="atlas-page-header__eyebrow">Operations · registered process · completed market sessions only</span><h1>Automation and audit</h1><p>Configure the post-close process and inspect its immutable run ledger. This is an operator surface, not an investment-decision screen.</p></div>
+        <span className="atlas-page-header__actions">
+          <Button onPress={() => navigate("/memory")} variant="secondary"><History size={14} />Research memory</Button>
+          <StatusBadge tone={statusTone(policy.data?.lastRunStatus)} dot>{policy.data?.lastRunStatus ?? "not configured"}</StatusBadge>
+        </span>
       </header>
 
       <div className="lifecycle-layout">

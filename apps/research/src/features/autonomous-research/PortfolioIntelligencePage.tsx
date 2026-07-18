@@ -1,12 +1,25 @@
-import { Activity, AlertTriangle, BriefcaseBusiness, ListChecks, RefreshCw, ShieldAlert } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  BriefcaseBusiness,
+  GitBranch,
+  Landmark,
+  ListChecks,
+  RefreshCw,
+  ScanSearch,
+  Settings2,
+  ShieldAlert,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { researchDeployment } from "../../app/deployment";
+import type { InvestmentMandate } from "../../app/api-client";
 import { Button, SelectField, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
-import { useShadowPortfolios } from "./hooks";
+import { useConfigureInvestmentMandate, useInvestmentOperatingView, useShadowPortfolios } from "./hooks";
 import { shadowExecutions } from "./model";
 import { PerformanceChart } from "./PerformanceChart";
+import { strategySelectionGuide } from "./strategy-guide";
 
 function currency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: researchDeployment.currency, maximumFractionDigits: 0 }).format(value);
@@ -35,11 +48,75 @@ function object(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function MandateEditor({
+  mandate,
+  workspaceId,
+  onClose,
+}: {
+  mandate: InvestmentMandate;
+  workspaceId: string;
+  onClose: () => void;
+}) {
+  const configure = useConfigureInvestmentMandate(workspaceId);
+  const [objective, setObjective] = useState(mandate.objective);
+  const [limits, setLimits] = useState({
+    maxGrossExposurePct: mandate.maxGrossExposurePct,
+    minCashReservePct: mandate.minCashReservePct,
+    maxPositionWeightPct: mandate.maxPositionWeightPct,
+    maxSectorWeightPct: mandate.maxSectorWeightPct,
+    maxAdvParticipationPct: mandate.maxAdvParticipationPct,
+    portfolioDrawdownBrakePct: mandate.portfolioDrawdownBrakePct,
+    stressLossLimitPct: mandate.stressLossLimitPct,
+  });
+  const setLimit = (key: keyof typeof limits, value: string) => {
+    setLimits((current) => ({ ...current, [key]: Number(value) }));
+  };
+  const valid = objective.trim().length >= 20 && Object.values(limits).every(Number.isFinite);
+  const save = () => configure.mutate(
+    {
+      objective: objective.trim(),
+      benchmark_key: mandate.benchmarkKey,
+      max_gross_exposure_pct: limits.maxGrossExposurePct,
+      min_cash_reserve_pct: limits.minCashReservePct,
+      max_position_weight_pct: limits.maxPositionWeightPct,
+      max_sector_weight_pct: limits.maxSectorWeightPct,
+      max_adv_participation_pct: limits.maxAdvParticipationPct,
+      portfolio_drawdown_brake_pct: limits.portfolioDrawdownBrakePct,
+      stress_loss_limit_pct: limits.stressLossLimitPct,
+    },
+    { onSuccess: onClose },
+  );
+
+  return (
+    <section aria-label="Create a new investment mandate version" className="mandate-editor">
+      <header><strong>New mandate version</strong><small>Existing books keep their pinned limits. New trials and books use this version.</small></header>
+      <label>Portfolio objective<textarea onChange={(event) => setObjective(event.target.value)} rows={3} value={objective} /></label>
+      <div>
+        <label>Gross ceiling %<input max="100" min="1" onChange={(event) => setLimit("maxGrossExposurePct", event.target.value)} step="0.1" type="number" value={limits.maxGrossExposurePct} /></label>
+        <label>Cash reserve %<input max="99" min="0" onChange={(event) => setLimit("minCashReservePct", event.target.value)} step="0.1" type="number" value={limits.minCashReservePct} /></label>
+        <label>Single name %<input max="100" min="0.1" onChange={(event) => setLimit("maxPositionWeightPct", event.target.value)} step="0.1" type="number" value={limits.maxPositionWeightPct} /></label>
+        <label>Sector ceiling %<input max="100" min="0.1" onChange={(event) => setLimit("maxSectorWeightPct", event.target.value)} step="0.1" type="number" value={limits.maxSectorWeightPct} /></label>
+        <label>ADV participation %<input max="100" min="0.1" onChange={(event) => setLimit("maxAdvParticipationPct", event.target.value)} step="0.1" type="number" value={limits.maxAdvParticipationPct} /></label>
+        <label>Drawdown brake %<input max="100" min="0.1" onChange={(event) => setLimit("portfolioDrawdownBrakePct", event.target.value)} step="0.1" type="number" value={limits.portfolioDrawdownBrakePct} /></label>
+        <label>Stress loss limit %<input max="100" min="0.1" onChange={(event) => setLimit("stressLossLimitPct", event.target.value)} step="0.1" type="number" value={limits.stressLossLimitPct} /></label>
+      </div>
+      {configure.isError && <p className="atlas-error"><AlertTriangle size={13} />{configure.error.message}</p>}
+      <footer><Button onPress={onClose} variant="quiet">Cancel</Button><Button isDisabled={!valid || configure.isPending} onPress={save} variant="primary">{configure.isPending ? "Creating version…" : "Create mandate version"}</Button></footer>
+    </section>
+  );
+}
+
 export function PortfolioIntelligencePage() {
   const workspace = useResearchWorkspaces().data?.[0];
   const portfolios = useShadowPortfolios(workspace?.id);
+  const operating = useInvestmentOperatingView(workspace?.id);
   const [selectedId, setSelectedId] = useState("");
+  const [editingMandate, setEditingMandate] = useState(false);
   const selected = useMemo(() => portfolios.data?.find((item) => item.id === selectedId) ?? portfolios.data?.[0], [portfolios.data, selectedId]);
+  const selectedAnalytics = useMemo(
+    () => operating.data?.portfolios.find((item) => item.portfolioId === selected?.id),
+    [operating.data?.portfolios, selected?.id],
+  );
   const executions = useMemo(() => shadowExecutions(selected), [selected]);
   const latest = selected?.snapshots.at(-1);
   const positionPlan = useMemo(() => {
@@ -70,9 +147,15 @@ export function PortfolioIntelligencePage() {
         return check && typeof check.key === "string" && typeof check.passed === "boolean" ? [check] : [];
       })
     : [];
+  const observableUniverse = Array.isArray(selected?.configuration.observable_universe)
+    ? selected.configuration.observable_universe.filter((value): value is string => typeof value === "string")
+    : null;
+  const selectionGuide = selected
+    ? strategySelectionGuide(selected.strategyKey, observableUniverse?.length ?? null)
+    : null;
 
-  if (portfolios.isLoading) return <div aria-label="Loading shadow portfolios" className="research-loading"><span className="research-loading__body" /></div>;
-  if (portfolios.isError) return <section className="research-unavailable"><AlertTriangle size={26} /><h1>Portfolio intelligence unavailable</h1><p>{portfolios.error.message}</p><Button onPress={() => portfolios.refetch()}><RefreshCw size={14} />Retry</Button></section>;
+  if (portfolios.isLoading || operating.isLoading) return <div aria-label="Loading shadow portfolios" className="research-loading"><span className="research-loading__body" /></div>;
+  if (portfolios.isError || operating.isError) return <section className="research-unavailable"><AlertTriangle size={26} /><h1>Portfolio intelligence unavailable</h1><p>{portfolios.error?.message ?? operating.error?.message}</p><Button onPress={() => { void portfolios.refetch(); void operating.refetch(); }}><RefreshCw size={14} />Retry</Button></section>;
 
   return (
     <div className="atlas-page">
@@ -85,6 +168,17 @@ export function PortfolioIntelligencePage() {
         <section className="atlas-empty"><BriefcaseBusiness size={28} /><h2>No active shadow book</h2><p>Complete a hypothesis backtest and start forward evaluation from the Hypothesis lab.</p></section>
       ) : (
         <>
+          {selectionGuide && (
+            <section className="atlas-panel strategy-selection-guide">
+              <header><ScanSearch size={16} /><span><strong>How a security enters this paper book</strong><small>Independent from the Research queue and its urgency score</small></span></header>
+              <div>
+                <span><small>1 · Universe</small><strong>{selectionGuide.universe}</strong></span>
+                <span><small>2 · Entry gates</small><strong>{selectionGuide.entry}</strong></span>
+                <span><small>3 · Ranking</small><strong>{selectionGuide.ranking}</strong></span>
+                <span><small>4 · Position size</small><strong>{selectionGuide.sizing}</strong></span>
+              </div>
+            </section>
+          )}
           <section className="atlas-panel portfolio-command">
             <header><span><strong>{selected.name}</strong><small>{selected.strategyKey} · inception {selected.inceptionDate}</small></span><StatusBadge tone={selected.status === "active" ? "positive" : "negative"} dot>{selected.status}</StatusBadge></header>
             {typeof selected.configuration.refresh_error === "string" && <div className="portfolio-stop"><ShieldAlert size={14} /><span><strong>Advancement stopped safely</strong>{selected.configuration.refresh_error}</span></div>}
@@ -99,6 +193,71 @@ export function PortfolioIntelligencePage() {
             </div>
             <PerformanceChart points={selected.snapshots.map((snapshot) => ({ date: snapshot.asOfDate, nav: snapshot.nav, benchmark: snapshot.benchmarkNav }))} />
           </section>
+
+          {operating.data?.mandate && selectedAnalytics && (
+            <section className="atlas-panel mandate-control">
+              <header>
+                <Landmark aria-hidden="true" size={16} />
+                <span><strong>Investment mandate</strong><small>Version {selectedAnalytics.mandateVersion} · {selectedAnalytics.mandateBinding === "pinned" ? "pinned at book inception" : "legacy book evaluated against the active mandate"}</small></span>
+                <StatusBadge tone={selectedAnalytics.risk.breachedLimits.length ? "negative" : "positive"}>{selectedAnalytics.risk.breachedLimits.length ? `${selectedAnalytics.risk.breachedLimits.length} breached` : "Within observed limits"}</StatusBadge>
+                <Button onPress={() => setEditingMandate((value) => !value)} variant="quiet"><Settings2 aria-hidden="true" size={13} />{editingMandate ? "Close" : "Edit"}</Button>
+              </header>
+              <p>{selectedAnalytics.mandate.objective}</p>
+              {operating.data.mandate.version !== selectedAnalytics.mandate.version && (
+                <p className="portfolio-data-note">Workspace mandate v{operating.data.mandate.version} is active for future trials and books. This book remains governed by its pinned v{selectedAnalytics.mandate.version} limits.</p>
+              )}
+              <div>
+                <span><small>Benchmark</small><strong>{selectedAnalytics.mandate.benchmarkKey.replace(/_/g, " ")}</strong></span>
+                <span><small>Gross ceiling</small><strong>{selectedAnalytics.mandate.maxGrossExposurePct.toFixed(0)}%</strong></span>
+                <span><small>Single name</small><strong>{selectedAnalytics.mandate.maxPositionWeightPct.toFixed(0)}%</strong></span>
+                <span><small>Sector ceiling</small><strong>{selectedAnalytics.mandate.maxSectorWeightPct.toFixed(0)}%</strong></span>
+                <span><small>ADV participation</small><strong>{selectedAnalytics.mandate.maxAdvParticipationPct.toFixed(1)}%</strong></span>
+                <span><small>Drawdown brake</small><strong>{selectedAnalytics.mandate.portfolioDrawdownBrakePct.toFixed(0)}%</strong></span>
+              </div>
+              {editingMandate && <MandateEditor mandate={operating.data.mandate} onClose={() => setEditingMandate(false)} workspaceId={workspace!.id} />}
+            </section>
+          )}
+
+          {selectedAnalytics && (
+            <div className="portfolio-analytics-grid">
+              <section className="atlas-panel portfolio-risk-report">
+                <header><ShieldAlert aria-hidden="true" size={16} /><span><strong>Risk and capacity</strong><small>Point-in-time positions against the pinned mandate</small></span></header>
+                <div className="portfolio-risk-kpis">
+                  <span><small>Largest position</small><strong>{selectedAnalytics.risk.largestPositionPct.toFixed(1)}%</strong><em>limit {selectedAnalytics.mandate.maxPositionWeightPct.toFixed(0)}%</em></span>
+                  <span><small>Largest sector</small><strong>{selectedAnalytics.risk.largestSectorPct.toFixed(1)}%</strong><em>limit {selectedAnalytics.mandate.maxSectorWeightPct.toFixed(0)}%</em></span>
+                  <span><small>Effective positions</small><strong>{selectedAnalytics.risk.effectivePositions.toFixed(1)}</strong><em>concentration-adjusted</em></span>
+                  <span><small>Max exit time</small><strong>{selectedAnalytics.risk.maximumExitDays === null ? "Unavailable" : `${selectedAnalytics.risk.maximumExitDays.toFixed(1)} days`}</strong><em>at mandate ADV</em></span>
+                  <span><small>Weighted correlation</small><strong>{selectedAnalytics.risk.weightedAverageCorrelation === null ? "Unavailable" : selectedAnalytics.risk.weightedAverageCorrelation.toFixed(2)}</strong><em>60-session maximum</em></span>
+                </div>
+                <div className="stress-list">
+                  {selectedAnalytics.risk.stressScenarios.map((scenario) => (
+                    <article key={scenario.key}>
+                      <span><strong>{scenario.label}</strong><small>{scenario.methodology}</small></span>
+                      <span className={scenario.status === "breached" ? "value-down" : ""}>{scenario.estimatedLossPct.toFixed(2)}% NAV loss</span>
+                    </article>
+                  ))}
+                </div>
+                {selectedAnalytics.risk.dataQualityNotes.map((note) => <p className="portfolio-data-note" key={note}>{note}</p>)}
+              </section>
+
+              <section className="atlas-panel performance-attribution">
+                <header><Activity aria-hidden="true" size={16} /><span><strong>Performance attribution</strong><small>What is measured, proxied, or still unavailable</small></span></header>
+                <div className="attribution-summary">
+                  <span><small>Portfolio</small><strong>{selectedAnalytics.attribution.portfolioReturnPct.toFixed(2)}%</strong></span>
+                  <span><small>Benchmark</small><strong>{selectedAnalytics.attribution.benchmarkReturnPct.toFixed(2)}%</strong></span>
+                  <span><small>Excess</small><strong className={selectedAnalytics.attribution.excessReturnPct >= 0 ? "value-up" : "value-down"}>{selectedAnalytics.attribution.excessReturnPct.toFixed(2)}%</strong></span>
+                </div>
+                <div className="attribution-components">
+                  {selectedAnalytics.attribution.components.map((component) => (
+                    <article key={component.key}>
+                      <span><strong>{component.label}</strong><small>{component.explanation}</small></span>
+                      <span><StatusBadge tone={component.quality === "exact" ? "positive" : component.quality === "proxy" ? "warning" : "neutral"}>{component.quality}</StatusBadge><strong>{component.contributionPct === null ? "—" : `${component.contributionPct >= 0 ? "+" : ""}${component.contributionPct.toFixed(2)}%`}</strong></span>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
 
           <div className="portfolio-grid">
             <section className="atlas-panel">
@@ -147,6 +306,29 @@ export function PortfolioIntelligencePage() {
               </div>
             )}
           </section>
+
+          {selectedAnalytics && (
+            <section className="atlas-panel decision-lineage">
+              <header>
+                <GitBranch aria-hidden="true" size={16} />
+                <span><strong>Decision lineage</strong><small>Immutable strategy intent, constraints, fills, positions, and measured outcomes</small></span>
+                <span className="execution-ledger__model">Append-only</span>
+              </header>
+              {selectedAnalytics.recentEvents.length === 0 ? (
+                <p className="execution-ledger__empty">This book predates the decision ledger. Its historical snapshots remain visible; causal events begin with the next reconciled session.</p>
+              ) : (
+                <div className="decision-lineage__list">
+                  {selectedAnalytics.recentEvents.slice(0, 30).map((event) => (
+                    <article key={event.id}>
+                      <span className={`decision-event decision-event--${event.eventType}`}>{event.eventType}</span>
+                      <span><strong>{event.code ? `$${event.code}` : "Portfolio"}</strong><small>{event.effectiveDate} · sequence {event.sequence}</small></span>
+                      <span><strong>{event.eventState}</strong><small>{event.causedByEventKey ? `caused by ${event.causedByEventKey}` : "root observation"}</small></span>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
     </div>

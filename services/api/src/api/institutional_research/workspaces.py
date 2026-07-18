@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from api.institutional_research.audit import record_research_audit_event
+from api.institutional_research.investment import ensure_default_mandate
 from api.institutional_research.schemas import WorkspaceOut
 from bulls.core.markets import get_market_profile
 from bulls.core.models import (
@@ -187,6 +188,8 @@ async def bootstrap_personal_workspace(
             )
         )
         await session.flush()
+
+    await ensure_default_mandate(session, workspace=workspace, user_id=user.id)
 
     record_research_audit_event(
         session,
