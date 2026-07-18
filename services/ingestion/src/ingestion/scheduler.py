@@ -10,6 +10,7 @@ tick goes to channel `sym:<market>:<code>` for the WebSocket gateway to fan out.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
 import redis.asyncio as aioredis
@@ -21,6 +22,7 @@ from bulls.core.models import QuoteSnapshot, Symbol
 from bulls.market_data import Quote, get_provider
 from bulls.market_data import Symbol as ProviderSymbol
 from ingestion.alerts import check_price_alerts
+from ingestion.dse_security_master import persist_dse_listing_snapshot
 from ingestion.intraday import persist_intraday_capture
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,27 @@ async def _persist_intraday_isolated(
     return 0
 
 
+async def _persist_dse_listings_isolated(
+    session,
+    symbols: list[ProviderSymbol],
+) -> int:
+    """Start DSE identity history without allowing an optional lineage failure to stop quotes."""
+
+    if not symbols or any(symbol.market != "DSE" for symbol in symbols):
+        return 0
+    try:
+        async with session.begin_nested():
+            await persist_dse_listing_snapshot(
+                session,
+                symbols,
+                observed_at=dt.datetime.now(dt.UTC),
+            )
+    except Exception:
+        logger.exception("DSE listing lineage failed; continuing latest-symbol ingestion")
+        return 1
+    return 0
+
+
 async def poll_market(market: str, *, tenant_id: str) -> dict[str, int]:
     """One ingestion cycle for a market. Returns counts for logging/monitoring."""
     provider = get_provider(market)
@@ -84,6 +107,10 @@ async def poll_market(market: str, *, tenant_id: str) -> dict[str, int]:
     async with get_sessionmaker()() as session:
         await bind_tenant_context(session, tenant_id)
         await _upsert_symbols(session, symbols)
+        listing_observation_failures = await _persist_dse_listings_isolated(
+            session,
+            symbols,
+        )
         intraday_capture_failures = await _persist_intraday_isolated(
             session,
             quotes,
@@ -104,5 +131,6 @@ async def poll_market(market: str, *, tenant_id: str) -> dict[str, int]:
     return {
         "symbols": len(symbols),
         "quotes": len(quotes),
+        "listing_observation_failures": listing_observation_failures,
         "intraday_capture_failures": intraday_capture_failures,
     }

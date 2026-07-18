@@ -50,12 +50,14 @@ async def test_intraday_failure_rolls_back_savepoint_but_quote_ingestion_continu
     upsert_quotes = AsyncMock()
     alerts = AsyncMock()
     publish = AsyncMock()
+    listing_lineage = AsyncMock(return_value=0)
     capture = AsyncMock(side_effect=RuntimeError("intraday table unavailable"))
 
     monkeypatch.setattr(scheduler, "get_provider", lambda market: provider)
     monkeypatch.setattr(scheduler, "get_sessionmaker", lambda: lambda: _AsyncContext(session))
     monkeypatch.setattr(scheduler, "bind_tenant_context", AsyncMock())
     monkeypatch.setattr(scheduler, "_upsert_symbols", upsert_symbols)
+    monkeypatch.setattr(scheduler, "_persist_dse_listings_isolated", listing_lineage)
     monkeypatch.setattr(scheduler, "_upsert_quotes", upsert_quotes)
     monkeypatch.setattr(scheduler, "check_price_alerts", alerts)
     monkeypatch.setattr(scheduler, "persist_intraday_capture", capture)
@@ -71,11 +73,17 @@ async def test_intraday_failure_rolls_back_savepoint_but_quote_ingestion_continu
 
     assert session.savepoints == 1
     upsert_quotes.assert_awaited_once_with(session, [quote])
+    listing_lineage.assert_awaited_once_with(session, [symbol])
     alerts.assert_awaited_once()
     session.commit.assert_awaited_once()
     publish.assert_awaited_once_with(redis, [quote])
     redis.aclose.assert_awaited_once()
-    assert result == {"symbols": 1, "quotes": 1, "intraday_capture_failures": 1}
+    assert result == {
+        "symbols": 1,
+        "quotes": 1,
+        "listing_observation_failures": 0,
+        "intraday_capture_failures": 1,
+    }
 
 
 @pytest.mark.asyncio
@@ -91,4 +99,17 @@ async def test_intraday_capture_success_reports_no_isolated_failure(monkeypatch)
     )
 
     assert failures == 0
+    assert session.savepoints == 1
+
+
+@pytest.mark.asyncio
+async def test_listing_lineage_failure_is_isolated_from_quote_path(monkeypatch) -> None:
+    session = _Session()
+    persist = AsyncMock(side_effect=RuntimeError("lineage table unavailable"))
+    monkeypatch.setattr(scheduler, "persist_dse_listing_snapshot", persist)
+    symbols = [SimpleNamespace(code="AAA", market="DSE")]
+
+    failures = await scheduler._persist_dse_listings_isolated(session, symbols)
+
+    assert failures == 1
     assert session.savepoints == 1
