@@ -38,6 +38,14 @@ class ResearchShadowPortfolio(Base):
             name="uq_research_shadow_portfolios_security_scope",
         ),
         UniqueConstraint(
+            "id",
+            "workspace_id",
+            "organization_id",
+            "tenant_id",
+            "market",
+            name="uq_research_shadow_portfolios_accounting_scope",
+        ),
+        UniqueConstraint(
             "workspace_id", "name", name="uq_research_shadow_portfolios_workspace_name"
         ),
         CheckConstraint(
@@ -177,6 +185,9 @@ class ResearchShadowSnapshot(Base):
     cumulative_turnover: Mapped[Decimal] = mapped_column(Numeric(20, 4))
     positions: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    pending_settlements: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
     )
     target_weights: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")

@@ -9,6 +9,9 @@ from bulls.analytics.research_strategy import (
     StrategySecurity,
     advance_shadow_portfolio,
     evaluate_shadow_promotion,
+    methodology_boundary_accounting_events,
+    opening_accounting_events,
+    replay_accounting_events,
     run_backtest,
 )
 
@@ -47,6 +50,15 @@ def test_strategy_cannot_cross_market_policy_boundary() -> None:
             market="DSE",
             strategy_key="us_breakout_v1",
             securities=[_security("A", market="DSE")],
+        )
+
+
+def test_unknown_strategy_fails_closed() -> None:
+    with pytest.raises(ValueError, match="Unknown registered strategy"):
+        run_backtest(
+            market="US",
+            strategy_key="unowned_strategy",
+            securities=[_security("A", market="US")],
         )
 
 
@@ -141,6 +153,172 @@ def test_shadow_book_stop_schedules_next_open_exit_without_hindsight_fill() -> N
     assert any(item.rule == "position_stop" for item in advanced.risk_interventions)
 
 
+def test_dse_sale_proceeds_do_not_fund_buys_before_t_plus_two_settlement() -> None:
+    securities = [
+        _security("AAA", market="DSE", sessions=220),
+        _security("ZZZ", market="DSE", sessions=220),
+    ]
+    previous = ShadowState(
+        cash=0,
+        positions={"ZZZ": ShadowPosition(shares=1_000, average_cost=10)},
+        peak_nav=20_000,
+        benchmark_nav=20_000,
+    )
+
+    first = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=securities,
+        previous=previous,
+        target_weights={"AAA": 0.5},
+        session_number=1,
+    )
+
+    assert [trade.side for trade in first.trades] == ["sell"]
+    assert first.state.cash == 0
+    assert first.state.pending_settlements[0].release_session == 3
+    assert first.gross_exposure_pct == 0
+    assert any(
+        item.rule == "cash_limit" and item.code == "AAA" for item in first.risk_interventions
+    )
+
+    second = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=securities,
+        previous=first.state,
+        target_weights={"AAA": 0.5},
+        session_number=2,
+    )
+    assert not second.trades
+    assert second.state.pending_settlements
+
+    third = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=securities,
+        previous=second.state,
+        target_weights={"AAA": 0.5},
+        session_number=3,
+    )
+    assert any(trade.side == "buy" and trade.code == "AAA" for trade in third.trades)
+
+
+def test_us_sale_proceeds_release_after_one_completed_session() -> None:
+    securities = [
+        _security("AAA", market="US", sessions=220),
+        _security("ZZZ", market="US", sessions=220),
+    ]
+    previous = ShadowState(
+        cash=0,
+        positions={"ZZZ": ShadowPosition(shares=1_000, average_cost=10)},
+        peak_nav=20_000,
+        benchmark_nav=20_000,
+    )
+
+    first = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=securities,
+        previous=previous,
+        target_weights={"AAA": 0.5},
+        session_number=1,
+    )
+    assert [trade.side for trade in first.trades] == ["sell"]
+    assert first.state.pending_settlements[0].release_session == 2
+
+    second = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=securities,
+        previous=first.state,
+        target_weights={"AAA": 0.5},
+        session_number=2,
+    )
+    assert not second.state.pending_settlements
+    assert any(trade.side == "buy" and trade.code == "AAA" for trade in second.trades)
+
+
+def test_cash_is_allocated_across_the_complete_buy_basket_without_ticker_bias() -> None:
+    securities = [
+        _security("AAA", market="US", sessions=220),
+        _security("BBB", market="US", sessions=220),
+    ]
+    advanced = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=securities,
+        previous=ShadowState(
+            cash=1_000,
+            positions={},
+            peak_nav=1_000,
+            benchmark_nav=1_000,
+        ),
+        target_weights={"AAA": 0.8, "BBB": 0.8},
+        session_number=1,
+    )
+
+    quantities = {trade.code: trade.quantity for trade in advanced.trades}
+    assert set(quantities) == {"AAA", "BBB"}
+    assert abs(quantities["AAA"] - quantities["BBB"]) <= 1
+    assert all("cash_capacity" in trade.constraint_notes for trade in advanced.trades)
+
+    reversed_input = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=list(reversed(securities)),
+        previous=ShadowState(
+            cash=1_000,
+            positions={},
+            peak_nav=1_000,
+            benchmark_nav=1_000,
+        ),
+        target_weights={"BBB": 0.8, "AAA": 0.8},
+        session_number=1,
+    )
+    assert reversed_input.state == advanced.state
+    assert reversed_input.trades == advanced.trades
+
+
+def test_missing_target_bar_is_an_explicit_rejection() -> None:
+    advanced = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=[_security("VISIBLE", market="US", sessions=220)],
+        previous=ShadowState(
+            cash=100_000,
+            positions={},
+            peak_nav=100_000,
+            benchmark_nav=100_000,
+        ),
+        target_weights={"MISSING": 0.1},
+        session_number=1,
+    )
+
+    assert advanced.trades == []
+    assert any(
+        item.rule == "missing_bar" and item.code == "MISSING"
+        for item in advanced.risk_interventions
+    )
+
+
+def test_missing_held_security_stops_shadow_advancement() -> None:
+    with pytest.raises(ValueError, match=r"cannot advance without current history.*HELD"):
+        advance_shadow_portfolio(
+            market="DSE",
+            strategy_key="dse_reversal_v1",
+            securities=[_security("VISIBLE", market="DSE", sessions=220)],
+            previous=ShadowState(
+                cash=10_000,
+                positions={"HELD": ShadowPosition(shares=100, average_cost=10)},
+                peak_nav=20_000,
+                benchmark_nav=20_000,
+            ),
+            target_weights={},
+            session_number=1,
+        )
+
+
 def test_backtest_carries_last_mark_when_held_security_bar_is_missing() -> None:
     securities = [_security(f"M{index}", market="US") for index in range(4)]
     missing_date = securities[3].bars[220].date
@@ -215,3 +393,112 @@ def test_shadow_promotion_requires_forward_window_and_all_risk_gates() -> None:
     assert collecting.status == "collecting"
     assert eligible.status == "eligible"
     assert rejected.status == "rejected"
+
+
+def test_new_shadow_book_opens_from_accounting_events_not_a_snapshot() -> None:
+    effective_date = dt.date(2026, 7, 18)
+    events = opening_accounting_events(
+        initial_capital=100_000,
+        effective_date=effective_date,
+    )
+
+    replayed = replay_accounting_events(None, events)
+
+    assert [event.event_key for event in events] == ["s0:opening_balance"]
+    assert replayed == ShadowState(
+        cash=100_000,
+        positions={},
+        peak_nav=100_000,
+        benchmark_nav=100_000,
+    )
+
+
+def test_accounting_ledger_replays_dse_fills_receivable_and_t_plus_two_release() -> None:
+    securities = [
+        _security("AAA", market="DSE", sessions=220),
+        _security("ZZZ", market="DSE", sessions=220),
+    ]
+    initial = ShadowState(
+        cash=0,
+        positions={"ZZZ": ShadowPosition(shares=1_000, average_cost=10)},
+        peak_nav=20_000,
+        benchmark_nav=20_000,
+    )
+    boundary = methodology_boundary_accounting_events(
+        state=initial,
+        session_number=0,
+        effective_date=securities[0].bars[-2].date,
+        source_snapshot_id="legacy-snapshot",
+    )
+    first = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=securities,
+        previous=initial,
+        target_weights={"AAA": 0.5},
+        session_number=1,
+    )
+    second = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=securities,
+        previous=first.state,
+        target_weights={"AAA": 0.5},
+        session_number=2,
+    )
+    third = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=securities,
+        previous=second.state,
+        target_weights={"AAA": 0.5},
+        session_number=3,
+    )
+
+    assert replay_accounting_events(initial, first.accounting_events) == first.state
+    assert replay_accounting_events(first.state, second.accounting_events) == second.state
+    assert replay_accounting_events(second.state, third.accounting_events) == third.state
+    assert any(
+        event.event_type == "fill" and event.payload["settlement"]["release_session"] == 3
+        for event in first.accounting_events
+    )
+    assert not any(event.event_type == "settlement_release" for event in second.accounting_events)
+    assert any(event.event_type == "settlement_release" for event in third.accounting_events)
+    assert (
+        replay_accounting_events(
+            None,
+            boundary + first.accounting_events + second.accounting_events + third.accounting_events,
+        )
+        == third.state
+    )
+
+
+def test_accounting_event_keys_and_payloads_are_deterministic_on_retry() -> None:
+    security = _security("FLOW", market="US", sessions=220)
+    previous = ShadowState(
+        cash=100_000,
+        positions={},
+        peak_nav=100_000,
+        benchmark_nav=100_000,
+    )
+
+    first = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=[security],
+        previous=previous,
+        target_weights={"FLOW": 0.1},
+        session_number=1,
+    )
+    retry = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=[security],
+        previous=previous,
+        target_weights={"FLOW": 0.1},
+        session_number=1,
+    )
+
+    assert [event.model_dump(mode="json") for event in first.accounting_events] == [
+        event.model_dump(mode="json") for event in retry.accounting_events
+    ]

@@ -402,6 +402,7 @@ class ResearchShadowSnapshotOut(ApiModel):
     cumulative_fees: float
     cumulative_turnover: float
     positions: dict[str, Any]
+    pending_settlements: list[dict[str, Any]]
     target_weights: dict[str, Any]
     trades: list[dict[str, Any]]
     risk_interventions: list[dict[str, Any]]
