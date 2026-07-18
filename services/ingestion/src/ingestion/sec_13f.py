@@ -12,6 +12,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import gzip
+import hashlib
+import json
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -37,6 +41,10 @@ from bulls.core.models import (
 )
 from bulls.market_data.providers.sec_13f import (
     DATASET_PAGE,
+    ArchiveResult,
+    CusipMatch,
+    ManagerFiling,
+    RawInstitutionalPosition,
     SymbolIdentity,
     build_holding_changes,
     discover_dataset_urls,
@@ -54,6 +62,8 @@ HTTP_RETRIES = 8
 RETRY_BASE_SECONDS = 5.0
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 MAPPING_SCOPE = "eligible_plus_restricted_research_v3"
+ARCHIVE_CACHE_SCHEMA_VERSION = 1
+DEFAULT_ARCHIVE_CACHE_DIR = Path("var/sec-13f-cache")
 _ARCHIVE_NAME = re.compile(
     r"^(?P<prefix>.*/)(?P<start_day>\d{2})(?P<start_month>[a-z]{3})(?P<start_year>\d{4})-"
     r"(?P<end_day>\d{2})(?P<end_month>[a-z]{3})(?P<end_year>\d{4})_form13f\.zip$"
@@ -227,6 +237,132 @@ def _normalize_codes(raw: str | None) -> list[str] | None:
     return sorted({code.strip().upper() for code in raw.split(",") if code.strip()})
 
 
+def _selected_archive_urls(urls: list[str], history_quarters: int) -> list[str]:
+    selected = list(reversed(urls[: history_quarters + 1]))
+    if len(selected) < history_quarters + 1:
+        raise RuntimeError(
+            f"SEC page listed {len(selected)} archives; {history_quarters + 1} required"
+        )
+    return selected
+
+
+def _archive_cache_dir() -> Path:
+    return Path(os.environ.get("BULLS_SEC_13F_CACHE_DIR", DEFAULT_ARCHIVE_CACHE_DIR))
+
+
+def _mapping_fingerprint(symbols: list[SymbolIdentity]) -> str:
+    digest = hashlib.sha256()
+    digest.update(f"{MAPPING_SCOPE}\n".encode())
+    for symbol in sorted(symbols, key=lambda row: (row.code, row.name)):
+        digest.update(f"{symbol.code}\0{symbol.name}\n".encode())
+    return digest.hexdigest()
+
+
+def _archive_cache_path(cache_dir: Path, source_url: str, fingerprint: str) -> Path:
+    url_digest = hashlib.sha256(source_url.encode()).hexdigest()[:20]
+    return cache_dir / (
+        f"sec13f-v{ARCHIVE_CACHE_SCHEMA_VERSION}-{fingerprint[:20]}-{url_digest}.json.gz"
+    )
+
+
+def _store_archive_cache(
+    cache_dir: Path,
+    archive: ArchiveResult,
+    *,
+    fingerprint: str,
+) -> Path:
+    target = _archive_cache_path(cache_dir, archive.source_url, fingerprint)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": ARCHIVE_CACHE_SCHEMA_VERSION,
+        "mapping_scope": MAPPING_SCOPE,
+        "mapping_fingerprint": fingerprint,
+        "source_url": archive.source_url,
+        "report_date": archive.report_date.isoformat(),
+        "positions": [row.model_dump(mode="json") for row in archive.positions],
+        "matches": [row.model_dump(mode="json") for row in archive.matches],
+        "unmatched_cusips": archive.unmatched_cusips,
+        "manager_filings": [
+            {
+                "cik": row.cik,
+                "name": row.name,
+                "report_date": row.report_date.isoformat(),
+                "filing_date": row.filing_date.isoformat(),
+                "accession_number": row.accession_number,
+                "source_url": row.source_url,
+            }
+            for row in archive.manager_filings.values()
+        ],
+    }
+    temporary = target.with_suffix(f"{target.suffix}.tmp")
+    with gzip.open(temporary, "wt", encoding="utf-8") as output:
+        json.dump(payload, output, separators=(",", ":"), sort_keys=True)
+    temporary.chmod(0o600)
+    temporary.replace(target)
+    return target
+
+
+def _load_archive_cache(
+    cache_dir: Path,
+    source_url: str,
+    *,
+    fingerprint: str,
+) -> ArchiveResult | None:
+    target = _archive_cache_path(cache_dir, source_url, fingerprint)
+    if not target.exists():
+        return None
+    try:
+        with gzip.open(target, "rt", encoding="utf-8") as source:
+            payload = json.load(source)
+        if (
+            payload["schema_version"] != ARCHIVE_CACHE_SCHEMA_VERSION
+            or payload["mapping_scope"] != MAPPING_SCOPE
+            or payload["mapping_fingerprint"] != fingerprint
+            or payload["source_url"] != source_url
+        ):
+            raise ValueError("13F derived cache provenance mismatch")
+        manager_filings = {
+            int(row["cik"]): ManagerFiling(
+                cik=int(row["cik"]),
+                name=str(row["name"]),
+                report_date=dt.date.fromisoformat(row["report_date"]),
+                filing_date=dt.date.fromisoformat(row["filing_date"]),
+                accession_number=str(row["accession_number"]),
+                source_url=str(row["source_url"]),
+            )
+            for row in payload["manager_filings"]
+        }
+        return ArchiveResult(
+            source_url=source_url,
+            report_date=dt.date.fromisoformat(payload["report_date"]),
+            positions=tuple(
+                RawInstitutionalPosition.model_validate(row) for row in payload["positions"]
+            ),
+            matches=tuple(CusipMatch.model_validate(row) for row in payload["matches"]),
+            unmatched_cusips=int(payload["unmatched_cusips"]),
+            manager_filings=manager_filings,
+        )
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        # A partial/corrupt derived cache must never become research evidence. Remove it so
+        # the official archive is downloaded and parsed again on this run.
+        target.unlink(missing_ok=True)
+        return None
+
+
+def _prune_archive_cache(
+    cache_dir: Path,
+    *,
+    fingerprint: str,
+    keep_urls: list[str],
+) -> None:
+    keep = {_archive_cache_path(cache_dir, url, fingerprint) for url in keep_urls}
+    for path in cache_dir.glob(
+        f"sec13f-v{ARCHIVE_CACHE_SCHEMA_VERSION}-{fingerprint[:20]}-*.json.gz"
+    ):
+        if path not in keep:
+            path.unlink(missing_ok=True)
+
+
 async def _symbol_context(
     codes: list[str] | None = None,
 ) -> tuple[list[SymbolIdentity], dict[str, str]]:
@@ -236,8 +372,7 @@ async def _symbol_context(
             select(SecurityMaster.symbol, SecurityMaster.security_name)
             .outerjoin(
                 Symbol,
-                (Symbol.market == SecurityMaster.market)
-                & (Symbol.code == SecurityMaster.symbol),
+                (Symbol.market == SecurityMaster.market) & (Symbol.code == SecurityMaster.symbol),
             )
             .where(
                 SecurityMaster.market == MARKET,
@@ -417,6 +552,7 @@ async def _persist_state(
     requested_quarters: int,
     new_matches: int,
     unmatched_cusips: int,
+    archive_cache_hits: int,
 ) -> dict[str, int]:
     now = dt.datetime.now(dt.UTC)
     sm = get_sessionmaker()
@@ -458,10 +594,12 @@ async def _persist_state(
                 "requested_quarters": requested_quarters,
                 "new_cusip_matches": new_matches,
                 "unmatched_cusips": unmatched_cusips,
+                "derived_archive_cache_hits": archive_cache_hits,
                 "retention": f"{RETENTION_QUARTERS} quarters; max 150 managers/symbol/quarter",
                 "mapping_scope": MAPPING_SCOPE,
                 "watched_manager_ciks": sorted(WATCHED_MANAGER_CIKS),
                 "raw_archives_retained": False,
+                "derived_archive_cache_schema": ARCHIVE_CACHE_SCHEMA_VERSION,
                 "current_archive_url": newest.source_url,
             },
         }
@@ -535,59 +673,89 @@ async def collect(
             "skipped_current": 1,
         }
 
+    # The SEC index is newest-first. Parsing oldest-first lets exact CUSIP matches learned from
+    # a baseline quarter improve every later quarter in the same run.
+    selected_urls = _selected_archive_urls(urls, history_quarters)
+    cache_dir = _archive_cache_dir()
+    mapping_fingerprint = _mapping_fingerprint(symbols)
+
     summaries_to_index = []
     period_stats: list[dict[str, int]] = []
     downloaded_bytes = 0
     new_matches = 0
     unmatched_cusips = 0
     completed = 0
+    archive_cache_hits = 0
     newest = None
     baseline = None
-    current = None
+    prior = None
 
     with tempfile.TemporaryDirectory(prefix="bulls-sec-13f-") as temp:
         async with httpx.AsyncClient(
             headers=_headers(), timeout=180, follow_redirects=True
         ) as client:
-            for index, url in enumerate(urls):
-                path = None
-                try:
-                    print(f"  ...downloading archive {index + 1}", flush=True)
-                    path, size = await _download_archive(client, Path(temp), url, index)
+            for index, url in enumerate(selected_urls):
+                archive = _load_archive_cache(
+                    cache_dir,
+                    url,
+                    fingerprint=mapping_fingerprint,
+                )
+                size = 0
+                if archive is not None:
+                    archive_cache_hits += 1
                     print(
-                        f"  ...parsing archive {index + 1} ({size / 1024 / 1024:.1f} MiB)",
+                        f"  ...loaded derived archive checkpoint {index + 1}/"
+                        f"{len(selected_urls)} ({archive.report_date})",
                         flush=True,
                     )
-                    archive = parse_13f_archive(
-                        path,
-                        source_url=url,
-                        symbols=symbols,
-                        known_cusips=known_cusips,
-                        progress=lambda rows, archive_number=index + 1: print(
-                            f"  ...archive {archive_number}: scanned {rows:,} holdings rows",
+                else:
+                    path = None
+                    try:
+                        print(
+                            f"  ...downloading archive {index + 1}/{len(selected_urls)}",
                             flush=True,
-                        ),
-                    )
-                except (httpx.HTTPError, ValueError) as error:
-                    print(f"  ! skipped 13F archive {url} ({error})", flush=True)
-                    continue
-                finally:
-                    if path is not None:
-                        path.unlink(missing_ok=True)
+                        )
+                        path, size = await _download_archive(client, Path(temp), url, index)
+                        print(
+                            f"  ...parsing archive {index + 1}/{len(selected_urls)} "
+                            f"({size / 1024 / 1024:.1f} MiB)",
+                            flush=True,
+                        )
+                        archive = parse_13f_archive(
+                            path,
+                            source_url=url,
+                            symbols=symbols,
+                            known_cusips=known_cusips,
+                            progress=lambda rows, archive_number=index + 1: print(
+                                f"  ...archive {archive_number}: scanned {rows:,} holdings rows",
+                                flush=True,
+                            ),
+                        )
+                        _store_archive_cache(
+                            cache_dir,
+                            archive,
+                            fingerprint=mapping_fingerprint,
+                        )
+                    except (httpx.HTTPError, ValueError) as error:
+                        print(f"  ! skipped 13F archive {url} ({error})", flush=True)
+                        continue
+                    finally:
+                        if path is not None:
+                            path.unlink(missing_ok=True)
 
                 downloaded_bytes += size
                 new_matches += len(archive.matches)
                 unmatched_cusips += archive.unmatched_cusips
                 known_cusips.update({row.cusip: row.code for row in archive.matches})
-                if current is None:
-                    current = archive
-                    newest = archive
+                if prior is None:
+                    prior = archive
+                    baseline = archive
                     continue
-                prior = archive
+                current = archive
                 if not _is_consecutive_report_pair(current.report_date, prior.report_date):
                     raise RuntimeError(
                         "13F data sets are not consecutive quarter ends: "
-                        f"{current.report_date} then {prior.report_date}"
+                        f"{prior.report_date} then {current.report_date}"
                     )
                 changes, summaries = build_holding_changes(
                     current,
@@ -597,7 +765,7 @@ async def collect(
                 period_stats.append(await _persist_period(current, changes, summaries, codes=codes))
                 summaries_to_index.extend(summaries)
                 completed += 1
-                baseline = prior
+                newest = current
                 print(
                     f"  ...stored {completed}/{history_quarters} quarters "
                     f"({current.report_date}, {len(summaries)} symbols)",
@@ -605,7 +773,7 @@ async def collect(
                 )
                 if completed == history_quarters:
                     break
-                current = prior
+                prior = current
 
         if completed < history_quarters or newest is None or baseline is None:
             raise RuntimeError(
@@ -620,6 +788,12 @@ async def collect(
                 requested_quarters=history_quarters,
                 new_matches=new_matches,
                 unmatched_cusips=unmatched_cusips,
+                archive_cache_hits=archive_cache_hits,
+            )
+            _prune_archive_cache(
+                cache_dir,
+                fingerprint=mapping_fingerprint,
+                keep_urls=selected_urls,
             )
         else:
             stats = {
@@ -674,6 +848,7 @@ async def collect(
         "current_report": int(newest.report_date.strftime("%Y%m%d")),
         "baseline_report": int(baseline.report_date.strftime("%Y%m%d")),
         "downloaded_bytes": downloaded_bytes,
+        "derived_archive_cache_hits": archive_cache_hits,
         "alerts_delivered": alerts_delivered,
     }
 

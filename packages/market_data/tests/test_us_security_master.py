@@ -24,10 +24,38 @@ def test_coupon_series_name_is_classified_as_preferred_not_common() -> None:
         )
         == "preferred_stock"
     )
+    assert classify_instrument("Example Inc. Series A Common Stock", is_etf=False) == "common_stock"
+
+
+def test_abbreviated_and_trust_preferred_names_are_not_common_stock() -> None:
     assert (
-        classify_instrument("Example Inc. Series A Common Stock", is_etf=False)
+        classify_instrument(
+            "Morgan Stanley Dep Shs Rpstg 1/1000th Int Prd Ser F Fxd to Flag",
+            is_etf=False,
+            symbol="MS-F",
+            assume_common=True,
+        )
+        == "preferred_stock"
+    )
+    assert (
+        classify_instrument(
+            "SCE TRUST VI",
+            is_etf=False,
+            symbol="SCE-L",
+            assume_common=True,
+        )
+        == "preferred_stock"
+    )
+    assert (
+        classify_instrument(
+            "Berkshire Hathaway Inc. Class B Common Stock",
+            is_etf=False,
+            symbol="BRK-B",
+            assume_common=True,
+        )
         == "common_stock"
     )
+
 
 NASDAQ_LISTED = """Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
 AAPL|Apple Inc. - Common Stock|Q|N|N|40|N|N

@@ -448,6 +448,10 @@ async def _onboarding_snapshot(
 
 
 async def _lineage_snapshot(session: AsyncSession, market: str) -> dict[str, Any]:
+    # These are exact acceptance counts over the full observation ledger, not dashboard
+    # approximations. Give this read-only transaction a bounded audit-specific budget and run the
+    # counts sequentially so PostgreSQL does not plan all large tables as one compound statement.
+    await session.execute(text("SET LOCAL statement_timeout = '180s'"))
     snapshot_counts = await _group_counts(
         session,
         select(DataSourceSnapshot.dataset_key, func.count())
@@ -469,40 +473,30 @@ async def _lineage_snapshot(session: AsyncSession, market: str) -> dict[str, Any
         .distinct()
         .subquery()
     )
-    (
-        bars,
-        observed_bars,
-        bar_revisions,
-        company_observations,
-        sec_observations,
-        listing_observations,
-    ) = (
-        await session.execute(
-            select(
-                select(func.count())
-                .select_from(DailyBar)
-                .where(DailyBar.market == market)
-                .scalar_subquery(),
-                select(func.count()).select_from(observed_bar_keys).scalar_subquery(),
-                select(func.count())
-                .select_from(DailyBarObservation)
-                .where(DailyBarObservation.market == market)
-                .scalar_subquery(),
-                select(func.count())
-                .select_from(CompanyDataObservation)
-                .where(CompanyDataObservation.market == market)
-                .scalar_subquery(),
-                select(func.count())
-                .select_from(SecFinancialFactObservation)
-                .where(SecFinancialFactObservation.market == market)
-                .scalar_subquery(),
-                select(func.count())
-                .select_from(SecurityListingObservation)
-                .where(SecurityListingObservation.market == market)
-                .scalar_subquery(),
-            )
-        )
-    ).one()
+    bars = await session.scalar(
+        select(func.count()).select_from(DailyBar).where(DailyBar.market == market)
+    )
+    observed_bars = await session.scalar(select(func.count()).select_from(observed_bar_keys))
+    bar_revisions = await session.scalar(
+        select(func.count())
+        .select_from(DailyBarObservation)
+        .where(DailyBarObservation.market == market)
+    )
+    company_observations = await session.scalar(
+        select(func.count())
+        .select_from(CompanyDataObservation)
+        .where(CompanyDataObservation.market == market)
+    )
+    sec_observations = await session.scalar(
+        select(func.count())
+        .select_from(SecFinancialFactObservation)
+        .where(SecFinancialFactObservation.market == market)
+    )
+    listing_observations = await session.scalar(
+        select(func.count())
+        .select_from(SecurityListingObservation)
+        .where(SecurityListingObservation.market == market)
+    )
     return {
         "source_snapshots_by_dataset": snapshot_counts,
         "unknown_code_versions_by_dataset": unknown_code_versions,

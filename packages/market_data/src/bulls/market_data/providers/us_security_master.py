@@ -83,10 +83,12 @@ def classify_instrument(
     name: str,
     *,
     is_etf: bool,
+    symbol: str | None = None,
     nextshares: bool = False,
     assume_common: bool = False,
 ) -> str:
     lower = name.lower()
+    normalized_symbol = _normalize_symbol(symbol or "")
     if nextshares:
         return "nextshares"
     if is_etf:
@@ -108,6 +110,8 @@ def classify_instrument(
         for token in (
             "american depositary",
             "american depository",
+            "american depositary sh",
+            "american depository sh",
             "new york registry share",
             " adr",
             " ads",
@@ -116,7 +120,23 @@ def classify_instrument(
         return "adr"
     # Non-American depositary shares usually represent preferred equity. ADR/ADS wording was
     # handled above, and explicit "preferred"/"pfd" wording was handled earlier.
-    if "depositary share" in lower or "depository share" in lower:
+    if any(
+        token in lower
+        for token in (
+            "depositary share",
+            "depository share",
+            "depositary shs",
+            "depository shs",
+            " dep shs",
+        )
+    ):
+        return "preferred_stock"
+    # NYSE occasionally publishes trust-preferred records using only a trust name and a
+    # preferred-style symbol suffix (for example SCE-L / "SCE TRUST VI"). Requiring both
+    # signals avoids treating ordinary issuer names containing "trust" as preferred stock.
+    if re.search(r"-[a-z]$", normalized_symbol, re.IGNORECASE) and re.search(
+        r"\btrust\s+[ivxlcdm]+\b", lower
+    ):
         return "preferred_stock"
     if any(
         token in lower
@@ -166,7 +186,10 @@ def parse_nasdaq_listed(text: str) -> list[UsSecurityRecord]:
         is_test = _yn(row.get("Test Issue"))
         financial_status = (row.get("Financial Status") or "").strip() or None
         instrument_type = classify_instrument(
-            name, is_etf=is_etf, nextshares=_yn(row.get("NextShares"))
+            name,
+            is_etf=is_etf,
+            symbol=symbol,
+            nextshares=_yn(row.get("NextShares")),
         )
         eligible, reason = eligibility_reason(
             instrument_type, is_test_issue=is_test, financial_status=financial_status
@@ -201,7 +224,12 @@ def parse_other_listed(text: str) -> list[UsSecurityRecord]:
         name = row["Security Name"]
         is_etf = _yn(row.get("ETF"))
         is_test = _yn(row.get("Test Issue"))
-        instrument_type = classify_instrument(name, is_etf=is_etf, assume_common=True)
+        instrument_type = classify_instrument(
+            name,
+            is_etf=is_etf,
+            symbol=nasdaq_symbol,
+            assume_common=True,
+        )
         eligible, reason = eligibility_reason(
             instrument_type, is_test_issue=is_test, financial_status=None
         )

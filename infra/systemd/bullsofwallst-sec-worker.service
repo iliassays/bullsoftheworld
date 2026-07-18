@@ -8,6 +8,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/bullsofdhaka/services/ingestion
 EnvironmentFile=/home/ubuntu/bullsofdhaka/.env
+Environment=BULLS_SEC_13F_CACHE_DIR=/home/ubuntu/bullsofdhaka/var/sec-13f-cache
 ExecStart=/home/ubuntu/bullsofdhaka/.venv/bin/arq ingestion.sec_worker.WorkerSettings
 Restart=always
 RestartSec=10

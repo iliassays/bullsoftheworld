@@ -82,7 +82,9 @@ class WorkerSettings:
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
     queue_name: ClassVar = get_settings().sec_ingestion_queue_name
     max_jobs: ClassVar = 1
-    job_timeout: ClassVar = 7200
+    # One new official archive can contain several million holdings rows. Derived checkpoints
+    # make retries resumable, but a first parse still needs a realistic bounded execution window.
+    job_timeout: ClassVar = 21600
     # A deploy cancellation must not turn a large archive refresh into surprise startup work.
     # Freshness monitoring reports an interrupted run; the next cron window performs the retry.
     retry_jobs: ClassVar = False

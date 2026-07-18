@@ -48,7 +48,19 @@ tail -f /home/ubuntu/bullsofdhaka/var/log/sec-refresh.log
 ```
 
 Starting the same unit again cannot create an overlapping run. The parser reports progress every
-250,000 holdings rows and uses a bounded unresolved-CUSIP cache.
+250,000 holdings rows, atomically checkpoints each provenance-scoped derived archive under
+`var/sec-13f-cache`, and deletes the downloaded raw ZIP. A timeout therefore resumes from the last
+complete parse instead of rescanning it.
+
+FINRA consolidated NMS short volume is an independent daily feed. The US worker fetches it after
+the expected publication window at 23:45 UTC, validates the source trailer and volume invariants,
+and catches up missing recent sessions. A high short-marked share is descriptive activity, not
+short interest and not a directional trade signal.
+
+US option-chain previews are owner-only, on demand, cached briefly, and not retained as a research
+history. Bulk options ingestion remains fail-closed unless a current licensed delivery and its
+entitlement metadata are configured. The discontinued Cboe Option Sentiment product must not be
+presented as an active source.
 
 ## Bounded unit template
 
@@ -186,12 +198,14 @@ auditable but do not block acceptance.
 
 ## US cohort backlog
 
-Private cohort staging is separate from baseline activation. The persistent timer runs at 00:45
-UTC and uses the protected-window runtime budget:
+The cap-band cohort runner predates the complete product-eligible catalog. After all full-universe
+cohorts reach a terminal state, its persistent timer must remain disabled; running both schedulers
+reprocesses the same instruments and makes completion status ambiguous. Keep the legacy service
+available only for an explicitly approved diagnostic replay:
 
 ```bash
-systemctl list-timers bullsofwallst-cohort-staging.timer
-journalctl -u bullsofwallst-cohort-staging.service -n 100 -o cat
+systemctl is-enabled bullsofwallst-cohort-staging.timer  # expected: disabled
+systemctl start bullsofwallst-cohort-staging.service     # manual diagnostic only
 ```
 
 Do not publish a cohort because its acquisition stages completed. Promotion still requires the

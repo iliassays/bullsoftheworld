@@ -261,3 +261,49 @@ def test_company_facts_does_not_subtract_ytd_eps_or_skip_a_missing_period() -> N
     assert [(row.metric, row.period_end, row.value) for row in rows] == [
         ("eps_diluted", dt.date(2026, 3, 31), 1.0)
     ]
+
+
+def test_company_facts_rejects_periods_after_filing_or_collection_date() -> None:
+    payload = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {
+                        "shares": [
+                            {
+                                "end": "2034-03-05",
+                                "val": 999_999,
+                                "accn": "0001-24-000001",
+                                "fy": 2023,
+                                "fp": "FY",
+                                "form": "10-K/A",
+                                "filed": "2024-03-27",
+                            },
+                            {
+                                "end": "2026-03-31",
+                                "val": 100_000,
+                                "accn": "0001-26-000001",
+                                "fy": 2026,
+                                "fp": "Q1",
+                                "form": "10-Q",
+                                "filed": "2026-04-20",
+                            },
+                            {
+                                "end": "2026-08-01",
+                                "val": 110_000,
+                                "accn": "0001-26-000002",
+                                "fy": 2026,
+                                "fp": "Q2",
+                                "form": "10-Q",
+                                "filed": "2026-08-10",
+                            },
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    rows = parse_company_facts("TEST", 1, payload, today=dt.date(2026, 7, 18))
+
+    assert [(row.period_end, row.value) for row in rows] == [(dt.date(2026, 3, 31), 100_000.0)]

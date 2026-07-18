@@ -519,6 +519,12 @@ def parse_company_fact_observations(
                         end is None
                         or filed is None
                         or end < cutoff
+                        # A financial-statement period cannot be known before it ends. SEC
+                        # Company Facts occasionally carries malformed future `end` values or
+                        # debt-maturity dates under balance-sheet concepts. Keeping either would
+                        # make the newest-value projection time travel.
+                        or end > filed
+                        or end > today
                         or form not in ANNUAL_FORMS | QUARTERLY_FORMS
                         or not accession
                         or not isinstance(raw.get("val"), int | float)
