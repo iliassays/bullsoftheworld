@@ -282,6 +282,45 @@ describe("research API tenant boundary", () => {
     });
   });
 
+  it("rejects malformed nested portfolio analytics before they reach rendering", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          workspaceId: "workspace-dse",
+          tenantId: "bullsofdhaka",
+          market: "DSE",
+          mandate: {
+            workspaceId: "workspace-dse",
+            tenantId: "bullsofdhaka",
+            market: "DSE",
+          },
+          trials: [],
+          portfolios: [
+            {
+              mandate: {
+                workspaceId: "workspace-dse",
+                tenantId: "bullsofdhaka",
+                market: "DSE",
+              },
+              risk: {
+                largestPositionPct: 10,
+                largestSectorPct: 20,
+                effectivePositions: 3,
+                stressScenarios: [{ estimated_loss_pct: 2.5 }],
+              },
+              attribution: { components: [] },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(researchApi.investmentOperatingView("workspace-dse")).rejects.toMatchObject({
+      status: 502,
+    });
+  });
+
   it("sends a complete bounded automation policy to the workspace endpoint", async () => {
     const body = {
       id: "policy-dse",

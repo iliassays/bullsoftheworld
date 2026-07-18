@@ -42,6 +42,12 @@ function detail(value: unknown): string {
   return typeof value === "string" ? value : "Risk policy intervened.";
 }
 
+function optionalNumber(value: unknown, digits: number, suffix = ""): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(digits)}${suffix}`
+    : "Unavailable";
+}
+
 function object(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -226,14 +232,14 @@ export function PortfolioIntelligencePage() {
                   <span><small>Largest position</small><strong>{selectedAnalytics.risk.largestPositionPct.toFixed(1)}%</strong><em>limit {selectedAnalytics.mandate.maxPositionWeightPct.toFixed(0)}%</em></span>
                   <span><small>Largest sector</small><strong>{selectedAnalytics.risk.largestSectorPct.toFixed(1)}%</strong><em>limit {selectedAnalytics.mandate.maxSectorWeightPct.toFixed(0)}%</em></span>
                   <span><small>Effective positions</small><strong>{selectedAnalytics.risk.effectivePositions.toFixed(1)}</strong><em>concentration-adjusted</em></span>
-                  <span><small>Max exit time</small><strong>{selectedAnalytics.risk.maximumExitDays === null ? "Unavailable" : `${selectedAnalytics.risk.maximumExitDays.toFixed(1)} days`}</strong><em>at mandate ADV</em></span>
-                  <span><small>Weighted correlation</small><strong>{selectedAnalytics.risk.weightedAverageCorrelation === null ? "Unavailable" : selectedAnalytics.risk.weightedAverageCorrelation.toFixed(2)}</strong><em>60-session maximum</em></span>
+                  <span><small>Max exit time</small><strong>{optionalNumber(selectedAnalytics.risk.maximumExitDays, 1, " days")}</strong><em>at mandate ADV</em></span>
+                  <span><small>Weighted correlation</small><strong>{optionalNumber(selectedAnalytics.risk.weightedAverageCorrelation, 2)}</strong><em>60-session maximum</em></span>
                 </div>
                 <div className="stress-list">
                   {selectedAnalytics.risk.stressScenarios.map((scenario) => (
                     <article key={scenario.key}>
                       <span><strong>{scenario.label}</strong><small>{scenario.methodology}</small></span>
-                      <span className={scenario.status === "breached" ? "value-down" : ""}>{scenario.estimatedLossPct.toFixed(2)}% NAV loss</span>
+                      <span className={scenario.status === "breached" ? "value-down" : ""}>{optionalNumber(scenario.estimatedLossPct, 2, "% NAV loss")}</span>
                     </article>
                   ))}
                 </div>
@@ -251,7 +257,7 @@ export function PortfolioIntelligencePage() {
                   {selectedAnalytics.attribution.components.map((component) => (
                     <article key={component.key}>
                       <span><strong>{component.label}</strong><small>{component.explanation}</small></span>
-                      <span><StatusBadge tone={component.quality === "exact" ? "positive" : component.quality === "proxy" ? "warning" : "neutral"}>{component.quality}</StatusBadge><strong>{component.contributionPct === null ? "—" : `${component.contributionPct >= 0 ? "+" : ""}${component.contributionPct.toFixed(2)}%`}</strong></span>
+                      <span><StatusBadge tone={component.quality === "exact" ? "positive" : component.quality === "proxy" ? "warning" : "neutral"}>{component.quality}</StatusBadge><strong>{component.contributionPct == null ? "—" : `${component.contributionPct >= 0 ? "+" : ""}${optionalNumber(component.contributionPct, 2, "%")}`}</strong></span>
                     </article>
                   ))}
                 </div>

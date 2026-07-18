@@ -9,7 +9,11 @@ from api.institutional_research.investment import (
     default_mandate_payload,
     risk_policy_from_mandate,
 )
-from api.institutional_research.schemas import InvestmentMandateUpdate
+from api.institutional_research.schemas import (
+    InvestmentMandateUpdate,
+    PerformanceAttributionOut,
+    PortfolioRiskReportOut,
+)
 from bulls.core.models import ResearchInvestmentMandate
 
 
@@ -71,3 +75,65 @@ def test_persisted_mandate_rehydrates_exact_engine_limits() -> None:
     assert policy.max_sector_weight == 0.20
     assert policy.max_adv_participation == 0.015
     assert policy.portfolio_drawdown_brake == 0.10
+
+
+def test_nested_portfolio_analytics_serialize_with_camel_case_contract() -> None:
+    risk = PortfolioRiskReportOut.model_validate(
+        {
+            "gross_exposure_pct": 25,
+            "cash_reserve_pct": 75,
+            "largest_position_pct": 10,
+            "largest_sector_pct": 20,
+            "concentration_hhi": 0.5,
+            "effective_positions": 2,
+            "weighted_average_correlation": None,
+            "maximum_pair_correlation": None,
+            "maximum_exit_days": 1.5,
+            "limit_checks": [
+                {
+                    "key": "gross_exposure",
+                    "status": "within_limit",
+                    "actual": 25,
+                    "limit": 85,
+                    "unit": "pct",
+                    "detail": "Observed gross exposure.",
+                }
+            ],
+            "stress_scenarios": [
+                {
+                    "key": "broad_market_down_10",
+                    "label": "Broad market -10%",
+                    "shock_pct": -10,
+                    "estimated_loss_pct": 2.5,
+                    "status": "within_limit",
+                    "methodology": "Gross exposure shocked by ten percent.",
+                }
+            ],
+            "breached_limits": [],
+            "data_quality_notes": [],
+        }
+    ).model_dump(mode="json", by_alias=True)
+    attribution = PerformanceAttributionOut.model_validate(
+        {
+            "portfolio_return_pct": 1,
+            "benchmark_return_pct": 0.5,
+            "excess_return_pct": 0.5,
+            "components": [
+                {
+                    "key": "active_residual",
+                    "label": "Active strategy residual",
+                    "contribution_pct": 0.5,
+                    "quality": "proxy",
+                    "explanation": "Residual contribution.",
+                }
+            ],
+            "rejected_actions": 0,
+            "methodology_version": "atlas-additive-attribution-v1",
+        }
+    ).model_dump(mode="json", by_alias=True)
+
+    assert risk["limitChecks"][0]["actual"] == 25
+    assert risk["stressScenarios"][0]["estimatedLossPct"] == 2.5
+    assert "estimated_loss_pct" not in risk["stressScenarios"][0]
+    assert attribution["components"][0]["contributionPct"] == 0.5
+    assert "contribution_pct" not in attribution["components"][0]

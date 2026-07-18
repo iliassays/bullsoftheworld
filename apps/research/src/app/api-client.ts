@@ -707,7 +707,17 @@ export const researchApi = {
       view.portfolios.some((portfolio) =>
         portfolio.mandate.workspaceId !== workspaceId ||
         portfolio.mandate.tenantId !== researchDeployment.tenant ||
-        portfolio.mandate.market !== researchDeployment.market
+        portfolio.mandate.market !== researchDeployment.market ||
+        !Number.isFinite(portfolio.risk.largestPositionPct) ||
+        !Number.isFinite(portfolio.risk.largestSectorPct) ||
+        !Number.isFinite(portfolio.risk.effectivePositions) ||
+        portfolio.risk.stressScenarios.some(
+          (scenario) => !Number.isFinite(scenario.estimatedLossPct),
+        ) ||
+        portfolio.attribution.components.some(
+          (component) => component.contributionPct !== null &&
+            !Number.isFinite(component.contributionPct),
+        )
       )
     ) {
       throw new ResearchApiError(502, "The API returned investment data outside this tenant boundary");

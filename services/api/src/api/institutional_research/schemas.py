@@ -494,6 +494,24 @@ class DecisionEventOut(ApiModel):
     recorded_at: dt.datetime
 
 
+class PortfolioRiskLimitCheckOut(ApiModel):
+    key: str
+    status: Literal["within_limit", "breached", "unavailable"]
+    actual: float | None
+    limit: float
+    unit: Literal["pct", "days"]
+    detail: str
+
+
+class PortfolioStressScenarioOut(ApiModel):
+    key: str
+    label: str
+    shock_pct: float
+    estimated_loss_pct: float
+    status: Literal["within_limit", "breached"]
+    methodology: str
+
+
 class PortfolioRiskReportOut(ApiModel):
     gross_exposure_pct: float
     cash_reserve_pct: float
@@ -504,17 +522,25 @@ class PortfolioRiskReportOut(ApiModel):
     weighted_average_correlation: float | None
     maximum_pair_correlation: float | None
     maximum_exit_days: float | None
-    limit_checks: list[dict[str, Any]]
-    stress_scenarios: list[dict[str, Any]]
+    limit_checks: list[PortfolioRiskLimitCheckOut]
+    stress_scenarios: list[PortfolioStressScenarioOut]
     breached_limits: list[str]
     data_quality_notes: list[str]
+
+
+class PerformanceAttributionComponentOut(ApiModel):
+    key: str
+    label: str
+    contribution_pct: float | None
+    quality: Literal["exact", "proxy", "unavailable"]
+    explanation: str
 
 
 class PerformanceAttributionOut(ApiModel):
     portfolio_return_pct: float
     benchmark_return_pct: float
     excess_return_pct: float
-    components: list[dict[str, Any]]
+    components: list[PerformanceAttributionComponentOut]
     rejected_actions: int
     methodology_version: str
 
