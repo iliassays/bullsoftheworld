@@ -7,7 +7,7 @@ ROLLING VWAP stands in for "above the volume-weighted average," and the 9-EMA is
 The true 1-minute 9-EMA/session-VWAP version needs the titan_platform intraday data.
 
 Tests the rule with and without the VWAP filter, a couple of trend definitions, and momentum-style
-exits, against buy & hold and our Scheme-3 flagship, with a train/test split so we don't fool
+exits, against buy and hold, with a train/test split so we do not reuse the old Scheme-3 headline
 ourselves. DSE history said plain momentum loses — but a pullback-continuation entry is a different
 animal, so it's worth a clean look.
 
@@ -20,10 +20,8 @@ import asyncio
 import datetime as dt
 from collections import defaultdict
 
-from portfolio_backtest import MIN_AVG_VOL, _load, simulate
+from portfolio_backtest import MIN_AVG_VOL, _load, dsex_return, simulate
 
-INDEX = 7.8
-SCHEME3 = 74.2
 SPLIT = dt.date(2025, 9, 1)
 
 
@@ -80,7 +78,8 @@ async def _run():
         ("trail 8% / hold 40d", dict(stop=-0.08, trail=0.08, hold=40)),
     ]
     print("9-EMA pullback + bounce (daily). 'VWAP' = 20-day rolling VWAP filter (intraday proxy).")
-    print(f"Reference — buy & hold DSEX: +{INDEX}%  |  Scheme-3 flagship: +{SCHEME3}%\n")
+    print(f"Reference — full-window DSEX price return: {dsex_return(dsex):+.1f}%")
+    print("Legacy Scheme-3 headline omitted; it used a separate optimistic methodology.\n")
     print(
         f"{'exit rule':<24}{'filter':<10}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'win%':>7}{'trades':>8}"
     )

@@ -37,7 +37,7 @@ Every visible claim was tested against four gates:
 
 | Board | Calculation / evidence | Retail verdict |
 |---|---|---|
-| DSE Quality Reversal | >=40% below 52W high, near low, ROE>0, P/E 0–25, liquidity/cap gates, fresh 5-day-high break; locally backtested and regime-sensitive | Keep as flagship, with current bear-regime caution |
+| DSE Quality Reversal | >=40% below 52W high, near low, ROE>0, P/E 0–25, liquidity/cap gates, fresh 5-day-high break; legacy-tested and regime-sensitive | Keep as a descriptive board with the legacy-methodology and bear-regime cautions; do not call it a flagship or an admitted edge |
 | DSE Oversold Quality | RSI<=30 plus profitability, valuation, liquidity, and cap gates; local factor evidence | Keep; correctly says zone, not timing signal |
 | DSE Unusual Session Activity | completed-session volume/turnover anomaly against own history | Keep; activity only, no direction claim |
 | DSE Value + Quality | P/E <0.8x sector median, ROE>=15, liquidity and cap gates | Keep; requires debt/EPS/news review |

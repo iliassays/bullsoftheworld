@@ -10,6 +10,12 @@
 > [`dse-edge-validation-2026-07.md`](dse-edge-validation-2026-07.md). No newly tested edge passed
 > its train/validation/test gates. `QualityReversalPortfolio` remains forward-paper evidence only.
 
+> **2026-07-18 production-server reconciliation:** the fixed January 2025–present comparison in
+> [`dse-native-edge-program-2025-results.md`](dse-native-edge-program-2025-results.md) rejected the
+> institutional reversal proxy and all four new tactical hypotheses. The old +73.6% figure below is
+> preserved as a legacy exploratory result, not a current performance claim. Production has no DSE
+> Atlas shadow portfolio; the separate Hedge agent account has no execution in the audited window.
+
 ## 0. Hard constraints (these shape everything)
 
 - **Data is EOD / delayed** (dsebd.org). No intraday, no live tape. → swing / positional / investing,

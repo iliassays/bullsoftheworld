@@ -6,6 +6,11 @@ No newly tested DSE edge is approved for a new paper-trading agent. The existing
 `QualityReversalPortfolio` remains active only to collect genuine forward evidence from immutable
 EOD decisions. It must not be backfilled from historical signals.
 
+The 18 July production reconciliation subsequently confirmed that this separate Hedge account has
+no executions in the audited January 2025–present window and that no DSE Atlas shadow portfolio
+exists. This document does not authorize creating one. See
+[`dse-native-edge-program-2025-results.md`](dse-native-edge-program-2025-results.md).
+
 ## Data boundary
 
 - 193,990 DSE daily bars, 2024-06-23 through 2026-07-15

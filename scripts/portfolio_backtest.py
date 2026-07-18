@@ -1,15 +1,15 @@
-"""Portfolio backtest — "if I invested 1,000, what happens?" (walk-forward, event-driven).
+"""Legacy exploratory portfolio simulation for the original DSE research scripts.
 
-Simulates the Deep-Value Reversal rule day by day with REAL money mechanics: enter washed-out names
-that trigger a turn, exit on stop / target / time, charge transaction costs, cap concurrent positions.
-Tracks a daily equity curve, so the output is a P&L you can read — final value, total return, CAGR,
-the worst drawdown you'd have stomached, win rate — and the same 1,000 just buying the DSEX index.
+Simulates the Deep-Value Reversal rule day by day, charges the legacy transaction fee and caps
+concurrent positions. It is retained to reproduce the original Hedge research, not as the Atlas
+admission engine or an institutional execution model.
 
     uv run python scripts/portfolio_backtest.py            # no regime filter
     uv run python scripts/portfolio_backtest.py --regime   # only trade when DSEX > its 50-day
 
-Honesty: EOD fills at the close (no intraday), 2-year single recovering-market regime, costs modelled
-at 0.4%/side but slippage on thin names is real. This is a historical simulation, not a promise.
+Limitations: same-session close entry, fractional units, one recovery-heavy regime, current-end
+liquidity filtering, no slippage/ADV capacity/settlement/sector constraints, unadjusted prices, and
+fiscal-year rather than publication-time fundamentals in dependent scripts.
 """
 
 from __future__ import annotations
@@ -32,6 +32,12 @@ MAX_HOLD = 63  # time exit ~3 months
 COST = 0.004  # per side (~0.8% round trip)
 WARMUP, MIN_AVG_VOL = 60, 5_000
 DEEP, NEAR_LOW = -40.0, 15.0
+
+
+def dsex_return(dsex: dict) -> float:
+    """Compute the full available DSEX price return instead of using a stale hard-coded value."""
+    values = [value for _, value in sorted(dsex.items()) if value]
+    return (values[-1] / values[0] - 1) * 100 if len(values) > 1 else 0.0
 
 
 def _sma(vals, n):

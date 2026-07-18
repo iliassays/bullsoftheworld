@@ -7,11 +7,11 @@
 
 ## 0. Review log (2026-07-01, Claude — reconciled vs codebase + `docs/research/dse-trading-research.md`)
 
-1. **Hero board = "Quality Reversal", not raw "Deep Washout Reclaim."** The research flagship is
-   **Scheme-3**: washout + 5-day-high break **filtered to profitable, reasonably-priced names**
-   (+73.6% vs +33.7%, 58% vs 41% win, −12% vs −21% drawdown — "the two proven edges *multiply*").
-   The first draft split the winning combo into two boards and headlined the weaker half. Fixed in
-   §3/§6: hero = Quality Reversal; raw deep-washout is demoted to an advanced/experimental board.
+1. **Quality Reversal is a descriptive legacy-tested board, not a proven flagship.** Scheme-3 adds a
+   profitability and valuation filter to the washout + 5-day-high rule. Its older exploratory engine
+   reported attractive results, but used optimistic same-close and data-availability assumptions;
+   the January 2025 institutional comparison did not admit the reversal proxy. The board may remain
+   descriptive with a visible methodology caveat, while raw deep-washout stays experimental.
 2. **Regime caveat is mandatory on the reversal boards.** The research: the whole washout edge rests
    on one *recovering*-market window; "deepest = falling knife in a sustained bear." Reversal boards
    carry a regime note, gated by the Dhaka Mood Index / DSEX-vs-200-DMA. See §2, §7.
@@ -77,9 +77,9 @@ this phase — it's the next phase (§11).
 - **DSE rule-aware.** Circuit detection must use the BSEC/DSE tiered price-band table, not a flat
   +/-10%. Settlement copy defaults to DSE T+2 for ordinary listed equities, with Z-category shown as
   higher-risk/T+3 where applicable.
-- **Evidence before hype.** The scanner should lead with signals that have worked on our DSE data:
-  self-normalized volume/turnover anomaly and deep-washout reclaim. Generic momentum/breakout is
-  allowed only as descriptive context or an experimental scan, not the hero setup.
+- **Evidence before hype.** Historical testing state and limitations must be visible. Scanner boards
+  describe conditions; they do not inherit Atlas admission or predictive claims from an old result.
+  Generic momentum/breakout remains descriptive or experimental rather than a hero setup.
 - **Important things first.** The default screen shows only 3-5 high-signal boards. Circuit, Z-category,
   smart-money disclosure, overbought/oversold, support/resistance, and experimental momentum stay
   behind "More filters" or "All".
@@ -96,7 +96,7 @@ Default visible boards:
 | Tab | Board | Purpose | Why visible first |
 |---|---|---|---|
 | Today | 🔥 Active Today | Stocks with unusual volume/turnover vs their own normal | Best validated activity signal; useful to small traders without implying buy/sell. |
-| Today | 🌊 Quality Reversal | Beaten-down **but profitable & reasonably-priced** names breaking their 5-day high | Research flagship (Scheme-3): washout × quality *multiplied* the edge (+73.6%, 58% win, −12% dd). Carries a regime caveat (§2). Raw deep-washout without the quality filter is an advanced/experimental board only. |
+| Today | 🌊 Quality Reversal | Beaten-down **but profitable & reasonably-priced** names breaking their 5-day high | Legacy-tested descriptive condition. The favorable older result used non-institutional assumptions and did not confer Atlas admission. Carries a regime caveat (§2); raw deep-washout remains experimental. |
 | Today | 💸 Top Turnover | Where money is actually trading today | Familiar to DSE retail users; liquidity-gated so it is not pure noise. |
 | Value | ⭐ Value + Quality | Cheap vs sector plus profitability | Core value-trader board. |
 | Value | 💵 Dividend Quality | Cash yield with EPS/record-date/checklist context | Useful for income/value users; avoids yield traps with checks. |

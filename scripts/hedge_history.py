@@ -1,8 +1,8 @@
-"""Hedge — track record / portfolio history (Scheme-3 backtest, every trade + growth curve).
+"""Hedge — frozen legacy Scheme-3 diagnostic (simulated trades and growth curve).
 
-Runs the validated flagship over the full history and surfaces it as a portfolio: the growth of a
-1,000 stake vs the market, the headline stats, and the complete trade ledger (every buy/sell with its
-result). Inline SVG chart — no external libraries — so it renders in the live app and the shared link.
+Runs the unchanged legacy rule over the available history and preserves the exploratory result. The
+simulation is deliberately separate from Atlas and from the forward paper account. Inline SVG keeps
+the persisted read model inspectable without introducing a browser-side calculation.
 """
 
 from __future__ import annotations
@@ -17,6 +17,20 @@ from bulls.core.models import HedgeTrackRecordSnapshot
 
 EXITS = dict(stop=-0.10, target=0.25, hold=63, max_pos=10)
 STRATEGY_KEY = "quality_reversal_v1"
+LEGACY_METHODOLOGY = {
+    "status": "legacy_exploratory_diagnostic",
+    "authority": "none",
+    "entry_price": "signal_session_close",
+    "position_units": "fractional",
+    "fee_each_side_pct": 0.4,
+    "slippage": "not_modelled",
+    "adv_capacity": "not_modelled",
+    "settlement": "not_modelled",
+    "sector_constraints": "not_modelled",
+    "corporate_actions": "unadjusted_prices",
+    "fundamental_knowledge_time": "fiscal_year_lag_approximation",
+    "historical_liquidity_filter": "latest_20_session_average_volume",
+}
 
 
 def backtest_from_inputs(by_code, dsex, sigs) -> dict:
@@ -51,6 +65,7 @@ def serialize_history(result: dict) -> dict:
             for trade in result["trades"]
         ],
         "stats": result["stats"],
+        "methodology": LEGACY_METHODOLOGY,
     }
 
 
@@ -107,20 +122,24 @@ def _svg(curve, index) -> str:
 
 
 def render_history(d: dict, *, computed_at=None, as_of_date=None) -> str:
-    """Portfolio growth section: headline stats + the equity curve (the persisted ledger sits below)."""
+    """Render the persisted legacy diagnostic without presenting it as an investable record."""
     s = d["stats"]
     return f"""
-<h2>Portfolio growth &mdash; 1,000 since {d["curve"][0][0]}</h2>
-<div class="cap">Backtest data through {as_of_date or d["curve"][-1][0]} · computed
-{computed_at.strftime("%Y-%m-%d %H:%M UTC") if computed_at else "offline"}</div>
+<h2>Legacy exploratory simulation &mdash; 1,000 since {d["curve"][0][0]}</h2>
+<div class="cap">Dynamic batch result through {as_of_date or d["curve"][-1][0]} · computed
+{computed_at.strftime("%Y-%m-%d %H:%M UTC") if computed_at else "offline"} · not an Atlas or
+forward-paper track record</div>
 <div class="tr">
-  <div><div class="k">1,000 became</div><div class="v pos">{s["final"]:,.0f}</div></div>
-  <div><div class="k">total / CAGR</div><div class="v">+{s["total"]:.0f}% / {s["cagr"]:.0f}%</div></div>
+  <div><div class="k">Simulated 1,000 became</div><div class="v pos">{s["final"]:,.0f}</div></div>
+  <div><div class="k">total / CAGR</div><div class="v">{s["total"]:+.0f}% / {s["cagr"]:+.0f}%</div></div>
   <div><div class="k">market return</div><div class="v">{s["index_return"]:+.1f}%</div></div>
   <div><div class="k">win rate</div><div class="v">{s["winrate"]:.0f}%</div></div>
   <div><div class="k">worst drop</div><div class="v neg">{s["maxdd"]:.0f}%</div></div>
   <div><div class="k">trades</div><div class="v">{s["n_trades"]}</div></div>
 </div>
 {_svg(d["curve"], d["index"])}
-<div class="cap">Green = the strategy growing 1,000 · grey dashed = the same 1,000 in the market index.
-A 10-position portfolio backtest; the full signal ledger is below.</div>"""
+<div class="cap">Green = legacy simulation · grey dashed = price-only DSEX comparison. Same-session
+close entry, fractional units and 0.4% fee each side; slippage, ADV capacity, settlement, sector
+constraints and corporate-action-adjusted total returns are not modelled. Historical eligibility is
+filtered using each security's latest 20-session volume, and fundamental knowledge time is only a
+fiscal-year approximation. The signal ledger below is not a shared-capital portfolio.</div>"""

@@ -27,6 +27,12 @@ normative: this mandate governs strategy admission; the operating model governs 
 
 ## Current decision
 
+The current implementation scope is **DSE only**. Existing US research records and code remain
+isolated and preserved, but no further US strategy, portfolio, data, UI, deployment, or promotion
+work should proceed until the DSE research and portfolio foundation is finished. The eventual
+multi-market product should reuse the same contracts with market-specific data, calendars, costs,
+constraints and books; it must never reuse DSE state inside a US decision or vice versa.
+
 Do not activate a generic DSE momentum, volume-breakout, or daily EMA-pullback paper strategy.
 
 The production data checked on 18 July 2026 contains 192,776 DSE daily bars for 401 symbols from
@@ -42,6 +48,21 @@ Existing research also rejects the available daily substitutes:
 - the costed 2026 high-volume continuation test underperformed DSEX;
 - the strict flat-base detector remains a descriptive watchlist, not a validated entry signal.
 
+### Intraday foundation implementation
+
+The working tree now has a durable storage contract for future DSE intraday research. Once its
+independent migration and ingestion release is deployed, every delayed
+quote delivery is retained as an immutable knowledge-time observation, and a separate partitioned
+15-minute sampled-bar projection records cumulative session VWAP, counter deltas, completeness,
+freshness, and provider-counter regressions. These are labelled sampled delayed observations, not
+exchange-native OHLC bars or a real-time tape.
+
+This implementation does not unblock the strategy or create historical coverage retroactively. The
+collection clock starts only after that migration and ingestion release are operating. Existing
+daily history is reused and does not need to be downloaded from scratch. The
+trend-pullback hypothesis remains data-blocked until the Strategy lab's admission report clears the
+minimum session history and the remaining universe, constraint-history, and preregistration gates.
+
 The preferred trend idea remains a registered research question, not a discarded intuition. Its
 correct test needs stored intraday bars, real session VWAP, effective-dated DSE trading constraints,
 corporate-action handling, and realistic next-observable fills.
@@ -54,14 +75,21 @@ attractive backtest.
 
 | Book | Horizon | State | Decision |
 |---|---|---|---|
-| `dse_reversal_v1` | EOD swing | Active diagnostic Atlas shadow book | Keep collecting immutable forward evidence. Explain its entries and failures; do not call it validated. |
+| `dse_reversal_v1` | EOD swing | Registered diagnostic; no current production Atlas shadow book | Preserve the specification and failed proxy evidence. Do not create or backfill a book unless a new immutable historical admission report passes. |
+| `us_breakout_v1` | EOD swing | Active diagnostic Atlas shadow book | Preserve as a separate trend experiment; do not merge its history into Leader Capture. |
+| `us_leader_capture_v1` | Multi-month | Candidate diagnostic | Combine point-in-time SEC acceleration with persistent price leadership. Research is allowed; automation is blocked until admission gates pass. |
 | `dse_trend_pullback_intraday_v1` | Intraday-to-multiday swing | Data-blocked hypothesis | Persist intraday history first, preregister the rule, then test. Do not paper trade a daily proxy. |
 | `dse_quality_value_v1` | Multi-month | Candidate | Rebuild with point-in-time financial publication dates and execution costs before deciding on a separate shadow book. |
 | `dse_pead_v1` | Event swing | Data-blocked hypothesis | Wait for deep, timestamped earnings-announcement history and surprise features. |
 
-Three concurrent DSE shadow books is the initial maximum. A candidate can occupy a slot only after
+Three concurrent shadow books per market is the initial maximum. A candidate can occupy a slot only after
 its immutable specification and historical diagnostic are stored. A rejected strategy keeps its
 record but does not consume an active slot.
+
+The executable registry must assign every strategy an explicit scorer, holding/selection policy,
+sizing policy, market and evidence contract. Missing ownership is a runtime error, never a fallback
+to the nearest existing strategy. A multi-month book may not silently inherit the weekly full-rank
+replacement or low-gross sizing of an EOD swing book.
 
 ## Strategy admission process
 
@@ -119,8 +147,8 @@ historical drawdowns, so those tiers require stricter liquidity, extension and e
 
 Do not conflate the two existing reversal systems:
 
-- Atlas `dse_reversal_v1` is a deterministic price/liquidity shadow strategy and currently avoids
-  historically unavailable fundamental snapshots.
+- Atlas `dse_reversal_v1` is a registered deterministic price/liquidity strategy definition that
+  avoids historically unavailable fundamental snapshots; no current production shadow book exists.
 - Hedge `QualityReversalPortfolio` / `quality_reversal_eod` is a separate agent-paper experiment
   driven by the immutable daily Hedge publication.
 
@@ -129,9 +157,11 @@ reported as the other's track record.
 
 ## Next implementation order
 
-1. Make the portfolio-manager command loop the default operating surface and preserve exact event
-   lineage from signal through target, constraint, fill, position, exit and outcome.
-2. Keep `dse_reversal_v1` running unchanged long enough to build honest forward evidence.
+1. Make the portfolio-manager command loop the default operating surface. Keep snapshot-derived
+   signal-to-outcome events as an audit projection and introduce an independent, replayable
+   accounting ledger before calling cash, position, fee or settlement lineage authoritative.
+2. Keep `dse_reversal_v1` registered but inactive. Its January 2025–present historical proxy failed;
+   do not create or backfill a shadow book until a new immutable admission report passes.
 3. Persist DSE intraday observations as partitioned bars with completeness and freshness metrics;
    do not retain only the latest quote if intraday research is an objective.
 4. Write and freeze the trend-pullback experiment before inspecting its holdout.
@@ -140,3 +170,6 @@ reported as the other's track record.
 
 This order may change only because a documented data-quality or economic finding changes the
 decision, not because a strategy is slow to produce trades or another variant looks more exciting.
+
+The canonical system boundary, Hedge freeze, source-of-truth matrix and independent release gates
+are defined in `docs/architecture/atlas-investment-authority.md`.

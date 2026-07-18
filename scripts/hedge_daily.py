@@ -1,14 +1,14 @@
-"""Hedge — your daily morning list (Scheme-3 Quality Reversal, the validated flagship).
+"""Hedge — the frozen legacy Scheme-3 Quality Reversal monitor.
 
-What to check each morning. Scans the latest EOD data for names that just FIRED the flagship signal —
-a washed-out, profitable, cheap company turning up — and prints each with entry / stop / target / hold
-and the quality context (P/E, ROE, sector). Also a WATCHLIST: names set up in the zone, waiting only
-for the breakout trigger.
+Scans the latest EOD data for names that meet the historical Scheme-3 rule — a washed-out,
+profitable, cheap company turning up — and prints each with its signal reference, stop, target and
+quality context. It also preserves the pre-trigger watchlist. Hedge is not the Atlas portfolio
+authority and this monitor does not create an Atlas target, order or fill.
 
     uv run python scripts/hedge_daily.py            # this EOD's new signals + watchlist
 
-Scheme-3 (backtested, out-of-sample validated): ~58% win, winners ~2.3x losers, +74% / 2yr vs index
-+8%, ~12% worst drawdown. EOD/delayed data, single market regime — trade small, a stop is mandatory.
+The separate History page reads a dynamically computed legacy diagnostic. Its same-close,
+single-regime methodology is exploratory and is not an institutional or forward-paper track record.
 """
 
 from __future__ import annotations
@@ -48,8 +48,12 @@ def _qualifies(code, price, year, fin, div):
     return None
 
 
-# Validated backtest stats (scripts/portfolio_backtest.py + validate_scheme3.py) — the trust header.
-TRACK_RECORD = {"total_2y": 73.6, "index_2y": 7.8, "win": 58, "maxdd": -12, "cagr": 31.7}
+LEGACY_RESEARCH_STATUS = {
+    "authority": "frozen_legacy_monitor",
+    "performance_source": "persisted_dynamic_history",
+    "performance_surface": "/history",
+    "atlas_book": False,
+}
 
 
 def _current_setup_rows(
@@ -143,9 +147,7 @@ def classify_monitor_changes(
     watchlist: list[dict],
     previous: dict | None,
 ) -> dict:
-    current_codes = {
-        row["code"] for row in [*new_signals, *active_signals, *watchlist]
-    }
+    current_codes = {row["code"] for row in [*new_signals, *active_signals, *watchlist]}
     previous_codes = _monitor_codes(previous)
     return {
         "added": sorted(current_codes - previous_codes),
@@ -178,9 +180,7 @@ def build_scan_snapshot(
     new_signals.sort(key=lambda row: (row["score"], row["code"]), reverse=True)
 
     new_codes = {row["code"] for row in new_signals}
-    watchlist = [
-        row for code, row in current_setups.items() if code not in new_codes
-    ]
+    watchlist = [row for code, row in current_setups.items() if code not in new_codes]
     watchlist.sort(key=lambda row: (row["score"], row["code"]), reverse=True)
     active_signals = _active_signal_rows(by_code, ledger_rows, latest)
 
@@ -196,7 +196,7 @@ def build_scan_snapshot(
             watchlist=watchlist,
             previous=previous,
         ),
-        "track_record": TRACK_RECORD,
+        "research_status": LEGACY_RESEARCH_STATUS,
     }
 
 
@@ -208,7 +208,9 @@ def scan_from_snapshot(snapshot: dict) -> dict:
         "watch": snapshot.get("watchlist", []),
         "active": snapshot.get("active_signals", []),
         "changes": snapshot.get("changes", {}),
-        "track_record": snapshot.get("track_record", TRACK_RECORD),
+        # Old immutable publications contain a hard-coded ``track_record`` object. Do not project
+        # that stale claim into the current view; performance belongs to the dynamic History read.
+        "research_status": snapshot.get("research_status", LEGACY_RESEARCH_STATUS),
         "ready": True,
     }
 
@@ -248,7 +250,7 @@ async def _run():
                 f"{x['pe']:>6.1f}{x['roe']:>5}%  washed-out {x['below_high']:>3}%, cheap · {x['sector'][:18]}"
             )
     else:
-        print("  (none today — the flagship is selective; see the watchlist)")
+        print("  (none today — the frozen rule is selective; see the watchlist)")
     print(f"\n=== WATCHLIST (zone + quality, waiting for the breakout): {len(r['watch'])} ===")
     print(f"  {'CODE':<11}{'price':>8}{'P/E':>6}{'ROE':>6}{'below_hi':>10}  sector")
     for x in r["watch"]:

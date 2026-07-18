@@ -84,8 +84,9 @@ _EVIDENCE: dict[str, str] = {
     "institutional_13f_distribution": "utility",
 }
 
-# The reversal-family edge is regime-dependent: proven on a *recovering* market, likely a
-# falling-knife catcher in a sustained bear. These boards get the live regime banner.
+# The reversal family showed a favorable legacy result in one recovering-market sample, but did
+# not earn institutional admission. These descriptive boards get the live regime banner because
+# the same pattern can be a falling-knife catcher in a sustained bear.
 _REGIME_SENSITIVE = frozenset({"quality_reversal", "oversold_quality"})
 _REGIME_WINDOW = 200
 _REGIME_MIN_OBS = 120  # under this, say nothing (omit over mislead)
@@ -287,11 +288,11 @@ def scanner_pack_for(market: str) -> ScannerPack:
 async def _quality_reversal(
     session, market: str, limit: int, cap_tier: str | None = None
 ) -> ScreenOut | None:
-    """Deep-washout x quality x a 5-day-high break — the backtested flagship (Scheme-3).
+    """Deep-washout x quality x a 5-day-high break — a legacy-tested descriptive screen.
 
     Washed-out (>=40% off the high, still near the low) BUT profitable and reasonably priced, that just
-    broke their prior 5-day high. Descriptive; carries a regime caveat (the edge is strongest in a
-    recovering market — deepest can be a falling knife in a sustained downtrend)."""
+    broke their prior 5-day high. Descriptive; carries a regime caveat because the favorable legacy
+    result covered one recovery regime and the pattern can be a falling knife in a downtrend."""
     T = TickerAnalytics
     rows = list(
         await session.scalars(

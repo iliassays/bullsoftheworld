@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import asyncio
 
-from portfolio_backtest import _load, simulate
+from portfolio_backtest import _load, dsex_return, simulate
 from scheme2_value import _load_fundamentals
 from scheme_lab import quality_reversal
-
-INDEX = 7.8
 
 
 async def _run():
     by_code, dsex = await _load()
+    index_return = dsex_return(dsex)
     fin, div = await _load_fundamentals("DSE")
     sigs = quality_reversal(by_code, fin, div)
 
@@ -35,7 +34,7 @@ async def _run():
         ("trail 15% / hold 252d", dict(trail=0.15, hold=252)),
     ]
     print("Scheme-3 — fixed target vs 'let winners run' (trailing stop) · stop -10% / 10 positions")
-    print(f"Reference — buy & hold DSEX: +{INDEX}%\n")
+    print(f"Reference — full-window DSEX price return: {index_return:+.1f}%\n")
     print(
         f"{'EXIT RULE':<30}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'win%':>7}{'avg win':>9}{'trades':>8}"
     )

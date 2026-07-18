@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -13,11 +15,13 @@ import hedge_daily  # noqa: E402
 from hedge_app import _render, render_sizing  # noqa: E402
 from hedge_archive import content_hash  # noqa: E402
 from hedge_daily import (  # noqa: E402
-    TRACK_RECORD,
+    LEGACY_RESEARCH_STATUS,
     _current_setup_rows,
     classify_monitor_changes,
     scan_from_snapshot,
 )
+from hedge_history import render_history, serialize_history  # noqa: E402
+from portfolio_backtest import dsex_return  # noqa: E402
 
 
 def _row(code: str) -> dict:
@@ -50,7 +54,7 @@ def test_scan_snapshot_exposes_only_this_sessions_new_signals() -> None:
     snapshot = {
         "schema_version": 1,
         "as_of": "2026-07-15",
-        "track_record": TRACK_RECORD,
+        "track_record": {"total_2y": 73.6},
         "new_signals": [{"code": "NEW", "score": 91}],
         "active_signals": [{"code": "OLDER", "signal_date": "2026-07-01"}],
         "watchlist": [{"code": "WATCH", "score": 70}],
@@ -62,6 +66,8 @@ def test_scan_snapshot_exposes_only_this_sessions_new_signals() -> None:
     assert [row["code"] for row in result["fired"]] == ["NEW"]
     assert [row["code"] for row in result["active"]] == ["OLDER"]
     assert [row["code"] for row in result["watch"]] == ["WATCH"]
+    assert "track_record" not in result
+    assert result["research_status"] == LEGACY_RESEARCH_STATUS
     assert result["ready"] is True
 
 
@@ -125,7 +131,7 @@ def test_current_setup_excludes_a_ticker_without_a_bar_for_the_publication_sessi
 def test_monitor_render_separates_signals_watchlist_and_paper_account() -> None:
     payload = {
         "as_of": "2026-07-15",
-        "track_record": TRACK_RECORD,
+        "track_record": {"total_2y": 73.6, "index_2y": 7.8},
         "new_signals": [],
         "active_signals": [],
         "watchlist": [],
@@ -147,10 +153,12 @@ def test_monitor_render_separates_signals_watchlist_and_paper_account() -> None:
     )
 
     assert "Quality Reversal Monitor" in html
+    assert "Frozen legacy research monitor" in html
+    assert "73.6" not in html
     assert "No new Quality Reversal signal" in html
     assert "setup waiting for breakout" in html
     assert "Forward-only account" not in html  # account has not been provisioned yet
-    assert "No historical fills will be invented" in html
+    assert "No dedicated forward paper account exists" in html
 
 
 def test_sizing_empty_session_does_not_claim_slots_are_full() -> None:
@@ -161,7 +169,7 @@ def test_sizing_empty_session_does_not_claim_slots_are_full() -> None:
             "watch": [],
             "active": [],
             "changes": {},
-            "track_record": TRACK_RECORD,
+            "research_status": LEGACY_RESEARCH_STATUS,
             "ready": True,
         },
         capital=200_000,
@@ -171,3 +179,43 @@ def test_sizing_empty_session_does_not_claim_slots_are_full() -> None:
 
     assert "No new signal was confirmed" in html
     assert "No free slots" not in html
+
+
+def test_history_serialization_labels_the_legacy_methodology() -> None:
+    first = dt.date(2025, 1, 2)
+    second = dt.date(2025, 1, 5)
+    payload = serialize_history(
+        {
+            "curve": [(first, 1_000.0), (second, 1_020.0)],
+            "index": [(first, 1_000.0), (second, 1_010.0)],
+            "trades": [],
+            "stats": {
+                "final": 1_020.0,
+                "total": 2.0,
+                "cagr": 10.0,
+                "index_return": 1.0,
+                "winrate": 50.0,
+                "maxdd": -2.0,
+                "n_trades": 2,
+            },
+        }
+    )
+
+    assert payload["methodology"]["status"] == "legacy_exploratory_diagnostic"
+    assert payload["methodology"]["entry_price"] == "signal_session_close"
+    assert payload["methodology"]["slippage"] == "not_modelled"
+
+    html = render_history(payload, as_of_date=second)
+    assert "Legacy exploratory simulation" in html
+    assert "not an Atlas or" in html
+    assert "Same-session" in html
+    assert "slippage, ADV capacity, settlement" in html
+
+
+def test_legacy_research_uses_the_loaded_dsex_window_not_a_stale_constant() -> None:
+    assert dsex_return(
+        {
+            dt.date(2025, 1, 1): 5_000.0,
+            dt.date(2025, 2, 1): 5_500.0,
+        }
+    ) == pytest.approx(10.0)

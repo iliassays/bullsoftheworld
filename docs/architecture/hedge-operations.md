@@ -29,6 +29,14 @@ The latest publication is also copied into
 selector, and the signals API read the small publication documents; a cache miss never loads DSE
 bars or fundamentals.
 
+Hedge is a frozen legacy research system, not Atlas portfolio authority. Its daily screen does not
+display a copied or hard-coded performance number. Older immutable publications may still contain
+the former `track_record` object as historical payload evidence, but the compatibility projection
+deliberately ignores it. The Legacy backtest page reads the current dynamic snapshot and labels its
+same-close entry, fractional-unit, missing-slippage, missing-capacity, missing-settlement,
+future-liquidity-filter and fiscal-year knowledge-time limitations. The signal-episode average is
+also labelled as an overlapping-event statistic, not a shared-capital portfolio return.
+
 ## Agent portfolios
 
 The agent engine is deterministic paper trading, not an LLM trader. Every intraday tick performs:
@@ -55,6 +63,11 @@ published conviction score, and executes through the same delayed-quote, brokera
 cash, slot, circuit-lock, opportunity, and audit machinery as every other model portfolio. Policy:
 10 positions, 10% target allocation per entry, -10% stop, +25% target, and a 63-trading-session time
 exit. It never backfills historical fills; its performance starts when the account is provisioned.
+
+This Hedge agent account is separate from Atlas. The production check on 18 July 2026 found no DSE
+Atlas shadow portfolio and no execution in this Hedge account. An existing empty legacy account is
+not permission to create an Atlas book or inherit the legacy backtest; any future Atlas book needs a
+passed immutable admission report and an explicit inception date.
 
 No strategy should be promoted from experimental status based on a few days of open-position
 mark-to-market performance. Evaluation requires enough closed trades across more than one market

@@ -13,9 +13,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 
-from portfolio_backtest import WARMUP, _load, simulate
-
-INDEX_RET = 7.8
+from portfolio_backtest import WARMUP, _load, dsex_return, simulate
 
 
 def _sma(vals, n):
@@ -144,8 +142,9 @@ SCHEMES = {
 
 async def _run():
     by_code, dsex = await _load()
+    index_return = dsex_return(dsex)
     print("Same engine for all (stop -10% / target +25% / hold 63d / 10 positions / 0.4% cost).")
-    print(f"Reference — DSEX buy & hold: {INDEX_RET:+.1f}%\n")
+    print(f"Reference — full-window DSEX price return: {index_return:+.1f}%\n")
     print(
         f"{'SCHEME':<24}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'trades':>8}{'win%':>7}{'avg W/L':>12}{'vs index':>10}"
     )
@@ -158,7 +157,7 @@ async def _run():
         wl = f"+{m['avg_win']:.0f}/{m['avg_loss']:.0f}"
         print(
             f"{name:<24}{m['total']:>+9.1f}{m['cagr']:>+8.1f}{m['maxdd']:>9.1f}"
-            f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{wl:>12}{m['total'] - INDEX_RET:>+10.1f}"
+            f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{wl:>12}{m['total'] - index_return:>+10.1f}"
         )
 
 

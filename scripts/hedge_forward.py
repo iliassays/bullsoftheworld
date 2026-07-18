@@ -161,7 +161,7 @@ async def read_log() -> dict:
 
 
 def render_ledger(log: dict) -> str:
-    """The persisted signal ledger as an HTML section (summary cards + scrollable table)."""
+    """Render signal episodes while keeping them distinct from shared-capital performance."""
     rows = ""
     for r in log["rows"]:
         res = r["result_pct"]
@@ -174,16 +174,18 @@ def render_ledger(log: dict) -> str:
             f"<td class='{cls}'>{(f'{res:+.1f}%') if res is not None else 'running'}</td></tr>"
         )
     return f"""
-<h2>Signal ledger &mdash; persisted &amp; growing (since {log["since"]})</h2>
+<h2>Signal episode ledger &mdash; not portfolio return (since {log["since"]})</h2>
 <div class="tr">
   <div><div class="k">signals logged</div><div class="v">{log["total"]}</div></div>
-  <div><div class="k">closed</div><div class="v">{log["closed"]}</div></div>
-  <div><div class="k">win rate</div><div class="v pos">{log["win_rate"]}%</div></div>
-  <div><div class="k">avg result</div><div class="v pos">+{log["avg"]}%</div></div>
+  <div><div class="k">resolved</div><div class="v">{log["closed"]}</div></div>
+  <div><div class="k">episode win rate</div><div class="v">{log["win_rate"]}%</div></div>
+  <div><div class="k">avg episode</div><div class="v {"pos" if log["avg"] >= 0 else "neg"}">{log["avg"]:+}%</div></div>
   <div><div class="k">open now</div><div class="v">{log["open"]}</div></div>
 </div>
-<div class="cap">Every Scheme-3 signal, persisted and re-scored daily. Backfilled at launch, grows
-forward from here — new picks log automatically, open ones close as they hit target/stop/time.</div>
+<div class="cap">Every Scheme-3 signal is persisted and re-scored. Consecutive sessions may create
+overlapping episodes in the same company; episodes do not compete for one capital account and their
+average is not a portfolio return. The ledger was historically backfilled at launch and therefore
+is not a forward execution record.</div>
 <div class="scroll"><table>
 <tr><th>signal date</th><th>code</th><th>entry</th><th>status</th><th>exit date</th><th>result</th></tr>
 {rows}

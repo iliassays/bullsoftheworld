@@ -1,4 +1,4 @@
-"""Scheme hunt — explore new edges beyond the flagship: low-vol, multi-factor, quality-momentum.
+"""Legacy scheme hunt: low-vol, multi-factor and quality-momentum diagnostics.
 
 Builds a cross-sectional engine that sees BOTH fundamentals and price features (volatility, 52w
 position, 3-month momentum) at each rebalance, then tests strategies the earlier labs couldn't:
@@ -6,8 +6,8 @@ position, 3-month momentum) at each rebalance, then tests strategies the earlier
   - multi-factor composite (AQR-style: rank value + quality + reversal together, buy the top)
   - quality momentum       (does momentum work when restricted to cheap profitable names?)
   - value-reversal x-sec   (the most beaten-down cheap profitable names, monthly, long hold)
-Each judged against Scheme-3 (the flagship to beat). Honest: more schemes = more multiple-comparison
-risk, so any winner gets the same out-of-sample check before it's trusted.
+These variants were exploratory and create multiple-comparison risk. They are preserved for research
+memory, not as an active strategy search or a comparison with the stale Scheme-3 headline.
 
     uv run python scripts/scheme_hunt.py
 """
@@ -18,11 +18,10 @@ import asyncio
 import statistics as st
 from collections import defaultdict
 
-from portfolio_backtest import MIN_AVG_VOL, _load, simulate
+from portfolio_backtest import MIN_AVG_VOL, _load, dsex_return, simulate
 from scheme2_value import _fundamentals_at, _load_fundamentals, _pct
 from schemes import _roll_ext
 
-INDEX_RET = 7.8
 TOP_N = 12
 
 
@@ -143,8 +142,10 @@ async def _run():
     by_code, dsex = await _load()
     fin, div = await _load_fundamentals("DSE")
     prepped = _prep(by_code)
+    index_return = dsex_return(dsex)
     print(f"Cross-sectional engine · {len(prepped)} liquid names · monthly rebalance, top-{TOP_N}")
-    print("Flagship to beat — Scheme-3 Quality Reversal: +73.6% / 58% win / -12% maxDD\n")
+    print(f"Full-window DSEX price return: {index_return:+.1f}%")
+    print("Legacy Scheme-3 headline omitted; it used a separate optimistic methodology.\n")
     print(
         f"{'NEW SCHEME':<24}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'trades':>8}{'win%':>7}{'vs idx':>8}"
     )
@@ -156,7 +157,7 @@ async def _run():
     for name, m in sorted(results, key=lambda r: r[1]["total"], reverse=True):
         print(
             f"{name:<24}{m['total']:>+9.1f}{m['cagr']:>+8.1f}{m['maxdd']:>9.1f}"
-            f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{m['total'] - INDEX_RET:>+8.1f}"
+            f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{m['total'] - index_return:>+8.1f}"
         )
 
 

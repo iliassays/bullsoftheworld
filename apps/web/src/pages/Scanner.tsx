@@ -408,8 +408,8 @@ function ScannerRow({ board, item, onPick }: { board: Screen; item: ScreenItem; 
   );
 }
 
-// The regime-dependent boards get a louder, live caution when DSEX sits below its 200-day
-// average — the research says the reversal edge was proven in a *recovering* market only.
+// The regime-dependent boards get a louder caution when DSEX sits below its 200-day average. The
+// favorable legacy diagnostic covered one recovery regime; it did not establish a proven edge.
 const REGIME_SENSITIVE = new Set(["quality_reversal", "oversold_quality"]);
 
 function RegimeBanner() {
@@ -417,8 +417,8 @@ function RegimeBanner() {
   return (
     <div className="mt-2 rounded-xl border border-down/40 bg-down/10 p-2.5 text-[11px] leading-snug text-down">
       {lang === "bn"
-        ? "⚠️ বাজার এখন ২০০-দিনের গড়ের নিচে। এই প্যাটার্নের এজ রিকভারি মার্কেটে প্রমাণিত — ডাউনট্রেন্ডে গভীর পতন আরও পড়তে পারে।"
-        : "⚠️ The market is below its 200-day average. This pattern's edge was proven in a recovering market — in a downtrend, deep falls can keep falling."}
+        ? "⚠️ বাজার এখন ২০০-দিনের গড়ের নিচে। পুরোনো গবেষণায় একটি রিকভারি পর্যায়ে ভালো ফল দেখা গিয়েছিল, কিন্তু এটি প্রমাণিত এজ নয় এবং কোনো Atlas কৌশল অনুমোদন পায়নি। ডাউনট্রেন্ডে গভীর পতন আরও পড়তে পারে।"
+        : "⚠️ The market is below its 200-day average. Older research looked favorable in one recovery regime, but this is not a proven edge and no Atlas strategy earned admission. In a downtrend, deep falls can keep falling."}
     </div>
   );
 }

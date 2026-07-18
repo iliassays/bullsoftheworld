@@ -12,11 +12,10 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 
-from portfolio_backtest import MIN_AVG_VOL, WARMUP, _load, simulate
+from portfolio_backtest import MIN_AVG_VOL, WARMUP, _load, dsex_return, simulate
 from scheme2_value import _fundamentals_at, _load_fundamentals
 from schemes import _prep
 
-INDEX = 7.8
 EXITS = dict(stop=-0.10, target=0.25, hold=63, max_pos=10)
 DEPTHS = [-20, -25, -30, -35, -40, -50]  # % below the 1-year high
 
@@ -41,9 +40,10 @@ def _signals(by_code, fin, div, deep):
 
 async def _run():
     by_code, dsex = await _load()
+    index_return = dsex_return(dsex)
     fin, div = await _load_fundamentals("DSE")
     print("Scheme-3 — required drop below the 1-year high (everything else fixed)")
-    print(f"Reference — buy & hold DSEX: +{INDEX}%\n")
+    print(f"Reference — full-window DSEX price return: {index_return:+.1f}%\n")
     print(f"{'drop below high':>16}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'win%':>7}{'trades':>8}")
     print("-" * 58)
     for deep in DEPTHS:

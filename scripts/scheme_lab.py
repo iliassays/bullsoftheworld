@@ -1,9 +1,7 @@
-"""Scheme lab v2 — more strategies, including hybrids that fuse our two proven edges.
+"""Legacy Scheme lab v2 — exploratory hybrids of reversal and quality/value rules.
 
-We know on DSE: mean-reversion (deep washout + turn) works and quality/value works; momentum and
-plain oversold lose. So the promising new schemes COMBINE the winners — e.g. "only take the washout
-bounce if the company is actually cheap and profitable" (filters out junk pennies). All run on the
-same portfolio engine; each gets style-appropriate exits. Leaderboard ranks them.
+The original study combined rules that looked favorable in one sample. Its same-close engine and
+multiple strategy search are preserved for reproducibility, not treated as proof or Atlas admission.
 
     uv run python scripts/scheme_lab.py
 """
@@ -13,12 +11,10 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 
-from portfolio_backtest import MIN_AVG_VOL, WARMUP, _load, simulate
+from portfolio_backtest import MIN_AVG_VOL, WARMUP, _load, dsex_return, simulate
 from scheme2_value import _build_signals as scheme2_signals
 from scheme2_value import _fundamentals_at, _load_fundamentals, _pct
 from schemes import _prep
-
-INDEX_RET = 7.8
 
 
 def _liquid(by_code):
@@ -115,9 +111,10 @@ SCHEMES = [
 
 async def _run():
     by_code, dsex = await _load()
+    index_return = dsex_return(dsex)
     fin, div = await _load_fundamentals("DSE")
     print("Each scheme: own entry rule, style-appropriate exits, same engine/costs.")
-    print(f"Reference — buy & hold DSEX: {INDEX_RET:+.1f}%\n")
+    print(f"Reference — full-window DSEX price return: {index_return:+.1f}%\n")
     print(
         f"{'SCHEME':<24}{'total%':>9}{'CAGR%':>8}{'maxDD%':>9}{'trades':>8}{'win%':>7}{'avg W/L':>12}{'vs idx':>8}"
     )
@@ -134,7 +131,7 @@ async def _run():
         wl = f"+{m['avg_win']:.0f}/{m['avg_loss']:.0f}"
         print(
             f"{name:<24}{m['total']:>+9.1f}{m['cagr']:>+8.1f}{m['maxdd']:>9.1f}"
-            f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{wl:>12}{m['total'] - INDEX_RET:>+8.1f}"
+            f"{m['n_trades']:>8}{m['winrate']:>6.0f}%{wl:>12}{m['total'] - index_return:>+8.1f}"
         )
 
 

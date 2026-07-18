@@ -3,8 +3,8 @@
 The screenshot's factor: 12-1 momentum (return from ~12 months ago to ~1 month ago, skipping the last
 month), optionally risk-adjusted ("steady climbs over wild ones" = momentum / volatility). We buy the
 top trenders each month and RIDE them (trailing stop, long hold). Globally momentum works; our earlier
-DSE tests said it loses. This is the definitive version. Compared to Scheme-3, with an out-of-sample
-split.
+DSE tests said it loses. This script preserves the original diagnostic with an out-of-sample split;
+it does not compare against the stale Scheme-3 headline.
 
 Caveat: 12-month momentum needs ~12 months of history, leaving only ~10 months of our 2-year window to
 test on — so few rebalances, statistically THIN. Read directionally.
@@ -19,9 +19,8 @@ import datetime as dt
 import statistics as st
 from collections import defaultdict
 
-from portfolio_backtest import MIN_AVG_VOL, _load, simulate
+from portfolio_backtest import MIN_AVG_VOL, _load, dsex_return, simulate
 
-INDEX = 7.8
 TOP_N = 12
 SPLIT = dt.date(2025, 9, 1)
 
@@ -62,6 +61,7 @@ def _signals(by_code, steady: bool):
 
 async def _run():
     by_code, dsex = await _load()
+    full_index_return = dsex_return(dsex)
 
     def idx(lo, hi):
         v = [x for dd, x in sorted(dsex.items()) if lo <= dd < hi]
@@ -85,7 +85,8 @@ async def _run():
         ),
     ]
     print("Momentum 'strongest trend' on DSE — buy the top-12 trenders, ride them.")
-    print(f"Reference — Scheme-3 (our flagship): +73.6%  |  buy & hold DSEX: +{INDEX}%\n")
+    print(f"Reference — full-window DSEX price return: {full_index_return:+.1f}%")
+    print("Legacy Scheme-3 headline omitted; it used a separate optimistic methodology.\n")
     print(f"{'MOMENTUM SCHEME':<38}{'total%':>9}{'maxDD%':>9}{'win%':>7}{'trades':>8}{'vs idx':>8}")
     print("-" * 80)
     best = None
@@ -94,7 +95,7 @@ async def _run():
             by_code, dsex, signal_fn=lambda b, s=sigs: s.get(b[0].code, set()), max_pos=10, **ex
         )
         print(
-            f"{name:<38}{m['total']:>+9.1f}{m['maxdd']:>9.1f}{m['winrate']:>6.0f}%{m['n_trades']:>8}{m['total'] - INDEX:>+8.1f}"
+            f"{name:<38}{m['total']:>+9.1f}{m['maxdd']:>9.1f}{m['winrate']:>6.0f}%{m['n_trades']:>8}{m['total'] - full_index_return:>+8.1f}"
         )
         if best is None or m["total"] > best[1]["total"]:
             best = (name, m, sigs, ex)

@@ -20,7 +20,7 @@ from collections import defaultdict
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from hedge_archive import read_daily_snapshots
-from hedge_daily import TRACK_RECORD, scan_from_snapshot
+from hedge_daily import LEGACY_RESEARCH_STATUS, scan_from_snapshot
 from hedge_forward import read_log, render_ledger
 from hedge_history import read_snapshot, render_history
 from risk_calc import MAX_HEAT_PCT, MAX_POSITION_PCT, MAX_POSITIONS, size
@@ -133,15 +133,16 @@ def _shell(active: str, body: str) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Hedge</title>
 <style>{_CSS}</style></head><body>
 <h1>Hedge <span style="color:#3ddc84">·</span></h1>
-<nav>{tab("/", "Quality Reversal")}{tab("/sizing", "Risk / sizing")}{tab("/history", "Track record")}{tab("/portfolios", "Agent portfolios")}</nav>
+<nav>{tab("/", "Quality Reversal")}{tab("/sizing", "Risk / sizing")}{tab("/history", "Legacy backtest")}{tab("/portfolios", "Agent portfolios")}</nav>
 {body}
 </body></html>"""
 
 
 def _paper_summary(paper: dict | None) -> str:
     if paper is None:
-        return """<div class="card"><div class="why">The dedicated forward paper account is being
-prepared. No historical fills will be invented; its record begins when the account is created.</div></div>"""
+        return """<div class="card"><div class="why">No dedicated forward paper account exists.
+No historical fills will be invented; any future record must begin from an explicitly declared
+inception date.</div></div>"""
     return f"""
 <div class="tr">
   <div><div class="k">Paper equity</div><div class="v">{_fmt_tk(paper["equity"])}</div></div>
@@ -172,14 +173,13 @@ def _render(
 <div class="card"><div class="why">The scheduled EOD refresh has not published the buy-list snapshot
 yet. This page will not run the full-market scan inside your browser request. Try again after the
 next refresh.</div></div>"""
-    tr = d["track_record"]
     selected_index = next(
         (index for index, row in enumerate(archive) if row.as_of_date.isoformat() == selected_date),
         0,
     )
     archive_options = "".join(
         f'<option value="{row.as_of_date}" {"selected" if row.as_of_date.isoformat() == selected_date else ""}>'
-        f'{row.as_of_date}{" · latest" if index == 0 else ""}</option>'
+        f"{row.as_of_date}{' · latest' if index == 0 else ''}</option>"
         for index, row in enumerate(archive)
     )
     buys = (
@@ -248,9 +248,11 @@ evidence {evidence_hash[:12] if evidence_hash else "pending"} · {archive_note}<
   <div><div class="k">Waiting for trigger</div><div class="v">{len(d["watch"])}</div><div class="metric-note">setup only</div></div>
   <div><div class="k">Removed vs prior</div><div class="v">{len(changes.get("removed", []))}</div><div class="metric-note">no longer monitored</div></div>
 </div>
-<div class="cap">Historical validation: +{tr["total_2y"]}% strategy vs +{tr["index_2y"]}% market,
-{tr["win"]}% wins, {tr["maxdd"]}% worst drawdown. This is a single-regime backtest; the forward
-paper account below is the decision-grade evidence.</div>
+<div class="card"><div class="why"><b>Frozen legacy research monitor.</b> Performance is not copied
+into this daily screen. The <a class="paper-link" href="/history">Legacy backtest</a> page reads the
+latest dynamically computed diagnostic and states its same-close, no-slippage limitations. It is
+not an Atlas track record, a paper execution record, or evidence that this session's names are
+profitable.</div></div>
 <div class="section-head"><h2>New signals ({len(d["fired"])})</h2>
 <a class="action-link" href="/sizing?date={selected_date}">Size this session</a></div>
 {buys}
@@ -288,21 +290,18 @@ next refresh.</div></div>"""
     r = size(capital, risk, d["fired"], held=held)
     rows, invested, heat, reserved = r["rows"], r["invested"], r["heat"], r["reserved"]
     pct = lambda x: x / capital * 100 if capital else 0  # noqa: E731
-    body = (
-        "".join(
-            f"<tr><td><b>{x['code']}</b></td><td class='num'>{x['score'] or 0}</td>"
-            f"<td class='num'>{x['entry']:.1f}</td>"
-            f"<td class='num neg'>{x['stop']:.1f}</td><td class='num pos'>{x['target']:.1f}</td>"
-            f"<td class='num'>{x['shares']:,}</td><td class='num'>{x['invested']:,.0f}</td>"
-            f"<td class='num'>{x['risk']:,.0f}</td><td class='num pos'>{x['reward']:,.0f}</td></tr>"
-            for x in rows
-        )
-        or (
-            f'<tr><td colspan="9" class="empty">No free slots — you already hold {held} of '
-            f"{MAX_POSITIONS}. Wait for an exit.</td></tr>"
-            if d["fired"]
-            else '<tr><td colspan="9" class="empty">No new signal was confirmed for this EOD session.</td></tr>'
-        )
+    body = "".join(
+        f"<tr><td><b>{x['code']}</b></td><td class='num'>{x['score'] or 0}</td>"
+        f"<td class='num'>{x['entry']:.1f}</td>"
+        f"<td class='num neg'>{x['stop']:.1f}</td><td class='num pos'>{x['target']:.1f}</td>"
+        f"<td class='num'>{x['shares']:,}</td><td class='num'>{x['invested']:,.0f}</td>"
+        f"<td class='num'>{x['risk']:,.0f}</td><td class='num pos'>{x['reward']:,.0f}</td></tr>"
+        for x in rows
+    ) or (
+        f'<tr><td colspan="9" class="empty">No free slots — you already hold {held} of '
+        f"{MAX_POSITIONS}. Wait for an exit.</td></tr>"
+        if d["fired"]
+        else '<tr><td colspan="9" class="empty">No new signal was confirmed for this EOD session.</td></tr>'
     )
     wait = (
         '<div class="cap"><b>Waitlist</b> (no room today — take when an open position exits): '
@@ -399,9 +398,7 @@ async def _agent_book(handles: set[str] | None = None) -> list[dict]:
                 .order_by(AgentTrade.user_id, AgentTrade.id)
             )
         ).all()
-        opportunity_counts: dict[int, dict[str, int]] = defaultdict(
-            lambda: {"open": 0, "total": 0}
-        )
+        opportunity_counts: dict[int, dict[str, int]] = defaultdict(lambda: {"open": 0, "total": 0})
         for user_id, status, count in (
             await session.execute(
                 select(
@@ -751,7 +748,7 @@ async def _archive_view(selected_date: str = ""):
             "watch": [],
             "active": [],
             "changes": {},
-            "track_record": TRACK_RECORD,
+            "research_status": LEGACY_RESEARCH_STATUS,
             "ready": False,
         },
         [],
@@ -762,9 +759,10 @@ async def _archive_view(selected_date: str = ""):
 async def _history_body() -> str:
     snapshot = await read_snapshot()
     if snapshot is None:
-        return """<h2>Track record is preparing</h2>
-<div class="card"><div class="why">The batch snapshot has not completed yet. This page never runs
-the multi-year backtest inside your browser request; refresh after the scheduled EOD job.</div></div>"""
+        return """<h2>Legacy diagnostic is unavailable</h2>
+<div class="card"><div class="why">The persisted batch snapshot has not completed yet. This page
+never runs the multi-year simulation inside a browser request and will not substitute a hard-coded
+performance claim.</div></div>"""
     return render_history(
         snapshot.payload,
         computed_at=snapshot.computed_at,
