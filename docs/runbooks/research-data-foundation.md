@@ -48,9 +48,11 @@ tail -f /home/ubuntu/bullsofdhaka/var/log/sec-refresh.log
 ```
 
 Starting the same unit again cannot create an overlapping run. The parser reports progress every
-250,000 holdings rows, atomically checkpoints each provenance-scoped derived archive under
-`var/sec-13f-cache`, and deletes the downloaded raw ZIP. A timeout therefore resumes from the last
-complete parse instead of rescanning it.
+250,000 holdings rows, aggregates manager/security positions into a bounded-memory SQLite cache
+under `var/sec-13f-cache`, and atomically publishes that provenance-scoped cache before deleting the
+downloaded raw ZIP. Quarter comparison then reads one symbol batch at a time. A timeout therefore
+resumes from the last complete archive instead of rescanning it, without holding whole-universe
+quarters in application memory.
 
 FINRA consolidated NMS short volume is an independent daily feed. The US worker fetches it after
 the expected publication window at 23:45 UTC, validates the source trailer and volume invariants,

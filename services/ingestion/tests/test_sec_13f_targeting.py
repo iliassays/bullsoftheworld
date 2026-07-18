@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import replace
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -63,7 +64,10 @@ def test_derived_archive_cache_round_trips_with_mapping_provenance(tmp_path) -> 
         report_date=dt.date(2026, 3, 31),
         filing_date=dt.date(2026, 5, 15),
         accession_number="0000000001-26-000001",
-        source_url="https://www.sec.gov/Archives/example",
+        source_url=(
+            "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/"
+            "0000000001-26-000001-index.html"
+        ),
     )
     archive = ArchiveResult(
         source_url=source_url,
@@ -97,19 +101,27 @@ def test_derived_archive_cache_round_trips_with_mapping_provenance(tmp_path) -> 
     )
     fingerprint = sec_13f._mapping_fingerprint([SymbolIdentity(code="NXTC", name="NextCure, Inc.")])
 
-    path = sec_13f._store_archive_cache(
-        tmp_path,
-        archive,
-        fingerprint=fingerprint,
-    )
-    restored = sec_13f._load_archive_cache(
+    path = sec_13f._archive_cache_path(tmp_path, source_url, fingerprint)
+    writer = sec_13f._ArchiveCacheWriter(path)
+    writer.add(archive.positions[0])
+    metadata_archive = replace(archive, positions=())
+    writer.finish(metadata_archive, fingerprint=fingerprint)
+    loaded = sec_13f._load_archive_cache(
         tmp_path,
         source_url,
         fingerprint=fingerprint,
     )
 
     assert path.stat().st_mode & 0o777 == 0o600
-    assert restored == archive
+    assert loaded is not None
+    restored, restored_path = loaded
+    assert restored_path == path
+    assert restored == metadata_archive
+    connection = sec_13f.sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        assert sec_13f._positions_from_cache(connection, "NXTC", restored) == archive.positions
+    finally:
+        connection.close()
     assert (
         sec_13f._load_archive_cache(
             tmp_path,
@@ -118,3 +130,87 @@ def test_derived_archive_cache_round_trips_with_mapping_provenance(tmp_path) -> 
         )
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_disk_backed_quarter_comparison_preserves_change_semantics(
+    tmp_path, monkeypatch
+) -> None:
+    source_url = "https://www.sec.gov/files/form13f.zip"
+
+    def archive(report_date: dt.date, shares: int, value: float, suffix: str):
+        accession = f"0000000001-26-0000{suffix}"
+        filing = ManagerFiling(
+            cik=1,
+            name="Example Capital",
+            report_date=report_date,
+            filing_date=report_date + dt.timedelta(days=45),
+            accession_number=accession,
+            source_url=(
+                f"https://www.sec.gov/Archives/edgar/data/1/{accession.replace('-', '')}/"
+                f"{accession}-index.html"
+            ),
+        )
+        position = RawInstitutionalPosition(
+            code="NXTC",
+            cusip="000000001",
+            manager_cik=1,
+            manager_name=filing.name,
+            report_date=report_date,
+            filing_date=filing.filing_date,
+            accession_number=accession,
+            shares=shares,
+            value_usd=value,
+            source_url=filing.source_url,
+        )
+        return (
+            ArchiveResult(
+                source_url=f"{source_url}?{suffix}",
+                report_date=report_date,
+                positions=(),
+                matches=(),
+                unmatched_cusips=0,
+                manager_filings={1: filing},
+            ),
+            position,
+        )
+
+    prior, prior_position = archive(dt.date(2025, 12, 31), 100, 500.0, "01")
+    current, current_position = archive(dt.date(2026, 3, 31), 150, 800.0, "02")
+    prior_path = tmp_path / "prior.sqlite3"
+    current_path = tmp_path / "current.sqlite3"
+    for metadata, position, path in (
+        (prior, prior_position, prior_path),
+        (current, current_position, current_path),
+    ):
+        writer = sec_13f._ArchiveCacheWriter(path)
+        writer.add(position)
+        writer.finish(metadata, fingerprint="test")
+
+    captured = {}
+
+    async def fake_persist(metadata, changes, summaries, *, codes):
+        captured.update(changes=changes, summaries=summaries, codes=codes)
+        return {
+            "positions": len(changes),
+            "summaries": len(summaries),
+            "identifiers": 0,
+            "managers": len(changes),
+        }
+
+    monkeypatch.setattr(sec_13f, "_persist_period", fake_persist)
+
+    stats, summaries = await sec_13f._persist_cached_period(
+        current,
+        current_path,
+        prior,
+        prior_path,
+        symbols=[SymbolIdentity(code="NXTC", name="NextCure, Inc.")],
+    )
+
+    assert stats["positions"] == 1
+    assert captured["codes"] == ["NXTC"]
+    assert captured["changes"][0].change_type == "increased"
+    assert captured["changes"][0].share_change == 50
+    assert summaries[0].net_share_change == 50
+    assert summaries[0].net_change_pct == 50.0

@@ -334,11 +334,15 @@ def parse_13f_archive(
     source_url: str,
     symbols: Iterable[SymbolIdentity],
     known_cusips: dict[str, str] | None = None,
+    position_sink: Callable[[RawInstitutionalPosition], None] | None = None,
+    retain_positions: bool = True,
     progress: Callable[[int], None] | None = None,
     progress_every_rows: int = 250_000,
 ) -> ArchiveResult:
     if progress_every_rows < 1:
         raise ValueError("progress_every_rows must be positive")
+    if not retain_positions and position_sink is None:
+        raise ValueError("position_sink is required when archive positions are not retained")
     symbol_list = tuple(symbols)
     match_index = _symbol_match_index(symbol_list)
     cusip_to_code = dict(known_cusips or {})
@@ -371,29 +375,38 @@ def parse_13f_archive(
                 candidate.accession_number,
             ) > (prior_filing.filing_date, prior_filing.accession_number):
                 manager_filings[item.cik] = candidate
-        aggregate: dict[tuple[str, int, dt.date], RawInstitutionalPosition] = {}
+        aggregate: dict[tuple[str, int, dt.date], RawInstitutionalPosition] | None = (
+            {} if retain_positions else None
+        )
 
         def add_position(row, submission: _Submission, code: str, cusip: str) -> None:
+            if submission.report_date != latest_report:
+                return
             try:
                 shares = int(float(row.get("SSHPRNAMT") or 0))
                 value_usd = float(row.get("VALUE") or 0)
             except ValueError:
                 return
+            position = RawInstitutionalPosition(
+                code=code,
+                cusip=cusip,
+                manager_cik=submission.cik,
+                manager_name=submission.manager_name,
+                report_date=submission.report_date,
+                filing_date=submission.filing_date,
+                accession_number=submission.accession,
+                shares=shares,
+                value_usd=value_usd,
+                source_url=filing_index_url(submission.cik, submission.accession),
+            )
+            if position_sink is not None:
+                position_sink(position)
+            if aggregate is None:
+                return
             key = (code, submission.cik, submission.report_date)
             prior = aggregate.get(key)
             if prior is None:
-                aggregate[key] = RawInstitutionalPosition(
-                    code=code,
-                    cusip=cusip,
-                    manager_cik=submission.cik,
-                    manager_name=submission.manager_name,
-                    report_date=submission.report_date,
-                    filing_date=submission.filing_date,
-                    accession_number=submission.accession,
-                    shares=shares,
-                    value_usd=value_usd,
-                    source_url=filing_index_url(submission.cik, submission.accession),
-                )
+                aggregate[key] = position
             else:
                 aggregate[key] = prior.model_copy(
                     update={
@@ -473,9 +486,7 @@ def parse_13f_archive(
                 if (row.get("PUTCALL") or "").strip():
                     continue
                 add_position(row, submission, cusip_to_code[cusip], cusip)
-    positions = tuple(
-        position for position in aggregate.values() if position.report_date == latest_report
-    )
+    positions = tuple(aggregate.values()) if aggregate is not None else ()
     return ArchiveResult(
         source_url=source_url,
         report_date=latest_report,
@@ -584,9 +595,11 @@ def build_holding_changes(
             key=lambda row: abs(row.share_change or 0),
             reverse=True,
         )[:TOP_BY_CHANGE]
-        prioritized = [
-            row for row in ranked if row.manager_cik in watched_manager_ciks
-        ] + ranked[:TOP_BY_VALUE] + by_change
+        prioritized = (
+            [row for row in ranked if row.manager_cik in watched_manager_ciks]
+            + ranked[:TOP_BY_VALUE]
+            + by_change
+        )
         keep: list[InstitutionalPositionChange] = []
         seen: set[tuple[int, str]] = set()
         for row in prioritized:

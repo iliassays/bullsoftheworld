@@ -256,8 +256,7 @@ def test_watched_manager_survives_bounded_position_retention() -> None:
         source_url="https://www.sec.gov/prior.zip",
         report_date=prior_date,
         positions=tuple(
-            _position("TEST", manager, 100, 10_000 - manager, prior_date)
-            for manager in managers
+            _position("TEST", manager, 100, 10_000 - manager, prior_date) for manager in managers
         ),
         matches=(),
         unmatched_cusips=0,
@@ -299,8 +298,7 @@ def test_archive_value_is_already_reported_in_us_dollars(tmp_path) -> None:
     archive_path = tmp_path / "13f.zip"
     files = {
         "COVERPAGE.tsv": (
-            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n"
-            "0000000001-26-000001\tExample Manager\n"
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n0000000001-26-000001\tExample Manager\n"
         ),
         "SUBMISSION.tsv": (
             "ACCESSION_NUMBER\tCIK\tFILING_DATE\tPERIODOFREPORT\tSUBMISSIONTYPE\n"
@@ -332,8 +330,7 @@ def test_archive_reports_bounded_streaming_progress(tmp_path) -> None:
     archive_path = tmp_path / "13f-progress.zip"
     files = {
         "COVERPAGE.tsv": (
-            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n"
-            "0000000001-26-000001\tExample Manager\n"
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n0000000001-26-000001\tExample Manager\n"
         ),
         "SUBMISSION.tsv": (
             "ACCESSION_NUMBER\tCIK\tFILING_DATE\tPERIODOFREPORT\tSUBMISSIONTYPE\n"
@@ -364,6 +361,17 @@ def test_archive_reports_bounded_streaming_progress(tmp_path) -> None:
     assert result.unmatched_cusips == 2
     assert [(row.code, row.shares) for row in result.positions] == [("AAPL", 2)]
 
+    streamed: list[RawInstitutionalPosition] = []
+    streamed_result = parse_13f_archive(
+        archive_path,
+        source_url="https://www.sec.gov/example.zip",
+        symbols=[SymbolIdentity(code="AAPL", name="Apple Inc. - Common Stock")],
+        position_sink=streamed.append,
+        retain_positions=False,
+    )
+    assert streamed_result.positions == ()
+    assert [(row.code, row.shares) for row in streamed] == [("AAPL", 2)]
+
 
 def test_archive_rejects_non_positive_progress_interval(tmp_path) -> None:
     with pytest.raises(ValueError, match="progress_every_rows must be positive"):
@@ -383,8 +391,7 @@ def test_archive_replays_earlier_rows_when_same_cusip_has_a_later_exact_label(
     archive_path = tmp_path / "13f-label-variant.zip"
     files = {
         "COVERPAGE.tsv": (
-            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n"
-            "0000000001-26-000001\tExample Manager\n"
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\n0000000001-26-000001\tExample Manager\n"
         ),
         "SUBMISSION.tsv": (
             "ACCESSION_NUMBER\tCIK\tFILING_DATE\tPERIODOFREPORT\tSUBMISSIONTYPE\n"
@@ -412,7 +419,5 @@ def test_archive_replays_earlier_rows_when_same_cusip_has_a_later_exact_label(
     )
 
     assert result.unmatched_cusips == 0
-    assert [(row.code, row.shares, row.value_usd) for row in result.positions] == [
-        ("TLT", 30, 300)
-    ]
+    assert [(row.code, row.shares, row.value_usd) for row in result.positions] == [("TLT", 30, 300)]
     assert result.matches[0].match_method == "exact_normalized_issuer"
