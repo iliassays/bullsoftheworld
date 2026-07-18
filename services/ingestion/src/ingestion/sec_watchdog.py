@@ -31,6 +31,7 @@ COOLDOWN_KEY = "watchdog:bullsofwallst:sec:alerted"
 SEC_MAX_AGE = dt.timedelta(hours=36)
 THIRTEEN_F_MAX_AGE = dt.timedelta(days=8)
 FINRA_MAX_AGE = dt.timedelta(days=4)
+FINRA_MIN_MATCH_RATIO = 0.80
 TARGET_13F_QUARTERS = 8
 # most_recent_due_session() flips to "today" 90 minutes after close (see us_worker.py) — that
 # delay is tuned so the primary EOD cron, fixed at 22:45 UTC, sees the due session already as
@@ -134,6 +135,14 @@ def _state_problems(
             )
         if finra.records <= 0 or finra.symbols_covered <= 0:
             problems.append("FINRA short-volume checkpoint contains no matched symbol records")
+        details = finra.details or {}
+        source_rows = int(details.get("latest_source_rows") or 0)
+        stored_rows = int(details.get("latest_stored_rows") or 0)
+        if source_rows and stored_rows / source_rows < FINRA_MIN_MATCH_RATIO:
+            problems.append(
+                "FINRA short-volume symbol match coverage fell to "
+                f"{stored_rows}/{source_rows} ({stored_rows / source_rows:.1%})"
+            )
     return problems
 
 
@@ -146,7 +155,9 @@ def _eod_cron_has_run(now: dt.datetime, due_session: dt.date) -> bool:
     local_today = to_market_tz(now, market=MARKET).date()
     if due_session < local_today:
         return True
-    attempt = dt.datetime.combine(due_session, _EOD_CRON_ATTEMPT_UTC, tzinfo=dt.UTC) + _EOD_CRON_GRACE
+    attempt = (
+        dt.datetime.combine(due_session, _EOD_CRON_ATTEMPT_UTC, tzinfo=dt.UTC) + _EOD_CRON_GRACE
+    )
     return now >= attempt
 
 

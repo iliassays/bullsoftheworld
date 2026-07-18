@@ -145,9 +145,7 @@ def _build_symbol_aliases(
     }
 
 
-async def _fetch_day(
-    client: httpx.AsyncClient, day: dt.date
-) -> tuple[list[dict], int] | None:
+async def _fetch_day(client: httpx.AsyncClient, day: dt.date) -> tuple[list[dict], int] | None:
     """Rows for one session, or None when FINRA hasn't published it (403/404 — routine)."""
     resp = await client.get(_URL.format(ymd=day.strftime("%Y%m%d")))
     if resp.status_code in {403, 404}:
@@ -193,9 +191,7 @@ async def collect(target: dt.date | None = None) -> dict[str, int]:
         )
         stored_sessions = set(
             await session.scalars(
-                select(ShortVolumeDaily.date)
-                .where(ShortVolumeDaily.market == MARKET)
-                .distinct()
+                select(ShortVolumeDaily.date).where(ShortVolumeDaily.market == MARKET).distinct()
             )
         )
         if target is not None:
@@ -248,9 +244,11 @@ async def collect(target: dt.date | None = None) -> dict[str, int]:
                     )
                     await session.execute(stmt)
                 current_state = await session.get(RegulatoryDataState, (MARKET, _SOURCE))
-                completed_sessions = dict(
-                    (current_state.details or {}).get("completed_sessions") or {}
-                ) if current_state else {}
+                completed_sessions = (
+                    dict((current_state.details or {}).get("completed_sessions") or {})
+                    if current_state
+                    else {}
+                )
                 completed_sessions[day.isoformat()] = {
                     "source_rows": len(rows),
                     "stored_rows": len(keep),
@@ -288,6 +286,7 @@ async def collect(target: dt.date | None = None) -> dict[str, int]:
                         "completed_sessions": completed_sessions,
                         "latest_source_rows": len(rows),
                         "latest_stored_rows": len(keep),
+                        "latest_match_ratio": round(len(keep) / len(rows), 4) if rows else 0.0,
                         "retention_days": _RETENTION_DAYS,
                         "raw_files_retained": False,
                     },

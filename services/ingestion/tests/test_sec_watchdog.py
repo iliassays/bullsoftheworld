@@ -82,6 +82,30 @@ def test_regulatory_state_reports_staleness_depth_coverage_and_failures() -> Non
     assert any("4/8 quarters" in problem for problem in problems)
 
 
+def test_finra_state_reports_symbol_mapping_coverage_regression() -> None:
+    now = dt.datetime(2026, 7, 10, tzinfo=dt.UTC)
+    states = {
+        "sec_edgar": _state("sec_edgar", now, covered=60),
+        "sec_13f": _state(
+            "sec_13f",
+            now,
+            covered=60,
+            details={"history_quarters_loaded": 8},
+        ),
+        "finra_short_volume": _state(
+            "finra_short_volume",
+            now,
+            covered=700,
+            as_of_date=dt.date(2026, 7, 9),
+            details={"latest_source_rows": 1_000, "latest_stored_rows": 700},
+        ),
+    }
+
+    problems = _state_problems(now, 60, states)  # type: ignore[arg-type]
+
+    assert problems == ["FINRA short-volume symbol match coverage fell to 700/1000 (70.0%)"]
+
+
 def test_eod_state_requires_due_session_coverage_and_analytics() -> None:
     due = dt.date(2026, 7, 10)
     next_day = dt.datetime(2026, 7, 11, 12, tzinfo=dt.UTC)  # well past the cron's own runtime
