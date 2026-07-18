@@ -216,7 +216,7 @@ async def run_finra_short_chain(ctx) -> str:
 
 
 async def refresh_restricted_research(ctx) -> str:
-    """Maintain high-risk research without feeding agents, Ideas, or coverage gates."""
+    """Maintain bounded private research data without feeding public product surfaces."""
     try:
         stats = await refresh_restricted_market_data()
     except Exception:
@@ -298,10 +298,14 @@ class WorkerSettings:
         # One ordered job prevents a note evaluation from racing ahead of the file transaction.
         # It is anchored to the latest ingested session and deduped, so restarts cannot double-post.
         cron(run_finra_short_chain, hour=23, minute=45, run_at_startup=True),
-        # A separate bounded job keeps research-only names fresh without making them part of
-        # EOD coverage, alerts, screeners, Ideas, market aggregates, or agent publication.
-        cron(refresh_restricted_research, hour=23, minute=35, run_at_startup=False),
-        cron(refresh_restricted_research, hour=13, minute=35, run_at_startup=False),
+        # Oldest-first batches continue through the post-close window until Atlas-ready names are
+        # current. They stay outside EOD coverage, screeners, Ideas, aggregates, and public agents.
+        cron(
+            refresh_restricted_research,
+            hour={1, 3, 5, 7, 9, 11, 13, 23},
+            minute=35,
+            run_at_startup=False,
+        ),
     ]
     redis_settings: ClassVar = RedisSettings.from_dsn(get_settings().redis_url)
     queue_name: ClassVar = get_settings().us_ingestion_queue_name
