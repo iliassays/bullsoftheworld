@@ -313,8 +313,8 @@ export function InvestmentCommandPage() {
             </header>
             {inbox.length === 0 ? <p className="command-side-empty">No fresh evidence requires investigation.</p> : inbox.map((candidate) => (
               <button key={candidate.id} onClick={() => navigate(`/companies/${encodeURIComponent(candidate.ticker)}`)} type="button">
-                <span><strong>${candidate.ticker}</strong><small>{candidate.company}</small></span>
-                <span><strong>{candidate.status === "new_evidence" ? "New evidence" : "Review"}</strong><small>Urgency {candidate.priority}</small></span>
+                <span className="command-research-inbox__identity"><strong>${candidate.ticker}</strong><small>{candidate.company}</small></span>
+                <span className="command-research-inbox__state"><strong>{candidate.status === "new_evidence" ? "New evidence" : "Review"}</strong><small>Urgency {candidate.priority}</small></span>
                 <p>{candidate.queueReason}</p>
               </button>
             ))}
@@ -330,7 +330,7 @@ export function InvestmentCommandPage() {
             {eventWatch.length === 0 ? <p className="command-side-empty">No scheduled catalyst is available in this horizon.</p> : eventWatch.map((event) => (
               <button key={event.id} onClick={() => navigate("/catalysts")} type="button">
                 <CalendarClock aria-hidden="true" size={15} />
-                <span><strong>${event.code} · {eventTypeLabel(event.eventType)}</strong><small>{timingLabel(event)}</small></span>
+                <span className="command-catalysts__event"><strong>${event.code} · {eventTypeLabel(event.eventType)}</strong><small>{timingLabel(event)}</small></span>
                 <StatusBadge tone={event.timingKind === "confirmed" ? "positive" : "warning"}>{event.timingKind}</StatusBadge>
               </button>
             ))}

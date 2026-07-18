@@ -199,12 +199,14 @@
 
   .command-layout .atlas-panel > header strong {
     font-size: 12px;
+    line-height: 1.35;
   }
 
   .command-layout .atlas-panel > header small {
     color: var(--text-faint);
     font-size: 9px;
     font-weight: 500;
+    line-height: 1.4;
   }
 
   .command-action {
@@ -340,6 +342,10 @@
     gap: 3px;
   }
 
+  .command-book-table > button strong {
+    line-height: 1.35;
+  }
+
   .command-book-metric > small {
     display: none;
   }
@@ -359,18 +365,21 @@
   .command-research-inbox > button,
   .command-catalysts > button {
     width: 100%;
+    min-height: 64px;
     border: 0;
     border-top: 1px solid var(--border);
     background: transparent;
     color: var(--text);
-    padding: 11px 0;
+    padding: 12px;
     text-align: left;
   }
 
   .command-research-inbox > button {
     display: grid;
+    min-height: 82px;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 5px 10px;
+    align-items: start;
+    gap: 8px 12px;
   }
 
   .command-research-inbox > button:hover strong,
@@ -378,26 +387,36 @@
     color: var(--accent-strong);
   }
 
-  .command-research-inbox > button > span {
+  .command-research-inbox__identity,
+  .command-research-inbox__state {
     display: grid;
     min-width: 0;
-    gap: 2px;
+    align-content: start;
+    gap: 3px;
   }
 
-  .command-research-inbox > button > span:last-of-type {
+  .command-research-inbox__state {
+    min-width: 78px;
     text-align: right;
   }
 
   .command-research-inbox > button strong,
   .command-catalysts > button strong {
+    display: block;
+    min-width: 0;
     font-size: 10px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
   }
 
   .command-research-inbox > button small,
   .command-catalysts > button small {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     color: var(--text-faint);
     font-size: 8px;
+    line-height: 1.4;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -408,7 +427,7 @@
     overflow: hidden;
     color: var(--text-muted);
     font-size: 9px;
-    line-height: 1.4;
+    line-height: 1.5;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
@@ -417,17 +436,23 @@
     display: grid;
     grid-template-columns: 22px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   .command-catalysts > button > svg {
     color: var(--text-faint);
   }
 
-  .command-catalysts > button > span:not(.ds-status) {
+  .command-catalysts__event {
     display: grid;
     min-width: 0;
-    gap: 3px;
+    align-content: center;
+    gap: 4px;
+  }
+
+  .command-catalysts > button > .ds-status {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .command-side-empty {
@@ -512,6 +537,10 @@
       grid-template-columns: 1fr;
     }
 
+    .command-research-inbox > button {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
     .command-action {
       grid-template-columns: 30px minmax(0, 1fr);
     }
@@ -546,6 +575,30 @@
       font-size: 8px;
       font-weight: 650;
       text-transform: uppercase;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .command-research-inbox > button {
+      grid-template-columns: 1fr;
+    }
+
+    .command-research-inbox__state {
+      min-width: 0;
+      text-align: left;
+    }
+
+    .command-research-inbox > button p {
+      grid-column: 1;
+    }
+
+    .command-catalysts > button {
+      grid-template-columns: 20px minmax(0, 1fr);
+    }
+
+    .command-catalysts > button > .ds-status {
+      grid-column: 2;
+      justify-self: start;
     }
   }
 }
