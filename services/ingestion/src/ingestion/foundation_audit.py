@@ -30,6 +30,9 @@ from bulls.core.models import (
     DailyBarObservation,
     DataSourceSnapshot,
     InstitutionalHoldingSummary,
+    IntradayBar,
+    IntradayCaptureSession,
+    IntradayQuoteObservation,
     OnDemandResearchJob,
     RegulatoryDataState,
     SecFiling,
@@ -48,7 +51,7 @@ from bulls.core.models import (
 from bulls.market_data.calendar import most_recent_completed_session
 from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 
-AUDIT_VERSION = "data-foundation-v2"
+AUDIT_VERSION = "data-foundation-v3"
 MARKETS = ("DSE", "US")
 STALE_RUN_AFTER = dt.timedelta(hours=3)
 _SIZE_TABLES = (
@@ -74,6 +77,9 @@ _SIZE_TABLES = (
     "universe_onboarding_stages",
     "research_dataset_snapshots",
     "research_evidence_documents",
+    "intraday_quote_observations",
+    "intraday_bars",
+    "intraday_capture_sessions",
 )
 
 
@@ -223,8 +229,7 @@ async def _market_data_snapshot(
             )
             .join(
                 Symbol,
-                (Symbol.market == TickerAnalytics.market)
-                & (Symbol.code == TickerAnalytics.code),
+                (Symbol.market == TickerAnalytics.market) & (Symbol.code == TickerAnalytics.code),
             )
             .where(
                 TickerAnalytics.market == market,
@@ -235,6 +240,59 @@ async def _market_data_snapshot(
             )
         )
     ).one()
+    intraday = None
+    if market == "DSE":
+        intraday_observations, intraday_bars, captured_sessions, complete_sessions = (
+            await session.execute(
+                select(
+                    select(func.count())
+                    .select_from(IntradayQuoteObservation)
+                    .where(IntradayQuoteObservation.market == market)
+                    .scalar_subquery(),
+                    select(func.count())
+                    .select_from(IntradayBar)
+                    .where(IntradayBar.market == market)
+                    .scalar_subquery(),
+                    select(func.count())
+                    .select_from(IntradayCaptureSession)
+                    .where(IntradayCaptureSession.market == market)
+                    .scalar_subquery(),
+                    select(func.count())
+                    .select_from(IntradayCaptureSession)
+                    .where(
+                        IntradayCaptureSession.market == market,
+                        IntradayCaptureSession.status == "complete",
+                    )
+                    .scalar_subquery(),
+                )
+            )
+        ).one()
+        latest_capture = await session.scalar(
+            select(IntradayCaptureSession)
+            .where(IntradayCaptureSession.market == market)
+            .order_by(IntradayCaptureSession.session_date.desc())
+            .limit(1)
+        )
+        intraday = {
+            "observations": int(intraday_observations or 0),
+            "sampled_bars": int(intraday_bars or 0),
+            "captured_sessions": int(captured_sessions or 0),
+            "complete_sessions": int(complete_sessions or 0),
+            "latest_session": latest_capture.session_date if latest_capture else None,
+            "latest_status": latest_capture.status if latest_capture else None,
+            "latest_slot_completeness_pct": (
+                float(latest_capture.slot_completeness_pct) if latest_capture else None
+            ),
+            "latest_symbol_completeness_pct": (
+                float(latest_capture.symbol_completeness_pct) if latest_capture else None
+            ),
+            "latest_vwap_coverage_pct": (
+                float(latest_capture.vwap_coverage_pct) if latest_capture else None
+            ),
+            "latest_observed_at": latest_capture.latest_observed_at if latest_capture else None,
+            "time_quality": "ingestion_upper_bound",
+            "bar_kind": "sampled_delayed_quote",
+        }
     return {
         "bars": {
             "latest_completed_session": completed_session,
@@ -251,6 +309,7 @@ async def _market_data_snapshot(
             "fingerprinted": int(fingerprinted or 0),
             "point_in_time_complete": int(pit_complete or 0),
         },
+        "intraday": intraday,
     }
 
 

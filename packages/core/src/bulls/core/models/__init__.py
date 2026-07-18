@@ -31,6 +31,11 @@ from bulls.core.models.hedge import (
     HedgeSignal,
     HedgeTrackRecordSnapshot,
 )
+from bulls.core.models.intraday import (
+    IntradayBar,
+    IntradayCaptureSession,
+    IntradayQuoteObservation,
+)
 from bulls.core.models.knowledge import KnowledgeChunk
 from bulls.core.models.market_summary import MarketSummary
 from bulls.core.models.moderation_event import ModerationEvent
@@ -121,6 +126,9 @@ __all__ = [
     "InstitutionalLead",
     "InstitutionalManager",
     "InstitutionalPosition",
+    "IntradayBar",
+    "IntradayCaptureSession",
+    "IntradayQuoteObservation",
     "KnowledgeChunk",
     "MarketSummary",
     "ModerationEvent",
