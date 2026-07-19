@@ -15,11 +15,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { AppTooltip, IconButton, StatusBadge } from "../design-system";
 import { useResearchAuth } from "../app/auth";
 import { isResearchPreview, researchDeployment } from "../app/deployment";
+import { ManagerGuide } from "./ManagerGuide";
+import { managerGuideForPath } from "./manager-guides";
 
 type Theme = "light" | "dark";
 
@@ -62,6 +64,7 @@ function initialTheme(): Theme {
 
 export function ResearchShell() {
   const auth = useResearchAuth();
+  const location = useLocation();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [navOpen, setNavOpen] = useState(false);
 
@@ -187,6 +190,7 @@ export function ResearchShell() {
         </header>
 
         <main className="research-main">
+          <ManagerGuide guide={managerGuideForPath(location.pathname)} />
           <Outlet />
         </main>
       </div>
