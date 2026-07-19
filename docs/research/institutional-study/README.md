@@ -34,8 +34,8 @@ press-derived; the study says so wherever it applies rather than laundering it i
 | 4 | The institutional decision pipeline | `phase4-decision-pipeline.md` | **done 2026-07-19** |
 | 5 | Portfolio construction | `phase5-portfolio-construction.md` | **done 2026-07-19** |
 | 6 | Risk management (4 levels) + averaging-down investigation | `phase6-risk-management.md` | **done 2026-07-19** |
-| 7 | Entry, execution, exit | `phase7-entry-execution-exit.md` | **done 2026-07-19** (FIM per-trade bps tables unverified — spot-check in Phase 16 pass) |
-| 8 | Regulatory-filings workflow (13F et al.) | `phase8-filings-workflow.md` | **done 2026-07-19** (no post-2020 peer-reviewed 13F-cloning re-test found — Phase 16 red-team item) |
+| 7 | Entry, execution, exit | `phase7-entry-execution-exit.md` | **done 2026-07-19** (FIM bps resolved in Phase 16 — per-version figures on ledger) |
+| 8 | Regulatory-filings workflow (13F et al.) | `phase8-filings-workflow.md` | **done 2026-07-19** (cloning recency resolved in Phase 16 — WP-grade positive, peer-reviewed crowding counterweight) |
 | 9 | Detailed case studies (16 institutions) | `phase9-case-studies.md` | **done 2026-07-19** (pod-rule primary hunt empty — documented absence; several ledger IOUs closed/corrected) |
 | 10 | Historical trade case studies (30+) | `phase10-trade-cases.md` | **done 2026-07-19** (GGP "$2.6bn" contamination caught; famous-trade P&L frequently U — labeled throughout) |
 | 11 | Cross-institution patterns | `phase11-patterns.md` | **done 2026-07-19** (headline: downside-first-by-a-non-author invariant; conditionals table; myth register) |
@@ -43,7 +43,7 @@ press-derived; the study says so wherever it applies rather than laundering it i
 | 13 | Backtesting & validation protocol | `phase13-validation.md` | **done 2026-07-19** (extends mandate steps 1–7; repo commit = preregistration receipt) |
 | 14 | Implementation roadmap | `phase14-roadmap.md` | **done 2026-07-19** (EDGAR pipeline = highest-leverage artifact; zero paid data through Stage 2) |
 | 15 | Risk rulebook | `phase15-risk-rulebook.md` | **done 2026-07-19** (all numbers = hypotheses w/ ranges; structure is the evidence-backed part) |
-| 16 | Red-team + final ranked recommendations | `phase16-redteam-final.md` | pending |
+| 16 | Red-team + final ranked recommendations | `phase16-redteam-final.md` | **done 2026-07-19** — STUDY COMPLETE 16/16 (all verification IOUs resolved; System B spec amended per Cusatis timing) |
 
 `ledger.md` — running research ledger (claim / source / contradiction / category / confidence /
 open uncertainty). Update it in every phase; check it before asserting anything numerical.
