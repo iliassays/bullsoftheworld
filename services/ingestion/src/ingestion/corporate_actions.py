@@ -59,6 +59,14 @@ def _details(announcement: Any) -> dict[str, Any]:
         str(announcement.headline),
         str(announcement.body or ""),
     )
+    if _has_rights_language(announcement):
+        parsed.update(
+            decode(
+                "corporate_action",
+                str(announcement.headline),
+                str(announcement.body or ""),
+            )
+        )
     # Re-decoding lets a parser upgrade take effect before an explicit news retag. Persisted fields
     # still win only when the new deterministic decoder did not recover them.
     return {**(announcement.details or {}), **parsed}

@@ -93,6 +93,7 @@ def test_verified_candidates_link_rights_terms_to_later_record_notice() -> None:
         code="RIGHTS",
         published_at=dt.date(2025, 5, 28),
         headline="BSEC consent for issuance of Rights Share",
+        category="other",
         body=(
             "Issuance of 1:17 Rights Share (1 Rights Share against 17 existing shares) "
             "at an issue price of BDT 1,110 per share."
