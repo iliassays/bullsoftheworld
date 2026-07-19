@@ -33,6 +33,7 @@ from ingestion.analytics import compute_all
 from ingestion.block_trades import pull_block_trades as collect_block_trades
 from ingestion.buzz import snapshot_all
 from ingestion.company import collect as collect_company
+from ingestion.corporate_actions import run as reconcile_corporate_action_data
 from ingestion.growth_retention import prune_raw_events
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
@@ -55,7 +56,7 @@ TENANT_ID = "bullsofdhaka"
 EOD_START_UTC_HOUR = 11
 FINAL_QUOTE_UTC_HOUR = 8
 FINAL_QUOTE_UTC_MINUTE = 45
-_EOD_CHAIN_VERSION = "v2"
+_EOD_CHAIN_VERSION = "v3"
 _EOD_COMPLETION_TTL_S = 400 * 24 * 60 * 60
 
 
@@ -159,6 +160,21 @@ async def refresh_company(ctx) -> str:
     return f"profiles={stats['profiles']} shareholding={stats['shareholding_rows']}"
 
 
+async def reconcile_corporate_actions(ctx) -> str:
+    """Populate bonus/right-safe adjusted closes after the completed DSE bar is available."""
+    if not _after_eod_window():
+        return "skipped: before EOD window"
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    stats = await reconcile_corporate_action_data(MARKET)
+    log.info("corporate-action reconciliation: %s", stats)
+    return (
+        f"adjusted={stats['daily_rows_populated']} events={stats['applied_events']} "
+        f"incomplete={stats['incomplete_bonus'] + stats['incomplete_rights']}"
+    )
+
+
 COMPANY_REFRESH_TIMEOUT_SECONDS = 1800
 
 
@@ -227,6 +243,7 @@ async def recover_eod_chain(ctx) -> str:
             f"(bars={latest_bar}, summary={latest_summary})"
         )
 
+    adjustments = await reconcile_corporate_action_data(MARKET)
     analytics = await compute_all(MARKET)
     portfolios = await snapshot_portfolios_run(MARKET, tenant_id=TENANT_ID)
     trending = await compute_trending(MARKET)
@@ -237,10 +254,11 @@ async def recover_eod_chain(ctx) -> str:
     if redis is not None:
         await redis.set(completion_key, "1", ex=_EOD_COMPLETION_TTL_S)
     log.info(
-        "eod recovery: bars=%s summary=%s analytics=%s portfolios=%s trending=%s "
+        "eod recovery: bars=%s summary=%s adjusted=%s analytics=%s portfolios=%s trending=%s "
         "buzz=%s levels=%s factors=%s market=%s",
         bars["bars_upserted"],
         summary["days_upserted"],
+        adjustments["daily_rows_populated"],
         analytics["computed"],
         portfolios["users"],
         trending["stored"],
@@ -251,6 +269,7 @@ async def recover_eod_chain(ctx) -> str:
     )
     return (
         f"recovered bars={bars['bars_upserted']} summary={summary['days_upserted']} "
+        f"adjusted={adjustments['daily_rows_populated']} "
         f"analytics={analytics['computed']} portfolios={portfolios['users']} "
         f"trending={trending['stored']} buzz={buzz['symbols']} levels={levels['published']} "
         f"factors={factors['published']} market={market_note['published']}"
@@ -330,10 +349,7 @@ async def run_volume_signals(ctx) -> str:
         counts["published"],
         counts["awaiting_confirmation"],
     )
-    return (
-        f"volume={counts['published']} "
-        f"awaiting_confirmation={counts['awaiting_confirmation']}"
-    )
+    return f"volume={counts['published']} awaiting_confirmation={counts['awaiting_confirmation']}"
 
 
 async def pull_news(ctx) -> str:
@@ -479,6 +495,7 @@ class WorkerSettings:
         pull_eod_bars,
         pull_eod_summary,
         refresh_company,
+        reconcile_corporate_actions,
         refresh_analytics,
         snapshot_portfolios,
         recover_eod_chain,
@@ -518,6 +535,8 @@ class WorkerSettings:
         cron(pull_eod_bars, hour=13, minute=0, run_at_startup=False),
         # Market-wide summary (index/turnover) right after the bar pull.
         cron(pull_eod_summary, hour=13, minute=5, run_at_startup=False),
+        # Normalize bonus/right events before analytics so record-date gaps never become signals.
+        cron(reconcile_corporate_actions, hour=13, minute=10, run_at_startup=False),
         # Weekly company/shareholding sweep — Friday (DSE closed, site quiet), well off the EOD path.
         cron(
             refresh_company,

@@ -81,5 +81,5 @@ def test_market_date_utc_guard_handles_dhaka_rollover() -> None:
 
 def test_dse_eod_completion_marker_is_tenant_session_and_version_specific() -> None:
     assert _eod_completion_key(dt.date(2026, 7, 9)) == (
-        "ingestion:bullsofdhaka:eod-complete:v2:2026-07-09"
+        "ingestion:bullsofdhaka:eod-complete:v3:2026-07-09"
     )

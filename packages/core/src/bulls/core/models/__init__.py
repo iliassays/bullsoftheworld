@@ -17,6 +17,7 @@ from bulls.core.models.company import (
     ShareholdingSnapshot,
 )
 from bulls.core.models.company_logo import CompanyLogo
+from bulls.core.models.corporate_action import CorporateAction
 from bulls.core.models.data_foundation import (
     CompanyDataObservation,
     DailyBarObservation,
@@ -113,6 +114,7 @@ __all__ = [
     "CompanyDataObservation",
     "CompanyLogo",
     "CompanyProfile",
+    "CorporateAction",
     "DailyBar",
     "DailyBarObservation",
     "DataSourceSnapshot",

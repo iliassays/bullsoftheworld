@@ -63,6 +63,7 @@ _RULES: list[tuple[tuple[str, ...], str]] = [
     # Director/sponsor dealing in their own shares — a smart-money signal worth surfacing.
     (("buy confirmation", "sale confirmation", "sell confirmation", "intention to"), "insider"),
     (("dividend",), "dividend"),
+    (("right share", "rights share", "rights issue", "right issue"), "corporate_action"),
     (
         (
             "half yearly",
@@ -140,7 +141,9 @@ async def _enqueue_embeddings(announcement_ids: list[int]) -> None:
         finally:
             await pool.aclose()
     except Exception as e:
-        log.warning("announcement embedding enqueue failed for %s rows: %s", len(announcement_ids), e)
+        log.warning(
+            "announcement embedding enqueue failed for %s rows: %s", len(announcement_ids), e
+        )
 
 
 async def _ingest(market: str, items: list) -> int:

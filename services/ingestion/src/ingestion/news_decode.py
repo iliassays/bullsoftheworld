@@ -23,7 +23,18 @@ _FACE_VALUE = (
 def _iso(value: str) -> str | None:
     """Normalise the two DSE date formats (DD.MM.YYYY and 'Month DD, YYYY') to ISO, else None."""
     value = value.strip().rstrip(".")
-    for fmt in ("%d.%m.%Y", "%B %d, %Y", "%b %d, %Y", "%d-%m-%Y", "%Y-%m-%d"):
+    for fmt in (
+        "%d.%m.%Y",
+        "%d/%m/%Y",
+        "%d-%b-%Y",
+        "%d-%B-%Y",
+        "%d %b %Y",
+        "%d %B %Y",
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%d-%m-%Y",
+        "%Y-%m-%d",
+    ):
         try:
             return dt.datetime.strptime(value, fmt).date().isoformat()
         except ValueError:
@@ -140,7 +151,16 @@ def _board_meeting(body: str) -> dict[str, Any]:
 
 def _corporate_action(body: str) -> dict[str, Any]:
     d: dict[str, Any] = {}
-    rec = re.search(r"record date[^0-9]*([\d]{2}\.[\d]{2}\.[\d]{4})", body, re.I)
+    date_token = (
+        r"(?:\d{1,2}[./-](?:\d{1,2}|[A-Za-z]+)[./-]\d{4}|"
+        r"[A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})"
+    )
+    rec = re.search(
+        rf"\brecord date\b(?:(?!(?:notified|notify|later)).){{0,120}}?"
+        rf"(?::|\bi\.?e\.?|\bis\b|\bwill be\b)\s*({date_token})",
+        body,
+        re.I | re.S,
+    )
     if rec:
         d["record_date"] = _iso(rec.group(1))
     spot = re.search(
@@ -153,6 +173,52 @@ def _corporate_action(body: str) -> dict[str, Any]:
     agm = re.search(r"AGM[:\s]+([\d]{2}\.[\d]{2}\.[\d]{4})", body, re.I)
     if agm:
         d["agm_date"] = _iso(agm.group(1))
+
+    # Prefer the explicit natural-language entitlement over a bare X:Y token. DSE announcements
+    # sometimes show both the issuer's shorthand and the economically unambiguous explanation.
+    right_for_existing = re.search(
+        r"(\d+(?:\.\d+)?)\s+(?:right|rights)\s+shares?\s+"
+        r"(?:for|against)\s+(?:every\s+)?(\d+(?:\.\d+)?)\s+existing\s+shares?",
+        body,
+        re.I,
+    )
+    if not right_for_existing:
+        right_for_existing = re.search(
+            r"(\d+(?:\.\d+)?)\s+(?:right|rights)\s+shares?\s+against\s+"
+            r"(\d+(?:\.\d+)?)\s+existing",
+            body,
+            re.I,
+        )
+    if right_for_existing:
+        new_shares = float(right_for_existing.group(1))
+        old_shares = float(right_for_existing.group(2))
+        if new_shares > 0 and old_shares > 0:
+            d["rights_new_shares"] = new_shares
+            d["rights_existing_shares"] = old_shares
+            d["rights_ratio"] = new_shares / old_shares
+    else:
+        ratio = re.search(
+            r"(?:issuance\s+of\s+|issue\s+of\s+)?(\d+(?:\.\d+)?)\s*:\s*"
+            r"(\d+(?:\.\d+)?)\s+(?:right|rights)\s+shares?",
+            body,
+            re.I,
+        )
+        if ratio:
+            new_shares = float(ratio.group(1))
+            old_shares = float(ratio.group(2))
+            if new_shares > 0 and old_shares > 0:
+                d["rights_new_shares"] = new_shares
+                d["rights_existing_shares"] = old_shares
+                d["rights_ratio"] = new_shares / old_shares
+
+    issue_price = re.search(
+        r"(?:offer|issue)\s+price(?:\s+of)?\s*[:\-]?\s*"
+        r"(?:BDT|Tk\.?)\s*([\d,]+(?:\.\d+)?)",
+        body,
+        re.I,
+    )
+    if issue_price:
+        d["rights_subscription_price"] = float(issue_price.group(1).replace(",", ""))
     return d
 
 
@@ -191,6 +257,11 @@ def decode(category: str, headline: str, body: str) -> dict[str, Any]:
     if not decoder or not body:
         return {}
     try:
-        return decoder(body, headline)
+        details = decoder(body, headline)
+        # Dividend announcements are the authoritative source for bonus terms and frequently carry
+        # the record date in the same body. Merge only deterministic corporate-action fields.
+        if category == "dividend":
+            details.update(_corporate_action(body))
+        return details
     except Exception:  # a parse miss must never break onboarding
         return {}
