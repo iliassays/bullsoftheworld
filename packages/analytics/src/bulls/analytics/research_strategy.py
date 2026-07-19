@@ -14,7 +14,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-ENGINE_VERSION = "atlas-portfolio-engine-v2"
+from bulls.core.markets import add_market_sessions, get_market_profile
+
+ENGINE_VERSION = "atlas-portfolio-engine-v3"
+DSE_SETTLEMENT_RULE_EFFECTIVE_FROM = dt.date(2024, 7, 2)
+US_T1_RULE_EFFECTIVE_FROM = dt.date(2024, 5, 28)
 
 
 class StrategyBar(BaseModel):
@@ -26,10 +30,18 @@ class StrategyBar(BaseModel):
     volume: int = Field(ge=0)
 
 
+class SecurityCategoryObservation(BaseModel):
+    category: str = Field(min_length=1, max_length=8)
+    known_at: dt.datetime
+    source: str = Field(min_length=1, max_length=64)
+
+
 class StrategySecurity(BaseModel):
     code: str
     sector: str = "Unclassified"
     cap_tier: str = "unclassified"
+    category_observations: list[SecurityCategoryObservation] = Field(default_factory=list)
+    settlement_trade_type: Literal["regular", "spot", "dvp"] = "regular"
     bars: list[StrategyBar]
 
 
@@ -64,7 +76,6 @@ class PortfolioRiskPolicy(BaseModel):
     portfolio_drawdown_brake: float
     fee_rate: float
     slippage_rate: float
-    settlement_sessions: int = Field(ge=0)
 
 
 class BacktestTrade(BaseModel):
@@ -78,6 +89,10 @@ class BacktestTrade(BaseModel):
     reason: str
     intended_quantity: int | None = Field(default=None, gt=0)
     constraint_notes: list[str] = Field(default_factory=list)
+    contractual_settlement_date: dt.date | None = None
+    settlement_rule: str | None = None
+    settlement_class: str | None = None
+    security_category: str | None = None
 
 
 class EquityPoint(BaseModel):
@@ -137,12 +152,34 @@ class CashSettlement(BaseModel):
     receivable_key: str = Field(min_length=1, max_length=160)
     release_session: int = Field(ge=0)
     amount: float = Field(gt=0)
+    trade_date: dt.date
+    contractual_settlement_date: dt.date
+    settlement_sessions: int = Field(gt=0)
+    settlement_rule: str = Field(min_length=1, max_length=96)
+    settlement_class: str = Field(min_length=1, max_length=48)
+    trade_type: Literal["regular"]
+    security_category: str | None = None
+
+
+class ShareSettlement(BaseModel):
+    lot_key: str = Field(min_length=1, max_length=160)
+    code: str = Field(min_length=1, max_length=32)
+    quantity: int = Field(gt=0)
+    release_session: int = Field(ge=0)
+    trade_date: dt.date
+    contractual_settlement_date: dt.date
+    settlement_sessions: int = Field(gt=0)
+    settlement_rule: str = Field(min_length=1, max_length=96)
+    settlement_class: str = Field(min_length=1, max_length=48)
+    trade_type: Literal["regular"]
+    security_category: str | None = None
 
 
 class ShadowState(BaseModel):
     cash: float = Field(ge=0)
     positions: dict[str, ShadowPosition] = Field(default_factory=dict)
     pending_settlements: list[CashSettlement] = Field(default_factory=list)
+    pending_share_settlements: list[ShareSettlement] = Field(default_factory=list)
     peak_nav: float = Field(gt=0)
     benchmark_nav: float = Field(gt=0)
     cumulative_fees: float = Field(default=0, ge=0)
@@ -156,7 +193,12 @@ class ShadowAccountingEvent(BaseModel):
     session_number: int = Field(ge=0)
     effective_date: dt.date
     event_type: Literal[
-        "opening_balance", "methodology_boundary", "settlement_release", "fill", "valuation"
+        "opening_balance",
+        "methodology_boundary",
+        "settlement_release",
+        "share_settlement_release",
+        "fill",
+        "valuation",
     ]
     code: str | None = None
     payload: dict[str, Any]
@@ -350,7 +392,6 @@ RISK_POLICIES = {
         portfolio_drawdown_brake=0.15,
         fee_rate=0.0040,
         slippage_rate=0.0025,
-        settlement_sessions=2,
     ),
     "US": PortfolioRiskPolicy(
         market="US",
@@ -364,9 +405,93 @@ RISK_POLICIES = {
         portfolio_drawdown_brake=0.18,
         fee_rate=0.0005,
         slippage_rate=0.0015,
-        settlement_sessions=1,
     ),
 }
+
+
+class SettlementTerms(BaseModel):
+    market: Literal["DSE", "US"]
+    security_category: str | None = None
+    trade_type: Literal["regular"]
+    settlement_sessions: int = Field(gt=0)
+    settlement_rule: str = Field(min_length=1, max_length=96)
+    settlement_class: str = Field(min_length=1, max_length=48)
+    contractual_settlement_date: dt.date
+
+
+def _category_known_by_open(
+    security: StrategySecurity,
+    *,
+    trade_date: dt.date,
+    market: Literal["DSE", "US"],
+) -> str | None:
+    profile = get_market_profile(market)
+    market_open = dt.datetime.combine(trade_date, profile.open_time, tzinfo=profile.tz)
+    eligible = []
+    for observation in security.category_observations:
+        if observation.known_at.tzinfo is None or observation.known_at.utcoffset() is None:
+            raise ValueError(f"{security.code} category observation has no knowledge timezone")
+        if observation.known_at <= market_open:
+            eligible.append(observation)
+    if not eligible:
+        return None
+    latest_known_at = max(item.known_at for item in eligible)
+    latest_categories = {
+        item.category.strip().upper() for item in eligible if item.known_at == latest_known_at
+    }
+    latest_categories.discard("")
+    if len(latest_categories) > 1:
+        raise ValueError(
+            f"{security.code} has conflicting DSE categories at {latest_known_at.isoformat()}"
+        )
+    return next(iter(latest_categories), None)
+
+
+def settlement_terms_for_security(
+    *,
+    market: Literal["DSE", "US"],
+    security: StrategySecurity,
+    trade_date: dt.date,
+) -> SettlementTerms:
+    """Resolve an effective-dated contractual settlement instruction or fail closed."""
+
+    if security.settlement_trade_type != "regular":
+        raise ValueError(
+            f"{security.code} uses unsupported {security.settlement_trade_type} settlement"
+        )
+    if market == "DSE":
+        if trade_date < DSE_SETTLEMENT_RULE_EFFECTIVE_FROM:
+            raise ValueError(
+                f"DSE settlement rule is unverified before {DSE_SETTLEMENT_RULE_EFFECTIVE_FROM}"
+            )
+        category = _category_known_by_open(security, trade_date=trade_date, market=market)
+        if category is None:
+            raise ValueError(f"{security.code} has no point-in-time DSE category at execution")
+        if category == "Z":
+            sessions = 3
+            settlement_class = "dse_z_regular"
+        elif category in {"A", "B", "G", "N"}:
+            sessions = 2
+            settlement_class = "dse_abgn_regular"
+        else:
+            raise ValueError(f"{security.code} has unsupported DSE category {category}")
+        rule = "bsec-z-category-directive-2024-07-02"
+    else:
+        if trade_date < US_T1_RULE_EFFECTIVE_FROM:
+            raise ValueError(f"US T+1 rule is unverified before {US_T1_RULE_EFFECTIVE_FROM}")
+        category = None
+        sessions = 1
+        settlement_class = "us_equity_regular"
+        rule = "us-equity-t1-2024-05-28"
+    return SettlementTerms(
+        market=market,
+        security_category=category,
+        trade_type="regular",
+        settlement_sessions=sessions,
+        settlement_rule=rule,
+        settlement_class=settlement_class,
+        contractual_settlement_date=add_market_sessions(trade_date, sessions, market),
+    )
 
 
 @dataclass
@@ -383,6 +508,7 @@ class _PlannedOrder:
     quantity: int
     intended_quantity: int
     constraint_notes: tuple[str, ...]
+    settlement_terms: SettlementTerms
 
 
 @dataclass(frozen=True)
@@ -390,6 +516,7 @@ class _AccountingFill:
     trade: BacktestTrade
     cash_delta: float
     settlement: CashSettlement | None
+    share_settlement: ShareSettlement | None
     fee: float
     turnover: float
     position_after: _Position | None
@@ -399,6 +526,14 @@ def _release_settlements(
     settlements: list[CashSettlement], *, session_number: int
 ) -> tuple[float, list[CashSettlement]]:
     released = sum(item.amount for item in settlements if item.release_session <= session_number)
+    pending = [item for item in settlements if item.release_session > session_number]
+    return released, pending
+
+
+def _release_share_settlements(
+    settlements: list[ShareSettlement], *, session_number: int
+) -> tuple[list[ShareSettlement], list[ShareSettlement]]:
+    released = [item for item in settlements if item.release_session <= session_number]
     pending = [item for item in settlements if item.release_session > session_number]
     return released, pending
 
@@ -463,6 +598,7 @@ def replay_accounting_events(
         cash = 0.0
         positions: dict[str, ShadowPosition] = {}
         pending_settlements: list[CashSettlement] = []
+        pending_share_settlements: list[ShareSettlement] = []
         peak_nav = 0.0
         benchmark_nav = 0.0
         cumulative_fees = 0.0
@@ -475,6 +611,9 @@ def replay_accounting_events(
         }
         pending_settlements = [
             settlement.model_copy(deep=True) for settlement in previous.pending_settlements
+        ]
+        pending_share_settlements = [
+            settlement.model_copy(deep=True) for settlement in previous.pending_share_settlements
         ]
         peak_nav = previous.peak_nav
         benchmark_nav = previous.benchmark_nav
@@ -504,6 +643,9 @@ def replay_accounting_events(
             pending_settlements = [
                 settlement.model_copy(deep=True) for settlement in state.pending_settlements
             ]
+            pending_share_settlements = [
+                settlement.model_copy(deep=True) for settlement in state.pending_share_settlements
+            ]
             peak_nav = state.peak_nav
             benchmark_nav = state.benchmark_nav
             cumulative_fees = state.cumulative_fees
@@ -513,23 +655,29 @@ def replay_accounting_events(
         if not initialized:
             raise ValueError("accounting ledger must begin with opening_balance")
         if event.event_type == "settlement_release":
-            receivable_key = str(payload["receivable_key"])
-            release_session = int(payload["release_session"])
-            amount = float(payload["amount"])
+            settlement = CashSettlement.model_validate(payload)
             match = next(
-                (
-                    index
-                    for index, item in enumerate(pending_settlements)
-                    if item.receivable_key == receivable_key
-                    and item.release_session == release_session
-                    and math.isclose(item.amount, amount, abs_tol=0.00005)
-                ),
+                (index for index, item in enumerate(pending_settlements) if item == settlement),
                 None,
             )
             if match is None:
                 raise ValueError("settlement release does not match an open receivable")
             pending_settlements.pop(match)
-            cash += amount
+            cash += settlement.amount
+            continue
+        if event.event_type == "share_settlement_release":
+            settlement = ShareSettlement.model_validate(payload)
+            match = next(
+                (
+                    index
+                    for index, item in enumerate(pending_share_settlements)
+                    if item == settlement
+                ),
+                None,
+            )
+            if match is None:
+                raise ValueError("share settlement release does not match an unsettled lot")
+            pending_share_settlements.pop(match)
             continue
         if event.event_type == "fill":
             if not event.code:
@@ -538,6 +686,11 @@ def replay_accounting_events(
             settlement_payload = payload.get("settlement")
             if settlement_payload is not None:
                 pending_settlements.append(CashSettlement.model_validate(settlement_payload))
+            share_settlement_payload = payload.get("share_settlement")
+            if share_settlement_payload is not None:
+                pending_share_settlements.append(
+                    ShareSettlement.model_validate(share_settlement_payload)
+                )
             position_after = payload.get("position_after")
             if position_after is None:
                 positions.pop(event.code, None)
@@ -570,6 +723,7 @@ def replay_accounting_events(
         cash=round(max(cash, 0.0), 4),
         positions=positions,
         pending_settlements=pending_settlements,
+        pending_share_settlements=pending_share_settlements,
         peak_nav=round(peak_nav, 4),
         benchmark_nav=round(benchmark_nav, 4),
         cumulative_fees=round(cumulative_fees, 4),
@@ -582,6 +736,7 @@ def _advance_accounting_events(
     date: dt.date,
     session_number: int,
     released_settlements: list[CashSettlement],
+    released_share_settlements: list[ShareSettlement],
     fills: list[_AccountingFill],
     state: ShadowState,
     nav: float,
@@ -598,6 +753,17 @@ def _advance_accounting_events(
         )
         for index, settlement in enumerate(released_settlements)
     ]
+    events.extend(
+        ShadowAccountingEvent(
+            event_key=f"s{session_number}:share_settlement_release:{index}",
+            session_number=session_number,
+            effective_date=date,
+            event_type="share_settlement_release",
+            code=settlement.code,
+            payload=settlement.model_dump(mode="json"),
+        )
+        for index, settlement in enumerate(released_share_settlements)
+    )
     for index, fill in enumerate(fills):
         events.append(
             ShadowAccountingEvent(
@@ -612,6 +778,11 @@ def _advance_accounting_events(
                     "settlement": (
                         fill.settlement.model_dump(mode="json")
                         if fill.settlement is not None
+                        else None
+                    ),
+                    "share_settlement": (
+                        fill.share_settlement.model_dump(mode="json")
+                        if fill.share_settlement is not None
                         else None
                     ),
                     "fee": fill.fee,
@@ -650,20 +821,24 @@ def _advance_accounting_events(
 
 def _execute_target_weights(
     *,
+    market: Literal["DSE", "US"],
     date: dt.date,
     session_number: int,
     opening_nav: float,
     settled_cash: float,
     pending_settlements: list[CashSettlement],
+    pending_share_settlements: list[ShareSettlement],
     positions: dict[str, _Position],
     target_weights: dict[str, float],
     bars: dict[str, StrategyBar | None],
     average_volumes: dict[str, float | None],
+    securities: dict[str, StrategySecurity],
     policy: PortfolioRiskPolicy,
     reason: str,
 ) -> tuple[
     float,
     list[CashSettlement],
+    list[ShareSettlement],
     list[BacktestTrade],
     list[RiskIntervention],
     float,
@@ -692,6 +867,33 @@ def _execute_target_weights(
         desired_shares = int(opening_nav * target_weight / bar.open)
         raw_quantity = desired_shares - current_shares
         if raw_quantity == 0:
+            continue
+        security = securities.get(code)
+        if security is None:
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=code,
+                    rule="settlement_identity_missing",
+                    detail="Order rejected because settlement identity was unavailable.",
+                )
+            )
+            continue
+        try:
+            settlement_terms = settlement_terms_for_security(
+                market=market,
+                security=security,
+                trade_date=date,
+            )
+        except ValueError as exc:
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=code,
+                    rule="settlement_class_unsupported",
+                    detail=f"Order rejected: {exc}.",
+                )
+            )
             continue
         intended_quantity = abs(raw_quantity)
         average_volume = average_volumes.get(code)
@@ -731,6 +933,7 @@ def _execute_target_weights(
                 quantity=abs(constrained_quantity),
                 intended_quantity=intended_quantity,
                 constraint_notes=tuple(notes),
+                settlement_terms=settlement_terms,
             )
         )
 
@@ -740,7 +943,25 @@ def _execute_target_weights(
     accounting_fills: list[_AccountingFill] = []
     for order in (item for item in planned if item.side == "sell"):
         current = positions.get(order.code)
-        quantity = min(order.quantity, current.shares if current else 0)
+        unsettled_quantity = sum(
+            item.quantity for item in pending_share_settlements if item.code == order.code
+        )
+        sellable_quantity = max(0, (current.shares if current else 0) - unsettled_quantity)
+        quantity = min(order.quantity, sellable_quantity)
+        sell_notes = list(order.constraint_notes)
+        if quantity < order.quantity:
+            sell_notes.append("share_settlement_lock")
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=order.code,
+                    rule="share_settlement_lock",
+                    detail=(
+                        f"Sell constrained from {order.quantity} to {quantity} shares because "
+                        f"{unsettled_quantity} shares had not reached contractual settlement."
+                    ),
+                )
+            )
         if quantity <= 0:
             continue
         fill_price = order.bar.open * (1 - policy.slippage_rate)
@@ -754,16 +975,20 @@ def _execute_target_weights(
             positions.pop(order.code, None)
         settlement: CashSettlement | None = None
         cash_delta = 0.0
-        if policy.settlement_sessions == 0:
-            settled_cash += proceeds
-            cash_delta = proceeds
-        else:
-            settlement = CashSettlement(
-                receivable_key=f"s{session_number}:receivable:{order.code}",
-                release_session=session_number + policy.settlement_sessions,
-                amount=round(proceeds, 4),
-            )
-            pending_settlements.append(settlement)
+        terms = order.settlement_terms
+        settlement = CashSettlement(
+            receivable_key=f"s{session_number}:receivable:{order.code}",
+            release_session=session_number + terms.settlement_sessions,
+            amount=round(proceeds, 4),
+            trade_date=date,
+            contractual_settlement_date=terms.contractual_settlement_date,
+            settlement_sessions=terms.settlement_sessions,
+            settlement_rule=terms.settlement_rule,
+            settlement_class=terms.settlement_class,
+            trade_type=terms.trade_type,
+            security_category=terms.security_category,
+        )
+        pending_settlements.append(settlement)
         fees_paid += fee
         traded_gross += gross
         trade = BacktestTrade(
@@ -776,7 +1001,11 @@ def _execute_target_weights(
             fee=round(fee, 2),
             reason=reason,
             intended_quantity=order.intended_quantity,
-            constraint_notes=list(order.constraint_notes),
+            constraint_notes=sell_notes,
+            contractual_settlement_date=terms.contractual_settlement_date,
+            settlement_rule=terms.settlement_rule,
+            settlement_class=terms.settlement_class,
+            security_category=terms.security_category,
         )
         trades.append(trade)
         position_after = positions.get(order.code)
@@ -785,6 +1014,7 @@ def _execute_target_weights(
                 trade=trade,
                 cash_delta=cash_delta,
                 settlement=settlement,
+                share_settlement=None,
                 fee=fee,
                 turnover=gross,
                 position_after=(
@@ -837,6 +1067,21 @@ def _execute_target_weights(
             average_cost=(old.average_cost * old.shares + total_cost) / new_shares,
         )
         settled_cash -= total_cost
+        terms = order.settlement_terms
+        share_settlement = ShareSettlement(
+            lot_key=f"s{session_number}:share_lot:{order.code}",
+            code=order.code,
+            quantity=quantity,
+            release_session=session_number + terms.settlement_sessions,
+            trade_date=date,
+            contractual_settlement_date=terms.contractual_settlement_date,
+            settlement_sessions=terms.settlement_sessions,
+            settlement_rule=terms.settlement_rule,
+            settlement_class=terms.settlement_class,
+            trade_type=terms.trade_type,
+            security_category=terms.security_category,
+        )
+        pending_share_settlements.append(share_settlement)
         fees_paid += fee
         traded_gross += gross
         trade = BacktestTrade(
@@ -850,6 +1095,10 @@ def _execute_target_weights(
             reason=reason,
             intended_quantity=order.intended_quantity,
             constraint_notes=notes,
+            contractual_settlement_date=terms.contractual_settlement_date,
+            settlement_rule=terms.settlement_rule,
+            settlement_class=terms.settlement_class,
+            security_category=terms.security_category,
         )
         trades.append(trade)
         position_after = positions[order.code]
@@ -858,6 +1107,7 @@ def _execute_target_weights(
                 trade=trade,
                 cash_delta=-total_cost,
                 settlement=None,
+                share_settlement=share_settlement,
                 fee=fee,
                 turnover=gross,
                 position_after=_Position(
@@ -869,6 +1119,7 @@ def _execute_target_weights(
     return (
         settled_cash,
         pending_settlements,
+        pending_share_settlements,
         trades,
         interventions,
         fees_paid,
@@ -1135,6 +1386,7 @@ def run_backtest(
     positions: dict[str, _Position] = {}
     cash = initial_capital
     pending_settlements: list[CashSettlement] = []
+    pending_share_settlements: list[ShareSettlement] = []
     pending_weights: dict[str, float] | None = None
     pending_reason = "scheduled rebalance"
     trades: list[BacktestTrade] = []
@@ -1153,6 +1405,10 @@ def run_backtest(
             session_number=session_index,
         )
         cash += released_cash
+        _, pending_share_settlements = _release_share_settlements(
+            pending_share_settlements,
+            session_number=session_index,
+        )
 
         if pending_weights is not None:
             opening_nav = cash + sum(item.amount for item in pending_settlements)
@@ -1169,21 +1425,25 @@ def run_backtest(
             (
                 cash,
                 pending_settlements,
+                pending_share_settlements,
                 session_trades,
                 session_interventions,
                 session_fees,
                 session_gross,
                 _,
             ) = _execute_target_weights(
+                market=market,
                 date=date,
                 session_number=session_index,
                 opening_nav=opening_nav,
                 settled_cash=cash,
                 pending_settlements=pending_settlements,
+                pending_share_settlements=pending_share_settlements,
                 positions=positions,
                 target_weights=pending_weights,
                 bars=current,
                 average_volumes=average_volumes,
+                securities=security_by_code,
                 policy=policy,
                 reason=pending_reason,
             )
@@ -1354,6 +1614,7 @@ def advance_shadow_portfolio(
     previous: ShadowState,
     target_weights: dict[str, float],
     session_number: int,
+    as_of_date: dt.date | None = None,
     risk_policy: PortfolioRiskPolicy | None = None,
 ) -> ShadowAdvanceResult:
     """Advance one real-time shadow book by one completed market session.
@@ -1367,10 +1628,16 @@ def advance_shadow_portfolio(
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
     if not securities:
         raise ValueError("shadow portfolio requires current security history")
-    dates = {security.bars[-1].date for security in securities if security.bars}
-    if len(dates) != 1:
-        raise ValueError("shadow portfolio securities must share one completed session date")
-    date = dates.pop()
+    latest_dates = {security.bars[-1].date for security in securities if security.bars}
+    if not latest_dates:
+        raise ValueError("shadow portfolio requires at least one completed security bar")
+    date = as_of_date or (next(iter(latest_dates)) if len(latest_dates) == 1 else None)
+    if date is None:
+        raise ValueError("as_of_date is required when security histories end on different dates")
+    if any(latest > date for latest in latest_dates):
+        raise ValueError("shadow portfolio security history extends beyond its as-of session")
+    if not any(security.bars and security.bars[-1].date == date for security in securities):
+        raise ValueError("shadow portfolio has no observable bar on its as-of session")
     policy = risk_policy or RISK_POLICIES[market]
     if policy.market != market:
         raise ValueError("risk policy belongs to another market")
@@ -1394,18 +1661,23 @@ def advance_shadow_portfolio(
         previous.pending_settlements,
         session_number=session_number,
     )
+    released_share_settlements, pending_share_settlements = _release_share_settlements(
+        previous.pending_share_settlements,
+        session_number=session_number,
+    )
     cash = previous.cash + released_cash
 
-    opening_nav = (
-        cash
-        + sum(item.amount for item in pending_settlements)
-        + sum(
-            position.shares * by_code[code].bars[-1].open
-            for code, position in positions.items()
-            if code in by_code
+    current_bars = {
+        code: security.bars[-1] if security.bars and security.bars[-1].date == date else None
+        for code, security in by_code.items()
+    }
+    opening_nav = cash + sum(item.amount for item in pending_settlements)
+    for code, position in positions.items():
+        security = by_code[code]
+        current_bar = current_bars[code]
+        opening_nav += position.shares * (
+            current_bar.open if current_bar is not None else security.bars[-1].close
         )
-    )
-    current_bars = {code: security.bars[-1] for code, security in by_code.items() if security.bars}
     average_volumes = {
         code: (
             statistics.fmean(item.volume for item in security.bars[-21:-1])
@@ -1417,30 +1689,48 @@ def advance_shadow_portfolio(
     (
         cash,
         pending_settlements,
+        pending_share_settlements,
         trades,
         interventions,
         session_fees,
         session_turnover,
         accounting_fills,
     ) = _execute_target_weights(
+        market=market,
         date=date,
         session_number=session_number,
         opening_nav=opening_nav,
         settled_cash=cash,
         pending_settlements=pending_settlements,
+        pending_share_settlements=pending_share_settlements,
         positions=positions,
         target_weights=target_weights,
         bars=current_bars,
         average_volumes=average_volumes,
+        securities=by_code,
         policy=policy,
         reason="prior-close shadow target",
     )
 
-    position_value = sum(
-        position.shares * by_code[code].bars[-1].close
-        for code, position in positions.items()
-        if code in by_code
-    )
+    position_value = 0.0
+    for code, position in positions.items():
+        security = by_code[code]
+        current_bar = current_bars[code]
+        position_value += position.shares * (
+            current_bar.close if current_bar is not None else security.bars[-1].close
+        )
+        if current_bar is None:
+            interventions.append(
+                RiskIntervention(
+                    date=date,
+                    code=code,
+                    rule="stale_mark",
+                    detail=(
+                        "No completed bar was available; NAV carried the last observable close, "
+                        "settlements still matured, and no execution was permitted."
+                    ),
+                )
+            )
     nav = cash + sum(item.amount for item in pending_settlements) + position_value
     peak_nav = max(previous.peak_nav, nav)
     drawdown = 1 - nav / peak_nav if peak_nav > 0 else 0.0
@@ -1448,18 +1738,25 @@ def advance_shadow_portfolio(
     benchmark_returns = [
         security.bars[-1].close / security.bars[-2].close - 1
         for security in securities
-        if len(security.bars) >= 2 and security.bars[-2].close > 0
+        if len(security.bars) >= 2
+        and security.bars[-1].date == date
+        and security.bars[-2].close > 0
     ]
     benchmark_nav = previous.benchmark_nav * (
         1 + statistics.fmean(benchmark_returns) if benchmark_returns else 1
     )
-    histories = {security.code: security.bars for security in securities}
+    histories = {
+        security.code: security.bars
+        for security in securities
+        if security.bars and security.bars[-1].date == date
+    }
+    current_securities = {code: by_code[code] for code in histories}
     next_targets = (
         _target_weights(
             strategy,
             policy,
             histories,
-            by_code,
+            current_securities,
             current_weights=target_weights,
         )
         if session_number % strategy.rebalance_sessions == 0
@@ -1469,6 +1766,7 @@ def advance_shadow_portfolio(
         security = by_code.get(code)
         if (
             security is not None
+            and security.bars[-1].date == date
             and security.bars[-1].close / position.average_cost - 1 <= -policy.position_stop_loss
         ):
             next_targets.pop(code, None)
@@ -1496,6 +1794,7 @@ def advance_shadow_portfolio(
             for code, position in positions.items()
         },
         pending_settlements=pending_settlements,
+        pending_share_settlements=pending_share_settlements,
         peak_nav=round(peak_nav, 4),
         benchmark_nav=round(benchmark_nav, 4),
         cumulative_fees=round(previous.cumulative_fees + session_fees, 4),
@@ -1505,6 +1804,7 @@ def advance_shadow_portfolio(
         date=date,
         session_number=session_number,
         released_settlements=released_settlements,
+        released_share_settlements=released_share_settlements,
         fills=accounting_fills,
         state=state,
         nav=nav,

@@ -35,11 +35,13 @@ from bulls.analytics.research_loop import (
 from bulls.analytics.research_strategy import (
     ENGINE_VERSION,
     STRATEGIES,
+    SecurityCategoryObservation,
     StrategyBar,
     StrategySecurity,
     run_backtest,
 )
 from bulls.core.models import (
+    CompanyDataObservation,
     DailyBar,
     EvidenceDocument,
     EvidenceSpan,
@@ -674,11 +676,36 @@ async def _backtest_universe(
                 volume=int(bar.volume),
             )
         )
+    category_rows = []
+    if market == "DSE":
+        category_rows = list(
+            await session.scalars(
+                select(CompanyDataObservation)
+                .where(
+                    CompanyDataObservation.market == market,
+                    CompanyDataObservation.code.in_(list(symbols)),
+                    CompanyDataObservation.record_type == "profile",
+                )
+                .order_by(CompanyDataObservation.code, CompanyDataObservation.known_at)
+            )
+        )
+    category_history: dict[str, list[SecurityCategoryObservation]] = {code: [] for code in symbols}
+    for observation in category_rows:
+        category = str(observation.payload.get("market_category") or "").strip().upper()
+        if category:
+            category_history[observation.code].append(
+                SecurityCategoryObservation(
+                    category=category,
+                    known_at=_utc(observation.known_at),
+                    source=observation.source,
+                )
+            )
     return [
         StrategySecurity(
             code=code,
             sector=symbols[code].sector or "Unclassified",
             cap_tier=analytics[code].cap_tier or "unclassified",
+            category_observations=category_history[code],
             bars=grouped[code],
         )
         for code in symbols

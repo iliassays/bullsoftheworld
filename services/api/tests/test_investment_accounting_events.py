@@ -10,8 +10,9 @@ import pytest
 from api.institutional_research.portfolio import (
     _accounting_event_hash,
     _record_accounting_events,
+    _replay_persisted_accounting_events,
 )
-from bulls.analytics.research_strategy import opening_accounting_events
+from bulls.analytics.research_strategy import ENGINE_VERSION, opening_accounting_events
 from bulls.core.models import ResearchAccountingEvent
 
 
@@ -83,9 +84,7 @@ async def test_accounting_retry_with_identical_payload_is_a_noop() -> None:
         initial_capital=100_000,
         effective_date=dt.date(2026, 7, 18),
     )
-    rows = SimpleNamespace(
-        all=lambda: [(events[0].event_key, _accounting_event_hash(events[0]))]
-    )
+    rows = SimpleNamespace(all=lambda: [(events[0].event_key, _accounting_event_hash(events[0]))])
     session = SimpleNamespace(
         execute=AsyncMock(return_value=rows),
         scalar=AsyncMock(return_value=0),
@@ -110,9 +109,7 @@ async def test_accounting_retry_rejects_same_key_moved_to_another_session() -> N
         effective_date=dt.date(2026, 7, 18),
     )[0]
     moved = original.model_copy(update={"effective_date": dt.date(2026, 7, 19)})
-    rows = SimpleNamespace(
-        all=lambda: [(original.event_key, _accounting_event_hash(original))]
-    )
+    rows = SimpleNamespace(all=lambda: [(original.event_key, _accounting_event_hash(original))])
     session = SimpleNamespace(
         execute=AsyncMock(return_value=rows),
         scalar=AsyncMock(return_value=0),
@@ -125,4 +122,84 @@ async def test_accounting_retry_rejects_same_key_moved_to_another_session() -> N
             session,
             portfolio=_portfolio(),
             events=[moved],
+        )
+
+
+@pytest.mark.asyncio
+async def test_persisted_accounting_ledger_is_rebuilt_from_database_events() -> None:
+    event = opening_accounting_events(
+        initial_capital=300_000,
+        effective_date=dt.date(2026, 7, 18),
+    )[0]
+    row = SimpleNamespace(
+        sequence=0,
+        event_key=event.event_key,
+        session_number=event.session_number,
+        effective_date=event.effective_date,
+        event_type=event.event_type,
+        code=event.code,
+        payload=event.payload,
+        engine_version=ENGINE_VERSION,
+        payload_hash=_accounting_event_hash(event),
+    )
+    session = SimpleNamespace(scalars=AsyncMock(return_value=[row]))
+
+    state = await _replay_persisted_accounting_events(
+        session,
+        portfolio=_portfolio(),
+    )
+
+    assert state.cash == 300_000
+    assert state.positions == {}
+
+
+@pytest.mark.asyncio
+async def test_persisted_accounting_ledger_rejects_sequence_gaps() -> None:
+    event = opening_accounting_events(
+        initial_capital=300_000,
+        effective_date=dt.date(2026, 7, 18),
+    )[0]
+    row = SimpleNamespace(
+        sequence=1,
+        event_key=event.event_key,
+        session_number=event.session_number,
+        effective_date=event.effective_date,
+        event_type=event.event_type,
+        code=event.code,
+        payload=event.payload,
+        engine_version=ENGINE_VERSION,
+        payload_hash=_accounting_event_hash(event),
+    )
+    session = SimpleNamespace(scalars=AsyncMock(return_value=[row]))
+
+    with pytest.raises(RuntimeError, match="sequence is not contiguous"):
+        await _replay_persisted_accounting_events(
+            session,
+            portfolio=_portfolio(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_persisted_accounting_ledger_rejects_identity_tampering() -> None:
+    event = opening_accounting_events(
+        initial_capital=300_000,
+        effective_date=dt.date(2026, 7, 18),
+    )[0]
+    row = SimpleNamespace(
+        sequence=0,
+        event_key=event.event_key,
+        session_number=event.session_number,
+        effective_date=event.effective_date,
+        event_type=event.event_type,
+        code=event.code,
+        payload={**event.payload, "cash": 1},
+        engine_version=ENGINE_VERSION,
+        payload_hash=_accounting_event_hash(event),
+    )
+    session = SimpleNamespace(scalars=AsyncMock(return_value=[row]))
+
+    with pytest.raises(RuntimeError, match="failed identity verification"):
+        await _replay_persisted_accounting_events(
+            session,
+            portfolio=_portfolio(),
         )

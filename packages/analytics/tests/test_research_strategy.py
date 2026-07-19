@@ -3,6 +3,8 @@ import datetime as dt
 import pytest
 
 from bulls.analytics.research_strategy import (
+    CashSettlement,
+    SecurityCategoryObservation,
     ShadowPosition,
     ShadowState,
     StrategyBar,
@@ -13,6 +15,7 @@ from bulls.analytics.research_strategy import (
     opening_accounting_events,
     replay_accounting_events,
     run_backtest,
+    settlement_terms_for_security,
 )
 
 
@@ -22,6 +25,8 @@ def _security(
     market: str,
     sessions: int = 240,
     volume: int = 1_000_000,
+    category: str | None = "A",
+    category_observations: list[SecurityCategoryObservation] | None = None,
 ) -> StrategySecurity:
     start = dt.date(2025, 1, 1)
     bars = []
@@ -41,7 +46,22 @@ def _security(
                 volume=volume + index * 100,
             )
         )
-    return StrategySecurity(code=code, sector="Technology", cap_tier="small", bars=bars)
+    observations = category_observations
+    if observations is None and market == "DSE" and category is not None:
+        observations = [
+            SecurityCategoryObservation(
+                category=category,
+                known_at=dt.datetime(2024, 6, 1, tzinfo=dt.UTC),
+                source="test_fixture",
+            )
+        ]
+    return StrategySecurity(
+        code=code,
+        sector="Technology",
+        cap_tier="small",
+        category_observations=observations or [],
+        bars=bars,
+    )
 
 
 def test_strategy_cannot_cross_market_policy_boundary() -> None:
@@ -202,6 +222,184 @@ def test_dse_sale_proceeds_do_not_fund_buys_before_t_plus_two_settlement() -> No
         session_number=3,
     )
     assert any(trade.side == "buy" and trade.code == "AAA" for trade in third.trades)
+
+
+def test_dse_contractual_settlement_uses_point_in_time_category_and_market_sessions() -> None:
+    trade_date = dt.date(2026, 7, 16)  # Thursday; DSE's next session is Sunday.
+    category_history = [
+        SecurityCategoryObservation(
+            category="A",
+            known_at=dt.datetime(2026, 7, 10, tzinfo=dt.UTC),
+            source="dse_company_page",
+        ),
+        SecurityCategoryObservation(
+            category="Z",
+            known_at=dt.datetime(2026, 7, 15, tzinfo=dt.UTC),
+            source="dse_company_page",
+        ),
+    ]
+    security = _security(
+        "CATEGORY",
+        market="DSE",
+        category_observations=category_history,
+    )
+
+    z_terms = settlement_terms_for_security(
+        market="DSE",
+        security=security,
+        trade_date=trade_date,
+    )
+    a_terms = settlement_terms_for_security(
+        market="DSE",
+        security=security,
+        trade_date=dt.date(2026, 7, 14),
+    )
+
+    assert z_terms.security_category == "Z"
+    assert z_terms.settlement_sessions == 3
+    assert z_terms.contractual_settlement_date == dt.date(2026, 7, 21)
+    assert a_terms.security_category == "A"
+    assert a_terms.settlement_sessions == 2
+    assert a_terms.contractual_settlement_date == dt.date(2026, 7, 16)
+
+
+def test_dse_order_fails_closed_without_category_known_before_market_open() -> None:
+    security = _security("UNKNOWN", market="DSE", category=None)
+    advanced = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=[security],
+        previous=ShadowState(
+            cash=100_000,
+            positions={},
+            peak_nav=100_000,
+            benchmark_nav=100_000,
+        ),
+        target_weights={"UNKNOWN": 0.1},
+        session_number=1,
+    )
+
+    assert advanced.trades == []
+    assert any(
+        item.rule == "settlement_class_unsupported" and item.code == "UNKNOWN"
+        for item in advanced.risk_interventions
+    )
+
+
+def test_dse_order_fails_closed_on_conflicting_category_observations() -> None:
+    known_at = dt.datetime(2025, 6, 15, tzinfo=dt.UTC)
+    security = _security(
+        "CONFLICT",
+        market="DSE",
+        category_observations=[
+            SecurityCategoryObservation(
+                category="A",
+                known_at=known_at,
+                source="source_a",
+            ),
+            SecurityCategoryObservation(
+                category="Z",
+                known_at=known_at,
+                source="source_b",
+            ),
+        ],
+    )
+    advanced = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=[security],
+        previous=ShadowState(
+            cash=100_000,
+            positions={},
+            peak_nav=100_000,
+            benchmark_nav=100_000,
+        ),
+        target_weights={"CONFLICT": 0.1},
+        session_number=1,
+    )
+
+    assert advanced.trades == []
+    assert any(
+        item.rule == "settlement_class_unsupported" and "conflicting" in item.detail
+        for item in advanced.risk_interventions
+    )
+
+
+def test_dse_bought_shares_cannot_be_sold_before_contractual_settlement() -> None:
+    security = _security("LOCKED", market="DSE", sessions=220)
+    initial = ShadowState(
+        cash=100_000,
+        positions={},
+        peak_nav=100_000,
+        benchmark_nav=100_000,
+    )
+    first = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=[security],
+        previous=initial,
+        target_weights={"LOCKED": 0.1},
+        session_number=1,
+    )
+    second = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=[security],
+        previous=first.state,
+        target_weights={},
+        session_number=2,
+    )
+    third = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=[security],
+        previous=second.state,
+        target_weights={},
+        session_number=3,
+    )
+
+    assert first.state.pending_share_settlements
+    assert second.trades == []
+    assert any(item.rule == "share_settlement_lock" for item in second.risk_interventions)
+    assert any(trade.side == "sell" for trade in third.trades)
+
+
+def test_stale_held_bar_does_not_freeze_due_settlement_release() -> None:
+    stale = _security("STALE", market="DSE", sessions=219)
+    current = _security("CURRENT", market="DSE", sessions=220)
+    as_of_date = current.bars[-1].date
+    receivable = CashSettlement(
+        receivable_key="s1:receivable:SOLD",
+        release_session=2,
+        amount=5_000,
+        trade_date=stale.bars[-1].date,
+        contractual_settlement_date=as_of_date,
+        settlement_sessions=2,
+        settlement_rule="bsec-z-category-directive-2024-07-02",
+        settlement_class="dse_abgn_regular",
+        trade_type="regular",
+        security_category="A",
+    )
+    advanced = advance_shadow_portfolio(
+        market="DSE",
+        strategy_key="dse_reversal_v1",
+        securities=[stale, current],
+        previous=ShadowState(
+            cash=10_000,
+            positions={"STALE": ShadowPosition(shares=100, average_cost=10)},
+            pending_settlements=[receivable],
+            peak_nav=20_000,
+            benchmark_nav=20_000,
+        ),
+        target_weights={"STALE": 0.1},
+        session_number=2,
+        as_of_date=as_of_date,
+    )
+
+    assert advanced.state.cash == 15_000
+    assert advanced.state.pending_settlements == []
+    assert advanced.trades == []
+    assert any(item.rule == "stale_mark" for item in advanced.risk_interventions)
 
 
 def test_us_sale_proceeds_release_after_one_completed_session() -> None:

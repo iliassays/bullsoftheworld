@@ -1,7 +1,7 @@
 """Add durable settlement receivables to Atlas shadow snapshots.
 
 Revision ID: d9e1f3a5b7c9
-Revises: e0f2a4b6c8d0
+Revises: f1e3a5c7d9b0
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "d9e1f3a5b7c9"
-down_revision = "e0f2a4b6c8d0"
+down_revision = "f1e3a5c7d9b0"
 branch_labels = None
 depends_on = None
 
@@ -37,14 +37,37 @@ def _workspace_access(table: str) -> str:
     )
 
 
+def _workspace_risk_access(table: str) -> str:
+    return (
+        "EXISTS (SELECT 1 FROM research_organization_memberships rom "
+        f"WHERE rom.organization_id = {table}.organization_id "
+        f"AND rom.tenant_id = {table}.tenant_id AND rom.market = {table}.market "
+        f"AND rom.user_id = {_USER_ID} AND rom.status = 'active' "
+        "AND (rom.role IN ('owner', 'admin') OR EXISTS ("
+        "SELECT 1 FROM research_workspace_memberships rwm "
+        f"WHERE rwm.workspace_id = {table}.workspace_id "
+        f"AND rwm.organization_id = {table}.organization_id "
+        f"AND rwm.tenant_id = {table}.tenant_id AND rwm.market = {table}.market "
+        f"AND rwm.user_id = {_USER_ID} AND rwm.status = 'active' "
+        "AND rwm.role IN ('portfolio_manager', 'risk'))))"
+    )
+
+
 def _enable_rls(table: str) -> None:
-    predicate = f"{_TENANT_SCOPE} AND ({_workspace_access(table)})"
+    read_predicate = f"{_TENANT_SCOPE} AND ({_workspace_access(table)})"
+    write_predicate = f"{_TENANT_SCOPE} AND ({_workspace_risk_access(table)})"
     op.execute(sa.text(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY'))
     op.execute(sa.text(f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY'))
     op.execute(
         sa.text(
-            f'CREATE POLICY "{table}_tenant_market_isolation" ON "{table}" '
-            f"USING ({predicate}) WITH CHECK ({predicate})"
+            f'CREATE POLICY "{table}_tenant_market_isolation" ON "{table}" FOR SELECT '
+            f"USING ({read_predicate})"
+        )
+    )
+    op.execute(
+        sa.text(
+            f'CREATE POLICY "{table}_risk_writer" ON "{table}" FOR INSERT '
+            f"WITH CHECK ({write_predicate})"
         )
     )
 
@@ -59,6 +82,15 @@ def upgrade() -> None:
         "research_shadow_snapshots",
         sa.Column(
             "pending_settlements",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
+    )
+    op.add_column(
+        "research_shadow_snapshots",
+        sa.Column(
+            "pending_share_settlements",
             postgresql.JSONB(astext_type=sa.Text()),
             server_default=sa.text("'[]'::jsonb"),
             nullable=False,
@@ -98,13 +130,11 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "event_type IN ('opening_balance', 'methodology_boundary', "
-            "'settlement_release', 'fill', 'valuation')",
+            "'settlement_release', 'share_settlement_release', 'fill', 'valuation')",
             name="ck_research_accounting_events_type",
         ),
         sa.CheckConstraint("event_key <> ''", name="ck_research_accounting_events_key"),
-        sa.CheckConstraint(
-            "engine_version <> ''", name="ck_research_accounting_events_engine"
-        ),
+        sa.CheckConstraint("engine_version <> ''", name="ck_research_accounting_events_engine"),
         sa.CheckConstraint(
             "payload_hash ~ '^[0-9a-f]{64}$'",
             name="ck_research_accounting_events_payload_hash",
@@ -143,9 +173,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "portfolio_id", "sequence", name="uq_research_accounting_events_sequence"
         ),
-        sa.UniqueConstraint(
-            "portfolio_id", "event_key", name="uq_research_accounting_events_key"
-        ),
+        sa.UniqueConstraint("portfolio_id", "event_key", name="uq_research_accounting_events_key"),
     )
     op.create_index(
         "ix_research_accounting_events_workspace_recorded",
@@ -188,7 +216,14 @@ def downgrade() -> None:
             "ON research_accounting_events"
         )
     )
+    op.execute(
+        sa.text(
+            "DROP POLICY IF EXISTS research_accounting_events_risk_writer "
+            "ON research_accounting_events"
+        )
+    )
     op.drop_table("research_accounting_events")
+    op.drop_column("research_shadow_snapshots", "pending_share_settlements")
     op.drop_column("research_shadow_snapshots", "pending_settlements")
     op.drop_constraint(
         "uq_research_shadow_portfolios_accounting_scope",

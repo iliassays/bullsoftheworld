@@ -53,7 +53,11 @@ def _payload_hash(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _accounting_event_hash(event: ShadowAccountingEvent) -> str:
+def _accounting_event_hash(
+    event: ShadowAccountingEvent,
+    *,
+    engine_version: str = ENGINE_VERSION,
+) -> str:
     """Fingerprint the complete economic identity, not only its mutable payload field."""
 
     return _payload_hash(
@@ -63,7 +67,7 @@ def _accounting_event_hash(event: ShadowAccountingEvent) -> str:
             "effective_date": event.effective_date,
             "event_type": event.event_type,
             "code": event.code,
-            "engine_version": ENGINE_VERSION,
+            "engine_version": engine_version,
             "payload": event.payload,
         }
     )
@@ -74,6 +78,7 @@ def _state_from_snapshot(snapshot: ResearchShadowSnapshot) -> ShadowState:
         cash=float(snapshot.cash),
         positions=snapshot.positions,
         pending_settlements=snapshot.pending_settlements,
+        pending_share_settlements=snapshot.pending_share_settlements,
         peak_nav=float(snapshot.peak_nav),
         benchmark_nav=float(snapshot.benchmark_nav),
         cumulative_fees=float(snapshot.cumulative_fees),
@@ -144,12 +149,69 @@ async def _record_accounting_events(
     await session.flush()
 
 
+def _assert_accounting_state(
+    authoritative: ShadowState,
+    expected: ShadowState,
+    *,
+    context: str,
+) -> None:
+    if _payload_hash(authoritative.model_dump(mode="json")) != _payload_hash(
+        expected.model_dump(mode="json")
+    ):
+        raise RuntimeError(f"Accounting ledger does not reconcile {context}")
+
+
+async def _replay_persisted_accounting_events(
+    session: AsyncSession,
+    *,
+    portfolio: ResearchShadowPortfolio,
+) -> ShadowState:
+    """Rebuild the book from the append-only database ledger and verify its hash chain."""
+
+    rows = list(
+        await session.scalars(
+            select(ResearchAccountingEvent)
+            .where(
+                ResearchAccountingEvent.portfolio_id == portfolio.id,
+                ResearchAccountingEvent.organization_id == portfolio.organization_id,
+                ResearchAccountingEvent.tenant_id == portfolio.tenant_id,
+                ResearchAccountingEvent.market == portfolio.market,
+            )
+            .order_by(ResearchAccountingEvent.sequence)
+        )
+    )
+    if not rows:
+        raise RuntimeError("Accounting ledger has no opening event")
+    expected_sequences = list(range(len(rows)))
+    actual_sequences = [row.sequence for row in rows]
+    if actual_sequences != expected_sequences:
+        raise RuntimeError("Accounting ledger sequence is not contiguous from zero")
+
+    events: list[ShadowAccountingEvent] = []
+    for row in rows:
+        event = ShadowAccountingEvent(
+            event_key=row.event_key,
+            session_number=row.session_number,
+            effective_date=row.effective_date,
+            event_type=row.event_type,
+            code=row.code,
+            payload=row.payload,
+        )
+        if row.payload_hash != _accounting_event_hash(
+            event,
+            engine_version=row.engine_version,
+        ):
+            raise RuntimeError(f"Accounting event {row.event_key} failed identity verification")
+        events.append(event)
+    return replay_accounting_events(None, events)
+
+
 async def _ensure_accounting_boundary(
     session: AsyncSession,
     *,
     portfolio: ResearchShadowPortfolio,
     latest: ResearchShadowSnapshot,
-) -> None:
+) -> ShadowState:
     existing = await session.scalar(
         select(ResearchAccountingEvent.id)
         .where(
@@ -160,18 +222,27 @@ async def _ensure_accounting_boundary(
         )
         .limit(1)
     )
-    if existing is not None:
-        return
-    await _record_accounting_events(
+    if existing is None:
+        await _record_accounting_events(
+            session,
+            portfolio=portfolio,
+            events=methodology_boundary_accounting_events(
+                state=_state_from_snapshot(latest),
+                session_number=latest.session_number,
+                effective_date=latest.as_of_date,
+                source_snapshot_id=str(latest.id),
+            ),
+        )
+    authoritative = await _replay_persisted_accounting_events(
         session,
         portfolio=portfolio,
-        events=methodology_boundary_accounting_events(
-            state=_state_from_snapshot(latest),
-            session_number=latest.session_number,
-            effective_date=latest.as_of_date,
-            source_snapshot_id=str(latest.id),
-        ),
     )
+    _assert_accounting_state(
+        authoritative,
+        _state_from_snapshot(latest),
+        context=f"latest snapshot {latest.id}",
+    )
+    return authoritative
 
 
 def _snapshot_out(snapshot: ResearchShadowSnapshot) -> ResearchShadowSnapshotOut:
@@ -189,6 +260,7 @@ def _snapshot_out(snapshot: ResearchShadowSnapshot) -> ResearchShadowSnapshotOut
         cumulative_turnover=float(snapshot.cumulative_turnover),
         positions=snapshot.positions,
         pending_settlements=snapshot.pending_settlements,
+        pending_share_settlements=snapshot.pending_share_settlements,
         target_weights=snapshot.target_weights,
         trades=snapshot.trades,
         risk_interventions=snapshot.risk_interventions,
@@ -333,6 +405,10 @@ async def create_shadow_portfolio(
         pending_settlements=[
             settlement.model_dump(mode="json") for settlement in opening_state.pending_settlements
         ],
+        pending_share_settlements=[
+            settlement.model_dump(mode="json")
+            for settlement in opening_state.pending_share_settlements
+        ],
         target_weights=result["latest_target_weights"],
         trades=[],
         risk_interventions=[],
@@ -406,6 +482,18 @@ async def _refresh_shadow_portfolio(
     *,
     portfolio: ResearchShadowPortfolio,
 ) -> None:
+    locked_id = await session.scalar(
+        select(ResearchShadowPortfolio.id)
+        .where(
+            ResearchShadowPortfolio.id == portfolio.id,
+            ResearchShadowPortfolio.organization_id == portfolio.organization_id,
+            ResearchShadowPortfolio.tenant_id == portfolio.tenant_id,
+            ResearchShadowPortfolio.market == portfolio.market,
+        )
+        .with_for_update()
+    )
+    if locked_id is None:
+        raise RuntimeError("Shadow portfolio disappeared before reconciliation")
     latest = (
         await session.scalars(
             select(ResearchShadowSnapshot)
@@ -458,7 +546,7 @@ async def _refresh_shadow_portfolio(
             if latest.as_of_date < bar.date <= latest_market_date
         }
     )
-    await _ensure_accounting_boundary(
+    authoritative_state = await _ensure_accounting_boundary(
         session,
         portfolio=portfolio,
         latest=latest,
@@ -467,7 +555,7 @@ async def _refresh_shadow_portfolio(
         current_securities = []
         for security in securities:
             history = [bar for bar in security.bars if bar.date <= current_date]
-            if history and history[-1].date == current_date:
+            if history:
                 current_securities.append(security.model_copy(update={"bars": history}))
         held_codes = set(latest.positions)
         if not held_codes <= {security.code for security in current_securities}:
@@ -476,33 +564,44 @@ async def _refresh_shadow_portfolio(
             portfolio.configuration = {
                 **portfolio.configuration,
                 "refresh_error": (
-                    "Shadow advancement stopped because held securities lacked a completed "
-                    f"bar for {current_date.isoformat()}: {', '.join(missing)}"
+                    "Shadow advancement stopped because held securities had no observable "
+                    f"history through {current_date.isoformat()}: {', '.join(missing)}"
                 ),
             }
             break
         previous_snapshot = latest
-        previous = _state_from_snapshot(latest)
         advanced = advance_shadow_portfolio(
             market=portfolio.market,
             strategy_key=portfolio.strategy_key,
             securities=current_securities,
-            previous=previous,
+            previous=authoritative_state,
             target_weights={key: float(value) for key, value in latest.target_weights.items()},
             session_number=latest.session_number + 1,
+            as_of_date=current_date,
             risk_policy=risk_policy,
         )
-        replayed_state = replay_accounting_events(previous, advanced.accounting_events)
-        if _payload_hash(replayed_state.model_dump(mode="json")) != _payload_hash(
-            advanced.state.model_dump(mode="json")
-        ):
-            raise RuntimeError(
-                f"Accounting replay did not reconcile shadow session {latest.session_number + 1}"
-            )
+        incremental_state = replay_accounting_events(
+            authoritative_state,
+            advanced.accounting_events,
+        )
+        _assert_accounting_state(
+            incremental_state,
+            advanced.state,
+            context=f"shadow session {latest.session_number + 1}",
+        )
         await _record_accounting_events(
             session,
             portfolio=portfolio,
             events=advanced.accounting_events,
+        )
+        authoritative_state = await _replay_persisted_accounting_events(
+            session,
+            portfolio=portfolio,
+        )
+        _assert_accounting_state(
+            authoritative_state,
+            advanced.state,
+            context=f"persisted shadow session {latest.session_number + 1}",
         )
         latest = ResearchShadowSnapshot(
             id=uuid.uuid4(),
@@ -513,20 +612,24 @@ async def _refresh_shadow_portfolio(
             as_of_date=advanced.date,
             session_number=latest.session_number + 1,
             nav=Decimal(str(advanced.nav)),
-            cash=Decimal(str(replayed_state.cash)),
-            benchmark_nav=Decimal(str(replayed_state.benchmark_nav)),
-            peak_nav=Decimal(str(replayed_state.peak_nav)),
+            cash=Decimal(str(authoritative_state.cash)),
+            benchmark_nav=Decimal(str(authoritative_state.benchmark_nav)),
+            peak_nav=Decimal(str(authoritative_state.peak_nav)),
             gross_exposure_pct=Decimal(str(advanced.gross_exposure_pct)),
             drawdown_pct=Decimal(str(advanced.drawdown_pct)),
-            cumulative_fees=Decimal(str(replayed_state.cumulative_fees)),
-            cumulative_turnover=Decimal(str(replayed_state.cumulative_turnover)),
+            cumulative_fees=Decimal(str(authoritative_state.cumulative_fees)),
+            cumulative_turnover=Decimal(str(authoritative_state.cumulative_turnover)),
             positions={
                 code: position.model_dump(mode="json")
-                for code, position in replayed_state.positions.items()
+                for code, position in authoritative_state.positions.items()
             },
             pending_settlements=[
                 settlement.model_dump(mode="json")
-                for settlement in replayed_state.pending_settlements
+                for settlement in authoritative_state.pending_settlements
+            ],
+            pending_share_settlements=[
+                settlement.model_dump(mode="json")
+                for settlement in authoritative_state.pending_share_settlements
             ],
             target_weights=advanced.next_target_weights,
             trades=[trade.model_dump(mode="json") for trade in advanced.trades],

@@ -344,19 +344,13 @@ class ResearchAccountingEvent(Base):
             "market",
             name="uq_research_accounting_events_security_scope",
         ),
-        UniqueConstraint(
-            "portfolio_id", "sequence", name="uq_research_accounting_events_sequence"
-        ),
-        UniqueConstraint(
-            "portfolio_id", "event_key", name="uq_research_accounting_events_key"
-        ),
+        UniqueConstraint("portfolio_id", "sequence", name="uq_research_accounting_events_sequence"),
+        UniqueConstraint("portfolio_id", "event_key", name="uq_research_accounting_events_key"),
         CheckConstraint("sequence >= 0", name="ck_research_accounting_events_sequence"),
-        CheckConstraint(
-            "session_number >= 0", name="ck_research_accounting_events_session_number"
-        ),
+        CheckConstraint("session_number >= 0", name="ck_research_accounting_events_session_number"),
         CheckConstraint(
             "event_type IN ('opening_balance', 'methodology_boundary', "
-            "'settlement_release', 'fill', 'valuation')",
+            "'settlement_release', 'share_settlement_release', 'fill', 'valuation')",
             name="ck_research_accounting_events_type",
         ),
         CheckConstraint("event_key <> ''", name="ck_research_accounting_events_key"),

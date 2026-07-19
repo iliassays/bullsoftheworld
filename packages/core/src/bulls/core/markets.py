@@ -269,6 +269,27 @@ def get_market_profile(market: str | None) -> MarketProfile:
         raise ValueError(f"Unknown market profile {market!r}") from None
 
 
+def is_market_session(date: dt.date, market: str | None) -> bool:
+    """Return whether ``date`` is a configured exchange session."""
+
+    profile = get_market_profile(market)
+    return date.isoweekday() in profile.trading_isoweekdays and date not in profile.holidays
+
+
+def add_market_sessions(date: dt.date, sessions: int, market: str | None) -> dt.date:
+    """Resolve a contractual T+n date from the shared exchange calendar."""
+
+    if sessions < 0:
+        raise ValueError("sessions must be non-negative")
+    resolved = date
+    remaining = sessions
+    while remaining:
+        resolved += dt.timedelta(days=1)
+        if is_market_session(resolved, market):
+            remaining -= 1
+    return resolved
+
+
 def cap_tier(market_cap_mn: float | None, market: str | None) -> str | None:
     """Canonical size tier for a market cap, or None when it can't be classified honestly.
 

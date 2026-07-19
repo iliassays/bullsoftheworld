@@ -11,7 +11,7 @@ import datetime as dt
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
-from bulls.core.markets import get_market_profile
+from bulls.core.markets import add_market_sessions, get_market_profile, is_market_session
 
 DHAKA = ZoneInfo("Asia/Dhaka")
 MARKET_OPEN = dt.time(10, 0)
@@ -57,20 +57,12 @@ def to_market_tz(
 
 def is_trading_day(d: dt.date, *, market: str | None = "DSE") -> bool:
     """True on configured market weekdays that are not configured full-day holidays."""
-    profile = _profile_for(market)
-    return d.isoweekday() in profile.trading_isoweekdays and d not in profile.holidays
+    return is_market_session(d, market)
 
 
 def add_trading_days(d: dt.date, n: int, *, market: str | None = "DSE") -> dt.date:
     """The date `n` trading days after `d`, skipping that market's weekends and holidays."""
-    if n < 0:
-        raise ValueError("n must be >= 0")
-    out = d
-    while n > 0:
-        out += dt.timedelta(days=1)
-        if is_trading_day(out, market=market):
-            n -= 1
-    return out
+    return add_market_sessions(d, n, market)
 
 
 def most_recent_completed_session(
@@ -89,11 +81,14 @@ def most_recent_completed_session(
     local = to_market_tz(when, market=market)
     candidate = local.date()
     if is_trading_day(candidate, market=market):
-        completed_at = dt.datetime.combine(
-            candidate,
-            market_close_on(candidate, market),
-            tzinfo=market_timezone(market),
-        ) + publication_delay
+        completed_at = (
+            dt.datetime.combine(
+                candidate,
+                market_close_on(candidate, market),
+                tzinfo=market_timezone(market),
+            )
+            + publication_delay
+        )
         if local >= completed_at:
             return candidate
     candidate -= dt.timedelta(days=1)
@@ -108,10 +103,9 @@ def is_trading_hours(
     """True if `when` falls inside the configured regular market session."""
     profile = _profile_for(market)
     local = to_market_tz(when, tz, market=market)
-    return (
-        is_trading_day(local.date(), market=profile.market)
-        and profile.open_time <= local.time() <= profile.close_time_on(local.date())
-    )
+    return is_trading_day(
+        local.date(), market=profile.market
+    ) and profile.open_time <= local.time() <= profile.close_time_on(local.date())
 
 
 def session_phase(
