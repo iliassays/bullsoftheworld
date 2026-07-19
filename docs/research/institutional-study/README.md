@@ -36,7 +36,7 @@ press-derived; the study says so wherever it applies rather than laundering it i
 | 6 | Risk management (4 levels) + averaging-down investigation | `phase6-risk-management.md` | **done 2026-07-19** |
 | 7 | Entry, execution, exit | `phase7-entry-execution-exit.md` | **done 2026-07-19** (FIM per-trade bps tables unverified — spot-check in Phase 16 pass) |
 | 8 | Regulatory-filings workflow (13F et al.) | `phase8-filings-workflow.md` | **done 2026-07-19** (no post-2020 peer-reviewed 13F-cloning re-test found — Phase 16 red-team item) |
-| 9 | Detailed case studies (10–15 institutions) | `phase9-case-studies.md` | pending |
+| 9 | Detailed case studies (16 institutions) | `phase9-case-studies.md` | **done 2026-07-19** (pod-rule primary hunt empty — documented absence; several ledger IOUs closed/corrected) |
 | 10 | Historical trade case studies (20+) | `phase10-trade-cases.md` | pending |
 | 11 | Cross-institution patterns | `phase11-patterns.md` | pending |
 | 12 | Three practical systems (A/B/C) | `phase12-systems.md` | pending |
