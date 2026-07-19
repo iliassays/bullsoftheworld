@@ -57,6 +57,36 @@ def test_verified_candidates_require_complete_bonus_terms() -> None:
     assert diagnostics["incomplete_bonus"] == 1
 
 
+def test_later_record_date_supersedes_same_fiscal_year_bonus_notice() -> None:
+    initial = _announcement(
+        3,
+        code="BONUS",
+        published_at=dt.date(2026, 4, 30),
+        category="dividend",
+        headline="Dividend Declaration",
+        body=(
+            "10% Stock Dividend for the year ended December 31, 2025. Record Date: May 21, 2026."
+        ),
+    )
+    consent = _announcement(
+        4,
+        code="BONUS",
+        published_at=dt.date(2026, 5, 21),
+        category="dividend",
+        headline="BSEC consent and Record Date for Stock Dividend",
+        body=(
+            "Consent for 10% Stock Dividend for the year ended December 31, 2025. "
+            "Another Record Date for entitlement will be June 04, 2026."
+        ),
+    )
+
+    candidates, diagnostics = verified_action_candidates([initial, consent])
+
+    assert len(candidates) == 1
+    assert candidates[0].record_date == dt.date(2026, 6, 4)
+    assert diagnostics["superseded_bonus"] == 1
+
+
 def test_verified_candidates_link_rights_terms_to_later_record_notice() -> None:
     terms = _announcement(
         10,

@@ -17,6 +17,16 @@ def test_dividend_decode_includes_bonus_record_date() -> None:
     assert details["record_date"] == "2026-07-14"
 
 
+def test_dividend_decode_normalizes_day_first_year_ended() -> None:
+    details = decode(
+        "dividend",
+        "Dividend Declaration",
+        "10% Stock dividend for the year ended on 31-Dec-2025. Record Date: 14-Jul-2026.",
+    )
+
+    assert details["year_ended"] == "2025-12-31"
+
+
 @pytest.mark.parametrize(
     ("body", "ratio", "price"),
     [

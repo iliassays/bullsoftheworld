@@ -77,7 +77,8 @@ def verified_action_candidates(
     rows = list(announcements)
     decoded = {int(row.id): _details(row) for row in rows}
     candidates: dict[tuple[str, str, dt.date], ActionCandidate] = {}
-    incomplete_bonus = incomplete_rights = 0
+    bonus_by_distribution: dict[tuple[str, str], tuple[ActionCandidate, Any]] = {}
+    incomplete_bonus = incomplete_rights = superseded_bonus = 0
 
     for row in rows:
         details = decoded[int(row.id)]
@@ -107,10 +108,24 @@ def verified_action_candidates(
             source_announcement_ids=(int(row.id),),
             known_at=_utc(row.created_at),
         )
-        key = (candidate.code, candidate.action_type, candidate.record_date)
-        previous = candidates.get(key)
-        if previous is None or candidate.known_at >= previous.known_at:
-            candidates[key] = candidate
+        distribution_key = str(details.get("year_ended") or f"record:{record_date.isoformat()}")
+        key = (candidate.code, distribution_key)
+        previous = bonus_by_distribution.get(key)
+        if previous is None or (
+            row.published_at,
+            candidate.known_at,
+            int(row.id),
+        ) >= (
+            previous[1].published_at,
+            previous[0].known_at,
+            int(previous[1].id),
+        ):
+            if previous is not None and previous[0].record_date != candidate.record_date:
+                superseded_bonus += 1
+            bonus_by_distribution[key] = (candidate, row)
+
+    for candidate, _ in bonus_by_distribution.values():
+        candidates[(candidate.code, candidate.action_type, candidate.record_date)] = candidate
 
     rights_terms: dict[str, list[tuple[Any, dict[str, Any]]]] = {}
     rights_records: list[tuple[Any, dt.date]] = []
@@ -177,6 +192,7 @@ def verified_action_candidates(
         "verified": len(output),
         "incomplete_bonus": incomplete_bonus,
         "incomplete_rights": incomplete_rights,
+        "superseded_bonus": superseded_bonus,
     }
 
 

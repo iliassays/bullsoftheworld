@@ -18,6 +18,10 @@ from typing import Any
 _FACE_VALUE = (
     10.0  # DSE equities are near-universally Tk 10 par; surfaced in details so the UI says so
 )
+_DATE_TOKEN = (
+    r"(?:\d{1,2}[./-](?:\d{1,2}|[A-Za-z]+)[./-]\d{4}|"
+    r"[A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})"
+)
 
 
 def _iso(value: str) -> str | None:
@@ -124,7 +128,7 @@ def _dividend(body: str) -> dict[str, Any]:
         )
     if stock:
         d["stock_pct"] = float(stock.group(1))
-    yr = re.search(r"year ended\s+([A-Za-z]+ \d{1,2}, \d{4})", body, re.I)
+    yr = re.search(rf"year ended(?:\s+on)?\s+({_DATE_TOKEN})", body, re.I)
     if yr:
         d["year_ended"] = _iso(yr.group(1))
     agm = re.search(r"AGM[:\s]+([\d]{2}\.[\d]{2}\.[\d]{4})", body, re.I)
@@ -151,13 +155,9 @@ def _board_meeting(body: str) -> dict[str, Any]:
 
 def _corporate_action(body: str) -> dict[str, Any]:
     d: dict[str, Any] = {}
-    date_token = (
-        r"(?:\d{1,2}[./-](?:\d{1,2}|[A-Za-z]+)[./-]\d{4}|"
-        r"[A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})"
-    )
     rec = re.search(
         rf"\brecord date\b(?:(?!(?:notified|notify|later)).){{0,120}}?"
-        rf"(?::|\bi\.?e\.?|\bis\b|\bwill be\b)\s*({date_token})",
+        rf"(?::|\bi\.?e\.?|\bis\b|\bwill be\b)\s*({_DATE_TOKEN})",
         body,
         re.I | re.S,
     )
