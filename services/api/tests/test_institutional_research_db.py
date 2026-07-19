@@ -27,7 +27,8 @@ async def test_research_tables_force_tenant_market_row_security() -> None:
             rows = (
                 await session.execute(
                     text(
-                        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, p.qual "
+                        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, "
+                        "COALESCE(p.qual, p.with_check) "
                         "FROM pg_class c "
                         "JOIN pg_namespace n ON n.oid = c.relnamespace "
                         "JOIN pg_policies p ON p.schemaname = n.nspname "
@@ -123,6 +124,7 @@ async def test_authenticated_research_api_isolates_dse_and_us_accounts() -> None
     from bulls.core.models import (
         RefreshSession,
         ResearchClaim,
+        ResearchInvestmentMandate,
         ResearchOrganization,
         ResearchWorkspace,
         User,
@@ -275,6 +277,13 @@ async def test_authenticated_research_api_isolates_dse_and_us_accounts() -> None
                     tenant_id=tenant_id,
                     market=market,
                     user_id=user_id,
+                )
+                await session.execute(
+                    delete(ResearchInvestmentMandate).where(
+                        ResearchInvestmentMandate.organization_id == organization_id,
+                        ResearchInvestmentMandate.tenant_id == tenant_id,
+                        ResearchInvestmentMandate.market == market,
+                    )
                 )
                 await session.execute(
                     delete(ResearchOrganization).where(
