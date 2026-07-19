@@ -39,10 +39,10 @@ press-derived; the study says so wherever it applies rather than laundering it i
 | 9 | Detailed case studies (16 institutions) | `phase9-case-studies.md` | **done 2026-07-19** (pod-rule primary hunt empty — documented absence; several ledger IOUs closed/corrected) |
 | 10 | Historical trade case studies (30+) | `phase10-trade-cases.md` | **done 2026-07-19** (GGP "$2.6bn" contamination caught; famous-trade P&L frequently U — labeled throughout) |
 | 11 | Cross-institution patterns | `phase11-patterns.md` | **done 2026-07-19** (headline: downside-first-by-a-non-author invariant; conditionals table; myth register) |
-| 12 | Three practical systems (A/B/C) | `phase12-systems.md` | pending |
-| 13 | Backtesting & validation protocol | `phase13-validation.md` | pending |
-| 14 | Implementation roadmap | `phase14-roadmap.md` | pending |
-| 15 | Risk rulebook | `phase15-risk-rulebook.md` | pending |
+| 12 | Three practical systems (A/B/C) | `phase12-systems.md` | **done 2026-07-19** (candidates for mandate admission only; 7 rejected systems documented) |
+| 13 | Backtesting & validation protocol | `phase13-validation.md` | **done 2026-07-19** (extends mandate steps 1–7; repo commit = preregistration receipt) |
+| 14 | Implementation roadmap | `phase14-roadmap.md` | **done 2026-07-19** (EDGAR pipeline = highest-leverage artifact; zero paid data through Stage 2) |
+| 15 | Risk rulebook | `phase15-risk-rulebook.md` | **done 2026-07-19** (all numbers = hypotheses w/ ranges; structure is the evidence-backed part) |
 | 16 | Red-team + final ranked recommendations | `phase16-redteam-final.md` | pending |
 
 `ledger.md` — running research ledger (claim / source / contradiction / category / confidence /
