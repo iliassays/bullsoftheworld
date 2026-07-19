@@ -40,6 +40,8 @@ class IntradayCaptureRows:
     session_date: dt.date
     capture_slot: dt.datetime
     regression_count: int
+    official_close_count: int
+    unavailable_price_count: int
 
 
 def _capture_slot(value: dt.datetime) -> dt.datetime:
@@ -82,6 +84,16 @@ def _session_vwap(*, volume: int, turnover_mn: float | None) -> float | None:
     return round(value, 6) if value > 0 else None
 
 
+def _observable_price(quote: Quote) -> tuple[float | None, str]:
+    """Return a labelled positive sampled price without rewriting the provider's raw LTP."""
+
+    if quote.ltp > 0:
+        return quote.ltp, "last_trade"
+    if quote.close > 0:
+        return quote.close, "official_close"
+    return None, "unavailable"
+
+
 def _counter_delta(current: int, previous: int | None) -> int | None:
     if previous is None or current < previous:
         return None
@@ -115,7 +127,14 @@ def derive_capture_rows(
     observations: list[dict[str, Any]] = []
     bars: list[dict[str, Any]] = []
     regression_count = 0
+    official_close_count = 0
+    unavailable_price_count = 0
     for quote in sorted(quotes, key=lambda item: item.code):
+        sampled_price, price_basis = _observable_price(quote)
+        if price_basis == "official_close":
+            official_close_count += 1
+        elif price_basis == "unavailable":
+            unavailable_price_count += 1
         prior = previous.get(quote.code)
         prior_same_session = (
             prior is not None
@@ -186,6 +205,7 @@ def derive_capture_rows(
                 "high": quote.high,
                 "low": quote.low,
                 "close": quote.close,
+                "price_basis": price_basis,
                 "prev_close": quote.prev_close,
                 "volume": quote.volume,
                 "trades": quote.trades,
@@ -197,39 +217,43 @@ def derive_capture_rows(
                 "source": SOURCE_NAME,
             }
         )
-        bars.append(
-            {
-                "market": quote.market,
-                "code": quote.code,
-                "session_date": session_date,
-                "interval_start": capture_slot,
-                "interval_minutes": CAPTURE_INTERVAL_MINUTES,
-                "open": quote.ltp,
-                "high": quote.ltp,
-                "low": quote.ltp,
-                "close": quote.ltp,
-                "volume_delta": volume_delta,
-                "trades_delta": trades_delta,
-                "turnover_delta_mn": turnover_delta,
-                "interval_vwap": interval_vwap,
-                "cumulative_volume": quote.volume,
-                "cumulative_trades": quote.trades,
-                "cumulative_turnover_mn": quote.turnover_mn,
-                "session_vwap": session_vwap,
-                "observation_count": 1,
-                "data_quality": data_quality,
-                "time_quality": "ingestion_upper_bound",
-                "source": SOURCE_NAME,
-                "last_source_snapshot_id": source_snapshot_id,
-                "known_at": quote.as_of,
-            }
-        )
+        if sampled_price is not None:
+            bars.append(
+                {
+                    "market": quote.market,
+                    "code": quote.code,
+                    "session_date": session_date,
+                    "interval_start": capture_slot,
+                    "interval_minutes": CAPTURE_INTERVAL_MINUTES,
+                    "open": sampled_price,
+                    "high": sampled_price,
+                    "low": sampled_price,
+                    "close": sampled_price,
+                    "price_basis": price_basis,
+                    "volume_delta": volume_delta,
+                    "trades_delta": trades_delta,
+                    "turnover_delta_mn": turnover_delta,
+                    "interval_vwap": interval_vwap,
+                    "cumulative_volume": quote.volume,
+                    "cumulative_trades": quote.trades,
+                    "cumulative_turnover_mn": quote.turnover_mn,
+                    "session_vwap": session_vwap,
+                    "observation_count": 1,
+                    "data_quality": data_quality,
+                    "time_quality": "ingestion_upper_bound",
+                    "source": SOURCE_NAME,
+                    "last_source_snapshot_id": source_snapshot_id,
+                    "known_at": quote.as_of,
+                }
+            )
     return IntradayCaptureRows(
         observations=observations,
         bars=bars,
         session_date=session_date,
         capture_slot=capture_slot,
         regression_count=regression_count,
+        official_close_count=official_close_count,
+        unavailable_price_count=unavailable_price_count,
     )
 
 
@@ -248,9 +272,7 @@ def _bars_for_inserted_observations(
     return [row for row in rows if _observation_key(row) in inserted]
 
 
-async def _insert_observations(
-    session, rows: list[dict[str, Any]]
-) -> set[ObservationKey]:
+async def _insert_observations(session, rows: list[dict[str, Any]]) -> set[ObservationKey]:
     inserted: set[ObservationKey] = set()
     for start in range(0, len(rows), OBSERVATION_BATCH_SIZE):
         batch = rows[start : start + OBSERVATION_BATCH_SIZE]
@@ -296,9 +318,9 @@ async def _upsert_bars(session, rows: list[dict[str, Any]]) -> None:
         combined_trades = func.coalesce(IntradayBar.trades_delta, 0) + func.coalesce(
             statement.excluded.trades_delta, 0
         )
-        combined_turnover = func.coalesce(
-            IntradayBar.turnover_delta_mn, 0.0
-        ) + func.coalesce(statement.excluded.turnover_delta_mn, 0.0)
+        combined_turnover = func.coalesce(IntradayBar.turnover_delta_mn, 0.0) + func.coalesce(
+            statement.excluded.turnover_delta_mn, 0.0
+        )
         combined_quality = case(
             (has_regression, "counter_regression"),
             (has_missing_turnover, "missing_turnover"),
@@ -311,6 +333,7 @@ async def _upsert_bars(session, rows: list[dict[str, Any]]) -> None:
                 "high": func.greatest(IntradayBar.high, statement.excluded.close),
                 "low": func.least(IntradayBar.low, statement.excluded.close),
                 "close": statement.excluded.close,
+                "price_basis": statement.excluded.price_basis,
                 "volume_delta": case((has_regression, None), else_=combined_volume),
                 "trades_delta": case((has_regression, None), else_=combined_trades),
                 "turnover_delta_mn": case(
@@ -352,7 +375,7 @@ def _capture_blockers(
     if slot_pct < 90:
         blockers.append("Fewer than 90% of scheduled capture slots were retained.")
     if symbol_pct < 90:
-        blockers.append("Fewer than 90% of the observed DSE universe was retained.")
+        blockers.append("Fewer than 90% of the DSE universe had an observable positive price.")
     if vwap_pct < 80:
         blockers.append("Session VWAP is unavailable for more than 20% of sampled bars.")
     if regressions:
@@ -371,7 +394,9 @@ async def _refresh_capture_session(
         await session.execute(
             select(
                 func.count(),
-                func.count(func.distinct(IntradayQuoteObservation.code)),
+                func.count(func.distinct(IntradayQuoteObservation.code)).filter(
+                    IntradayQuoteObservation.price_basis != "unavailable"
+                ),
                 func.min(IntradayQuoteObservation.observed_at),
                 func.max(IntradayQuoteObservation.observed_at),
                 func.count().filter(IntradayQuoteObservation.sequence_status == "regressed"),
@@ -444,7 +469,9 @@ async def _refresh_capture_session(
             "declared_source_delay_minutes": 15,
             "source_timestamp_available": False,
             "time_quality": "ingestion_upper_bound",
-            "price_bar_kind": "sampled_ltp",
+            "price_bar_kind": "sampled_observable_price",
+            "price_basis_values": ["last_trade", "official_close"],
+            "unavailable_provider_prices_retained_without_bar": True,
             "session_vwap_kind": "cumulative_turnover_over_volume",
         },
     }
@@ -492,6 +519,7 @@ async def persist_intraday_capture(
     normalized = [
         quote.model_dump(mode="json") for quote in sorted(dse_quotes, key=lambda item: item.code)
     ]
+    price_bases = [_observable_price(quote)[1] for quote in dse_quotes]
     captured_at = max(quote.as_of for quote in dse_quotes)
     if not is_expected_capture_time(captured_at):
         return None
@@ -511,11 +539,15 @@ async def persist_intraday_capture(
             "expected_symbol_count": expected_symbol_count,
             "is_delayed": True,
             "source_timestamp_available": False,
+            "last_trade_count": price_bases.count("last_trade"),
+            "official_close_fallback_count": price_bases.count("official_close"),
+            "unavailable_price_count": price_bases.count("unavailable"),
         },
         source_metadata={
             "raw_delivery_retained": False,
             "time_quality": "ingestion_upper_bound",
             "capture_interval_minutes": CAPTURE_INTERVAL_MINUTES,
+            "price_fallback_policy": "positive_ltp_else_positive_official_close_else_no_bar",
         },
     )
     rows = derive_capture_rows(dse_quotes, previous, source_snapshot_id=snapshot_id)

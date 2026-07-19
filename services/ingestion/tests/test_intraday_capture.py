@@ -63,10 +63,42 @@ def test_first_capture_is_a_labelled_baseline_with_real_session_vwap() -> None:
     assert observation["sequence_status"] == "baseline"
     assert observation["session_vwap"] == 120
     assert observation["time_quality"] == "ingestion_upper_bound"
+    assert observation["price_basis"] == "last_trade"
     assert bar["data_quality"] == "baseline"
     assert bar["volume_delta"] is None
     assert bar["interval_vwap"] is None
     assert bar["open"] == bar["high"] == bar["low"] == bar["close"] == quote.ltp
+    assert bar["price_basis"] == "last_trade"
+
+
+def test_post_close_zero_ltp_retains_raw_observation_and_uses_labelled_close() -> None:
+    quote = _quote(
+        observed_at=dt.datetime(2026, 7, 19, 8, 45, tzinfo=dt.UTC),
+        ltp=0,
+    )
+
+    rows = derive_capture_rows([quote], {}, source_snapshot_id=uuid.uuid4())
+
+    assert rows.observations[0]["ltp"] == 0
+    assert rows.observations[0]["price_basis"] == "official_close"
+    assert rows.bars[0]["close"] == quote.close
+    assert rows.bars[0]["price_basis"] == "official_close"
+    assert rows.official_close_count == 1
+    assert rows.unavailable_price_count == 0
+
+
+def test_unpriced_no_trade_quote_is_retained_without_manufacturing_a_bar() -> None:
+    quote = _quote(
+        observed_at=dt.datetime(2026, 7, 19, 8, 45, tzinfo=dt.UTC),
+        ltp=0,
+    ).model_copy(update={"high": 0, "low": 0, "close": 0, "volume": 0, "trades": 0})
+
+    rows = derive_capture_rows([quote], {}, source_snapshot_id=uuid.uuid4())
+
+    assert rows.observations[0]["price_basis"] == "unavailable"
+    assert rows.bars == []
+    assert rows.official_close_count == 0
+    assert rows.unavailable_price_count == 1
 
 
 def test_later_capture_derives_counter_deltas_without_reusing_session_totals() -> None:
@@ -152,7 +184,10 @@ def test_duplicate_observation_cannot_increment_the_sampled_bar_projection() -> 
     rows = derive_capture_rows([quote], {}, source_snapshot_id=uuid.uuid4())
 
     assert _bars_for_inserted_observations(rows.bars, set()) == []
-    assert _bars_for_inserted_observations(
-        rows.bars,
-        {_observation_key(rows.observations[0])},
-    ) == rows.bars
+    assert (
+        _bars_for_inserted_observations(
+            rows.bars,
+            {_observation_key(rows.observations[0])},
+        )
+        == rows.bars
+    )

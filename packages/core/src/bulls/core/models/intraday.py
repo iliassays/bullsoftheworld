@@ -36,8 +36,11 @@ class IntradayQuoteObservation(Base):
 
     __tablename__ = "intraday_quote_observations"
     __table_args__ = (
-        CheckConstraint("ltp > 0", name="ck_intraday_quote_observations_ltp"),
-        CheckConstraint("high > 0 AND low > 0", name="ck_intraday_quote_observations_range"),
+        CheckConstraint("ltp >= 0", name="ck_intraday_quote_observations_ltp"),
+        CheckConstraint(
+            "high >= 0 AND low >= 0 AND close >= 0",
+            name="ck_intraday_quote_observations_range",
+        ),
         CheckConstraint("high >= low", name="ck_intraday_quote_observations_range_order"),
         CheckConstraint(
             "volume >= 0 AND trades >= 0", name="ck_intraday_quote_observations_counts"
@@ -49,6 +52,10 @@ class IntradayQuoteObservation(Base):
         CheckConstraint(
             "time_quality IN ('source_timestamp', 'ingestion_upper_bound')",
             name="ck_intraday_quote_observations_time_quality",
+        ),
+        CheckConstraint(
+            "price_basis IN ('last_trade', 'official_close', 'unavailable')",
+            name="ck_intraday_quote_observations_price_basis",
         ),
         Index(
             "ix_intraday_quote_observations_symbol_time",
@@ -72,6 +79,7 @@ class IntradayQuoteObservation(Base):
     high: Mapped[float] = mapped_column(Float)
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
+    price_basis: Mapped[str] = mapped_column(String(24), server_default="last_trade")
     prev_close: Mapped[float | None] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(BigInteger)
     trades: Mapped[int] = mapped_column(Integer)
@@ -118,6 +126,10 @@ class IntradayBar(Base):
             "time_quality IN ('source_timestamp', 'ingestion_upper_bound')",
             name="ck_intraday_bars_time_quality",
         ),
+        CheckConstraint(
+            "price_basis IN ('last_trade', 'official_close')",
+            name="ck_intraday_bars_price_basis",
+        ),
         Index("ix_intraday_bars_symbol_time", "market", "code", "interval_start"),
         {"postgresql_partition_by": "RANGE (session_date)"},
     )
@@ -131,6 +143,7 @@ class IntradayBar(Base):
     high: Mapped[float] = mapped_column(Float)
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
+    price_basis: Mapped[str] = mapped_column(String(24), server_default="last_trade")
     volume_delta: Mapped[int | None] = mapped_column(BigInteger)
     trades_delta: Mapped[int | None] = mapped_column(Integer)
     turnover_delta_mn: Mapped[float | None] = mapped_column(Float)
