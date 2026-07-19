@@ -131,6 +131,35 @@ def test_rights_record_without_verified_terms_is_omitted() -> None:
     assert diagnostics["incomplete_rights"] == 1
 
 
+def test_egm_record_date_in_rights_notice_is_not_an_entitlement_event() -> None:
+    notice = _announcement(
+        21,
+        code="RIGHTS",
+        published_at=dt.date(2024, 12, 10),
+        headline="Decision to issue Rights Share and hold EGM",
+        body=(
+            "A separate Record Date for the entitlement of the Rights Share will be declared "
+            "after BSEC approval. Record Date: January 2, 2025 will be the date for the EGM. "
+            "Issuance of 1:17 Rights Share at an issue price of BDT 1,110 per share."
+        ),
+    )
+    proceeds_egm = _announcement(
+        22,
+        code="RIGHTS",
+        published_at=dt.date(2025, 11, 2),
+        headline="EGM for change of utilization of Rights Share proceeds",
+        body=(
+            "Record date for entitlement of attending and voting at EGM: November 20, 2025. "
+            "The meeting concerns utilization of Rights Issue proceeds."
+        ),
+    )
+
+    candidates, diagnostics = verified_action_candidates([notice, proceeds_egm])
+
+    assert candidates == []
+    assert diagnostics["incomplete_rights"] == 0
+
+
 def test_adjustment_factor_supports_bonus_rights_and_large_bonus() -> None:
     assert theoretical_adjustment_factor(
         reference_close=120.0,

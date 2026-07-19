@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -29,6 +30,10 @@ _NEGATIVE_RIGHTS_LANGUAGE = (
     "rejected right",
     "declines consent",
     "cannot be reviewed",
+)
+_RIGHTS_DATE_TOKEN = (
+    r"(?:\d{1,2}[./-](?:\d{1,2}|[A-Za-z]+)[./-]\d{4}|"
+    r"[A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})"
 )
 
 
@@ -67,6 +72,25 @@ def _has_rights_language(announcement: Any) -> bool:
 def _is_negative_rights_notice(announcement: Any) -> bool:
     text = f"{announcement.headline} {announcement.body or ''}".lower()
     return any(phrase in text for phrase in _NEGATIVE_RIGHTS_LANGUAGE)
+
+
+def _is_rights_entitlement_record(announcement: Any) -> bool:
+    """Require the parsed date to belong to rights entitlement, not an EGM or proceeds notice."""
+
+    text = str(announcement.body or "")
+    date_after_terms = re.search(
+        rf"\brecord date\b.{{0,100}}?entitlement.{{0,50}}?rights?\s+shares?"
+        rf".{{0,40}}?(?::|\bis\b|\bi\.?e\.?|\bwill be\b)\s*{_RIGHTS_DATE_TOKEN}",
+        text,
+        re.I | re.S,
+    )
+    date_before_terms = re.search(
+        rf"\brecord date\b.{{0,40}}?(?::|\bis\b|\bi\.?e\.?|\bwill be\b)\s*"
+        rf"{_RIGHTS_DATE_TOKEN}.{{0,80}}?entitlement.{{0,50}}?rights?\s+shares?",
+        text,
+        re.I | re.S,
+    )
+    return date_after_terms is not None or date_before_terms is not None
 
 
 def verified_action_candidates(
@@ -138,7 +162,7 @@ def verified_action_candidates(
             and details.get("rights_subscription_price") is not None
         ):
             rights_terms.setdefault(str(row.code).upper(), []).append((row, details))
-        if details.get("record_date"):
+        if details.get("record_date") and _is_rights_entitlement_record(row):
             try:
                 rights_records.append((row, dt.date.fromisoformat(str(details["record_date"]))))
             except ValueError:
