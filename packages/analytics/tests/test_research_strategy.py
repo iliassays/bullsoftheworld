@@ -8,6 +8,7 @@ from bulls.analytics.research_strategy import (
     ShadowPosition,
     ShadowState,
     StrategyBar,
+    StrategyFundamentalObservation,
     StrategySecurity,
     advance_shadow_portfolio,
     evaluate_shadow_promotion,
@@ -80,6 +81,98 @@ def test_unknown_strategy_fails_closed() -> None:
             strategy_key="unowned_strategy",
             securities=[_security("A", market="US")],
         )
+
+
+@pytest.mark.parametrize(
+    "strategy_key",
+    ["dse_pead_v1", "dse_trend_pullback_intraday_v1"],
+)
+def test_data_blocked_strategy_cannot_create_backtest(strategy_key: str) -> None:
+    with pytest.raises(ValueError, match="intentionally data-blocked"):
+        run_backtest(
+            market="DSE",
+            strategy_key=strategy_key,
+            securities=[_security("A", market="DSE")],
+        )
+
+
+def _quality_security(code: str, *, known_at: dt.datetime) -> StrategySecurity:
+    start = dt.date(2025, 1, 1)
+    bars = [
+        StrategyBar(
+            date=start + dt.timedelta(days=index),
+            open=(20 + index * 0.01) * 0.998,
+            high=(20 + index * 0.01) * 1.01,
+            low=(20 + index * 0.01) * 0.99,
+            close=20 + index * 0.01,
+            raw_close=20 + index * 0.01,
+            volume=1_000_000 + index * 100,
+        )
+        for index in range(300)
+    ]
+    return StrategySecurity(
+        code=code,
+        sector="Technology",
+        cap_tier="small",
+        category_observations=[
+            SecurityCategoryObservation(
+                category="A",
+                known_at=dt.datetime(2024, 1, 1, tzinfo=dt.UTC),
+                source="test_fixture",
+            )
+        ],
+        fundamental_observations=[
+            StrategyFundamentalObservation(
+                fiscal_year=2023,
+                eps=2.0,
+                nav_per_share=18.0,
+                profit_mn=100.0,
+                known_at=known_at,
+                source="test_fixture",
+            ),
+            StrategyFundamentalObservation(
+                fiscal_year=2024,
+                eps=2.5,
+                nav_per_share=20.0,
+                profit_mn=125.0,
+                known_at=known_at,
+                source="test_fixture",
+            ),
+        ],
+        bars=bars,
+    )
+
+
+def test_quality_value_uses_only_fundamentals_known_by_signal_close() -> None:
+    available = [
+        _quality_security(
+            f"Q{index}",
+            known_at=dt.datetime(2024, 12, 31, tzinfo=dt.UTC),
+        )
+        for index in range(4)
+    ]
+    unavailable = [
+        _quality_security(
+            f"L{index}",
+            known_at=dt.datetime(2027, 1, 1, tzinfo=dt.UTC),
+        )
+        for index in range(4)
+    ]
+
+    result = run_backtest(
+        market="DSE",
+        strategy_key="dse_quality_value_v1",
+        securities=available,
+    )
+    blocked_result = run_backtest(
+        market="DSE",
+        strategy_key="dse_quality_value_v1",
+        securities=unavailable,
+    )
+
+    assert result.trades
+    assert result.strategy.research_state == "candidate"
+    assert blocked_result.trades == []
 
 
 def test_us_backtest_uses_next_session_and_charges_costs() -> None:

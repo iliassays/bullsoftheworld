@@ -27,6 +27,9 @@ class StrategyBar(BaseModel):
     high: float = Field(gt=0)
     low: float = Field(gt=0)
     close: float = Field(gt=0)
+    # Valuation features use the contemporaneous unadjusted quote. Trend/return features and fills
+    # use adjusted OHLC so a later bonus or rights event does not masquerade as a crash.
+    raw_close: float | None = Field(default=None, gt=0)
     volume: int = Field(ge=0)
 
 
@@ -36,11 +39,21 @@ class SecurityCategoryObservation(BaseModel):
     source: str = Field(min_length=1, max_length=64)
 
 
+class StrategyFundamentalObservation(BaseModel):
+    fiscal_year: int = Field(ge=1900, le=2200)
+    eps: float | None = None
+    nav_per_share: float | None = None
+    profit_mn: float | None = None
+    known_at: dt.datetime
+    source: str = Field(min_length=1, max_length=64)
+
+
 class StrategySecurity(BaseModel):
     code: str
     sector: str = "Unclassified"
     cap_tier: str = "unclassified"
     category_observations: list[SecurityCategoryObservation] = Field(default_factory=list)
+    fundamental_observations: list[StrategyFundamentalObservation] = Field(default_factory=list)
     settlement_trade_type: Literal["regular", "spot", "dvp"] = "regular"
     bars: list[StrategyBar]
 
@@ -62,6 +75,11 @@ class StrategyDefinition(BaseModel):
     research_state: Literal["diagnostic", "candidate", "eligible_for_shadow", "data_blocked"]
     automation_eligible: bool = False
     description: str
+    economic_thesis: str = ""
+    signal_contract: tuple[str, ...] = ()
+    execution_contract: tuple[str, ...] = ()
+    exit_contract: tuple[str, ...] = ()
+    kill_criteria: tuple[str, ...] = ()
 
 
 class PortfolioRiskPolicy(BaseModel):
@@ -337,6 +355,158 @@ STRATEGIES = {
             "Ranks liquid drawdown recoveries using completed price and participation data. "
             "It does not use historically unavailable fundamental snapshots."
         ),
+        economic_thesis=(
+            "Forced or impatient selling can temporarily push liquid DSE securities below a "
+            "reasonable clearing price; a controlled recovery with renewed participation may "
+            "capture the exhaustion of that pressure."
+        ),
+        signal_contract=(
+            "At least 126 completed adjusted daily bars.",
+            "Material 126-session drawdown, positive five-session recovery, controlled RSI, and participation confirmation.",
+        ),
+        execution_contract=(
+            "Form target only after the completed session close.",
+            "Fill no earlier than the next observable regular-session open with DSE costs, ADV capacity, and settlement constraints.",
+        ),
+        exit_contract=("Scheduled weekly rerank, 12% position stop, or portfolio drawdown brake.",),
+        kill_criteria=(
+            "Required adjusted-price, category, liquidity, or session evidence becomes unavailable.",
+            "Historical or forward promotion gates fail; retain the failed trial record.",
+        ),
+    ),
+    "dse_quality_value_v1": StrategyDefinition(
+        key="dse_quality_value_v1",
+        market="DSE",
+        name="DSE point-in-time quality value",
+        family="quality_value",
+        horizon="multi_month",
+        scorer_key="dse_quality_value",
+        selection_key="rank_buffer_2x",
+        sizing_key="inverse_volatility",
+        methodology_version="dse-quality-value-v1",
+        minimum_lookback=126,
+        rebalance_sessions=20,
+        maximum_positions=8,
+        required_evidence=(
+            "two point-in-time annual financial observations",
+            "positive EPS, NAV, and profit",
+            "bonus/right-safe daily prices",
+            "completed daily liquidity history",
+        ),
+        research_state="candidate",
+        automation_eligible=False,
+        description=(
+            "Ranks profitable, improving DSE companies at bounded earnings and book multiples. "
+            "A financial row is invisible before its conservative platform knowledge time."
+        ),
+        economic_thesis=(
+            "Slow diffusion of fundamental information and aversion to temporarily unfashionable "
+            "companies may leave profitable, improving businesses too cheap relative to earnings "
+            "and book value."
+        ),
+        signal_contract=(
+            "Use only annual observations whose known_at is no later than the signal close.",
+            "Require two fiscal years, positive and improving EPS, positive profit and NAV, ROE proxy of at least 8%, P/E no greater than 18, and P/B no greater than 2.5.",
+            "Reject severe 63-session deterioration and securities below the portfolio liquidity floor.",
+        ),
+        execution_contract=(
+            "Rebalance every 20 completed sessions and fill at the next observable open.",
+            "Apply DSE fees, slippage, ADV capacity, category settlement, concentration, and cash constraints.",
+        ),
+        exit_contract=(
+            "Leave when the security falls outside the two-times rank buffer, breaches the position stop, or the portfolio drawdown brake fires.",
+        ),
+        kill_criteria=(
+            "Point-in-time financial revisions or bonus/right adjustments are incomplete for the evaluation window.",
+            "The untouched test or forward book fails benchmark-relative, drawdown, execution, or multiple-testing gates.",
+        ),
+    ),
+    "dse_pead_v1": StrategyDefinition(
+        key="dse_pead_v1",
+        market="DSE",
+        name="DSE post-earnings announcement drift",
+        family="event_drift",
+        horizon="event_swing",
+        scorer_key="data_blocked",
+        selection_key="top_ranked",
+        sizing_key="inverse_volatility",
+        methodology_version="dse-pead-v1-contract",
+        minimum_lookback=126,
+        rebalance_sessions=1,
+        maximum_positions=6,
+        required_evidence=(
+            "deep timestamped DSE earnings announcement history",
+            "reported and comparable prior-period EPS",
+            "consensus or preregistered expectation proxy",
+            "next-observable price and liquidity after publication",
+        ),
+        research_state="data_blocked",
+        automation_eligible=False,
+        description=(
+            "Preregistered event-drift contract. It cannot emit a signal, target, backtest, or "
+            "shadow book until timestamped surprise evidence is deep enough."
+        ),
+        economic_thesis=(
+            "Investors may incorporate a genuine earnings surprise gradually when analysis, "
+            "attention, or liquidity is constrained."
+        ),
+        signal_contract=(
+            "Measure a preregistered earnings surprise using evidence known at publication.",
+            "Exclude announcements without a reliable publication clock or comparable period.",
+        ),
+        execution_contract=(
+            "Trade no earlier than the first observable eligible session after publication and model post-event gaps explicitly.",
+        ),
+        exit_contract=(
+            "Fixed event horizon, thesis-invalidating subsequent disclosure, stop, or portfolio brake.",
+        ),
+        kill_criteria=(
+            "Announcement timing, surprise measurement, or next-observable execution coverage is incomplete.",
+        ),
+    ),
+    "dse_trend_pullback_intraday_v1": StrategyDefinition(
+        key="dse_trend_pullback_intraday_v1",
+        market="DSE",
+        name="DSE intraday trend pullback",
+        family="trend_pullback",
+        horizon="intraday_to_multiday",
+        scorer_key="data_blocked",
+        selection_key="top_ranked",
+        sizing_key="inverse_volatility",
+        methodology_version="dse-trend-pullback-intraday-v1-contract",
+        minimum_lookback=60,
+        rebalance_sessions=1,
+        maximum_positions=6,
+        required_evidence=(
+            "complete 15-minute DSE bars",
+            "real session VWAP and intraday EMA",
+            "intraday completeness and stale-quote flags",
+            "effective-dated circuits, category, costs, and next-observable fills",
+        ),
+        research_state="data_blocked",
+        automation_eligible=False,
+        description=(
+            "The owner's preferred strong-trend, controlled-micro-pullback hypothesis. It is "
+            "fully registered but intentionally cannot run on a daily proxy."
+        ),
+        economic_thesis=(
+            "Persistent institutional or informed demand may resume after a low-volume, orderly "
+            "micro-pullback when renewed participation reclaims VWAP or an intraday trend reference."
+        ),
+        signal_contract=(
+            "Separate established trend from one-session spikes and circuit-lock behavior.",
+            "Require orderly volatility-scaled pullback, contracting participation, structural invalidation, and renewed flow on reclaim.",
+        ),
+        execution_contract=(
+            "Use only the next retained observable 15-minute price after confirmation with spread, slippage, circuit, ADV, and T+2 cash constraints.",
+        ),
+        exit_contract=(
+            "Structural pullback-low invalidation, maximum holding horizon, strategy rerank, or portfolio brake.",
+        ),
+        kill_criteria=(
+            "Any required intraday interval, VWAP input, quote-quality flag, or execution constraint is missing.",
+            "Low/micro-cap results are not independently viable after stressed costs and drawdown controls.",
+        ),
     ),
     "us_breakout_v1": StrategyDefinition(
         key="us_breakout_v1",
@@ -377,6 +547,16 @@ def registered_strategies(
     return [
         strategy for strategy in STRATEGIES.values() if market is None or strategy.market == market
     ]
+
+
+def _assert_strategy_runnable(strategy: StrategyDefinition) -> None:
+    if strategy.research_state != "data_blocked":
+        return
+    missing = "; ".join(strategy.required_evidence) or "required evidence is unavailable"
+    raise ValueError(
+        f"Strategy {strategy.key} is intentionally data-blocked and cannot create a signal, "
+        f"target, backtest, or shadow book. Missing evidence: {missing}."
+    )
 
 
 RISK_POLICIES = {
@@ -1176,6 +1356,7 @@ def _price_inputs(history: list[StrategyBar]) -> tuple[list[float], float, float
 def _score_dse_liquid_reversal(
     strategy: StrategyDefinition,
     history: list[StrategyBar],
+    security: StrategySecurity,
 ) -> FeatureScore | None:
     if len(history) < strategy.minimum_lookback:
         return None
@@ -1196,6 +1377,7 @@ def _score_dse_liquid_reversal(
 def _score_us_liquid_trend(
     strategy: StrategyDefinition,
     history: list[StrategyBar],
+    security: StrategySecurity,
 ) -> FeatureScore | None:
     if len(history) < strategy.minimum_lookback:
         return None
@@ -1217,8 +1399,88 @@ def _score_us_liquid_trend(
     return score, volatility, average_volume
 
 
+def _fundamentals_known_by_signal_close(
+    strategy: StrategyDefinition,
+    security: StrategySecurity,
+    signal_date: dt.date,
+) -> list[StrategyFundamentalObservation]:
+    profile = get_market_profile(strategy.market)
+    signal_close = dt.datetime.combine(signal_date, profile.close_time, tzinfo=profile.tz)
+    latest_by_year: dict[int, StrategyFundamentalObservation] = {}
+    for observation in security.fundamental_observations:
+        known_at = observation.known_at
+        if known_at.tzinfo is None:
+            known_at = known_at.replace(tzinfo=dt.UTC)
+        if known_at > signal_close:
+            continue
+        previous = latest_by_year.get(observation.fiscal_year)
+        if previous is None:
+            latest_by_year[observation.fiscal_year] = observation
+            continue
+        previous_known_at = previous.known_at
+        if previous_known_at.tzinfo is None:
+            previous_known_at = previous_known_at.replace(tzinfo=dt.UTC)
+        if known_at >= previous_known_at:
+            latest_by_year[observation.fiscal_year] = observation
+    return sorted(latest_by_year.values(), key=lambda item: item.fiscal_year, reverse=True)
+
+
+def _score_dse_quality_value(
+    strategy: StrategyDefinition,
+    history: list[StrategyBar],
+    security: StrategySecurity,
+) -> FeatureScore | None:
+    if len(history) < strategy.minimum_lookback:
+        return None
+    inputs = _price_inputs(history)
+    if inputs is None:
+        return None
+    closes, volatility, average_volume, relative_volume = inputs
+    financials = _fundamentals_known_by_signal_close(strategy, security, history[-1].date)
+    if len(financials) < 2:
+        return None
+    current, prior = financials[:2]
+    if (
+        current.eps is None
+        or prior.eps is None
+        or current.nav_per_share is None
+        or current.profit_mn is None
+        or current.eps <= 0
+        or prior.eps <= 0
+        or current.nav_per_share <= 0
+        or current.profit_mn <= 0
+    ):
+        return None
+    earnings_growth = current.eps / prior.eps - 1.0
+    roe_proxy = current.eps / current.nav_per_share
+    raw_close = history[-1].raw_close or history[-1].close
+    pe_ratio = raw_close / current.eps
+    pb_ratio = raw_close / current.nav_per_share
+    momentum_63 = closes[-1] / closes[-64] - 1.0
+    if (
+        earnings_growth <= 0
+        or roe_proxy < 0.08
+        or pe_ratio > 18
+        or pb_ratio > 2.5
+        or momentum_63 <= -0.15
+        or relative_volume < 0.75
+    ):
+        return None
+    score = (
+        min(earnings_growth, 1.0) * 25
+        + min(roe_proxy, 0.35) * 100
+        + (1 / pe_ratio) * 120
+        + (1 / pb_ratio) * 12
+        + max(momentum_63, -0.15) * 10
+        + relative_volume * 5
+        - volatility * 8
+    )
+    return score, volatility, average_volume
+
+
 _SCORERS = {
     "dse_liquid_reversal": _score_dse_liquid_reversal,
+    "dse_quality_value": _score_dse_quality_value,
     "us_liquid_trend": _score_us_liquid_trend,
 }
 
@@ -1226,13 +1488,14 @@ _SCORERS = {
 def _feature_score(
     strategy: StrategyDefinition,
     history: list[StrategyBar],
+    security: StrategySecurity,
 ) -> FeatureScore | None:
     scorer = _SCORERS.get(strategy.scorer_key)
     if scorer is None:
         raise RuntimeError(
             f"Strategy {strategy.key} owns unregistered scorer {strategy.scorer_key}; refusing to run"
         )
-    return scorer(strategy, history)
+    return scorer(strategy, history, security)
 
 
 def _target_weights(
@@ -1245,7 +1508,7 @@ def _target_weights(
 ) -> dict[str, float]:
     ranked: list[tuple[float, str, float]] = []
     for code, history in histories.items():
-        feature = _feature_score(strategy, history)
+        feature = _feature_score(strategy, history, securities[code])
         if feature is None:
             continue
         score, volatility, average_volume = feature
@@ -1373,6 +1636,7 @@ def run_backtest(
     strategy = get_strategy_definition(strategy_key)
     if strategy.market != market:
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
+    _assert_strategy_runnable(strategy)
     policy = risk_policy or RISK_POLICIES[market]
     if policy.market != market:
         raise ValueError("risk policy belongs to another market")
@@ -1626,6 +1890,7 @@ def advance_shadow_portfolio(
     strategy = get_strategy_definition(strategy_key)
     if strategy.market != market:
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
+    _assert_strategy_runnable(strategy)
     if not securities:
         raise ValueError("shadow portfolio requires current security history")
     latest_dates = {security.bars[-1].date for security in securities if security.bars}

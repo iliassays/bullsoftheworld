@@ -79,7 +79,7 @@ export function LifecycleControlPage() {
   const [researchLimit, setResearchLimit] = useState(5);
   const [universeLimit, setUniverseLimit] = useState(25);
   const [initialCapital, setInitialCapital] = useState(
-    researchDeployment.market === "DSE" ? 10_000_000 : 100_000,
+    researchDeployment.market === "DSE" ? 300_000 : 100_000,
   );
   const [selectedRunId, setSelectedRunId] = useState("");
 

@@ -172,6 +172,34 @@ export interface AutomationPolicyInput {
   initial_capital: number;
 }
 
+export type ResearchStrategyKey =
+  | "dse_reversal_v1"
+  | "dse_quality_value_v1"
+  | "dse_pead_v1"
+  | "dse_trend_pullback_intraday_v1"
+  | "us_breakout_v1";
+
+export interface StrategyCatalogItem {
+  key: ResearchStrategyKey;
+  market: "DSE" | "US";
+  name: string;
+  family: string;
+  horizon: string;
+  methodologyVersion: string;
+  minimumLookback: number;
+  rebalanceSessions: number;
+  maximumPositions: number;
+  requiredEvidence: string[];
+  researchState: "diagnostic" | "candidate" | "eligible_for_shadow" | "data_blocked";
+  automationEligible: boolean;
+  description: string;
+  economicThesis: string;
+  signalContract: string[];
+  executionContract: string[];
+  exitContract: string[];
+  killCriteria: string[];
+}
+
 export interface InvestmentMandate {
   id: string;
   workspaceId: string;
@@ -611,7 +639,7 @@ export const researchApi = {
   async backtest(
     workspaceId: string,
     payload: {
-      strategy_key: "dse_reversal_v1" | "us_breakout_v1";
+      strategy_key: ResearchStrategyKey;
       start_date?: string;
       end_date?: string;
       cap_tier?: string;
@@ -687,6 +715,15 @@ export const researchApi = {
       `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/automation`,
     );
     return policy ? assertAutomationBoundary(policy, workspaceId) : null;
+  },
+  async strategyCatalog(workspaceId: string): Promise<StrategyCatalogItem[]> {
+    const strategies = await request<StrategyCatalogItem[]>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/strategies`,
+    );
+    if (strategies.some((strategy) => strategy.market !== researchDeployment.market)) {
+      throw new ResearchApiError(502, "The API returned a strategy outside this market boundary");
+    }
+    return strategies;
   },
   async investmentOperatingView(workspaceId: string): Promise<InvestmentOperatingView> {
     const view = await request<InvestmentOperatingView>(

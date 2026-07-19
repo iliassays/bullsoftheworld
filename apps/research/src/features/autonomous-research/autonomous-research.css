@@ -92,6 +92,58 @@
     gap: 14px;
   }
 
+  .strategy-catalog-panel {
+    margin-bottom: 14px;
+  }
+
+  .strategy-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .strategy-catalog-grid article {
+    min-width: 0;
+    border-right: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .strategy-catalog-grid article:last-child {
+    border-right: 0;
+  }
+
+  .strategy-catalog-grid article > span {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .strategy-catalog-grid strong {
+    color: var(--text);
+    font-size: 10px;
+  }
+
+  .strategy-catalog-grid small,
+  .strategy-catalog-grid em {
+    display: block;
+    margin-top: 5px;
+    color: var(--text-faint);
+    font-size: 8px;
+    font-style: normal;
+    line-height: 1.45;
+  }
+
+  .strategy-catalog-grid p {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 9px;
+    line-height: 1.5;
+  }
+
+  .strategy-catalog-grid em {
+    color: var(--warning);
+  }
+
   .lab-config {
     position: sticky;
     top: calc(var(--topbar-height) + 16px);
@@ -1027,6 +1079,18 @@
   }
 
   @media (max-width: 1100px) {
+    .strategy-catalog-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .strategy-catalog-grid article:nth-child(2) {
+      border-right: 0;
+    }
+
+    .strategy-catalog-grid article:nth-child(-n + 2) {
+      border-bottom: 1px solid var(--border);
+    }
+
     .lab-layout {
       grid-template-columns: 250px minmax(0, 1fr);
     }
@@ -1061,6 +1125,20 @@
     .portfolio-grid,
     .memory-grid {
       grid-template-columns: 1fr;
+    }
+
+    .strategy-catalog-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .strategy-catalog-grid article,
+    .strategy-catalog-grid article:nth-child(2) {
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .strategy-catalog-grid article:last-child {
+      border-bottom: 0;
     }
 
     .strategy-selection-guide > div {

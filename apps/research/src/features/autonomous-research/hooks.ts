@@ -8,7 +8,19 @@ import {
   previewInvestmentMandate,
   previewResearchRuns,
   previewShadowPortfolios,
+  previewStrategyCatalog,
 } from "./preview-data";
+
+export function useStrategyCatalog(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: ["research", "strategy-catalog", workspaceId],
+    queryFn: () => isResearchPreview
+      ? previewStrategyCatalog
+      : researchApi.strategyCatalog(workspaceId!),
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+  });
+}
 
 export function useResearchRuns(workspaceId: string | undefined) {
   return useQuery({

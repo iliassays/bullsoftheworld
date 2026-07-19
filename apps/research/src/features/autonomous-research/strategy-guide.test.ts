@@ -19,4 +19,12 @@ describe("strategySelectionGuide", () => {
     expect(guide.entry).toContain("50-day above 200-day");
     expect(guide.sizing).toContain("10% position cap");
   });
+
+  it("explains the point-in-time quality value gates", () => {
+    const guide = strategySelectionGuide("dse_quality_value_v1", 25);
+
+    expect(guide.entry).toContain("known by the signal close");
+    expect(guide.entry).toContain("P/E at most 18");
+    expect(guide.ranking).toContain("later revisions are invisible");
+  });
 });

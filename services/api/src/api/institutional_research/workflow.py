@@ -37,6 +37,7 @@ from bulls.analytics.research_strategy import (
     STRATEGIES,
     SecurityCategoryObservation,
     StrategyBar,
+    StrategyFundamentalObservation,
     StrategySecurity,
     run_backtest,
 )
@@ -673,6 +674,7 @@ async def _backtest_universe(
                 high=float(bar.high) * adjustment,
                 low=float(bar.low) * adjustment,
                 close=float(bar.close) * adjustment,
+                raw_close=float(bar.close),
                 volume=int(bar.volume),
             )
         )
@@ -684,28 +686,48 @@ async def _backtest_universe(
                 .where(
                     CompanyDataObservation.market == market,
                     CompanyDataObservation.code.in_(list(symbols)),
-                    CompanyDataObservation.record_type == "profile",
+                    CompanyDataObservation.record_type.in_(("profile", "annual_financial")),
                 )
                 .order_by(CompanyDataObservation.code, CompanyDataObservation.known_at)
             )
         )
     category_history: dict[str, list[SecurityCategoryObservation]] = {code: [] for code in symbols}
+    fundamental_history: dict[str, list[StrategyFundamentalObservation]] = {
+        code: [] for code in symbols
+    }
     for observation in category_rows:
-        category = str(observation.payload.get("market_category") or "").strip().upper()
-        if category:
-            category_history[observation.code].append(
-                SecurityCategoryObservation(
-                    category=category,
-                    known_at=_utc(observation.known_at),
-                    source=observation.source,
+        if observation.record_type == "profile":
+            category = str(observation.payload.get("market_category") or "").strip().upper()
+            if category:
+                category_history[observation.code].append(
+                    SecurityCategoryObservation(
+                        category=category,
+                        known_at=_utc(observation.known_at),
+                        source=observation.source,
+                    )
                 )
+            continue
+        try:
+            fiscal_year = int(observation.payload["fiscal_year"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        fundamental_history[observation.code].append(
+            StrategyFundamentalObservation(
+                fiscal_year=fiscal_year,
+                eps=observation.payload.get("eps"),
+                nav_per_share=observation.payload.get("nav_per_share"),
+                profit_mn=observation.payload.get("profit_mn"),
+                known_at=_utc(observation.known_at),
+                source=observation.source,
             )
+        )
     return [
         StrategySecurity(
             code=code,
             sector=symbols[code].sector or "Unclassified",
             cap_tier=analytics[code].cap_tier or "unclassified",
             category_observations=category_history[code],
+            fundamental_observations=fundamental_history[code],
             bars=grouped[code],
         )
         for code in symbols
@@ -728,6 +750,12 @@ async def execute_backtest(
     strategy = STRATEGIES[request.strategy_key]
     if strategy.market != workspace.market:
         raise ValueError(f"Strategy {strategy.key} is not registered for {workspace.market}")
+    if strategy.research_state == "data_blocked":
+        missing = "; ".join(strategy.required_evidence)
+        raise ValueError(
+            f"Strategy {strategy.key} is intentionally data-blocked and cannot create a signal, "
+            f"target, backtest, or shadow book. Missing evidence: {missing}."
+        )
     mandate = await get_active_mandate(session, workspace=workspace)
     if mandate is None:
         raise ValueError("An active investment mandate is required before testing a strategy")
@@ -799,19 +827,34 @@ async def execute_backtest(
         )
     run.evidence_snapshot_hash = _stable_hash(
         {
-            security.code: _stable_hash(
-                [
+            security.code: {
+                "bars": _stable_hash(
                     [
-                        str(bar.date),
-                        bar.open,
-                        bar.high,
-                        bar.low,
-                        bar.close,
-                        bar.volume,
+                        [
+                            str(bar.date),
+                            bar.open,
+                            bar.high,
+                            bar.low,
+                            bar.close,
+                            bar.raw_close,
+                            bar.volume,
+                        ]
+                        for bar in security.bars
                     ]
-                    for bar in security.bars
-                ]
-            )
+                ),
+                "fundamentals": _stable_hash(
+                    [
+                        observation.model_dump(mode="json")
+                        for observation in security.fundamental_observations
+                    ]
+                ),
+                "categories": _stable_hash(
+                    [
+                        observation.model_dump(mode="json")
+                        for observation in security.category_observations
+                    ]
+                ),
+            }
             for security in securities
         }
     )

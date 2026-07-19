@@ -55,9 +55,9 @@ export function summarizeStrategyBooks(
 ): StrategyBookSummary[] {
   return portfolios.map((portfolio) => {
     const initial = portfolio.snapshots[0];
-    const latest = portfolio.snapshots.at(-1);
+    const latest = portfolio.snapshots[portfolio.snapshots.length - 1];
     const positions = latest?.positions ?? {};
-    const targets = latest?.targetWeights ?? {};
+    const targets: Record<string, number> = latest?.targetWeights ?? {};
     const queuedEntries = Object.entries(targets).filter(
       ([code, target]) => target > 0 && !positions[code],
     ).length;

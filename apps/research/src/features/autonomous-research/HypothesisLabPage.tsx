@@ -1,10 +1,11 @@
 import { AlertTriangle, FileLock2, FlaskConical, Play, ShieldCheck, TestTube2, WalletCards } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import type { ResearchStrategyKey } from "../../app/api-client";
 import { researchDeployment } from "../../app/deployment";
 import { Button, SelectField, StatusBadge, type SelectOption } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
-import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest } from "./hooks";
+import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest, useStrategyCatalog } from "./hooks";
 import { backtestResult } from "./model";
 import { PerformanceChart } from "./PerformanceChart";
 
@@ -22,6 +23,7 @@ export function HypothesisLabPage() {
   const workspace = workspaces.data?.[0];
   const runs = useResearchRuns(workspace?.id);
   const operating = useInvestmentOperatingView(workspace?.id);
+  const catalog = useStrategyCatalog(workspace?.id);
   const latestSummary = runs.data?.find((run) => run.runKind === "hypothesis");
   const latest = useResearchRun(workspace?.id, latestSummary?.id);
   const runBacktest = useRunBacktest(workspace?.id);
@@ -36,9 +38,17 @@ export function HypothesisLabPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [universeLimit, setUniverseLimit] = useState(25);
-  const [capital, setCapital] = useState(100_000);
+  const [capital, setCapital] = useState(researchDeployment.market === "DSE" ? 300_000 : 100_000);
   const [bookName, setBookName] = useState(`${researchDeployment.market} systematic shadow`);
-  const strategyKey = researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_breakout_v1";
+  const [strategyKey, setStrategyKey] = useState<ResearchStrategyKey>(
+    researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_breakout_v1",
+  );
+  const strategyOptions = useMemo<SelectOption<ResearchStrategyKey>[]>(
+    () => (catalog.data ?? [])
+      .filter((strategy) => strategy.researchState !== "data_blocked")
+      .map((strategy) => ({ value: strategy.key, label: `${strategy.name} · ${strategy.researchState}` })),
+    [catalog.data],
+  );
 
   const submit = () => runBacktest.mutate({
     strategy_key: strategyKey,
@@ -56,10 +66,24 @@ export function HypothesisLabPage() {
         <StatusBadge tone="info" dot>{strategyKey}</StatusBadge>
       </header>
 
+      <section className="atlas-panel strategy-catalog-panel">
+        <header><TestTube2 aria-hidden="true" size={16} /><span><strong>Bounded DSE strategy portfolio</strong><small>Runnable is different from validated; blocked means the engine must abstain</small></span></header>
+        <div className="strategy-catalog-grid">
+          {(catalog.data ?? []).map((strategy) => (
+            <article key={strategy.key}>
+              <span><strong>{strategy.name}</strong><StatusBadge tone={strategy.researchState === "data_blocked" ? "warning" : strategy.researchState === "candidate" ? "info" : "neutral"}>{strategy.researchState.replace(/_/g, " ")}</StatusBadge></span>
+              <small>{strategy.key} · {strategy.horizon.replace(/_/g, " ")}</small>
+              <p>{strategy.economicThesis}</p>
+              {strategy.researchState === "data_blocked" && <em>Missing: {strategy.requiredEvidence.join(" · ")}</em>}
+            </article>
+          ))}
+        </div>
+      </section>
+
       <div className="lab-layout">
         <aside className="atlas-panel lab-config">
           <header><FlaskConical aria-hidden="true" size={16} /><span><strong>Experiment specification</strong><small>Inputs are stored with the run</small></span></header>
-          <label>Registered strategy<input disabled value={strategyKey} /></label>
+          <label>Registered strategy<SelectField label="Registered strategy" onChange={setStrategyKey} options={strategyOptions} value={strategyKey} /></label>
           <label>Capitalization mandate<SelectField label="Capitalization mandate" onChange={setCapTier} options={CAP_OPTIONS} value={capTier} /></label>
           <span className="lab-config__split">
             <label>Start date<input onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} /></label>

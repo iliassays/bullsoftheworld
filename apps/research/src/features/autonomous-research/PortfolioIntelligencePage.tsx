@@ -124,7 +124,7 @@ export function PortfolioIntelligencePage() {
     [operating.data?.portfolios, selected?.id],
   );
   const executions = useMemo(() => shadowExecutions(selected), [selected]);
-  const latest = selected?.snapshots.at(-1);
+  const latest = selected?.snapshots[selected.snapshots.length - 1];
   const positionPlan = useMemo(() => {
     if (!latest) return [];
     return [...new Set([...Object.keys(latest.positions), ...Object.keys(latest.targetWeights)])]

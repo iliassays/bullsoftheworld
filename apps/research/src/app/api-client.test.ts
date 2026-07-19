@@ -338,7 +338,7 @@ describe("research API tenant boundary", () => {
       cap_tier: "small",
       strategy_key: "dse_reversal_v1",
       universe_limit: 25,
-      initial_capital: 10_000_000,
+      initial_capital: 300_000,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(

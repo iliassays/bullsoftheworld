@@ -5,6 +5,7 @@ import type {
   InvestmentOperatingView,
   ResearchRun,
   ShadowPortfolio,
+  StrategyCatalogItem,
 } from "../../app/api-client";
 
 function sessionDate(daysAgo: number): string {
@@ -17,10 +18,116 @@ const isDse = researchDeployment.market === "DSE";
 const primaryCode = isDse ? "BRACBANK" : "NXTC";
 const secondaryCode = isDse ? "BXPHARMA" : "AEON";
 const strategyKey = isDse ? "dse_reversal_v1" : "us_breakout_v1";
-const initialCapital = isDse ? 10_000_000 : 100_000;
-const primaryShares = isDse ? 7300 : 1180;
+const initialCapital = isDse ? 300_000 : 100_000;
+const primaryShares = isDse ? 210 : 1180;
 const primaryFillPrice = isDse ? 142.4 : 8.42;
 const primaryGrossValue = primaryShares * primaryFillPrice;
+
+export const previewStrategyCatalog: StrategyCatalogItem[] = isDse
+  ? [
+      {
+        key: "dse_reversal_v1",
+        market: "DSE",
+        name: "DSE liquid reversal",
+        family: "reversal",
+        horizon: "eod_swing",
+        methodologyVersion: "dse-liquid-reversal-v1",
+        minimumLookback: 126,
+        rebalanceSessions: 5,
+        maximumPositions: 8,
+        requiredEvidence: [],
+        researchState: "diagnostic",
+        automationEligible: true,
+        description: "Liquid drawdown recoveries using completed price and participation data.",
+        economicThesis: "Forced selling may temporarily push liquid securities below a reasonable clearing price.",
+        signalContract: ["Material drawdown, controlled recovery, RSI, participation, and liquidity gates."],
+        executionContract: ["Next observable open with DSE costs, capacity, and settlement."],
+        exitContract: ["Weekly rerank, position stop, or portfolio brake."],
+        killCriteria: ["Required price, liquidity, category, or session evidence becomes unavailable."],
+      },
+      {
+        key: "dse_quality_value_v1",
+        market: "DSE",
+        name: "DSE point-in-time quality value",
+        family: "quality_value",
+        horizon: "multi_month",
+        methodologyVersion: "dse-quality-value-v1",
+        minimumLookback: 126,
+        rebalanceSessions: 20,
+        maximumPositions: 8,
+        requiredEvidence: ["Two point-in-time annual financial observations", "Bonus/right-safe daily prices"],
+        researchState: "candidate",
+        automationEligible: false,
+        description: "Profitable, improving DSE companies at bounded earnings and book multiples.",
+        economicThesis: "Slowly diffusing fundamental evidence may leave improving businesses too cheap.",
+        signalContract: ["Positive improving EPS, NAV, profit, valuation, trend, and liquidity gates."],
+        executionContract: ["20-session rebalance and next observable open."],
+        exitContract: ["Rank buffer, position stop, or portfolio brake."],
+        killCriteria: ["Point-in-time financial or adjustment evidence is incomplete."],
+      },
+      {
+        key: "dse_pead_v1",
+        market: "DSE",
+        name: "DSE post-earnings announcement drift",
+        family: "event_drift",
+        horizon: "event_swing",
+        methodologyVersion: "dse-pead-v1-contract",
+        minimumLookback: 126,
+        rebalanceSessions: 1,
+        maximumPositions: 6,
+        requiredEvidence: ["Deep timestamped earnings history", "Preregistered earnings-surprise feature"],
+        researchState: "data_blocked",
+        automationEligible: false,
+        description: "Registered event-drift contract; no signals or books until event evidence is sufficient.",
+        economicThesis: "Earnings surprises may diffuse gradually under attention and liquidity constraints.",
+        signalContract: ["Reliable publication clock and comparable point-in-time surprise."],
+        executionContract: ["First observable eligible session after publication."],
+        exitContract: ["Fixed event horizon, invalidation, stop, or brake."],
+        killCriteria: ["Publication timing or surprise evidence is incomplete."],
+      },
+      {
+        key: "dse_trend_pullback_intraday_v1",
+        market: "DSE",
+        name: "DSE intraday trend pullback",
+        family: "trend_pullback",
+        horizon: "intraday_to_multiday",
+        methodologyVersion: "dse-trend-pullback-intraday-v1-contract",
+        minimumLookback: 60,
+        rebalanceSessions: 1,
+        maximumPositions: 6,
+        requiredEvidence: ["Complete 15-minute bars", "Session VWAP, intraday EMA, and next-observable fills"],
+        researchState: "data_blocked",
+        automationEligible: false,
+        description: "Strong-trend micro-pullback contract; a daily proxy is forbidden.",
+        economicThesis: "Persistent demand may resume after an orderly low-volume pullback and reclaim.",
+        signalContract: ["Trend, contraction, structural invalidation, and renewed participation."],
+        executionContract: ["Next retained 15-minute price after confirmation."],
+        exitContract: ["Pullback-low invalidation, maximum horizon, rerank, or brake."],
+        killCriteria: ["Any required intraday interval or execution input is missing."],
+      },
+    ]
+  : [
+      {
+        key: "us_breakout_v1",
+        market: "US",
+        name: "US liquid trend participation",
+        family: "trend",
+        horizon: "eod_swing",
+        methodologyVersion: "us-liquid-trend-v1",
+        minimumLookback: 200,
+        rebalanceSessions: 5,
+        maximumPositions: 10,
+        requiredEvidence: [],
+        researchState: "diagnostic",
+        automationEligible: true,
+        description: "Liquid positive trends with participation and extension control.",
+        economicThesis: "Persistent trends may continue as slower capital incorporates improving information.",
+        signalContract: ["Trend, momentum, participation, extension, and liquidity gates."],
+        executionContract: ["Next observable open with costs and capacity."],
+        exitContract: ["Rerank, stop, or portfolio brake."],
+        killCriteria: ["Required evidence or promotion gates fail."],
+      },
+    ];
 
 export const previewInvestmentMandate: InvestmentMandate = {
   id: "00000000-0000-0000-0000-000000000601",

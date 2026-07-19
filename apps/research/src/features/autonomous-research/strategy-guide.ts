@@ -29,6 +29,15 @@ export function strategySelectionGuide(
     };
   }
 
+  if (strategyKey === "dse_quality_value_v1") {
+    return {
+      universe: `${universe}, ranked by completed-session traded value`,
+      entry: "Two annual observations known by the signal close; positive and improving EPS, positive NAV and profit, ROE proxy at least 8%, P/E at most 18, P/B at most 2.5, no severe 63-session deterioration, and at least BDT 2m average daily value",
+      ranking: "Passing companies rank by earnings improvement, profitability, earnings and book yield, participation, momentum, and volatility; later revisions are invisible",
+      sizing: "20-session rebalance, rank buffer, target volatility, 12% position cap, 30% sector cap, 85% gross cap, liquidity, fees, slippage, and DSE settlement",
+    };
+  }
+
   return {
     universe: `${universe} defined by the registered experiment`,
     entry: "Only securities passing the registered point-in-time entry gates are eligible",

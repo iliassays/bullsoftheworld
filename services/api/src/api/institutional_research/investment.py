@@ -56,6 +56,18 @@ _ECONOMIC_HYPOTHESES = {
         "Liquid DSE securities that suffered a material drawdown but show controlled short-term "
         "recovery and renewed participation may mean-revert as forced selling exhausts."
     ),
+    "dse_quality_value_v1": (
+        "Profitable, improving DSE companies may compound from undemanding earnings and book "
+        "multiples as slowly diffusing fundamental evidence is incorporated."
+    ),
+    "dse_pead_v1": (
+        "Genuine earnings surprises may drift when attention, analysis, or liquidity constraints "
+        "slow their incorporation into DSE prices."
+    ),
+    "dse_trend_pullback_intraday_v1": (
+        "Persistent demand may resume after an orderly low-volume micro-pullback and renewed "
+        "participation reclaims an intraday trend reference."
+    ),
     "us_breakout_v1": (
         "Liquid US securities with persistent positive trend, participation confirmation, and "
         "limited extension may continue as slower capital adjusts to improving price information."

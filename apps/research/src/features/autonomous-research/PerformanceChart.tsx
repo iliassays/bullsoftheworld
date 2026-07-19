@@ -31,7 +31,7 @@ export function PerformanceChart({ points }: { points: ChartPoint[] }) {
         <path className="atlas-chart__benchmark" d={path(points.map((point) => point.benchmark), width, height, minimum, maximum)} fill="none" />
         <path className="atlas-chart__portfolio" d={path(points.map((point) => point.nav), width, height, minimum, maximum)} fill="none" />
       </svg>
-      <span className="atlas-chart__range"><small>{points[0]!.date}</small><small>{points.at(-1)?.date}</small></span>
+      <span className="atlas-chart__range"><small>{points[0]!.date}</small><small>{points[points.length - 1]?.date}</small></span>
       <span className="atlas-chart__legend"><i /> Portfolio <i /> Observable-universe benchmark</span>
     </div>
   );

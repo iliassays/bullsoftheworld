@@ -224,7 +224,13 @@ class StartResearchRequest(ApiModel):
 
 class BacktestRequest(ApiModel):
     idempotency_key: str = Field(min_length=8, max_length=96)
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"]
+    strategy_key: Literal[
+        "dse_reversal_v1",
+        "dse_quality_value_v1",
+        "dse_pead_v1",
+        "dse_trend_pullback_intraday_v1",
+        "us_breakout_v1",
+    ]
     start_date: dt.date | None = None
     end_date: dt.date | None = None
     cap_tier: Literal["mega", "large", "mid", "small", "micro", "penny"] | None = None
@@ -477,6 +483,27 @@ class StrategyTrialOut(ApiModel):
     outcome: dict[str, Any]
     registered_at: dt.datetime
     completed_at: dt.datetime | None
+
+
+class StrategyCatalogItemOut(ApiModel):
+    key: str
+    market: Literal["DSE", "US"]
+    name: str
+    family: str
+    horizon: str
+    methodology_version: str
+    minimum_lookback: int
+    rebalance_sessions: int
+    maximum_positions: int
+    required_evidence: list[str]
+    research_state: Literal["diagnostic", "candidate", "eligible_for_shadow", "data_blocked"]
+    automation_eligible: bool
+    description: str
+    economic_thesis: str
+    signal_contract: list[str]
+    execution_contract: list[str]
+    exit_contract: list[str]
+    kill_criteria: list[str]
 
 
 class DecisionEventOut(ApiModel):
