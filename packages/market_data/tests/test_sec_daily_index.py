@@ -111,6 +111,20 @@ async def test_fetch_day_missing_index_returns_empty() -> None:
     assert entries == []
 
 
+async def test_fetch_day_treats_403_as_missing_index() -> None:
+    # Verified live against real EDGAR: a missing daily-index path (weekend or
+    # holiday) answers 403, not 404. A well-identified client must not treat that
+    # as an error, or every Saturday/Sunday raises in the daily cron.
+    transport = httpx.MockTransport(lambda request: httpx.Response(403))
+    client = SecDailyIndexClient(
+        user_agent="BullsOfTheWorld/0.1 hello@bullsofwallst.com",
+        transport=transport,
+    )
+    raw, entries = await client.fetch_day(dt.date(2026, 7, 4))
+    assert raw is None
+    assert entries == []
+
+
 async def test_fetch_filing_returns_raw_document() -> None:
     body = b"<SEC-DOCUMENT>raw filing bytes</SEC-DOCUMENT>"
     client = SecDailyIndexClient(

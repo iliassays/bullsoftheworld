@@ -121,7 +121,10 @@ class SecDailyIndexClient:
     ) -> tuple[bytes | None, list[DailyIndexEntry]]:
         """Fetch one day's master index. Returns (raw bytes, parsed entries).
 
-        A 404 means no index exists for that day (weekend/holiday): returns (None, []).
+        No index for that day (weekend/holiday) is a normal empty day, not an error:
+        returns (None, []). Verified live that EDGAR answers a missing daily-index
+        path with 403, not 404 (checked both a holiday and an ordinary Saturday) —
+        see ``_get_bytes`` for why that is safe to treat as "not found" here.
         """
         raw = await self._get_bytes(self.index_path(day), allow_not_found=True)
         if raw is None:
@@ -131,6 +134,13 @@ class SecDailyIndexClient:
     async def fetch_filing(self, filename: str) -> bytes | None:
         """Fetch a raw filing document by its index ``filename`` path, byte-exact."""
         return await self._get_bytes(f"{_BASE}/{filename}", allow_not_found=True)
+
+    # EDGAR's Archives tree answers a missing path with 403, not 404 — confirmed live
+    # for both a holiday and an ordinary Saturday's daily-index file. That is not the
+    # "unidentified client" 403 Phase 8 warns about: this client always sends a valid
+    # identifying User-Agent (enforced in __init__), so a 403 here can only mean the
+    # requested day/filing genuinely does not exist.
+    _NOT_FOUND_STATUSES = frozenset({403, 404})
 
     async def _get_bytes(self, url: str, *, allow_not_found: bool = False) -> bytes | None:
         async with httpx.AsyncClient(
@@ -142,7 +152,7 @@ class SecDailyIndexClient:
                     await asyncio.sleep(delay)
                 self._last_request = time.monotonic()
                 response = await client.get(url)
-                if allow_not_found and response.status_code == 404:
+                if allow_not_found and response.status_code in self._NOT_FOUND_STATUSES:
                     return None
                 if response.status_code not in {429, 500, 502, 503, 504}:
                     response.raise_for_status()
