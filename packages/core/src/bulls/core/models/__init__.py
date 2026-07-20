@@ -86,6 +86,11 @@ from bulls.core.models.sec import (
     SecFinancialFact,
     SecurityIdentifier,
 )
+from bulls.core.models.sec_events import (
+    EdgarFilingEvent,
+    InsiderTransaction,
+    OwnershipStakeEvent,
+)
 from bulls.core.models.security_master import SecurityMaster
 from bulls.core.models.short_volume import ShortVolumeDaily
 from bulls.core.models.signal_event import SignalEvent
@@ -116,12 +121,14 @@ __all__ = [
     "DailyBarObservation",
     "DataSourceSnapshot",
     "DividendRecord",
+    "EdgarFilingEvent",
     "EvidenceDocument",
     "EvidenceSpan",
     "Follow",
     "HedgeDailyScanSnapshot",
     "HedgeSignal",
     "HedgeTrackRecordSnapshot",
+    "InsiderTransaction",
     "InstitutionalHoldingSummary",
     "InstitutionalLead",
     "InstitutionalManager",
@@ -134,6 +141,7 @@ __all__ = [
     "ModerationEvent",
     "OnDemandResearchJob",
     "OnDemandResearchRequest",
+    "OwnershipStakeEvent",
     "PageViewEvent",
     "PortfolioHolding",
     "PortfolioSnapshot",
