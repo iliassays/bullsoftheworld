@@ -80,6 +80,35 @@ export interface BacktestMetric {
   maxDrawdownPct: number | null;
 }
 
+export interface DeflatedSharpe {
+  /** Probability the edge is real after adjusting for how many variants were tried. */
+  deflatedSharpe: number;
+  /** The same confidence before any multiple-testing adjustment. */
+  probabilisticSharpe: number;
+  /** Sharpe the best of N worthless strategies would be expected to show by luck. */
+  benchmarkSharpe: number;
+  numTrials: number;
+  threshold: number;
+  passes: boolean;
+}
+
+export interface CostStressTier {
+  label: string;
+  oneWayBps: number;
+  measured: boolean;
+  netReturnPct: number;
+  excessReturnPct: number;
+  edgeSurvives: boolean;
+}
+
+export interface CostStress {
+  tiers: CostStressTier[];
+  /** Lowest one-way cost at which the edge stops beating its benchmark. */
+  edgeDiesAtBps: number | null;
+  measuredCoverage: number;
+  universeSize: number;
+}
+
 export interface BacktestResult {
   engineVersion: string;
   strategy: {
@@ -111,6 +140,10 @@ export interface BacktestResult {
   validationStatus: "diagnostic" | "eligible_for_shadow";
   failedGates: string[];
   warnings: string[];
+  // Overfitting guard (institutional study 13.3.3) and cost-stress tiers (13.2). Both are
+  // absent on runs recorded before those gates existed, so both are nullable.
+  deflatedSharpe: DeflatedSharpe | null;
+  costStress: CostStress | null;
   latestTargetWeights: Record<string, number>;
 }
 
@@ -336,6 +369,51 @@ function backtestStep(run: ResearchRun | undefined): ResearchRunStep | undefined
   return run?.steps.find((step) => step.kind === "portfolio_backtest");
 }
 
+function deflatedSharpe(run: ResearchRun | undefined): DeflatedSharpe | null {
+  const gate = run?.steps.find((step) => step.kind === "validation_gate");
+  const payload = record(record(gate?.output)?.deflated_sharpe);
+  if (!payload) return null;
+  const value = numeric(payload.deflated_sharpe);
+  if (!Number.isFinite(value)) return null;
+  return {
+    deflatedSharpe: value,
+    probabilisticSharpe: numeric(payload.probabilistic_sharpe),
+    benchmarkSharpe: numeric(payload.benchmark_sharpe),
+    numTrials: numeric(payload.num_trials),
+    threshold: numeric(payload.threshold),
+    passes: payload.passes === true,
+  };
+}
+
+function costStress(run: ResearchRun | undefined): CostStress | null {
+  const step = run?.steps.find((item) => item.kind === "cost_stress");
+  const payload = record(step?.output);
+  if (!payload || !Array.isArray(payload.outcomes)) return null;
+  const tiers = payload.outcomes
+    .map((entry) => {
+      const outcome = record(entry);
+      const tier = record(outcome?.tier);
+      if (!outcome || !tier) return null;
+      return {
+        label: text(tier.label) ?? "",
+        oneWayBps: numeric(tier.one_way_bps),
+        measured: tier.measured === true,
+        netReturnPct: numeric(outcome.net_return_pct),
+        excessReturnPct: numeric(outcome.excess_return_pct),
+        edgeSurvives: outcome.edge_survives === true,
+      };
+    })
+    .filter((tier): tier is CostStressTier => tier !== null);
+  if (tiers.length === 0) return null;
+  const dies = payload.edge_dies_at_bps;
+  return {
+    tiers,
+    edgeDiesAtBps: typeof dies === "number" ? dies : null,
+    measuredCoverage: numeric(payload.measured_coverage),
+    universeSize: numeric(payload.universe_size),
+  };
+}
+
 export function backtestResult(run: ResearchRun | undefined): BacktestResult | null {
   const output = record(backtestStep(run)?.output);
   const strategy = record(output?.strategy);
@@ -402,6 +480,8 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
     validationStatus,
     failedGates: strings(output.failed_gates),
     warnings: strings(output.warnings),
+    deflatedSharpe: deflatedSharpe(run),
+    costStress: costStress(run),
     latestTargetWeights: Object.fromEntries(
       Object.entries(record(output.latest_target_weights) ?? {}).filter(
         (entry): entry is [string, number] => typeof entry[1] === "number",

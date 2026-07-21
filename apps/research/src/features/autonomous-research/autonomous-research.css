@@ -361,6 +361,52 @@
     border-bottom: 0;
   }
 
+  .overfitting-guard,
+  .cost-stress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    padding: 12px;
+    font-size: 10px;
+  }
+
+  .overfitting-guard strong,
+  .cost-stress strong {
+    color: var(--text);
+    font-size: 11px;
+  }
+
+  .guard-lede,
+  .guard-note {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .guard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+
+  .guard-grid span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+  }
+
+  .guard-grid small {
+    color: var(--text-muted);
+  }
+
+  .guard-grid b {
+    font-size: 14px;
+  }
+
   .validation-gates {
     display: flex;
     flex-direction: column;

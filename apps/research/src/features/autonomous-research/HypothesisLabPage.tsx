@@ -113,6 +113,36 @@ export function HypothesisLabPage() {
                   <div role="row"><span>Slice</span><span>Sessions</span><span>Total return</span><span>Ann. return</span><span>Sharpe</span><span>Max drawdown</span></div>
                   {result.metrics.map((metric) => <div key={metric.label} role="row"><strong>{metric.label}</strong><span>{metric.sessions}</span><span className={(metric.totalReturnPct ?? 0) >= 0 ? "value-up" : "value-down"}>{value(metric.totalReturnPct, "%")}</span><span>{value(metric.annualizedReturnPct, "%")}</span><span>{value(metric.sharpe)}</span><span>{value(metric.maxDrawdownPct, "%")}</span></div>)}
                 </div>
+                {result.deflatedSharpe && <div className="overfitting-guard">
+                  <strong>Overfitting guard</strong>
+                  <p className="guard-lede">A backtest picked as the best of many attempts flatters itself. This discounts the result by how many variants were tried.</p>
+                  <div className="guard-grid">
+                    <span><small>Confidence the edge is real</small><b className={result.deflatedSharpe.passes ? "value-up" : "value-down"}>{(result.deflatedSharpe.deflatedSharpe * 100).toFixed(1)}%</b></span>
+                    <span><small>Before adjusting for attempts</small><b>{(result.deflatedSharpe.probabilisticSharpe * 100).toFixed(1)}%</b></span>
+                    <span><small>Variants tried</small><b>{result.deflatedSharpe.numTrials}</b></span>
+                    <span><small>Bar to clear</small><b>{(result.deflatedSharpe.threshold * 100).toFixed(0)}%</b></span>
+                  </div>
+                  <p className="guard-note">{result.deflatedSharpe.passes
+                    ? "Clears the bar: the result is unlikely to be an artefact of repeated searching."
+                    : "Does not clear the bar. Treat this as a diagnostic, not evidence of an edge."}</p>
+                </div>}
+                {result.costStress && <div className="cost-stress">
+                  <strong>Where the edge dies</strong>
+                  <p className="guard-lede">Re-run at rising trading costs. Spread measured per name on {result.costStress.measuredCoverage} of {result.costStress.universeSize} securities, never assumed.</p>
+                  <div className="metric-table" role="table">
+                    <div role="row"><span>Cost assumption</span><span>One-way</span><span>Net return</span><span>vs benchmark</span><span>Edge</span></div>
+                    {result.costStress.tiers.map((tier) => <div key={tier.label} role="row">
+                      <strong>{tier.measured ? "Measured" : `Stress ${tier.oneWayBps}bps`}</strong>
+                      <span>{tier.oneWayBps.toFixed(1)}bps</span>
+                      <span className={tier.netReturnPct >= 0 ? "value-up" : "value-down"}>{value(tier.netReturnPct, "%")}</span>
+                      <span className={tier.excessReturnPct >= 0 ? "value-up" : "value-down"}>{value(tier.excessReturnPct, "%")}</span>
+                      <span>{tier.edgeSurvives ? "survives" : "gone"}</span>
+                    </div>)}
+                  </div>
+                  <p className="guard-note">{result.costStress.edgeDiesAtBps !== null
+                    ? `The edge stops beating its benchmark at ${result.costStress.edgeDiesAtBps}bps one-way. Anything that dies by 30bps is not tradeable at retail cost.`
+                    : "The edge survives every stress tier tested, including 50bps one-way."}</p>
+                </div>}
                 {result.failedGates.length > 0 && <div className="validation-gates"><strong>Why this is not validated</strong>{result.failedGates.map((gate) => <span key={gate}><AlertTriangle size={12} />{gate}</span>)}</div>}
               </section>
 
