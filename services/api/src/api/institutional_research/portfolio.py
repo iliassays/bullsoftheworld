@@ -13,6 +13,7 @@ from api.institutional_research.investment import (
     get_active_mandate,
     mandate_snapshot,
     mark_trial_shadow,
+    record_ladder_freeze_clearance,
     record_snapshot_decision_events,
     risk_policy_from_snapshot,
 )
@@ -331,6 +332,9 @@ async def _refresh_shadow_portfolio(
             benchmark_nav=float(latest.benchmark_nav),
             cumulative_fees=float(latest.cumulative_fees),
             cumulative_turnover=float(latest.cumulative_turnover),
+            # The drawdown-ladder freeze is book-level state and must survive across refreshes,
+            # otherwise a frozen book would silently re-arm on the next advance.
+            ladder_frozen=bool(portfolio.configuration.get("ladder_frozen", False)),
         )
         advanced = advance_shadow_portfolio(
             market=portfolio.market,
@@ -369,6 +373,11 @@ async def _refresh_shadow_portfolio(
         )
         session.add(latest)
         portfolio.last_evaluated_on = advanced.date
+        if bool(portfolio.configuration.get("ladder_frozen", False)) != advanced.state.ladder_frozen:
+            portfolio.configuration = {
+                **portfolio.configuration,
+                "ladder_frozen": advanced.state.ladder_frozen,
+            }
         await session.flush()
         await record_snapshot_decision_events(
             session,
@@ -377,6 +386,54 @@ async def _refresh_shadow_portfolio(
             previous=previous_snapshot,
         )
     await _evaluate_portfolio_promotion(session, portfolio=portfolio)
+
+
+async def clear_shadow_ladder_freeze(
+    session: AsyncSession,
+    *,
+    workspace: ResearchWorkspace,
+    portfolio_id: uuid.UUID,
+    user_id: int,
+    reason: str,
+) -> ResearchShadowPortfolioOut:
+    """Release a drawdown-ladder freeze after a written review (Phase 15 L2/L3.4).
+
+    The ladder flattens and freezes a book on its own; only this deliberate, justified action can
+    re-arm it. The reason is mandatory and is appended to the decision ledger as an override —
+    silent erosion of the risk grammar is the documented failure mode we are guarding against.
+    """
+    written_reason = reason.strip()
+    if not written_reason:
+        raise ValueError("a written review reason is required to clear a drawdown-ladder freeze")
+
+    portfolio = await session.scalar(
+        select(ResearchShadowPortfolio).where(
+            ResearchShadowPortfolio.id == portfolio_id,
+            ResearchShadowPortfolio.workspace_id == workspace.id,
+            ResearchShadowPortfolio.organization_id == workspace.organization_id,
+            ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
+            ResearchShadowPortfolio.market == workspace.market,
+        )
+    )
+    if portfolio is None:
+        raise LookupError("shadow portfolio not found in this workspace")
+    if not bool(portfolio.configuration.get("ladder_frozen", False)):
+        raise ValueError("this shadow book is not frozen")
+
+    snapshots = await _snapshots(session, portfolio=portfolio, limit=1)
+    if not snapshots:
+        raise ValueError("a frozen book cannot be cleared before it has a recorded snapshot")
+
+    portfolio.configuration = {**portfolio.configuration, "ladder_frozen": False}
+    await record_ladder_freeze_clearance(
+        session,
+        portfolio=portfolio,
+        snapshot=snapshots[-1],
+        user_id=user_id,
+        reason=written_reason,
+    )
+    await session.flush()
+    return await _portfolio_out(session, portfolio)
 
 
 async def list_shadow_portfolios(

@@ -31,6 +31,7 @@ from api.institutional_research.options import (
     load_option_chain_preview,
 )
 from api.institutional_research.portfolio import (
+    clear_shadow_ladder_freeze,
     create_shadow_portfolio,
     list_shadow_portfolios,
     load_outcome_calibration,
@@ -43,6 +44,7 @@ from api.institutional_research.schemas import (
     BacktestRequest,
     CalibrationOut,
     CatalystCalendarOut,
+    ClearLadderFreezeRequest,
     CompanyDossierOut,
     CreateShadowPortfolioRequest,
     InvestmentMandateOut,
@@ -906,6 +908,59 @@ async def reconcile_workspace_shadow_portfolios(
         attributes={"portfolio_count": len(portfolios)},
     )
     return portfolios
+
+
+@router.post("/workspaces/{workspace_id}/shadow-portfolios/{portfolio_id}/clear-ladder-freeze")
+async def clear_shadow_portfolio_ladder_freeze(
+    workspace_id: uuid.UUID,
+    portfolio_id: uuid.UUID,
+    payload: ClearLadderFreezeRequest,
+    request: Request,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> ResearchShadowPortfolioOut:
+    """Re-arm a book the drawdown ladder froze, recording the written review as an override."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    try:
+        authorized = await authorize_research_workspace(
+            session,
+            workspace_id=workspace_id,
+            user_id=user.id,
+            tenant_id=tenant.name,
+            market=tenant.market,
+            permission=ResearchPermission.MANAGE_RISK,
+        )
+        portfolio = await clear_shadow_ladder_freeze(
+            session,
+            workspace=authorized.workspace,
+            portfolio_id=portfolio_id,
+            user_id=user.id,
+            reason=payload.reason,
+        )
+    except ResearchWorkspaceNotFound:
+        raise HTTPException(status_code=404, detail="Research workspace not found") from None
+    except ResearchAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=exc.reason) from None
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    record_research_audit_event(
+        session,
+        workspace=authorized.workspace,
+        actor_user_id=user.id,
+        event_type="shadow_portfolio_ladder_freeze_cleared",
+        resource_type="research_shadow_portfolio",
+        resource_id=str(portfolio_id),
+        request_id=getattr(request.state, "request_id", None),
+        attributes={"reason_length": len(payload.reason)},
+    )
+    return portfolio
 
 
 @router.get("/workspaces/{workspace_id}/calibration")

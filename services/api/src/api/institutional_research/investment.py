@@ -293,7 +293,9 @@ async def register_strategy_trial(
         status="registered",
         registration_state="preregistered",
         trial_sequence=int(prior_trials or 0) + 1,
-        multiple_testing_policy="family_gate_v1",
+        # The multiple-testing correction is now the deflated Sharpe ratio computed over the
+        # family's trial count (Phase 13.3.3), not the earlier flat attempt>1 diagnostic flag.
+        multiple_testing_policy="deflated_sharpe_v1",
         economic_hypothesis=_ECONOMIC_HYPOTHESES[strategy.key],
         specification=specification,
         specification_hash=_hash(specification),
@@ -374,6 +376,58 @@ def _target_changes(previous: dict[str, Any], current: dict[str, Any]) -> list[d
             {"code": code, "previous_weight": before, "target_weight": after, "action": action}
         )
     return changes
+
+
+async def record_ladder_freeze_clearance(
+    session: AsyncSession,
+    *,
+    portfolio: ResearchShadowPortfolio,
+    snapshot: ResearchShadowSnapshot,
+    user_id: int,
+    reason: str,
+) -> None:
+    """Append the written-review override that releases a drawdown-ladder freeze (Phase 15 L3.4).
+
+    Clearing a freeze is a manual deviation from the risk grammar, so it lands in the append-only
+    ledger as a risk event carrying its written justification — never a silent state flip. The
+    override log is what the quarterly review reads.
+    """
+    maximum_sequence = await session.scalar(
+        select(func.max(ResearchDecisionEvent.sequence)).where(
+            ResearchDecisionEvent.portfolio_id == portfolio.id,
+            ResearchDecisionEvent.organization_id == portfolio.organization_id,
+            ResearchDecisionEvent.tenant_id == portfolio.tenant_id,
+            ResearchDecisionEvent.market == portfolio.market,
+        )
+    )
+    sequence = int(maximum_sequence) + 1 if maximum_sequence is not None else 0
+    payload = {
+        "action": "drawdown_ladder_freeze_cleared",
+        "reason": reason,
+        "cleared_by_user_id": user_id,
+        "cleared_at": dt.datetime.now(dt.UTC).isoformat(),
+        "snapshot_session_number": snapshot.session_number,
+    }
+    session.add(
+        ResearchDecisionEvent(
+            id=uuid.uuid4(),
+            organization_id=portfolio.organization_id,
+            workspace_id=portfolio.workspace_id,
+            tenant_id=portfolio.tenant_id,
+            market=portfolio.market,
+            portfolio_id=portfolio.id,
+            snapshot_id=snapshot.id,
+            correlation_id=uuid.uuid5(portfolio.id, f"ladder-freeze-clear:{sequence}"),
+            sequence=sequence,
+            effective_date=snapshot.as_of_date,
+            event_key=f"s{snapshot.session_number}:risk:ladder_freeze_cleared:{sequence}",
+            event_type="risk",
+            event_state="executed",
+            payload=payload,
+            payload_hash=_hash(payload),
+        )
+    )
+    await session.flush()
 
 
 async def record_snapshot_decision_events(

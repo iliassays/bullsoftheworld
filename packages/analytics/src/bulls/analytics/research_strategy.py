@@ -14,7 +14,20 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from bulls.analytics.cost_observatory import CostTier, cost_tiers, estimate_spread
+from bulls.analytics.drawdown_ladder import (
+    DrawdownLadder,
+    LadderState,
+    apply_drawdown_ladder,
+)
+
 ENGINE_VERSION = "atlas-portfolio-engine-v1"
+
+# Half-spread cost input for a backtest run:
+#   None              -> use the policy's flat slippage_rate (backward-compatible default)
+#   float (bps)       -> one flat one-way half-spread applied to every name (a stress tier)
+#   dict[code, bps]   -> per-name measured half-spread, policy slippage_rate for anything missing
+HalfSpreadInput = float | dict[str, float] | None
 
 
 class StrategyBar(BaseModel):
@@ -131,6 +144,10 @@ class ShadowState(BaseModel):
     benchmark_nav: float = Field(gt=0)
     cumulative_fees: float = Field(default=0, ge=0)
     cumulative_turnover: float = Field(default=0, ge=0)
+    # Live/shadow drawdown ladder: once the flatten rung trips, the book stays flat until an
+    # operator clears the freeze after a written review (Phase 15 L2). Defaults False so existing
+    # persisted shadow states deserialize unchanged.
+    ladder_frozen: bool = False
 
 
 class ShadowAdvanceResult(BaseModel):
@@ -310,6 +327,26 @@ class _Position:
     average_cost: float
 
 
+def _half_spread_rate(code: str, half_spread_bps: HalfSpreadInput, policy: PortfolioRiskPolicy) -> float:
+    """Resolve the one-way slippage rate for ``code`` given the run's half-spread input."""
+    if half_spread_bps is None:
+        return policy.slippage_rate
+    if isinstance(half_spread_bps, dict):
+        measured = half_spread_bps.get(code)
+        return measured / 10_000.0 if measured is not None else policy.slippage_rate
+    return half_spread_bps / 10_000.0
+
+
+def _ladder_from_policy(policy: PortfolioRiskPolicy) -> DrawdownLadder:
+    """Two-rung ladder derived from the mandate's single drawdown brake (no schema change).
+
+    The existing ``portfolio_drawdown_brake`` stays the flatten rung, so behavior at that level is
+    unchanged; the ladder adds an intermediate halve rung at two-thirds of it (Phase 15 L2).
+    """
+    flatten_at = policy.portfolio_drawdown_brake
+    return DrawdownLadder(halve_at_pct=round(flatten_at * 2.0 / 3.0, 4), flatten_at_pct=flatten_at)
+
+
 def _returns(values: list[float]) -> list[float]:
     return [
         values[index] / values[index - 1] - 1.0
@@ -466,8 +503,15 @@ def run_backtest(
     inactive_security_history_complete: bool = False,
     point_in_time_inputs_complete: bool = False,
     risk_policy: PortfolioRiskPolicy | None = None,
+    half_spread_bps: HalfSpreadInput = None,
 ) -> BacktestResult:
-    """Run the registered strategy with next-session execution and deterministic risk gates."""
+    """Run the registered strategy with next-session execution and deterministic risk gates.
+
+    ``half_spread_bps`` selects the trading-cost model (see ``HalfSpreadInput``); the default keeps
+    the policy's flat slippage. The drawdown response is the two-rung ladder (halve then flatten);
+    in a historical backtest it auto re-arms once drawdown recovers, so the whole path stays
+    diagnostic — the freeze-until-written-review behavior is reserved for live/shadow books.
+    """
 
     if initial_capital <= 0:
         raise ValueError("initial_capital must be positive")
@@ -477,6 +521,7 @@ def run_backtest(
     policy = risk_policy or RISK_POLICIES[market]
     if policy.market != market:
         raise ValueError("risk policy belongs to another market")
+    ladder = _ladder_from_policy(policy)
     security_by_code = {security.code: security for security in securities}
     bars_by_code = {
         security.code: {bar.date: bar for bar in sorted(security.bars, key=lambda item: item.date)}
@@ -536,8 +581,9 @@ def run_backtest(
                 if quantity == 0:
                     continue
                 side: Literal["buy", "sell"] = "buy" if quantity > 0 else "sell"
+                slippage_rate = _half_spread_rate(code, half_spread_bps, policy)
                 fill_price = bar.open * (
-                    1 + policy.slippage_rate if side == "buy" else 1 - policy.slippage_rate
+                    1 + slippage_rate if side == "buy" else 1 - slippage_rate
                 )
                 absolute_quantity = abs(quantity)
                 gross = absolute_quantity * fill_price
@@ -665,16 +711,18 @@ def run_backtest(
                 )
             pending_weights = target
             pending_reason = "position risk stop"
-        if drawdown >= policy.portfolio_drawdown_brake:
+        # Two-rung drawdown ladder. A historical backtest never persists the freeze (auto re-arm):
+        # a fresh unfrozen state each session, so exposure resumes once drawdown recovers and the
+        # whole path stays diagnostic. The sticky freeze is a live/shadow rule (Phase 15 L2).
+        ladder_action = apply_drawdown_ladder(
+            drawdown_pct=max(drawdown, 0.0), state=LadderState(frozen=False), ladder=ladder
+        )
+        if ladder_action.gross_multiplier == 0.0:
             pending_weights = {}
-            pending_reason = "portfolio drawdown brake"
+            pending_reason = "drawdown ladder: flatten"
             latest_target_weights = {}
             interventions.append(
-                RiskIntervention(
-                    date=date,
-                    rule="portfolio_drawdown_brake",
-                    detail=f"Gross exposure scheduled to zero after drawdown reached {drawdown:.1%}.",
-                )
+                RiskIntervention(date=date, rule="drawdown_ladder_flatten", detail=ladder_action.detail)
             )
         elif (
             session_index >= strategy.minimum_lookback
@@ -682,8 +730,20 @@ def run_backtest(
             and pending_weights is None
         ):
             latest_target_weights = _target_weights(strategy, policy, histories, security_by_code)
-            pending_weights = latest_target_weights
-            pending_reason = "scheduled point-in-time rebalance"
+            if ladder_action.gross_multiplier < 1.0:
+                pending_weights = {
+                    code: round(weight * ladder_action.gross_multiplier, 6)
+                    for code, weight in latest_target_weights.items()
+                }
+                pending_reason = "scheduled rebalance (halved by drawdown ladder)"
+                interventions.append(
+                    RiskIntervention(
+                        date=date, rule="drawdown_ladder_halve", detail=ladder_action.detail
+                    )
+                )
+            else:
+                pending_weights = latest_target_weights
+                pending_reason = "scheduled point-in-time rebalance"
 
     nav_values = [point.nav for point in curve]
     split_1 = max(2, round(len(nav_values) * 0.6))
@@ -733,6 +793,157 @@ def run_backtest(
             "A missing held-security bar carries the last observable close and records a stale-mark intervention.",
         ],
         latest_target_weights=latest_target_weights,
+    )
+
+
+class CostTierOutcome(BaseModel):
+    """One backtest run's headline result at a single trading-cost assumption."""
+
+    tier: CostTier
+    final_nav: float
+    net_return_pct: float
+    benchmark_return_pct: float
+    excess_return_pct: float
+    max_drawdown_pct: float | None
+    sharpe: float | None
+    trades: int
+    # True when this tier's net return still beats the benchmark after its costs.
+    edge_survives: bool
+
+
+class CostTieredBacktest(BaseModel):
+    """A strategy run across the measured cost and the 10/30/50 bps stress floors (Phase 13.2)."""
+
+    engine_version: str
+    strategy_key: str
+    fee_bps: float
+    # Per-name measured half-spreads (bps); names too thin to measure are absent.
+    measured_half_spread_bps: dict[str, float]
+    universe_size: int
+    measured_coverage: int
+    outcomes: list[CostTierOutcome]
+    # Lowest one-way cost (bps) at which the edge no longer beats the benchmark, if any.
+    edge_dies_at_bps: float | None
+    # The authoritative full backtest at the realistic cost basis (measured per-name half-spreads
+    # when available, otherwise the lightest stress tier) — the run the validation gate scores.
+    primary: BacktestResult
+
+
+def run_cost_tiered_backtest(
+    *,
+    market: Literal["DSE", "US"],
+    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"],
+    securities: list[StrategySecurity],
+    initial_capital: float = 100_000.0,
+    inactive_security_history_complete: bool = False,
+    point_in_time_inputs_complete: bool = False,
+    risk_policy: PortfolioRiskPolicy | None = None,
+    stress_levels_bps: tuple[float, ...] = (10.0, 30.0, 50.0),
+) -> CostTieredBacktest:
+    """Run the strategy at its measured per-name cost and at fixed one-way stress floors.
+
+    Phase 13.2's rule: "any system whose edge dies at 30 bps one-way in its actual universe is
+    dead." Every tier's ``one_way_bps`` is a *total* one-way cost (half-spread + fee), so the
+    tiers are directly comparable. The measured tier uses Corwin-Schultz per-name half-spreads;
+    the stress tiers hold total one-way cost at 10/30/50 bps regardless of what was measured.
+    """
+    policy = risk_policy or RISK_POLICIES[market]
+    fee_bps = policy.fee_rate * 10_000.0
+
+    measured: dict[str, float] = {}
+    for security in securities:
+        estimate = estimate_spread(
+            security.code,
+            [bar.high for bar in security.bars],
+            [bar.low for bar in security.bars],
+        )
+        if estimate is not None:
+            measured[security.code] = round(estimate.half_spread_bps, 4)
+    measured_average = statistics.fmean(measured.values()) if measured else None
+
+    tiers = cost_tiers(
+        measured_half_spread_bps=measured_average,
+        fee_bps=fee_bps,
+        stress_levels_bps=stress_levels_bps,
+    )
+
+    def _run(tier: CostTier) -> BacktestResult:
+        if tier.measured:
+            return run_backtest(
+                market=market,
+                strategy_key=strategy_key,
+                securities=securities,
+                initial_capital=initial_capital,
+                inactive_security_history_complete=inactive_security_history_complete,
+                point_in_time_inputs_complete=point_in_time_inputs_complete,
+                risk_policy=policy,
+                half_spread_bps=measured,
+            )
+        # Hold total one-way cost at the tier: half-spread = tier - fee (the engine adds fee back).
+        flat_half_spread = max(tier.one_way_bps - fee_bps, 0.0)
+        return run_backtest(
+            market=market,
+            strategy_key=strategy_key,
+            securities=securities,
+            initial_capital=initial_capital,
+            inactive_security_history_complete=inactive_security_history_complete,
+            point_in_time_inputs_complete=point_in_time_inputs_complete,
+            risk_policy=policy,
+            half_spread_bps=flat_half_spread,
+        )
+
+    outcomes: list[CostTierOutcome] = []
+    primary: BacktestResult | None = None
+    for tier in tiers:
+        result = _run(tier)
+        # The realistic basis is the measured tier; if nothing was measurable, the first (lightest)
+        # tier stands in so a run always has an authoritative full result to score.
+        if primary is None or tier.measured:
+            primary = result
+        net = (result.final_nav / initial_capital - 1.0) * 100.0
+        benchmark = (result.benchmark_final / initial_capital - 1.0) * 100.0
+        outcomes.append(
+            CostTierOutcome(
+                tier=tier,
+                final_nav=result.final_nav,
+                net_return_pct=round(net, 3),
+                benchmark_return_pct=round(benchmark, 3),
+                excess_return_pct=round(net - benchmark, 3),
+                max_drawdown_pct=result.metrics[0].max_drawdown_pct,
+                sharpe=result.metrics[0].sharpe,
+                trades=len(result.trades),
+                edge_survives=net - benchmark > 0,
+            )
+        )
+
+    # The cheapest stress tier at which the edge stops beating the benchmark — where it "dies".
+    dead_tiers = sorted(
+        outcome.tier.one_way_bps
+        for outcome in outcomes
+        if not outcome.tier.measured and not outcome.edge_survives
+    )
+    if primary is None:
+        # No tiers at all only happens with an empty stress set and no measurable spread; run once
+        # at the policy default so the caller always receives an authoritative result.
+        primary = run_backtest(
+            market=market,
+            strategy_key=strategy_key,
+            securities=securities,
+            initial_capital=initial_capital,
+            inactive_security_history_complete=inactive_security_history_complete,
+            point_in_time_inputs_complete=point_in_time_inputs_complete,
+            risk_policy=policy,
+        )
+    return CostTieredBacktest(
+        engine_version=ENGINE_VERSION,
+        strategy_key=strategy_key,
+        fee_bps=round(fee_bps, 4),
+        measured_half_spread_bps=measured,
+        universe_size=len(securities),
+        measured_coverage=len(measured),
+        outcomes=outcomes,
+        edge_dies_at_bps=dead_tiers[0] if dead_tiers else None,
+        primary=primary,
     )
 
 
@@ -915,14 +1126,31 @@ def advance_shadow_portfolio(
                     detail="Next-open exit required by the deterministic position stop.",
                 )
             )
-    if drawdown >= policy.portfolio_drawdown_brake:
+    # Two-rung drawdown ladder with the LIVE freeze semantics: a book that trips the flatten rung
+    # stays flat until an operator clears the freeze after a written review (Phase 15 L2). The
+    # freeze carries in ShadowState across sessions, so a mechanical NAV recovery cannot silently
+    # re-arm the book.
+    ladder = _ladder_from_policy(policy)
+    ladder_action = apply_drawdown_ladder(
+        drawdown_pct=max(drawdown, 0.0),
+        state=LadderState(frozen=previous.ladder_frozen),
+        ladder=ladder,
+    )
+    ladder_frozen = ladder_action.frozen
+    if ladder_action.gross_multiplier == 0.0:
         next_targets = {}
         interventions.append(
             RiskIntervention(
-                date=date,
-                rule="portfolio_drawdown_brake",
-                detail="Next-open gross exposure set to zero by the portfolio drawdown brake.",
+                date=date, rule="drawdown_ladder_flatten", detail=ladder_action.detail
             )
+        )
+    elif ladder_action.gross_multiplier < 1.0:
+        next_targets = {
+            code: round(weight * ladder_action.gross_multiplier, 6)
+            for code, weight in next_targets.items()
+        }
+        interventions.append(
+            RiskIntervention(date=date, rule="drawdown_ladder_halve", detail=ladder_action.detail)
         )
     state = ShadowState(
         cash=round(cash, 4),
@@ -934,6 +1162,7 @@ def advance_shadow_portfolio(
         benchmark_nav=round(benchmark_nav, 4),
         cumulative_fees=round(previous.cumulative_fees + session_fees, 4),
         cumulative_turnover=round(previous.cumulative_turnover + session_turnover, 4),
+        ladder_frozen=ladder_frozen,
     )
     return ShadowAdvanceResult(
         date=date,

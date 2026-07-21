@@ -389,6 +389,13 @@ class CreateShadowPortfolioRequest(ApiModel):
     name: str = Field(min_length=3, max_length=120)
 
 
+class ClearLadderFreezeRequest(ApiModel):
+    """Written review that releases a drawdown-ladder freeze (Phase 15 L3.4 override log)."""
+
+    # Substantive justification is mandatory: the override log is only useful if it says why.
+    reason: str = Field(min_length=20, max_length=2000)
+
+
 class ResearchShadowSnapshotOut(ApiModel):
     id: uuid.UUID
     as_of_date: dt.date

@@ -26,6 +26,7 @@ from api.institutional_research.lineage import (
 )
 from api.institutional_research.schemas import BacktestRequest, ResearchRunOut
 from api.institutional_research.universe import apply_research_product_scope
+from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
     AutonomousResearchInput,
@@ -35,9 +36,10 @@ from bulls.analytics.research_loop import (
 from bulls.analytics.research_strategy import (
     ENGINE_VERSION,
     STRATEGIES,
+    EquityPoint,
     StrategyBar,
     StrategySecurity,
-    run_backtest,
+    run_cost_tiered_backtest,
 )
 from bulls.core.models import (
     DailyBar,
@@ -686,6 +688,41 @@ async def _backtest_universe(
     ]
 
 
+def _deflated_sharpe_gate(
+    equity_curve: list[EquityPoint],
+    *,
+    num_trials: int,
+    threshold: float = 0.95,
+) -> tuple[dict | None, str | None]:
+    """Overfitting-adjusted promotion gate (Phase 13.3.3 / 13.5), computed over the full curve.
+
+    Returns ``(summary, failed_gate)``: the deflated-Sharpe numbers to surface in the run, and a
+    failed-gate message when the edge does not clear the trial-count-adjusted bar. ``num_trials``
+    is the strategy family's attempt count, so more prior attempts mechanically raise the bar —
+    this replaces the earlier flat "attempt > 1 is diagnostic" rule with a graded statistic.
+
+    Pure function (no DB, no I/O) so the gate logic is unit-testable on its own.
+    """
+    navs = [point.nav for point in equity_curve]
+    returns = [navs[i] / navs[i - 1] - 1.0 for i in range(1, len(navs)) if navs[i - 1] > 0]
+    result = deflated_sharpe_ratio(returns, num_trials=num_trials, threshold=threshold)
+    if result is None:
+        # Phase 13.5: a promotable system must carry a positive deflated statistic. If the return
+        # history is too thin to compute one, it cannot be eligible — say so rather than pass by
+        # omission (the same run already fails the length gate; this keeps the reason explicit).
+        return None, (
+            "Deflated Sharpe could not be computed from the available return history; a positive "
+            "deflated statistic is required before promotion."
+        )
+    summary = result.model_dump(mode="json")
+    if not result.passes:
+        return summary, (
+            f"Deflated Sharpe {result.deflated_sharpe:.3f} over {num_trials} trial(s) is below "
+            f"the {threshold:.2f} overfitting-adjusted promotion bar."
+        )
+    return summary, None
+
+
 async def execute_backtest(
     session: AsyncSession,
     *,
@@ -750,7 +787,7 @@ async def execute_backtest(
         specification=frozen_specification,
     )
     securities = await _backtest_universe(session, market=workspace.market, request=request)
-    result = run_backtest(
+    cost_tiered = run_cost_tiered_backtest(
         market=workspace.market,
         strategy_key=request.strategy_key,
         securities=securities,
@@ -759,15 +796,17 @@ async def execute_backtest(
         point_in_time_inputs_complete=False,
         risk_policy=risk_policy,
     )
-    if trial.trial_sequence > 1:
-        family_gate = (
-            f"Strategy family attempt {trial.trial_sequence} requires an explicit "
-            "multiple-testing adjustment before promotion."
-        )
+    # The realistic (measured-cost) run is authoritative for the gate and the record; the stress
+    # tiers ride alongside as robustness evidence (Phase 13.2 — where does the edge die?).
+    result = cost_tiered.primary
+    deflated_sharpe_summary, overfitting_gate = _deflated_sharpe_gate(
+        result.equity_curve, num_trials=trial.trial_sequence
+    )
+    if overfitting_gate is not None:
         result = result.model_copy(
             update={
                 "validation_status": "diagnostic",
-                "failed_gates": [*result.failed_gates, family_gate],
+                "failed_gates": [*result.failed_gates, overfitting_gate],
             }
         )
     run.evidence_snapshot_hash = _stable_hash(
@@ -836,7 +875,17 @@ async def execute_backtest(
             "status": result.validation_status,
             "failed_gates": result.failed_gates,
             "warnings": result.warnings,
+            "deflated_sharpe": deflated_sharpe_summary,
         },
+    )
+    cost_tier_summary = cost_tiered.model_dump(mode="json", exclude={"primary"})
+    _add_step(
+        session,
+        run=run,
+        ordinal=4,
+        kind="cost_stress",
+        output=cost_tier_summary,
+        metrics={"edge_dies_at_bps": cost_tiered.edge_dies_at_bps},
     )
     run.parameters = {
         **parameters,
@@ -845,6 +894,13 @@ async def execute_backtest(
             "validation_status": result.validation_status,
             "failed_gates": result.failed_gates,
             "full_metrics": result.metrics[0].model_dump(mode="json"),
+            "deflated_sharpe": deflated_sharpe_summary,
+            "cost_stress": {
+                "edge_dies_at_bps": cost_tiered.edge_dies_at_bps,
+                "measured_coverage": cost_tiered.measured_coverage,
+                "universe_size": cost_tiered.universe_size,
+                "tiers": [outcome.model_dump(mode="json") for outcome in cost_tiered.outcomes],
+            },
         },
     }
     run.status = "succeeded"
