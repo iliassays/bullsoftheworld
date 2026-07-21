@@ -27,7 +27,11 @@ from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import EdgarFilingEvent, InsiderTransaction, OwnershipStakeEvent
 from bulls.market_data.providers.sec_13dg import parse_13dg
-from bulls.market_data.providers.sec_daily_index import DailyIndexEntry, SecDailyIndexClient
+from bulls.market_data.providers.sec_daily_index import (
+    DailyIndexEntry,
+    SecDailyIndexClient,
+    parse_acceptance_datetime,
+)
 from bulls.market_data.providers.sec_form4 import parse_form4
 
 logger = logging.getLogger(__name__)
@@ -75,14 +79,19 @@ class ParsedFiling:
     parse_status: str
     insider_rows: list[dict] = field(default_factory=list)
     stake_row: dict | None = None
+    # EDGAR acceptance timestamp, read form-agnostically from the SGML header. This is the
+    # point-in-time anchor every filings signal is stamped with (institutional study 13.1.1),
+    # so it must be captured for Form 4 exactly as it is for 13D/G.
+    accepted_at: dt.datetime | None = None
 
 
 def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
     """Route a raw dissemination file to the right parser. Pure function."""
+    accepted_at = parse_acceptance_datetime(raw)
     if entry.form in {"4", "4/A"}:
         filing = parse_form4(raw)
         if filing is None:
-            return ParsedFiling(parse_status="failed")
+            return ParsedFiling(parse_status="failed", accepted_at=accepted_at)
         rows = []
         for owner in filing.owners:
             for row_index, txn in enumerate(filing.transactions):
@@ -111,13 +120,14 @@ def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
                         "has_derivative_transactions": filing.has_derivative_transactions,
                     }
                 )
-        return ParsedFiling(parse_status="parsed", insider_rows=rows)
+        return ParsedFiling(parse_status="parsed", insider_rows=rows, accepted_at=accepted_at)
 
     stake = parse_13dg(raw)
     if stake is None:
-        return ParsedFiling(parse_status="failed")
+        return ParsedFiling(parse_status="failed", accepted_at=accepted_at)
     return ParsedFiling(
         parse_status="parsed",
+        accepted_at=stake.accepted_at or accepted_at,
         stake_row={
             "accession_number": stake.accession_number,
             "form": stake.form,
@@ -218,7 +228,7 @@ async def collect_day(
                     cik=entry.cik,
                     company_name=entry.company,
                     filed_date=entry.date_filed,
-                    accepted_at=(outcome.stake_row or {}).get("accepted_at"),
+                    accepted_at=outcome.accepted_at,
                     index_filename=entry.filename,
                     raw_object_key=stored.key,
                     raw_sha256=stored.sha256,

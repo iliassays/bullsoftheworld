@@ -47,6 +47,26 @@ def accession_from_filename(filename: str) -> str | None:
     return match.group(1) if match else None
 
 
+# Every EDGAR dissemination file carries this header regardless of form type.
+_ACCEPTANCE_RE = re.compile(rb"<ACCEPTANCE-DATETIME>(\d{14})")
+
+
+def parse_acceptance_datetime(raw: bytes) -> dt.datetime | None:
+    """Extract a filing's EDGAR acceptance timestamp, form-agnostically.
+
+    This is the point-in-time anchor the filings research requires: the moment a filing became
+    public, as opposed to the coarser ``FILED AS OF DATE``. Returns ``None`` when the header is
+    absent or malformed rather than guessing a time.
+    """
+    match = _ACCEPTANCE_RE.search(raw)
+    if match is None:
+        return None
+    try:
+        return dt.datetime.strptime(match.group(1).decode(), "%Y%m%d%H%M%S").replace(tzinfo=dt.UTC)
+    except ValueError:
+        return None
+
+
 def parse_master_index(text: str, *, forms: set[str] | None = None) -> list[DailyIndexEntry]:
     """Parse a ``master.<date>.idx`` file into entries, optionally filtered by form type.
 

@@ -11,6 +11,7 @@ from bulls.market_data.providers.sec_daily_index import (
     DailyIndexEntry,
     SecDailyIndexClient,
     accession_from_filename,
+    parse_acceptance_datetime,
     parse_master_index,
 )
 
@@ -143,3 +144,15 @@ def test_quarter_path() -> None:
     assert client.index_path(dt.date(2026, 2, 2)).endswith(
         "daily-index/2026/QTR1/master.20260202.idx"
     )
+
+
+def test_parse_acceptance_datetime_is_form_agnostic() -> None:
+    # Every dissemination file carries this header, Form 4 included — it is the point-in-time
+    # anchor signals are stamped with, so it must not be read only on the 13D/G path.
+    raw = b"<SEC-DOCUMENT>x\n<ACCEPTANCE-DATETIME>20260717163045\nCONFORMED SUBMISSION TYPE:\t4\n"
+    assert parse_acceptance_datetime(raw) == dt.datetime(2026, 7, 17, 16, 30, 45, tzinfo=dt.UTC)
+
+
+def test_parse_acceptance_datetime_returns_none_rather_than_guessing() -> None:
+    assert parse_acceptance_datetime(b"no header here") is None
+    assert parse_acceptance_datetime(b"<ACCEPTANCE-DATETIME>20261352999999") is None
