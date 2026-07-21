@@ -78,3 +78,15 @@ def test_parse_13dg_missing_subject_returns_none() -> None:
     # loudly (None -> parse_status failed) instead of emitting a half-row.
     broken = _FILING.replace("SUBJECT COMPANY:", "OTHER SECTION:")
     assert parse_13dg(broken.encode()) is None
+
+
+def test_parse_13dg_accepts_post_2025_schedule_label() -> None:
+    # EDGAR renamed CONFORMED SUBMISSION TYPE from "SC 13D"/"SC 13G" to "SCHEDULE
+    # 13D"/"SCHEDULE 13G" (confirmed live, including "SCHEDULE 13D/A" amendments)
+    # around 2024/2025 year-end. Both spellings must parse.
+    renamed = _FILING.replace(
+        "CONFORMED SUBMISSION TYPE:\tSC 13D", "CONFORMED SUBMISSION TYPE:\tSCHEDULE 13D/A"
+    )
+    filing = parse_13dg(renamed.encode())
+    assert filing is not None
+    assert filing.form == "SCHEDULE 13D/A"

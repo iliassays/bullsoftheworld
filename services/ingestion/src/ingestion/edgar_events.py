@@ -33,7 +33,24 @@ from bulls.market_data.providers.sec_form4 import parse_form4
 logger = logging.getLogger(__name__)
 
 # The event streams the research needs (institutional study, Phase 12 System A).
-TARGET_FORMS = frozenset({"4", "4/A", "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A"})
+# EDGAR's daily-index form label for Schedule 13D/G changed from "SC 13D"/"SC 13G"
+# to "SCHEDULE 13D"/"SCHEDULE 13G" (confirmed live: the last "SC 13D/A" appears
+# 2024-12-31, "SCHEDULE 13D/A" already alongside it that day, and exclusively from
+# 2025-01-02 on) -- both spellings are kept so historical and current data both match.
+TARGET_FORMS = frozenset(
+    {
+        "4",
+        "4/A",
+        "SC 13D",
+        "SC 13D/A",
+        "SC 13G",
+        "SC 13G/A",
+        "SCHEDULE 13D",
+        "SCHEDULE 13D/A",
+        "SCHEDULE 13G",
+        "SCHEDULE 13G/A",
+    }
+)
 
 _MAX_FILING_BYTES = 50 * 1024 * 1024
 

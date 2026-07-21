@@ -18,7 +18,20 @@ import re
 
 from pydantic import BaseModel
 
-_FORMS = {"SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A", "SCHEDULE 13D", "SCHEDULE 13G"}
+# EDGAR's CONFORMED SUBMISSION TYPE switched from "SC 13D"/"SC 13G" to "SCHEDULE
+# 13D"/"SCHEDULE 13G" around the 2024/2025 year-end (confirmed live, including
+# amendments -- e.g. accession 0000950170-25-022263 is header-labeled "SCHEDULE
+# 13D/A"). Both eras' spellings are kept so historical and current filings both parse.
+_FORMS = {
+    "SC 13D",
+    "SC 13D/A",
+    "SC 13G",
+    "SC 13G/A",
+    "SCHEDULE 13D",
+    "SCHEDULE 13D/A",
+    "SCHEDULE 13G",
+    "SCHEDULE 13G/A",
+}
 
 _ACCESSION_RE = re.compile(r"^ACCESSION NUMBER:\s*(\S+)", re.MULTILINE)
 _TYPE_RE = re.compile(r"^CONFORMED SUBMISSION TYPE:\s*(.+?)\s*$", re.MULTILINE)
