@@ -228,3 +228,99 @@ def rejection_summary(screened: Iterable[ScreenedCandidate]) -> dict[str, int]:
         for reason in item.rejection_reasons:
             tally[reason] = tally.get(reason, 0) + 1
     return dict(sorted(tally.items(), key=lambda pair: (-pair[1], pair[0])))
+
+
+class BookState(BaseModel):
+    """The book between sessions."""
+
+    positions: list[BookPosition] = Field(default_factory=list)
+
+
+class BookAdvance(BaseModel):
+    """One session's book decisions, with the full audit trail of what was refused."""
+
+    as_of: dt.datetime
+    state: BookState
+    target_weights: dict[str, float]
+    exits: list[ExitInstruction] = Field(default_factory=list)
+    entries: list[CandidateEvent] = Field(default_factory=list)
+    screened: list[ScreenedCandidate] = Field(default_factory=list)
+
+
+def advance_book(
+    *,
+    as_of: dt.datetime,
+    state: BookState,
+    new_candidates: Sequence[CandidateEvent],
+    market_state: dict[str, CandidateMarketState],
+    policy: BookPolicy,
+    thesis_breaks: dict[str, ExitReason] | None = None,
+) -> BookAdvance:
+    """Advance the event book by one session: exit first, then screen, then enter.
+
+    Order matters and is deliberate. Exits are resolved *before* entries so a name leaving the book
+    frees its slot the same session — otherwise a full book would refuse a fresh signal while
+    holding a position it had already decided to close. Nothing here looks at prices: this is the
+    book's intent, and execution (next-open fills, costs, ADV limits) is the engine's job.
+
+    Only candidates whose signal is already public as of ``as_of`` are considered; a future-stamped
+    event is dropped rather than traded, which is the point-in-time contract enforced at the book
+    boundary as well as the signal boundary.
+    """
+    exits = exits_due(state.positions, as_of=as_of, policy=policy, thesis_breaks=thesis_breaks)
+    exiting = {instruction.symbol for instruction in exits}
+    surviving = [p for p in state.positions if p.symbol not in exiting]
+
+    knowable = [c for c in new_candidates if c.signal_at <= as_of]
+    screened = screen_candidates(knowable, market_state, policy)
+    entries = plan_entries(screened, surviving, policy)
+
+    opened = [
+        BookPosition(symbol=entry.symbol, kind=entry.kind, opened_at=as_of, weight=0.0)
+        for entry in entries
+    ]
+    positions = surviving + opened
+    weights = target_weights(positions, [], policy)
+    positions = [p.model_copy(update={"weight": weights.get(p.symbol, 0.0)}) for p in positions]
+
+    return BookAdvance(
+        as_of=as_of,
+        state=BookState(positions=positions),
+        target_weights=weights,
+        exits=exits,
+        entries=entries,
+        screened=screened,
+    )
+
+
+def build_weight_schedule(
+    *,
+    sessions: Sequence[dt.datetime],
+    candidates_by_session: dict[dt.datetime, Sequence[CandidateEvent]],
+    market_state_by_session: dict[dt.datetime, dict[str, CandidateMarketState]],
+    policy: BookPolicy,
+    thesis_breaks_by_session: dict[dt.datetime, dict[str, ExitReason]] | None = None,
+) -> tuple[dict[dt.datetime, dict[str, float]], list[BookAdvance]]:
+    """Walk the book forward across sessions, returning the target-weight schedule and the trail.
+
+    The schedule is what the execution engine consumes; the advances are the evidence file — every
+    entry, exit and refusal, in order. Both are returned because a result without its rejections
+    is not reviewable (Phase 13.4).
+    """
+    breaks = thesis_breaks_by_session or {}
+    state = BookState()
+    schedule: dict[dt.datetime, dict[str, float]] = {}
+    advances: list[BookAdvance] = []
+    for session in sorted(sessions):
+        advance = advance_book(
+            as_of=session,
+            state=state,
+            new_candidates=candidates_by_session.get(session, ()),
+            market_state=market_state_by_session.get(session, {}),
+            policy=policy,
+            thesis_breaks=breaks.get(session),
+        )
+        state = advance.state
+        schedule[session] = advance.target_weights
+        advances.append(advance)
+    return schedule, advances

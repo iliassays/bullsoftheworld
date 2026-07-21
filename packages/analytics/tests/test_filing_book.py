@@ -9,8 +9,11 @@ import pytest
 from bulls.analytics.filing_book import (
     BookPolicy,
     BookPosition,
+    BookState,
     CandidateEvent,
     CandidateMarketState,
+    advance_book,
+    build_weight_schedule,
     exits_due,
     plan_entries,
     rejection_summary,
@@ -227,3 +230,102 @@ def test_cash_heavy_policy_is_legitimate_not_rejected() -> None:
     # A book that can only ever be 15% invested is a valid preregistered choice.
     policy = BookPolicy(max_position_pct=0.05, max_concurrent_positions=3)
     assert policy.max_concurrent_positions == 3
+
+
+# --- walking the book forward ---------------------------------------------------------------
+
+
+def _sessions(n: int) -> list[dt.datetime]:
+    return [_NOW + dt.timedelta(days=i) for i in range(n)]
+
+
+def test_advance_opens_a_position_and_weights_it() -> None:
+    advance = advance_book(
+        as_of=_NOW,
+        state=BookState(),
+        new_candidates=[_candidate("AAA")],
+        market_state={"AAA": _good_state()},
+        policy=_POLICY,
+    )
+    assert [p.symbol for p in advance.state.positions] == ["AAA"]
+    assert advance.target_weights == {"AAA": pytest.approx(0.05)}
+    assert advance.state.positions[0].weight == pytest.approx(0.05)
+
+
+def test_advance_ignores_signals_not_yet_public() -> None:
+    # A future-stamped event must not be traded: the point-in-time contract holds at the book
+    # boundary too, not only inside the signal layer.
+    future = _candidate("AAA")
+    future = future.model_copy(update={"signal_at": _NOW + dt.timedelta(days=5)})
+    advance = advance_book(
+        as_of=_NOW, state=BookState(), new_candidates=[future],
+        market_state={"AAA": _good_state()}, policy=_POLICY,
+    )
+    assert advance.state.positions == []
+    assert advance.entries == []
+
+
+def test_exit_frees_its_slot_in_the_same_session() -> None:
+    # A full book must not refuse a fresh signal while holding a name it already decided to close.
+    policy = BookPolicy(max_concurrent_positions=1)
+    held = BookState(
+        positions=[BookPosition(symbol="OLD", kind="activist_13d", opened_at=_NOW, weight=0.05)]
+    )
+    advance = advance_book(
+        as_of=_NOW,
+        state=held,
+        new_candidates=[_candidate("NEW")],
+        market_state={"NEW": _good_state()},
+        policy=policy,
+        thesis_breaks={"OLD": "stake_exit"},
+    )
+    assert [i.symbol for i in advance.exits] == ["OLD"]
+    assert [p.symbol for p in advance.state.positions] == ["NEW"]
+
+
+def test_schedule_holds_a_position_until_its_time_stop() -> None:
+    policy = BookPolicy(time_stop_days=3)
+    sessions = _sessions(6)
+    schedule, advances = build_weight_schedule(
+        sessions=sessions,
+        candidates_by_session={sessions[0]: [_candidate("AAA")]},
+        market_state_by_session={sessions[0]: {"AAA": _good_state()}},
+        policy=policy,
+    )
+    # Held from entry through to the time stop, then gone.
+    assert "AAA" in schedule[sessions[0]]
+    assert "AAA" in schedule[sessions[2]]
+    assert schedule[sessions[3]] == {}
+    assert any(e.reason == "time_stop" for a in advances for e in a.exits)
+
+
+def test_schedule_records_rejections_across_the_whole_run() -> None:
+    sessions = _sessions(2)
+    _, advances = build_weight_schedule(
+        sessions=sessions,
+        candidates_by_session={
+            sessions[0]: [_candidate("WIDE")],
+            sessions[1]: [_candidate("CROWDED")],
+        },
+        market_state_by_session={
+            sessions[0]: {"WIDE": _good_state(half_spread_bps=900.0)},
+            sessions[1]: {"CROWDED": _good_state(short_interest_pct_of_float=80.0)},
+        },
+        policy=_POLICY,
+    )
+    all_screened = [s for a in advances for s in a.screened]
+    assert rejection_summary(all_screened) == {
+        "crowded_short_interest": 1,
+        "spread_above_tradeable_gate": 1,
+    }
+    # Nothing was ever held.
+    assert all(a.target_weights == {} for a in advances)
+
+
+def test_empty_run_produces_an_empty_schedule_not_an_error() -> None:
+    sessions = _sessions(3)
+    schedule, advances = build_weight_schedule(
+        sessions=sessions, candidates_by_session={}, market_state_by_session={}, policy=_POLICY,
+    )
+    assert all(weights == {} for weights in schedule.values())
+    assert len(advances) == 3
