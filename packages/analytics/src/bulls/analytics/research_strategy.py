@@ -47,7 +47,7 @@ class StrategySecurity(BaseModel):
 
 
 class StrategyDefinition(BaseModel):
-    key: Literal["dse_reversal_v1", "us_breakout_v1"]
+    key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"]
     market: Literal["DSE", "US"]
     name: str
     methodology_version: str
@@ -291,6 +291,23 @@ STRATEGIES = {
 }
 
 
+STRATEGIES["us_factor_sleeve_v1"] = StrategyDefinition(
+    key="us_factor_sleeve_v1",
+    market="US",
+    name="US factor sleeve",
+    methodology_version="us-factor-sleeve-v1",
+    # A year of history is required before the 12-1 momentum leg exists at all.
+    minimum_lookback=252,
+    rebalance_sessions=21,
+    maximum_positions=40,
+    description=(
+        "Equal-weighted composite of value, momentum, quality and low-issuance ranks, "
+        "vol-scaled within 1/N bands. Weights are supplied by the factor sleeve rather than "
+        "computed from price features, so this strategy always runs from a weight schedule."
+    ),
+)
+
+
 RISK_POLICIES = {
     "DSE": PortfolioRiskPolicy(
         market="DSE",
@@ -497,15 +514,22 @@ def _performance_slice(
 def run_backtest(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"],
+    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"],
     securities: list[StrategySecurity],
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
     point_in_time_inputs_complete: bool = False,
     risk_policy: PortfolioRiskPolicy | None = None,
     half_spread_bps: HalfSpreadInput = None,
+    weight_schedule: dict[dt.date, dict[str, float]] | None = None,
 ) -> BacktestResult:
     """Run the registered strategy with next-session execution and deterministic risk gates.
+
+    ``weight_schedule`` drives event- and factor-driven books whose targets are decided outside
+    the price-feature engine (System A's filings book, System C's factor sleeve). When supplied,
+    the strategy's own signal is never consulted; targets are taken from the schedule on the dates
+    it specifies. Execution, costs, ADV limits and the drawdown ladder are identical either way,
+    which is the point of routing every book through one engine.
 
     ``half_spread_bps`` selects the trading-cost model (see ``HalfSpreadInput``); the default keeps
     the policy's flat slippage. The drawdown response is the two-rung ladder (halve then flatten);
@@ -724,6 +748,24 @@ def run_backtest(
             interventions.append(
                 RiskIntervention(date=date, rule="drawdown_ladder_flatten", detail=ladder_action.detail)
             )
+        elif weight_schedule is not None:
+            scheduled = weight_schedule.get(date)
+            if scheduled is not None and pending_weights is None:
+                latest_target_weights = dict(scheduled)
+                if ladder_action.gross_multiplier < 1.0:
+                    pending_weights = {
+                        code: round(weight * ladder_action.gross_multiplier, 6)
+                        for code, weight in latest_target_weights.items()
+                    }
+                    pending_reason = "scheduled weights (halved by drawdown ladder)"
+                    interventions.append(
+                        RiskIntervention(
+                            date=date, rule="drawdown_ladder_halve", detail=ladder_action.detail
+                        )
+                    )
+                else:
+                    pending_weights = latest_target_weights
+                    pending_reason = "externally scheduled target weights"
         elif (
             session_index >= strategy.minimum_lookback
             and session_index % strategy.rebalance_sessions == 0
@@ -832,7 +874,7 @@ class CostTieredBacktest(BaseModel):
 def run_cost_tiered_backtest(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"],
+    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"],
     securities: list[StrategySecurity],
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
@@ -950,7 +992,7 @@ def run_cost_tiered_backtest(
 def advance_shadow_portfolio(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"],
+    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"],
     securities: list[StrategySecurity],
     previous: ShadowState,
     target_weights: dict[str, float],
