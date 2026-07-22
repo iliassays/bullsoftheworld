@@ -99,6 +99,11 @@ class SleevePolicy(BaseModel):
     weight_band_high: float = Field(default=1.5, ge=1.0)
     # A security must have at least this many of the four factors to be ranked at all.
     minimum_factors: int = Field(default=3, ge=1, le=4)
+    # Turnover budget (Phase 12, binding): a held name is retained while it stays inside the top
+    # ``target_positions * hold_rank_multiple``. Without this the book replaces itself every
+    # rebalance and pays the spread each time -- the premia's documented cost-survival depends on
+    # patient implementation (Keim), so impatience is a spec violation, not a tuning choice.
+    hold_rank_multiple: float = Field(default=1.5, ge=1.0, le=3.0)
 
 
 def point_in_time_fundamentals(
@@ -261,6 +266,34 @@ def rank_universe(
         )
     ranked.sort(key=lambda item: (-item.composite, item.code))
     return ranked
+
+
+def select_with_turnover_buffer(
+    ranked: Sequence[RankedSecurity],
+    *,
+    current_holdings: Sequence[str] = (),
+    policy: SleevePolicy | None = None,
+) -> list[RankedSecurity]:
+    """Choose the book with a hold buffer, so names are not churned on rank noise.
+
+    A name already held is kept while it remains inside the wider retention band; only when it
+    falls outside is it replaced, and vacancies are filled from the strongest names not yet held.
+    This is the turnover budget Phase 12 requires -- a strategy that re-cuts every position monthly
+    pays the spread twelve times a year and hands its premium to the market maker.
+    """
+    policy = policy or SleevePolicy()
+    target = policy.target_positions
+    retention_limit = int(target * policy.hold_rank_multiple)
+    held = set(current_holdings)
+
+    retained = [item for item in ranked[:retention_limit] if item.code in held][:target]
+    retained_codes = {item.code for item in retained}
+    room = target - len(retained)
+    incoming = [item for item in ranked if item.code not in retained_codes and item.code not in held]
+    selected = retained + incoming[:room]
+    # Rank order keeps the book deterministic regardless of how it was assembled.
+    selected.sort(key=lambda item: (-item.composite, item.code))
+    return selected
 
 
 def sleeve_weights(

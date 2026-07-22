@@ -27,6 +27,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from bulls.analytics.cost_observatory import estimate_spread
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
 from bulls.analytics.factor_sleeve import (
     FundamentalFact,
@@ -37,6 +38,7 @@ from bulls.analytics.factor_sleeve import (
     equal_weight_null,
     point_in_time_fundamentals,
     rank_universe,
+    select_with_turnover_buffer,
     single_factor_null,
     sleeve_weights,
 )
@@ -100,6 +102,29 @@ async def _load(max_symbols: int) -> tuple[dict[str, list[DailyBar]], list[Funda
     return bars, facts
 
 
+def _tradeable_universe(
+    bars: dict[str, list[StrategyBar]], max_half_spread_bps: float
+) -> tuple[set[str], dict[str, float]]:
+    """Phase 12's tradeable gate: measured half-spread ceiling, not an alphabetical slice.
+
+    The spread is measured from each name's own high/low history (Corwin-Schultz), so the gate is
+    a cost fact rather than an assumption. Names we cannot measure are excluded -- omit over
+    mislead -- because an unpriceable name is one we cannot claim to have traded.
+    """
+    keep: set[str] = set()
+    measured: dict[str, float] = {}
+    for code, history in bars.items():
+        estimate = estimate_spread(
+            code, [b.high for b in history], [b.low for b in history]
+        )
+        if estimate is None:
+            continue
+        measured[code] = round(estimate.half_spread_bps, 2)
+        if estimate.half_spread_bps <= max_half_spread_bps:
+            keep.add(code)
+    return keep, measured
+
+
 def _build_schedule(
     bars: dict[str, list[StrategyBar]],
     facts: list[FundamentalFact],
@@ -113,6 +138,7 @@ def _build_schedule(
     selected_counts: list[int] = []
     null_schedule: dict[dt.date, dict[str, float]] = {}
     momentum_schedule: dict[dt.date, dict[str, float]] = {}
+    holdings: set[str] = set()
 
     for index, as_of in enumerate(sessions):
         if index < 252 or index % _REBALANCE_SESSIONS != 0:
@@ -139,7 +165,12 @@ def _build_schedule(
         ranked = rank_universe(scores, policy)
         if not ranked:
             continue
-        weights = sleeve_weights(ranked, policy)
+        # Turnover budget: keep what is still good rather than re-cutting the book monthly.
+        selected = select_with_turnover_buffer(
+            ranked, current_holdings=sorted(holdings), policy=policy
+        )
+        weights = sleeve_weights(selected, policy)
+        holdings = set(weights)
         schedule[as_of] = weights
         null_schedule[as_of] = equal_weight_null([r.code for r in ranked[: policy.target_positions]])
         momentum_schedule[as_of] = single_factor_null(scores, "momentum", policy)
@@ -177,6 +208,11 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     bars, facts = await _load(args.max_symbols)
     if not bars:
         return {"error": "no price history available for the selected universe"}
+    tradeable, measured_spreads = _tradeable_universe(bars, args.max_half_spread_bps)
+    excluded = len(bars) - len(tradeable)
+    bars = {code: history for code, history in bars.items() if code in tradeable}
+    if not bars:
+        return {"error": "no security cleared the tradeable spread gate"}
     sessions = sorted({b.date for history in bars.values() for b in history if b.date >= args.start})
     policy = SleevePolicy(target_positions=args.positions)
     schedule, diagnostics = _build_schedule(bars, facts, sessions, policy)
@@ -195,6 +231,8 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     common = dict(
         market="US", strategy_key="us_factor_sleeve_v1", securities=securities,
         risk_policy=RISK_POLICIES["US"],
+        # Charge each name its own measured half-spread rather than one assumed rate.
+        half_spread_bps={c: b for c, b in measured_spreads.items() if c in bars},
     )
     # The sleeve, then the two nulls it must beat, all through the same engine (13.3.4).
     sleeve = run_backtest(**common, weight_schedule=schedule)
@@ -203,6 +241,10 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 
     report = {
         "universe_symbols": len(bars),
+        "excluded_by_spread_gate": excluded,
+        "median_half_spread_bps": round(
+            sorted(measured_spreads.values())[len(measured_spreads) // 2], 2
+        ) if measured_spreads else None,
         "sessions": len(sessions),
         "rebalances": diagnostics["rebalances"],
         "avg_ranked_per_rebalance": diagnostics["avg_ranked"],
@@ -233,6 +275,10 @@ def main() -> None:
     parser.add_argument("--start", type=dt.date.fromisoformat, default=dt.date(2023, 1, 1))
     parser.add_argument("--max-symbols", type=int, default=400)
     parser.add_argument("--positions", type=int, default=40)
+    parser.add_argument(
+        "--max-half-spread-bps", type=float, default=50.0,
+        help="tradeable gate: exclude names whose measured half-spread exceeds this",
+    )
     parser.add_argument(
         "--trials", type=int, default=1,
         help="specifications tried in this family; raises the overfitting bar",
