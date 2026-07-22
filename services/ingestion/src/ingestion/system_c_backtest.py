@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import bisect
 import datetime as dt
 import json
 import sys
@@ -125,6 +126,13 @@ def _tradeable_universe(
     return keep, measured
 
 
+def _facts_by_code(facts: list[FundamentalFact]) -> dict[str, list[FundamentalFact]]:
+    grouped: dict[str, list[FundamentalFact]] = {}
+    for fact in facts:
+        grouped.setdefault(fact.code, []).append(fact)
+    return grouped
+
+
 def _build_schedule(
     bars: dict[str, list[StrategyBar]],
     facts: list[FundamentalFact],
@@ -140,21 +148,31 @@ def _build_schedule(
     momentum_schedule: dict[dt.date, dict[str, float]] = {}
     holdings: set[str] = set()
 
+    # One pass to build sorted date/price arrays per symbol, so each rebalance is a bisect
+    # rather than a full rescan. This is what makes the full-universe, full-history run feasible.
+    prepared = {
+        code: (
+            [b.date for b in history],
+            [PricePoint(date=b.date, close=b.close) for b in history],
+        )
+        for code, history in bars.items()
+    }
+
     for index, as_of in enumerate(sessions):
         if index < 252 or index % _REBALANCE_SESSIONS != 0:
             continue
         current = point_in_time_fundamentals(facts, as_of=as_of)
         prior = point_in_time_fundamentals(facts, as_of=as_of - dt.timedelta(days=365))
         scores = []
-        for code, history in bars.items():
-            window = [b for b in history if b.date <= as_of]
-            if len(window) < 253:
+        for code, (dates, points) in prepared.items():
+            cut = bisect.bisect_right(dates, as_of)
+            if cut < 253:
                 continue
             scores.append(
                 compute_factor_scores(
                     SecurityFactorInputs(
                         code=code,
-                        prices=[PricePoint(date=b.date, close=b.close) for b in window],
+                        prices=points[:cut],
                         fundamentals=current.get(code, {}),
                         prior_fundamentals=prior.get(code, {}),
                     )
