@@ -52,6 +52,12 @@ class BookPolicy(BaseModel):
     # hidden. Set True only once a real short-interest feed exists.
     screen_crowding: bool = True
     minimum_market_cap_mn: float = Field(default=50.0, ge=0)
+    # Market cap is a *secondary* tradeability gate -- the measured spread is the primary one. When
+    # False, a name with no shares-outstanding data is not rejected for that alone (the spread gate
+    # still protects us); a name whose cap IS known and below the floor is still rejected. Set True
+    # to demand cap data on every name. Coverage of shares-outstanding is ~50%, so requiring it
+    # discards good candidates for a data gap rather than a real disqualification.
+    require_market_cap: bool = True
     # The documented drift horizon; beyond it the evidence is silent, so the book does not hold.
     time_stop_days: int = Field(default=365, ge=1)
 
@@ -133,7 +139,8 @@ def screen_candidates(
                     reasons.append("crowded_short_interest")
 
             if state.market_cap_mn is None:
-                reasons.append("market_cap_unknown")
+                if policy.require_market_cap:
+                    reasons.append("market_cap_unknown")
             elif state.market_cap_mn < policy.minimum_market_cap_mn:
                 reasons.append("below_market_cap_floor")
         screened.append(

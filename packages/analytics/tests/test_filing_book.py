@@ -349,3 +349,22 @@ def test_crowding_screen_still_fires_when_enabled() -> None:
         half_spread_bps=20.0, short_interest_pct_of_float=None, market_cap_mn=500.0
     )}
     assert "short_interest_unknown" in screen_candidates([_candidate("AAA")], state, policy)[0].rejection_reasons
+
+
+def test_market_cap_can_be_a_secondary_gate() -> None:
+    # require_market_cap=False: unknown cap passes on the spread gate, but a KNOWN sub-floor cap
+    # still rejects. The measured spread is the primary tradeability test.
+    policy = BookPolicy(require_market_cap=False)
+    unknown = CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_float=3.0, market_cap_mn=None)
+    tiny = CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_float=3.0, market_cap_mn=5.0)
+    results = {r.candidate.symbol: r for r in screen_candidates(
+        [_candidate("UNKNOWN"), _candidate("TINY")],
+        {"UNKNOWN": unknown, "TINY": tiny}, policy)}
+    assert results["UNKNOWN"].accepted is True
+    assert "market_cap_unknown" not in results["UNKNOWN"].rejection_reasons
+    assert "below_market_cap_floor" in results["TINY"].rejection_reasons
+
+
+def test_market_cap_required_by_default() -> None:
+    state = {"AAA": CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_float=3.0, market_cap_mn=None)}
+    assert "market_cap_unknown" in screen_candidates([_candidate("AAA")], state, BookPolicy())[0].rejection_reasons

@@ -72,6 +72,7 @@ from bulls.core.models import (
     InsiderTransaction,
     OwnershipStakeEvent,
     SecFinancialFact,
+    SecurityMaster,
 )
 
 # Documented multi-campaign activists (Phase 1/9 tier). Filer selection IS the strategy: the
@@ -94,7 +95,13 @@ async def _load_events(start: dt.date):
             select(InsiderTransaction.owner_cik, InsiderTransaction.transaction_date)
             .where(InsiderTransaction.transaction_date.is_not(None))
         ))
-        # CIK -> symbol bridge from the insider table's own paired columns.
+        # CIK -> symbol bridge. The security master is the authoritative source (it resolves
+        # activist 13D targets that never appear in the insider stream); the insider table's own
+        # paired columns are a fallback for anything the master is missing.
+        master_rows = list(await s.execute(
+            select(SecurityMaster.cik, SecurityMaster.symbol)
+            .where(SecurityMaster.market == "US", SecurityMaster.cik.is_not(None))
+        ))
         bridge_rows = list(await s.execute(
             select(distinct(InsiderTransaction.issuer_cik), InsiderTransaction.issuer_symbol)
             .where(InsiderTransaction.issuer_symbol.is_not(None))
@@ -127,7 +134,7 @@ async def _load_events(start: dt.date):
             .where(OwnershipStakeEvent.form.like("%13D%"),
                    OwnershipStakeEvent.accepted_at.is_not(None))
         ))
-    return class_rows, bridge_rows, purchase_rows, stake_rows
+    return class_rows, master_rows, bridge_rows, purchase_rows, stake_rows
 
 
 async def _load_prices(codes: list[str], start: dt.date):
@@ -154,14 +161,16 @@ async def _load_prices(codes: list[str], start: dt.date):
     return bar_rows, fact_rows
 
 
-def _candidates(class_rows, bridge_rows, purchase_rows, stake_rows, *, start):
+def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows, *, start):
     # Routine/opportunistic per insider, from the light projection.
     owner_dates: dict[int, list[dt.date]] = defaultdict(list)
     for owner_cik, txn_date in class_rows:
         owner_dates[owner_cik].append(txn_date)
     classes = {owner: classify_insider(dates) for owner, dates in owner_dates.items()}
 
+    # Security master first (authoritative), then the insider pairs fill any gaps.
     cik_to_symbol = {cik: sym for cik, sym in bridge_rows if sym}
+    cik_to_symbol.update({cik: sym for cik, sym in master_rows if sym})
 
     trades = [
         InsiderTrade(
@@ -230,9 +239,9 @@ def _market_state_on(symbol, as_of, spreads, bars, pit_shares) -> CandidateMarke
 
 
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
-    class_rows, bridge_rows, purchase_rows, stake_rows = await _load_events(args.start)
+    class_rows, master_rows, bridge_rows, purchase_rows, stake_rows = await _load_events(args.start)
     candidates, diag = _candidates(
-        class_rows, bridge_rows, purchase_rows, stake_rows, start=args.start
+        class_rows, master_rows, bridge_rows, purchase_rows, stake_rows, start=args.start
     )
     if not candidates:
         return {"error": "no candidate events", "diagnostics": diag}
@@ -260,6 +269,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         max_position_pct=0.05, max_concurrent_positions=args.max_positions,
         max_half_spread_bps=args.max_half_spread_bps, minimum_market_cap_mn=100.0,
         time_stop_days=args.time_stop_days, screen_crowding=False,
+        require_market_cap=False,  # spread gate is primary; cap floor applies only when known
     )
 
     by_session: dict[dt.datetime, list[CandidateEvent]] = defaultdict(list)
@@ -316,6 +326,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         "rejections": rejection_summary(all_screened),
         "caveats": [
             "Crowding screen DISABLED: no short-interest-vs-float feed. Book ran two of three gates.",
+            "Market-cap floor is secondary: applied where shares data exists (~50% coverage), spread gate primary.",
             "Benchmark comparison omitted: the engine benchmark is a biased arithmetic-mean series.",
             "Activist roster is a hand-curated allow-list; coverage of the true activist set is partial.",
         ],
