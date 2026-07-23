@@ -14,9 +14,14 @@ Point-in-time throughout: every event is stamped with its EDGAR *acceptance* tim
 transaction date, and market-cap uses only fundamentals filed by the signal date. Read-only:
 nothing is placed, nothing persisted.
 
+**Two-phase and memory-lean by design.** The insider table holds ~1.7M rows and the market has
+~11k symbols; materialising all of that as objects OOMs the box. So classification runs off a
+light (owner, date) projection, only P-code purchases in the window are hydrated, and prices are
+loaded for exactly the few hundred names that actually become candidates -- never the whole market.
+
 Honest limitation carried into the output: the crowding screen is disabled because we ingest
-short *volume*, not short interest as a percent of float. The book therefore runs with two of its
-three entry gates. This is a recorded gap, not a silent one.
+short *volume*, not short interest as a percent of float. The book runs two of its three entry
+gates. This is a recorded gap, not a silent one.
 
 Usage::
 
@@ -33,7 +38,7 @@ import sys
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import distinct, select
 
 from bulls.analytics.cost_observatory import estimate_spread
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
@@ -50,7 +55,7 @@ from bulls.analytics.filing_signals import (
     ActivistEvent,
     ActivistRoster,
     InsiderTrade,
-    classify_insiders,
+    classify_insider,
     detect_clusters,
     qualifying_activist_events,
     qualifying_purchases,
@@ -79,11 +84,24 @@ _ACTIVIST_FRAGMENTS = (
 )
 
 
-async def _load(start: dt.date, max_symbols: int | None):
+async def _load_events(start: dt.date):
+    """Phase 1: everything needed to decide candidates, without touching prices."""
     sm = get_sessionmaker()
     async with sm() as s:
-        # Insider transactions joined to their dissemination time (accepted_at).
-        insider_rows = list(await s.execute(
+        # Light projection for routine/opportunistic classification: the pattern lives in an
+        # insider's full trade calendar, so we need every date but only the date and owner.
+        class_rows = list(await s.execute(
+            select(InsiderTransaction.owner_cik, InsiderTransaction.transaction_date)
+            .where(InsiderTransaction.transaction_date.is_not(None))
+        ))
+        # CIK -> symbol bridge from the insider table's own paired columns.
+        bridge_rows = list(await s.execute(
+            select(distinct(InsiderTransaction.issuer_cik), InsiderTransaction.issuer_symbol)
+            .where(InsiderTransaction.issuer_symbol.is_not(None))
+        ))
+        # Only open-market purchases disseminated in the window can become candidates; hydrate
+        # just those (a small fraction of the 1.7M rows).
+        purchase_rows = list(await s.execute(
             select(
                 InsiderTransaction.issuer_cik, InsiderTransaction.issuer_symbol,
                 InsiderTransaction.owner_cik, InsiderTransaction.transaction_date,
@@ -94,7 +112,10 @@ async def _load(start: dt.date, max_symbols: int | None):
             )
             .join(EdgarFilingEvent,
                   EdgarFilingEvent.accession_number == InsiderTransaction.accession_number)
-            .where(InsiderTransaction.transaction_date.is_not(None))
+            .where(InsiderTransaction.code == "P",
+                   InsiderTransaction.transaction_date.is_not(None),
+                   EdgarFilingEvent.accepted_at.is_not(None),
+                   EdgarFilingEvent.accepted_at >= start - dt.timedelta(days=45))
         ))
         stake_rows = list(await s.execute(
             select(
@@ -106,15 +127,17 @@ async def _load(start: dt.date, max_symbols: int | None):
             .where(OwnershipStakeEvent.form.like("%13D%"),
                    OwnershipStakeEvent.accepted_at.is_not(None))
         ))
-        # System A only ever trades names that appear as filing events -- not the whole 11k-symbol
-        # market. Load bars for every symbol with insider activity (this also covers the activist
-        # targets, whose symbols are resolved from the same insider issuer pairs), chunked so no
-        # single query times out pulling millions of irrelevant rows.
-        candidate_codes = sorted({r.issuer_symbol for r in insider_rows if r.issuer_symbol})
-        bar_rows = []
-        fact_rows = []
-        for chunk_start in range(0, len(candidate_codes), 500):
-            chunk = candidate_codes[chunk_start : chunk_start + 500]
+    return class_rows, bridge_rows, purchase_rows, stake_rows
+
+
+async def _load_prices(codes: list[str], start: dt.date):
+    """Phase 2: bars + shares only for the names that became candidates, chunked."""
+    sm = get_sessionmaker()
+    bar_rows: list = []
+    fact_rows: list = []
+    async with sm() as s:
+        for i in range(0, len(codes), 400):
+            chunk = codes[i : i + 400]
             bar_rows += list(await s.execute(
                 select(DailyBar.code, DailyBar.date, DailyBar.open, DailyBar.high,
                        DailyBar.low, DailyBar.close, DailyBar.volume)
@@ -128,24 +151,18 @@ async def _load(start: dt.date, max_symbols: int | None):
                 .where(SecFinancialFact.market == "US", SecFinancialFact.code.in_(chunk),
                        SecFinancialFact.metric == "shares_outstanding")
             ))
-    return insider_rows, stake_rows, bar_rows, fact_rows
+    return bar_rows, fact_rows
 
 
-def _build(insider_rows, stake_rows, bar_rows, fact_rows, *, start, max_symbols):
-    bars: dict[str, list[StrategyBar]] = defaultdict(list)
-    for code, d, o, h, low, cl, v in bar_rows:
-        if None in (o, h, low, cl) or min(o, h, low, cl) <= 0:
-            continue
-        bars[code].append(StrategyBar(date=d, open=o, high=h, low=low, close=cl, volume=int(v or 0)))
-    price_codes = set(bars)
+def _candidates(class_rows, bridge_rows, purchase_rows, stake_rows, *, start):
+    # Routine/opportunistic per insider, from the light projection.
+    owner_dates: dict[int, list[dt.date]] = defaultdict(list)
+    for owner_cik, txn_date in class_rows:
+        owner_dates[owner_cik].append(txn_date)
+    classes = {owner: classify_insider(dates) for owner, dates in owner_dates.items()}
 
-    # CIK -> symbol bridge, learned from the insider table's own paired columns.
-    cik_to_symbol: dict[int, str] = {}
-    for row in insider_rows:
-        if row.issuer_symbol and row.issuer_symbol in price_codes:
-            cik_to_symbol.setdefault(row.issuer_cik, row.issuer_symbol)
+    cik_to_symbol = {cik: sym for cik, sym in bridge_rows if sym}
 
-    # --- insider sleeve ---
     trades = [
         InsiderTrade(
             issuer_cik=r.issuer_cik, issuer_symbol=r.issuer_symbol, owner_cik=r.owner_cik,
@@ -154,24 +171,19 @@ def _build(insider_rows, stake_rows, bar_rows, fact_rows, *, start, max_symbols)
             is_10b5_1_plan=r.is_10b5_1_plan, is_officer=r.is_officer,
             is_director=r.is_director, is_ten_percent_owner=r.is_ten_percent_owner,
         )
-        for r in insider_rows if r.accepted_at is not None
+        for r in purchase_rows
     ]
-    classes = classify_insiders(trades)
-    purchases = [t for t in qualifying_purchases(trades, classes)
-                 if t.issuer_symbol in price_codes]
+    purchases = [t for t in qualifying_purchases(trades, classes) if t.issuer_symbol]
     clusters = detect_clusters(purchases, window_days=30, minimum_insiders=1)
-
     insider_candidates = [
         CandidateEvent(
             symbol=c.issuer_symbol, issuer_cik=c.issuer_cik, kind="insider_cluster",
             signal_at=c.signal_at,
-            # Rank clusters: more insiders and officer participation are the stronger signal.
             strength=c.distinct_insiders + (0.5 if c.includes_officer_or_director else 0.0),
         )
         for c in clusters if c.issuer_symbol and c.signal_at.date() >= start
     ]
 
-    # --- activist sleeve ---
     roster = ActivistRoster(name_fragments=_ACTIVIST_FRAGMENTS)
     activist_events = [
         ActivistEvent(
@@ -185,39 +197,24 @@ def _build(insider_rows, stake_rows, bar_rows, fact_rows, *, start, max_symbols)
     activist_candidates = [
         CandidateEvent(
             symbol=cik_to_symbol[e.subject_cik], issuer_cik=e.subject_cik, kind="activist_13d",
-            signal_at=e.signal_at, strength=5.0,  # activist events outrank insider clusters
+            signal_at=e.signal_at, strength=5.0,
         )
         for e in qualifying_activist_events(activist_events, roster)
         if e.subject_cik in cik_to_symbol and e.signal_at.date() >= start
     ]
 
     candidates = insider_candidates + activist_candidates
-
-    # --- point-in-time market state: measured spread + market cap ---
-    spreads: dict[str, float] = {}
-    for code in {c.symbol for c in candidates}:
-        history = bars.get(code)
-        if not history:
-            continue
-        est = estimate_spread(code, [b.high for b in history], [b.low for b in history])
-        if est is not None:
-            spreads[code] = est.half_spread_bps
-    facts = [FundamentalFact(code=c, metric="shares_outstanding", value=v, period_end=pe, filed_at=fa)
-             for c, v, pe, fa in fact_rows]
-
-    return bars, candidates, spreads, facts, {
-        "insider_trades": len(trades),
+    diag = {
+        "classified_insiders": len(classes),
         "opportunistic_purchases": len(purchases),
         "insider_clusters": len(insider_candidates),
         "activist_events": len(activist_candidates),
         "cik_symbol_bridge": len(cik_to_symbol),
     }
+    return candidates, diag
 
 
-def _market_state_on(
-    symbol: str, as_of: dt.date, spreads: dict[str, float],
-    bars: dict[str, list[StrategyBar]], pit_shares: dict[str, dict[str, float]],
-) -> CandidateMarketState:
+def _market_state_on(symbol, as_of, spreads, bars, pit_shares) -> CandidateMarketState:
     close = None
     for b in bars.get(symbol, []):
         if b.date <= as_of:
@@ -225,29 +222,46 @@ def _market_state_on(
         else:
             break
     shares = pit_shares.get(symbol, {}).get("shares_outstanding")
-    market_cap_mn = (close * shares / 1_000_000) if close and shares else None
     return CandidateMarketState(
         half_spread_bps=spreads.get(symbol),
-        short_interest_pct_of_float=None,  # screen disabled (no SI-vs-float feed)
-        market_cap_mn=market_cap_mn,
+        short_interest_pct_of_float=None,
+        market_cap_mn=(close * shares / 1_000_000) if close and shares else None,
     )
 
 
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
-    insider_rows, stake_rows, bar_rows, fact_rows = await _load(args.start, args.max_symbols)
-    bars, candidates, spreads, facts, diag = _build(
-        insider_rows, stake_rows, bar_rows, fact_rows, start=args.start, max_symbols=args.max_symbols
+    class_rows, bridge_rows, purchase_rows, stake_rows = await _load_events(args.start)
+    candidates, diag = _candidates(
+        class_rows, bridge_rows, purchase_rows, stake_rows, start=args.start
     )
     if not candidates:
         return {"error": "no candidate events", "diagnostics": diag}
 
+    codes = sorted({c.symbol for c in candidates})
+    bar_rows, fact_rows = await _load_prices(codes, args.start)
+    bars: dict[str, list[StrategyBar]] = defaultdict(list)
+    for code, d, o, h, low, cl, v in bar_rows:
+        if None in (o, h, low, cl) or min(o, h, low, cl) <= 0:
+            continue
+        bars[code].append(StrategyBar(date=d, open=o, high=h, low=low, close=cl, volume=int(v or 0)))
+    facts = [FundamentalFact(code=c, metric="shares_outstanding", value=v, period_end=pe, filed_at=fa)
+             for c, v, pe, fa in fact_rows]
+
+    spreads: dict[str, float] = {}
+    for code in codes:
+        history = bars.get(code)
+        if not history:
+            continue
+        est = estimate_spread(code, [b.high for b in history], [b.low for b in history])
+        if est is not None:
+            spreads[code] = est.half_spread_bps
+
     policy = BookPolicy(
         max_position_pct=0.05, max_concurrent_positions=args.max_positions,
         max_half_spread_bps=args.max_half_spread_bps, minimum_market_cap_mn=100.0,
-        time_stop_days=args.time_stop_days, screen_crowding=False,  # no SI feed -> documented gap
+        time_stop_days=args.time_stop_days, screen_crowding=False,
     )
 
-    # Group candidates by signal session; screen each with point-in-time market state.
     by_session: dict[dt.datetime, list[CandidateEvent]] = defaultdict(list)
     for c in candidates:
         by_session[c.signal_at].append(c)
@@ -266,23 +280,20 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         sessions=sessions, candidates_by_session=by_session,
         market_state_by_session=market_state_by_session, policy=policy,
     )
-    # The engine schedules on calendar dates; collapse the intraday signal stamps to dates.
-    schedule: dict[dt.date, dict[str, float]] = {}
-    for when, weights in schedule_dt.items():
-        schedule[when.date()] = weights
-    held_symbols = {s for w in schedule.values() for s in w}
-    if not held_symbols:
+    schedule: dict[dt.date, dict[str, float]] = {w.date(): weights for w, weights in schedule_dt.items()}
+    held = {s for w in schedule.values() for s in w}
+    if not held:
         return {"error": "no position ever cleared the gates", "diagnostics": diag,
                 "rejections": rejection_summary(all_screened)}
 
     securities = [
         StrategySecurity(code=code, bars=[b for b in bars[code] if b.date >= args.start])
-        for code in held_symbols if len(bars.get(code, [])) >= 30
+        for code in held if len(bars.get(code, [])) >= 30
     ]
     result = run_backtest(
-        market="US", strategy_key="us_breakout_v1",  # engine identity only; weights come from schedule
-        securities=securities, weight_schedule=schedule,
-        half_spread_bps={c: spreads[c] for c in held_symbols if c in spreads},
+        market="US", strategy_key="us_breakout_v1", securities=securities,
+        weight_schedule=schedule,
+        half_spread_bps={c: spreads[c] for c in held if c in spreads},
     )
     navs = [p.nav for p in result.equity_curve]
     returns = [navs[i] / navs[i - 1] - 1 for i in range(1, len(navs)) if navs[i - 1] > 0]
@@ -293,7 +304,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         "window": {"start": str(args.start), "sessions_traded": len(navs)},
         "diagnostics": diag,
         "book": {
-            "distinct_names_held": len(held_symbols),
+            "distinct_names_held": len(held),
             "rebalance_days": len(schedule),
             "trades": len(result.trades),
             "net_return_pct": round((result.final_nav / result.initial_capital - 1) * 100, 2),
@@ -314,7 +325,6 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--start", type=dt.date.fromisoformat, default=dt.date(2021, 7, 1))
-    p.add_argument("--max-symbols", type=int, default=None)
     p.add_argument("--max-positions", type=int, default=20)
     p.add_argument("--max-half-spread-bps", type=float, default=100.0)
     p.add_argument("--time-stop-days", type=int, default=365)
