@@ -106,18 +106,28 @@ async def _load(start: dt.date, max_symbols: int | None):
             .where(OwnershipStakeEvent.form.like("%13D%"),
                    OwnershipStakeEvent.accepted_at.is_not(None))
         ))
-        bar_rows = list(await s.execute(
-            select(DailyBar.code, DailyBar.date, DailyBar.open, DailyBar.high,
-                   DailyBar.low, DailyBar.close, DailyBar.volume)
-            .where(DailyBar.market == "US", DailyBar.date >= start - dt.timedelta(days=400))
-            .order_by(DailyBar.code, DailyBar.date)
-        ))
-        fact_rows = list(await s.execute(
-            select(SecFinancialFact.code, SecFinancialFact.value,
-                   SecFinancialFact.period_end, SecFinancialFact.filed_at)
-            .where(SecFinancialFact.market == "US",
-                   SecFinancialFact.metric == "shares_outstanding")
-        ))
+        # System A only ever trades names that appear as filing events -- not the whole 11k-symbol
+        # market. Load bars for every symbol with insider activity (this also covers the activist
+        # targets, whose symbols are resolved from the same insider issuer pairs), chunked so no
+        # single query times out pulling millions of irrelevant rows.
+        candidate_codes = sorted({r.issuer_symbol for r in insider_rows if r.issuer_symbol})
+        bar_rows = []
+        fact_rows = []
+        for chunk_start in range(0, len(candidate_codes), 500):
+            chunk = candidate_codes[chunk_start : chunk_start + 500]
+            bar_rows += list(await s.execute(
+                select(DailyBar.code, DailyBar.date, DailyBar.open, DailyBar.high,
+                       DailyBar.low, DailyBar.close, DailyBar.volume)
+                .where(DailyBar.market == "US", DailyBar.code.in_(chunk),
+                       DailyBar.date >= start - dt.timedelta(days=400))
+                .order_by(DailyBar.code, DailyBar.date)
+            ))
+            fact_rows += list(await s.execute(
+                select(SecFinancialFact.code, SecFinancialFact.value,
+                       SecFinancialFact.period_end, SecFinancialFact.filed_at)
+                .where(SecFinancialFact.market == "US", SecFinancialFact.code.in_(chunk),
+                       SecFinancialFact.metric == "shares_outstanding")
+            ))
     return insider_rows, stake_rows, bar_rows, fact_rows
 
 
