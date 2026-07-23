@@ -161,7 +161,7 @@ async def _load_prices(codes: list[str], start: dt.date):
     return bar_rows, fact_rows
 
 
-def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows, *, start):
+def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows, *, start, sleeve):
     # Routine/opportunistic per insider, from the light projection.
     owner_dates: dict[int, list[dt.date]] = defaultdict(list)
     for owner_cik, txn_date in class_rows:
@@ -212,8 +212,16 @@ def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows,
         if e.subject_cik in cik_to_symbol and e.signal_at.date() >= start
     ]
 
-    candidates = insider_candidates + activist_candidates
+    # Sleeve isolation: the two signals differ in kind and volume (thousands of insider clusters
+    # vs dozens of activist 13Ds), so testing each alone answers a distinct pre-registered claim.
+    if sleeve == "insider":
+        candidates = insider_candidates
+    elif sleeve == "activist":
+        candidates = activist_candidates
+    else:
+        candidates = insider_candidates + activist_candidates
     diag = {
+        "sleeve": sleeve,
         "classified_insiders": len(classes),
         "opportunistic_purchases": len(purchases),
         "insider_clusters": len(insider_candidates),
@@ -241,7 +249,8 @@ def _market_state_on(symbol, as_of, spreads, bars, pit_shares) -> CandidateMarke
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     class_rows, master_rows, bridge_rows, purchase_rows, stake_rows = await _load_events(args.start)
     candidates, diag = _candidates(
-        class_rows, master_rows, bridge_rows, purchase_rows, stake_rows, start=args.start
+        class_rows, master_rows, bridge_rows, purchase_rows, stake_rows,
+        start=args.start, sleeve=args.sleeve,
     )
     if not candidates:
         return {"error": "no candidate events", "diagnostics": diag}
@@ -340,6 +349,7 @@ def main() -> None:
     p.add_argument("--max-half-spread-bps", type=float, default=100.0)
     p.add_argument("--time-stop-days", type=int, default=365)
     p.add_argument("--trials", type=int, default=1)
+    p.add_argument("--sleeve", choices=["both", "insider", "activist"], default="both")
     args = p.parse_args()
     json.dump(asyncio.run(main_async(args)), sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
