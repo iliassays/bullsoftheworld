@@ -46,6 +46,11 @@ class BookPolicy(BaseModel):
     max_half_spread_bps: float = Field(default=100.0, gt=0)
     # Crowding screen: short interest as a percent of float.
     max_short_interest_pct: float = Field(default=20.0, gt=0)
+    # The crowding screen needs short-interest-vs-float, a metric we do not yet ingest (we have
+    # daily short *volume*, which is not the same thing). Disabling it is an explicit, recorded
+    # choice -- the book then runs with one fewer gate, and that limitation must be reported, never
+    # hidden. Set True only once a real short-interest feed exists.
+    screen_crowding: bool = True
     minimum_market_cap_mn: float = Field(default=50.0, ge=0)
     # The documented drift horizon; beyond it the evidence is silent, so the book does not hold.
     time_stop_days: int = Field(default=365, ge=1)
@@ -121,10 +126,11 @@ def screen_candidates(
             elif state.half_spread_bps > policy.max_half_spread_bps:
                 reasons.append("spread_above_tradeable_gate")
 
-            if state.short_interest_pct_of_float is None:
-                reasons.append("short_interest_unknown")
-            elif state.short_interest_pct_of_float > policy.max_short_interest_pct:
-                reasons.append("crowded_short_interest")
+            if policy.screen_crowding:
+                if state.short_interest_pct_of_float is None:
+                    reasons.append("short_interest_unknown")
+                elif state.short_interest_pct_of_float > policy.max_short_interest_pct:
+                    reasons.append("crowded_short_interest")
 
             if state.market_cap_mn is None:
                 reasons.append("market_cap_unknown")

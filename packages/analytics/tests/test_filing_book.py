@@ -329,3 +329,23 @@ def test_empty_run_produces_an_empty_schedule_not_an_error() -> None:
     )
     assert all(weights == {} for weights in schedule.values())
     assert len(advances) == 3
+
+
+def test_crowding_screen_can_be_disabled_without_rejecting_unknown_si() -> None:
+    # With no short-interest feed, disabling the screen must let a name through on its other gates
+    # rather than rejecting it as "short_interest_unknown".
+    policy = BookPolicy(screen_crowding=False)
+    state = {"AAA": CandidateMarketState(
+        half_spread_bps=20.0, short_interest_pct_of_float=None, market_cap_mn=500.0
+    )}
+    result = screen_candidates([_candidate("AAA")], state, policy)[0]
+    assert result.accepted is True
+    assert "short_interest_unknown" not in result.rejection_reasons
+
+
+def test_crowding_screen_still_fires_when_enabled() -> None:
+    policy = BookPolicy(screen_crowding=True)
+    state = {"AAA": CandidateMarketState(
+        half_spread_bps=20.0, short_interest_pct_of_float=None, market_cap_mn=500.0
+    )}
+    assert "short_interest_unknown" in screen_candidates([_candidate("AAA")], state, policy)[0].rejection_reasons
