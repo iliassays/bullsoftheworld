@@ -13,6 +13,10 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.institutional_research.dossier import build_company_dossier
+from api.institutional_research.institutional_backtests import (
+    InstitutionalBacktestPreparation,
+    prepare_institutional_backtest,
+)
 from api.institutional_research.investment import (
     complete_strategy_trial,
     get_active_mandate,
@@ -39,6 +43,7 @@ from bulls.analytics.research_strategy import (
     EquityPoint,
     StrategyBar,
     StrategySecurity,
+    run_backtest,
     run_cost_tiered_backtest,
 )
 from bulls.core.models import (
@@ -747,6 +752,13 @@ async def execute_backtest(
     cutoff = dt.datetime.combine(latest_market_date or dt.date.today(), dt.time.max, tzinfo=dt.UTC)
     parameters = request.model_dump(mode="json")
     risk_policy = risk_policy_from_mandate(mandate)
+    institutional_strategy = request.strategy_key in {
+        "us_activist_13d_v1",
+        "us_insider_cluster_v1",
+        "us_forced_seller_v1",
+        "us_factor_sleeve_v1",
+    }
+    execution_timing = "next_close" if institutional_strategy else "next_open"
     frozen_specification = {
         "request": parameters,
         "strategy": strategy.model_dump(mode="json"),
@@ -754,7 +766,7 @@ async def execute_backtest(
         "mandate": mandate_snapshot(mandate),
         "execution": {
             "signal_cutoff": "completed session close",
-            "earliest_fill": "next observable session open",
+            "earliest_fill": f"next observable session {execution_timing.removeprefix('next_')}",
             "long_only": True,
         },
         "validation": {
@@ -786,19 +798,138 @@ async def execute_backtest(
         strategy=strategy,
         specification=frozen_specification,
     )
-    securities = await _backtest_universe(session, market=workspace.market, request=request)
+    preparation = InstitutionalBacktestPreparation(securities=[], weight_schedule={})
+    if institutional_strategy:
+        preparation = await prepare_institutional_backtest(
+            session,
+            strategy_key=request.strategy_key,
+            request=request,
+        )
+        securities = preparation.securities
+    else:
+        securities = await _backtest_universe(session, market=workspace.market, request=request)
     cost_tiered = run_cost_tiered_backtest(
         market=workspace.market,
         strategy_key=request.strategy_key,
         securities=securities,
         initial_capital=request.initial_capital,
-        inactive_security_history_complete=False,
-        point_in_time_inputs_complete=False,
+        inactive_security_history_complete=preparation.inactive_security_history_complete,
+        point_in_time_inputs_complete=preparation.point_in_time_inputs_complete,
         risk_policy=risk_policy,
+        weight_schedule=preparation.weight_schedule if institutional_strategy else None,
+        execution_timing=execution_timing,
     )
     # The realistic (measured-cost) run is authoritative for the gate and the record; the stress
     # tiers ride alongside as robustness evidence (Phase 13.2 — where does the edge die?).
     result = cost_tiered.primary
+    if institutional_strategy:
+        required_regimes = {
+            "global_financial_crisis_2007_2009",
+            "pandemic_dislocation_2020_2021",
+            "rates_inflation_2022_2023",
+            "recent_2024_onward",
+        }
+        if request.strategy_key == "us_factor_sleeve_v1":
+            required_regimes.add("factor_drought_2017_2020")
+        observed_regimes = {item.key for item in result.robustness_slices}
+        missing_regimes = sorted(required_regimes - observed_regimes)
+        if missing_regimes:
+            result = result.model_copy(
+                update={
+                    "validation_status": "diagnostic",
+                    "failed_gates": list(
+                        dict.fromkeys(
+                            [
+                                *result.failed_gates,
+                                "Named-regime evidence is incomplete: "
+                                + ", ".join(item.replace("_", " ") for item in missing_regimes)
+                                + ".",
+                            ]
+                        )
+                    ),
+                }
+            )
+    if preparation.failed_gates:
+        result = result.model_copy(
+            update={
+                "validation_status": "diagnostic",
+                "failed_gates": list(
+                    dict.fromkeys([*result.failed_gates, *preparation.failed_gates])
+                ),
+            }
+        )
+
+    comparator_summary: dict[str, dict[str, Any]] = {}
+    if preparation.comparators:
+        main_realistic_return = (
+            result.final_nav / result.initial_capital - 1.0
+            if result.initial_capital > 0
+            else 0.0
+        )
+        main_stress_30 = next(
+            (
+                outcome.net_return_pct
+                for outcome in cost_tiered.outcomes
+                if not outcome.tier.measured and outcome.tier.one_way_bps == 30.0
+            ),
+            None,
+        )
+        stress_half_spread = max(30.0 - risk_policy.fee_rate * 10_000.0, 0.0)
+        failed_nulls: list[str] = []
+        for label, schedule in preparation.comparators.items():
+            realistic = run_backtest(
+                market=workspace.market,
+                strategy_key=request.strategy_key,
+                securities=securities,
+                initial_capital=request.initial_capital,
+                risk_policy=risk_policy,
+                weight_schedule=schedule,
+                execution_timing=execution_timing,
+                use_point_in_time_spread=True,
+            )
+            stressed = run_backtest(
+                market=workspace.market,
+                strategy_key=request.strategy_key,
+                securities=securities,
+                initial_capital=request.initial_capital,
+                risk_policy=risk_policy,
+                weight_schedule=schedule,
+                execution_timing=execution_timing,
+                half_spread_bps=stress_half_spread,
+            )
+            realistic_return = (
+                realistic.final_nav / realistic.initial_capital - 1.0
+                if realistic.initial_capital > 0
+                else 0.0
+            )
+            stressed_return_pct = (
+                (stressed.final_nav / stressed.initial_capital - 1.0) * 100.0
+                if stressed.initial_capital > 0
+                else 0.0
+            )
+            beats_realistic = main_realistic_return > realistic_return
+            beats_stressed = (
+                main_stress_30 is not None and main_stress_30 > stressed_return_pct
+            )
+            comparator_summary[label] = {
+                "realistic_return_pct": round(realistic_return * 100.0, 3),
+                "stress_30bps_return_pct": round(stressed_return_pct, 3),
+                "strategy_beats_realistic": beats_realistic,
+                "strategy_beats_stress_30bps": beats_stressed,
+            }
+            if not beats_realistic or not beats_stressed:
+                failed_nulls.append(
+                    f"Strategy did not beat the {label.replace('_', ' ')} null at realistic and 30 bps costs."
+                )
+        if failed_nulls:
+            result = result.model_copy(
+                update={
+                    "validation_status": "diagnostic",
+                    "failed_gates": list(
+                        dict.fromkeys([*result.failed_gates, *failed_nulls])
+                    ),
+                }
+            )
     deflated_sharpe_summary, overfitting_gate = _deflated_sharpe_gate(
         result.equity_curve, num_trials=trial.trial_sequence
     )
@@ -826,6 +957,10 @@ async def execute_backtest(
             )
             for security in securities
         }
+        | {
+            "weight_schedule": _stable_hash(preparation.weight_schedule),
+            "execution_timing": execution_timing,
+        }
     )
     _add_step(
         session,
@@ -850,13 +985,26 @@ async def execute_backtest(
             "codes": [security.code for security in securities],
             "inactive_security_history_complete": False,
             "point_in_time_universe_complete": False,
-            "point_in_time_inputs_complete": False,
+            "point_in_time_inputs_complete": preparation.point_in_time_inputs_complete,
+            "preparation": preparation.diagnostics,
         },
     )
     _add_step(
         session,
         run=run,
         ordinal=2,
+        kind="system_readiness",
+        output={
+            "institutional_system": institutional_strategy,
+            "execution_timing": execution_timing,
+            "failed_gates": preparation.failed_gates,
+            "diagnostics": preparation.diagnostics,
+        },
+    )
+    _add_step(
+        session,
+        run=run,
+        ordinal=3,
         kind="portfolio_backtest",
         output=result.model_dump(mode="json"),
         metrics={
@@ -869,24 +1017,43 @@ async def execute_backtest(
     _add_step(
         session,
         run=run,
-        ordinal=3,
+        ordinal=4,
         kind="validation_gate",
         output={
             "status": result.validation_status,
             "failed_gates": result.failed_gates,
             "warnings": result.warnings,
             "deflated_sharpe": deflated_sharpe_summary,
+            "robustness_slices": [
+                item.model_dump(mode="json") for item in result.robustness_slices
+            ],
         },
     )
     cost_tier_summary = cost_tiered.model_dump(mode="json", exclude={"primary"})
     _add_step(
         session,
         run=run,
-        ordinal=4,
+        ordinal=5,
         kind="cost_stress",
         output=cost_tier_summary,
         metrics={"edge_dies_at_bps": cost_tiered.edge_dies_at_bps},
     )
+    if comparator_summary:
+        _add_step(
+            session,
+            run=run,
+            ordinal=6,
+            kind="null_models",
+            output=comparator_summary,
+            metrics={
+                "nulls_tested": len(comparator_summary),
+                "nulls_beaten_at_both_costs": sum(
+                    item["strategy_beats_realistic"]
+                    and item["strategy_beats_stress_30bps"]
+                    for item in comparator_summary.values()
+                ),
+            },
+        )
     run.parameters = {
         **parameters,
         "result_summary": {
@@ -895,12 +1062,17 @@ async def execute_backtest(
             "failed_gates": result.failed_gates,
             "full_metrics": result.metrics[0].model_dump(mode="json"),
             "deflated_sharpe": deflated_sharpe_summary,
+            "robustness_slices": [
+                item.model_dump(mode="json") for item in result.robustness_slices
+            ],
             "cost_stress": {
                 "edge_dies_at_bps": cost_tiered.edge_dies_at_bps,
                 "measured_coverage": cost_tiered.measured_coverage,
                 "universe_size": cost_tiered.universe_size,
                 "tiers": [outcome.model_dump(mode="json") for outcome in cost_tiered.outcomes],
             },
+            "null_models": comparator_summary,
+            "system_readiness": preparation.diagnostics,
         },
     }
     run.status = "succeeded"

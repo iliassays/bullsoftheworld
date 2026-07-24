@@ -124,6 +124,9 @@ export function PortfolioIntelligencePage() {
     [operating.data?.portfolios, selected?.id],
   );
   const executions = useMemo(() => shadowExecutions(selected), [selected]);
+  const executionTiming = selected?.configuration.execution_timing === "next_close"
+    ? "close"
+    : "open";
   const latest = selected?.snapshots.at(-1);
   const positionPlan = useMemo(() => {
     if (!latest) return [];
@@ -286,23 +289,25 @@ export function PortfolioIntelligencePage() {
             <header>
               <ListChecks aria-hidden="true" size={16} />
               <span><strong>Execution ledger</strong><small>{executions.length} recorded paper {executions.length === 1 ? "trade" : "trades"} · newest first</small></span>
-              <span className="execution-ledger__model">EOD shadow model</span>
+              <span className="execution-ledger__model">EOD next-{executionTiming}</span>
             </header>
             <div className="execution-ledger__notice">
-              Targets are fixed after the prior close and filled at the next completed session's adjusted open, with configured slippage and fees. These are Atlas simulations, not broker orders or Hedge intraday-agent trades.
+              Targets are fixed after the prior completed session and filled at the next completed session's adjusted {executionTiming}, with configured slippage and fees. Shortfall is the signed adverse move from the recorded decision price; negative is favorable. These are Atlas simulations, not broker orders or Hedge intraday-agent trades.
             </div>
             {executions.length === 0 ? (
               <p className="execution-ledger__empty">No execution has occurred yet. The book remains in cash until the registered strategy produces an executable target.</p>
             ) : (
               <div className="execution-ledger__table">
-                <div><span>Date</span><span>Security</span><span>Side</span><span>Quantity</span><span>Fill</span><span>Gross</span><span>Fee</span><span>Cash impact</span><span>Reason</span></div>
+                <div><span>Date</span><span>Security</span><span>Side</span><span>Quantity</span><span>Decision</span><span>Fill</span><span>Shortfall</span><span>Gross</span><span>Fee</span><span>Cash impact</span><span>Reason</span></div>
                 {executions.map((trade) => (
                   <div key={trade.id}>
                     <span>{executionDate(trade.date)}<small>Session {trade.sessionNumber}</small></span>
                     <strong>{trade.code}</strong>
                     <span className={`execution-side execution-side--${trade.side}`}>{trade.side}</span>
                     <span>{trade.quantity.toLocaleString("en-US")}</span>
+                    <span>{trade.decisionReferencePrice === null ? "—" : executionCurrency(trade.decisionReferencePrice)}</span>
                     <span>{executionCurrency(trade.fillPrice)}</span>
+                    <span className={(trade.implementationShortfallBps ?? 0) <= 0 ? "value-up" : "value-down"}>{trade.implementationShortfallBps === null ? "—" : `${trade.implementationShortfallBps >= 0 ? "+" : ""}${trade.implementationShortfallBps.toFixed(1)} bps`}</span>
                     <span>{executionCurrency(trade.grossValue)}</span>
                     <span>{executionCurrency(trade.fee)}</span>
                     <span className={trade.cashImpact >= 0 ? "value-up" : "value-down"}>{trade.cashImpact >= 0 ? "+" : ""}{executionCurrency(trade.cashImpact)}</span>

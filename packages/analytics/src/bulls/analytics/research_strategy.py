@@ -1,6 +1,9 @@
 """Point-in-time backtest and shadow-book engine for Bulls Atlas.
 
-Signals use completed bars through T and trades fill no earlier than the next available session open.
+Signals use completed information through T and execute no earlier than the next observable
+session. Execution timing is part of the frozen strategy specification: the legacy portal
+strategies use next-open fills, while the institutional event and factor systems use next-close
+fills because the research mandate explicitly prohibits optimistic opening-auction execution.
 The engine is deliberately long-only until market-specific borrowing and locate data exist.
 """
 
@@ -21,7 +24,24 @@ from bulls.analytics.drawdown_ladder import (
     apply_drawdown_ladder,
 )
 
-ENGINE_VERSION = "atlas-portfolio-engine-v1"
+ENGINE_VERSION = "atlas-portfolio-engine-v2"
+
+type StrategyKey = Literal[
+    "dse_reversal_v1",
+    "us_breakout_v1",
+    "us_activist_13d_v1",
+    "us_insider_cluster_v1",
+    "us_forced_seller_v1",
+    "us_factor_sleeve_v1",
+]
+type ExecutionTiming = Literal["next_open", "next_close"]
+type RobustnessKey = Literal[
+    "global_financial_crisis_2007_2009",
+    "factor_drought_2017_2020",
+    "pandemic_dislocation_2020_2021",
+    "rates_inflation_2022_2023",
+    "recent_2024_onward",
+]
 
 # Half-spread cost input for a backtest run:
 #   None              -> use the policy's flat slippage_rate (backward-compatible default)
@@ -47,7 +67,7 @@ class StrategySecurity(BaseModel):
 
 
 class StrategyDefinition(BaseModel):
-    key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"]
+    key: StrategyKey
     market: Literal["DSE", "US"]
     name: str
     methodology_version: str
@@ -82,6 +102,8 @@ class BacktestTrade(BaseModel):
     reason: str
     intended_quantity: int | None = Field(default=None, gt=0)
     constraint_notes: list[str] = Field(default_factory=list)
+    decision_reference_price: float | None = Field(default=None, gt=0)
+    implementation_shortfall_bps: float | None = None
 
 
 class EquityPoint(BaseModel):
@@ -111,6 +133,18 @@ class PerformanceSlice(BaseModel):
     max_drawdown_pct: float | None
 
 
+class RobustnessSlice(BaseModel):
+    key: RobustnessKey
+    label: str
+    start_date: dt.date
+    end_date: dt.date
+    sessions: int
+    total_return_pct: float
+    benchmark_return_pct: float
+    excess_return_pct: float
+    max_drawdown_pct: float
+
+
 class BacktestResult(BaseModel):
     engine_version: str
     strategy: StrategyDefinition
@@ -124,12 +158,85 @@ class BacktestResult(BaseModel):
     equity_curve: list[EquityPoint]
     risk_interventions: list[RiskIntervention]
     metrics: list[PerformanceSlice]
+    robustness_slices: list[RobustnessSlice]
     turnover_pct: float
     fees_paid: float
     validation_status: Literal["diagnostic", "eligible_for_shadow"]
     failed_gates: list[str]
     warnings: list[str]
     latest_target_weights: dict[str, float]
+
+
+_ROBUSTNESS_WINDOWS: tuple[
+    tuple[RobustnessKey, str, dt.date, dt.date], ...
+] = (
+    (
+        "global_financial_crisis_2007_2009",
+        "Global financial crisis",
+        dt.date(2007, 7, 1),
+        dt.date(2009, 6, 30),
+    ),
+    (
+        "factor_drought_2017_2020",
+        "Factor drought",
+        dt.date(2017, 1, 1),
+        dt.date(2020, 1, 31),
+    ),
+    (
+        "pandemic_dislocation_2020_2021",
+        "Pandemic dislocation",
+        dt.date(2020, 2, 1),
+        dt.date(2021, 12, 31),
+    ),
+    (
+        "rates_inflation_2022_2023",
+        "Rates and inflation shock",
+        dt.date(2022, 1, 1),
+        dt.date(2023, 12, 31),
+    ),
+    (
+        "recent_2024_onward",
+        "Recent regime",
+        dt.date(2024, 1, 1),
+        dt.date.max,
+    ),
+)
+
+
+def robustness_slices(equity_curve: list[EquityPoint]) -> list[RobustnessSlice]:
+    """Measure named stress periods without synthesizing missing historical observations."""
+
+    slices: list[RobustnessSlice] = []
+    for key, label, window_start, window_end in _ROBUSTNESS_WINDOWS:
+        points = [
+            point
+            for point in equity_curve
+            if window_start <= point.date <= window_end
+        ]
+        if len(points) < 2 or points[0].nav <= 0 or points[0].benchmark <= 0:
+            continue
+        peak = points[0].nav
+        maximum_drawdown = 0.0
+        for point in points:
+            peak = max(peak, point.nav)
+            if peak > 0:
+                maximum_drawdown = max(maximum_drawdown, 1 - point.nav / peak)
+        total_return = (points[-1].nav / points[0].nav - 1) * 100
+        benchmark_return = (points[-1].benchmark / points[0].benchmark - 1) * 100
+        slices.append(
+            RobustnessSlice(
+                key=key,
+                label=label,
+                start_date=points[0].date,
+                end_date=points[-1].date,
+                sessions=len(points),
+                total_return_pct=round(total_return, 3),
+                benchmark_return_pct=round(benchmark_return, 3),
+                excess_return_pct=round(total_return - benchmark_return, 3),
+                max_drawdown_pct=round(maximum_drawdown * 100, 3),
+            )
+        )
+    return slices
 
 
 class ShadowPosition(BaseModel):
@@ -288,6 +395,45 @@ STRATEGIES = {
             "Ranks liquid positive trends with participation confirmation and extension control."
         ),
     ),
+    "us_activist_13d_v1": StrategyDefinition(
+        key="us_activist_13d_v1",
+        market="US",
+        name="US activist 13D event book",
+        methodology_version="us-activist-13d-v1",
+        minimum_lookback=20,
+        rebalance_sessions=1,
+        maximum_positions=20,
+        description=(
+            "Follows new Schedule 13D disclosures from a preregistered activist roster. "
+            "Signals, rejections, thesis breaks, costs, and time stops are point-in-time."
+        ),
+    ),
+    "us_insider_cluster_v1": StrategyDefinition(
+        key="us_insider_cluster_v1",
+        market="US",
+        name="US opportunistic insider cluster book",
+        methodology_version="us-insider-cluster-v1",
+        minimum_lookback=20,
+        rebalance_sessions=1,
+        maximum_positions=20,
+        description=(
+            "Follows non-plan open-market purchases by insiders classified from history "
+            "available at each filing timestamp, with clusters ranked above single purchases."
+        ),
+    ),
+    "us_forced_seller_v1": StrategyDefinition(
+        key="us_forced_seller_v1",
+        market="US",
+        name="US forced-seller post-spin book",
+        methodology_version="us-forced-seller-post-spin-v1",
+        minimum_lookback=20,
+        rebalance_sessions=1,
+        maximum_positions=20,
+        description=(
+            "Tests post-spin forced-selling dislocations only when authoritative point-in-time "
+            "corporate-action, parent-holder, and distribution histories are available."
+        ),
+    ),
 }
 
 
@@ -352,6 +498,79 @@ def _half_spread_rate(code: str, half_spread_bps: HalfSpreadInput, policy: Portf
         measured = half_spread_bps.get(code)
         return measured / 10_000.0 if measured is not None else policy.slippage_rate
     return half_spread_bps / 10_000.0
+
+
+def _implementation_shortfall_bps(
+    *,
+    side: Literal["buy", "sell"],
+    decision_price: float | None,
+    fill_price: float,
+) -> float | None:
+    """Return signed adverse execution shortfall; negative values are favorable fills."""
+
+    if decision_price is None or decision_price <= 0:
+        return None
+    adverse_return = (
+        fill_price / decision_price - 1
+        if side == "buy"
+        else 1 - fill_price / decision_price
+    )
+    return round(adverse_return * 10_000, 3)
+
+
+def constrain_target_weights(
+    target_weights: dict[str, float],
+    *,
+    security_by_code: dict[str, StrategySecurity],
+    policy: PortfolioRiskPolicy,
+) -> tuple[dict[str, float], list[str]]:
+    """Fail closed and enforce mandate limits on an externally constructed long-only book.
+
+    Signal builders are allowed to propose weights, never to bypass the portfolio mandate. Invalid
+    values and unknown securities are removed, then name, sector, and gross limits are applied in
+    that order. Sector and gross breaches are scaled proportionally so the ranking signal is
+    preserved without allowing iteration order to decide which name receives capital.
+    """
+
+    constrained: dict[str, float] = {}
+    notes: list[str] = []
+    for code, raw_weight in sorted(target_weights.items()):
+        security = security_by_code.get(code)
+        if security is None:
+            notes.append(f"{code}: removed because it is outside the observable universe")
+            continue
+        if not math.isfinite(raw_weight) or raw_weight <= 0:
+            notes.append(f"{code}: removed because target weight is not positive and finite")
+            continue
+        weight = min(float(raw_weight), policy.max_position_weight)
+        if weight < raw_weight:
+            notes.append(
+                f"{code}: clipped to the {policy.max_position_weight:.1%} position limit"
+            )
+        constrained[code] = weight
+
+    by_sector: dict[str, list[str]] = {}
+    for code in constrained:
+        by_sector.setdefault(security_by_code[code].sector or "Unclassified", []).append(code)
+    for sector, codes in sorted(by_sector.items()):
+        sector_gross = sum(constrained[code] for code in codes)
+        if sector_gross <= policy.max_sector_weight or sector_gross <= 0:
+            continue
+        scale = policy.max_sector_weight / sector_gross
+        for code in codes:
+            constrained[code] *= scale
+        notes.append(
+            f"{sector}: scaled to the {policy.max_sector_weight:.1%} sector limit"
+        )
+
+    gross = sum(constrained.values())
+    if gross > policy.max_gross_exposure and gross > 0:
+        scale = policy.max_gross_exposure / gross
+        constrained = {code: weight * scale for code, weight in constrained.items()}
+        notes.append(
+            f"portfolio: scaled to the {policy.max_gross_exposure:.1%} gross-exposure limit"
+        )
+    return ({code: round(weight, 8) for code, weight in constrained.items()}, notes)
 
 
 def _ladder_from_policy(policy: PortfolioRiskPolicy) -> DrawdownLadder:
@@ -514,7 +733,7 @@ def _performance_slice(
 def run_backtest(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"],
+    strategy_key: StrategyKey,
     securities: list[StrategySecurity],
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
@@ -522,6 +741,8 @@ def run_backtest(
     risk_policy: PortfolioRiskPolicy | None = None,
     half_spread_bps: HalfSpreadInput = None,
     weight_schedule: dict[dt.date, dict[str, float]] | None = None,
+    execution_timing: ExecutionTiming = "next_open",
+    use_point_in_time_spread: bool = False,
 ) -> BacktestResult:
     """Run the registered strategy with next-session execution and deterministic risk gates.
 
@@ -531,14 +752,20 @@ def run_backtest(
     it specifies. Execution, costs, ADV limits and the drawdown ladder are identical either way,
     which is the point of routing every book through one engine.
 
+    ``execution_timing`` is frozen with the experiment. ``next_close`` still delays every target by
+    a full observable session; it never fills on the close that formed the signal.
+
     ``half_spread_bps`` selects the trading-cost model (see ``HalfSpreadInput``); the default keeps
-    the policy's flat slippage. The drawdown response is the two-rung ladder (halve then flatten);
-    in a historical backtest it auto re-arms once drawdown recovers, so the whole path stays
-    diagnostic — the freeze-until-written-review behavior is reserved for live/shadow books.
+    the policy's flat slippage. When ``use_point_in_time_spread`` is true, each order estimates its
+    half-spread using only bars completed before that order. The drawdown response is the two-rung
+    ladder (halve then flatten and freeze). A historical run cannot invent the written review
+    required to clear a freeze, so it stays flat and becomes diagnostic after that transition.
     """
 
     if initial_capital <= 0:
         raise ValueError("initial_capital must be positive")
+    if execution_timing not in {"next_open", "next_close"}:
+        raise ValueError(f"unknown execution timing {execution_timing!r}")
     strategy = STRATEGIES[strategy_key]
     if strategy.market != market:
         raise ValueError(f"Strategy {strategy_key} is not registered for {market}")
@@ -557,6 +784,7 @@ def run_backtest(
     cash = initial_capital
     pending_weights: dict[str, float] | None = None
     pending_reason = "scheduled rebalance"
+    pending_decision_prices: dict[str, float] = {}
     trades: list[BacktestTrade] = []
     curve: list[EquityPoint] = []
     interventions: list[RiskIntervention] = []
@@ -565,27 +793,47 @@ def run_backtest(
     peak_nav = initial_capital
     benchmark = initial_capital
     latest_target_weights: dict[str, float] = {}
+    ladder_multiplier = 1.0
+    ladder_state = LadderState()
+    historical_freeze_triggered = False
 
     for session_index, date in enumerate(dates):
         current = {code: bars.get(date) for code, bars in bars_by_code.items()}
 
         if pending_weights is not None:
-            opening_nav = cash
+            retry_pending_target = False
+            execution_nav = cash
             for code, position in positions.items():
                 bar = current.get(code)
                 if bar is not None:
-                    opening_nav += position.shares * bar.open
+                    reference_price = bar.open if execution_timing == "next_open" else bar.close
+                    execution_nav += position.shares * reference_price
                 elif histories[code]:
-                    opening_nav += position.shares * histories[code][-1].close
+                    execution_nav += position.shares * histories[code][-1].close
             all_codes = set(positions) | set(pending_weights)
             for code in sorted(all_codes):
                 bar = current.get(code)
                 if bar is None:
+                    retry_pending_target = True
+                    interventions.append(
+                        RiskIntervention(
+                            date=date,
+                            code=code,
+                            rule="execution_bar_missing",
+                            detail=(
+                                f"Target could not execute at the {execution_timing.removeprefix('next_')} "
+                                "because no observable bar was available."
+                            ),
+                        )
+                    )
                     continue
                 current_shares = positions.get(code, _Position(0, 0.0)).shares
-                desired_value = opening_nav * pending_weights.get(code, 0.0)
-                desired_shares = int(desired_value / bar.open)
+                reference_price = bar.open if execution_timing == "next_open" else bar.close
+                desired_value = execution_nav * pending_weights.get(code, 0.0)
+                desired_shares = int(desired_value / reference_price)
                 quantity = desired_shares - current_shares
+                intended_quantity = abs(quantity)
+                constraint_notes: list[str] = []
                 history = histories[code]
                 average_volume = (
                     statistics.fmean(item.volume for item in history[-20:]) if history else 0.0
@@ -601,12 +849,38 @@ def run_backtest(
                         )
                     )
                     continue
-                quantity = max(-max_quantity, min(max_quantity, quantity))
+                clipped_quantity = max(-max_quantity, min(max_quantity, quantity))
+                if clipped_quantity != quantity:
+                    constraint_notes.append(
+                        f"ADV participation clipped {intended_quantity} intended shares "
+                        f"to {abs(clipped_quantity)}"
+                    )
+                    interventions.append(
+                        RiskIntervention(
+                            date=date,
+                            code=code,
+                            rule="adv_participation_limit",
+                            detail=constraint_notes[-1],
+                        )
+                    )
+                quantity = clipped_quantity
                 if quantity == 0:
                     continue
                 side: Literal["buy", "sell"] = "buy" if quantity > 0 else "sell"
-                slippage_rate = _half_spread_rate(code, half_spread_bps, policy)
-                fill_price = bar.open * (
+                if use_point_in_time_spread:
+                    spread = estimate_spread(
+                        code,
+                        [item.high for item in history],
+                        [item.low for item in history],
+                    )
+                    slippage_rate = (
+                        spread.half_spread_bps / 10_000.0
+                        if spread is not None
+                        else policy.slippage_rate
+                    )
+                else:
+                    slippage_rate = _half_spread_rate(code, half_spread_bps, policy)
+                fill_price = reference_price * (
                     1 + slippage_rate if side == "buy" else 1 - slippage_rate
                 )
                 absolute_quantity = abs(quantity)
@@ -614,6 +888,18 @@ def run_backtest(
                 fee = gross * policy.fee_rate
                 if side == "buy":
                     affordable = int(cash / (fill_price * (1 + policy.fee_rate)))
+                    if affordable < absolute_quantity:
+                        constraint_notes.append(
+                            f"settled cash clipped {absolute_quantity} shares to {affordable}"
+                        )
+                        interventions.append(
+                            RiskIntervention(
+                                date=date,
+                                code=code,
+                                rule="cash_limit",
+                                detail=constraint_notes[-1],
+                            )
+                        )
                     absolute_quantity = min(absolute_quantity, affordable)
                     if absolute_quantity <= 0:
                         interventions.append(
@@ -660,9 +946,19 @@ def run_backtest(
                         gross_value=round(gross, 2),
                         fee=round(fee, 2),
                         reason=pending_reason,
+                        intended_quantity=intended_quantity or None,
+                        constraint_notes=constraint_notes,
+                        decision_reference_price=pending_decision_prices.get(code),
+                        implementation_shortfall_bps=_implementation_shortfall_bps(
+                            side=side,
+                            decision_price=pending_decision_prices.get(code),
+                            fill_price=fill_price,
+                        ),
                     )
                 )
-            pending_weights = None
+            if not retry_pending_target:
+                pending_weights = None
+                pending_decision_prices = {}
 
         previous_closes: list[float] = []
         current_closes: list[float] = []
@@ -730,62 +1026,124 @@ def run_backtest(
                         date=date,
                         code=code,
                         rule="position_stop",
-                        detail=f"Next-open exit scheduled after a {policy.position_stop_loss:.0%} loss threshold.",
+                        detail=(
+                            f"Next-{execution_timing.removeprefix('next_')} exit scheduled after a "
+                            f"{policy.position_stop_loss:.0%} loss threshold."
+                        ),
                     )
                 )
-            pending_weights = target
-            pending_reason = "position risk stop"
-        # Two-rung drawdown ladder. A historical backtest never persists the freeze (auto re-arm):
-        # a fresh unfrozen state each session, so exposure resumes once drawdown recovers and the
-        # whole path stays diagnostic. The sticky freeze is a live/shadow rule (Phase 15 L2).
+            latest_target_weights = target
+        # The freeze is part of the strategy path. A historical simulation cannot fabricate the
+        # written review required to clear it, so the book remains flat after the second rung.
+        was_frozen = ladder_state.frozen
         ladder_action = apply_drawdown_ladder(
-            drawdown_pct=max(drawdown, 0.0), state=LadderState(frozen=False), ladder=ladder
+            drawdown_pct=max(drawdown, 0.0), state=ladder_state, ladder=ladder
         )
-        if ladder_action.gross_multiplier == 0.0:
-            pending_weights = {}
-            pending_reason = "drawdown ladder: flatten"
-            latest_target_weights = {}
-            interventions.append(
-                RiskIntervention(date=date, rule="drawdown_ladder_flatten", detail=ladder_action.detail)
-            )
-        elif weight_schedule is not None:
+        ladder_state = LadderState(frozen=ladder_action.frozen)
+        proposed_target: dict[str, float] | None = None
+        proposed_reason = ""
+        if weight_schedule is not None:
             scheduled = weight_schedule.get(date)
-            if scheduled is not None and pending_weights is None:
-                latest_target_weights = dict(scheduled)
-                if ladder_action.gross_multiplier < 1.0:
-                    pending_weights = {
-                        code: round(weight * ladder_action.gross_multiplier, 6)
-                        for code, weight in latest_target_weights.items()
-                    }
-                    pending_reason = "scheduled weights (halved by drawdown ladder)"
+            if scheduled is not None:
+                proposed_target, constraint_notes = constrain_target_weights(
+                    scheduled, security_by_code=security_by_code, policy=policy
+                )
+                for detail in constraint_notes:
                     interventions.append(
                         RiskIntervention(
-                            date=date, rule="drawdown_ladder_halve", detail=ladder_action.detail
+                            date=date,
+                            rule="target_weight_constraint",
+                            detail=detail,
                         )
                     )
-                else:
-                    pending_weights = latest_target_weights
-                    pending_reason = "externally scheduled target weights"
+                latest_target_weights = proposed_target
+                proposed_reason = "externally scheduled target weights"
         elif (
             session_index >= strategy.minimum_lookback
             and session_index % strategy.rebalance_sessions == 0
-            and pending_weights is None
         ):
-            latest_target_weights = _target_weights(strategy, policy, histories, security_by_code)
-            if ladder_action.gross_multiplier < 1.0:
+            raw_target = _target_weights(strategy, policy, histories, security_by_code)
+            proposed_target, constraint_notes = constrain_target_weights(
+                raw_target, security_by_code=security_by_code, policy=policy
+            )
+            for detail in constraint_notes:
+                interventions.append(
+                    RiskIntervention(
+                        date=date,
+                        rule="target_weight_constraint",
+                        detail=detail,
+                    )
+                )
+            latest_target_weights = proposed_target
+            proposed_reason = "scheduled point-in-time rebalance"
+
+        if stopped_codes:
+            for code in stopped_codes:
+                latest_target_weights.pop(code, None)
+                if proposed_target is not None:
+                    proposed_target.pop(code, None)
+
+        multiplier_changed = ladder_action.gross_multiplier != ladder_multiplier
+        ladder_multiplier = ladder_action.gross_multiplier
+        if ladder_multiplier == 0.0:
+            ladder_changed_target = multiplier_changed or proposed_target is not None or stopped_codes
+            latest_target_weights = {}
+            if ladder_changed_target:
+                pending_weights = {}
+                pending_reason = "drawdown ladder: flatten"
+                pending_decision_prices = {
+                    code: current[code].close
+                    for code in positions
+                    if current.get(code) is not None
+                }
+            if ladder_action.frozen and not was_frozen:
+                historical_freeze_triggered = True
+                interventions.append(
+                    RiskIntervention(
+                        date=date,
+                        rule="drawdown_ladder_flatten",
+                        detail=ladder_action.detail,
+                    )
+                )
+            elif was_frozen and proposed_target is not None:
+                interventions.append(
+                    RiskIntervention(
+                        date=date,
+                        rule="frozen_target_rejected",
+                        detail=(
+                            "A scheduled target was suppressed because the historical book "
+                            "remains frozen pending a review that cannot be fabricated."
+                        ),
+                    )
+                )
+        elif proposed_target is not None or stopped_codes or multiplier_changed:
+            if (
+                pending_weights is None
+                or stopped_codes
+                or proposed_target is not None
+                or multiplier_changed
+            ):
                 pending_weights = {
-                    code: round(weight * ladder_action.gross_multiplier, 6)
+                    code: round(weight * ladder_multiplier, 8)
                     for code, weight in latest_target_weights.items()
                 }
-                pending_reason = "scheduled rebalance (halved by drawdown ladder)"
+                pending_decision_prices = {
+                    code: current[code].close
+                    for code in set(positions) | set(pending_weights)
+                    if current.get(code) is not None
+                }
+                pending_reason = (
+                    "position risk stop"
+                    if stopped_codes
+                    else proposed_reason or "drawdown ladder exposure restoration"
+                )
+            if ladder_multiplier < 1.0:
+                pending_reason = f"{pending_reason} (halved by drawdown ladder)"
                 interventions.append(
                     RiskIntervention(
                         date=date, rule="drawdown_ladder_halve", detail=ladder_action.detail
                     )
                 )
-            else:
-                pending_weights = latest_target_weights
-                pending_reason = "scheduled point-in-time rebalance"
 
     nav_values = [point.nav for point in curve]
     split_1 = max(2, round(len(nav_values) * 0.6))
@@ -796,6 +1154,7 @@ def run_backtest(
         _performance_slice("validation", nav_values[split_1 - 1 : split_2]),
         _performance_slice("test", nav_values[split_2 - 1 :]),
     ]
+    regime_slices = robustness_slices(curve)
     failed_gates: list[str] = []
     if len(dates) < 756:
         failed_gates.append("Fewer than three years of completed sessions.")
@@ -807,6 +1166,10 @@ def run_backtest(
         failed_gates.append("Point-in-time input revisions are not complete for the test window.")
     if len(trades) < 30:
         failed_gates.append("Fewer than 30 completed executions are available for inference.")
+    if historical_freeze_triggered:
+        failed_gates.append(
+            "The drawdown ladder froze the historical book; no unrecorded review was invented to re-arm it."
+        )
     validation_status: Literal["diagnostic", "eligible_for_shadow"] = (
         "eligible_for_shadow" if not failed_gates else "diagnostic"
     )
@@ -823,6 +1186,7 @@ def run_backtest(
         equity_curve=curve,
         risk_interventions=interventions,
         metrics=metrics,
+        robustness_slices=regime_slices,
         turnover_pct=round(traded_gross / initial_capital * 100, 3),
         fees_paid=round(fees_paid, 2),
         validation_status=validation_status,
@@ -831,7 +1195,10 @@ def run_backtest(
             "Results are research diagnostics, not expected returns or a recommendation.",
             "The benchmark is an equal-weight observable-universe series and shares current-universe bias.",
             "Fundamental and universe filters are validation-safe only when point-in-time input coverage is complete.",
-            "Corporate-action safety depends on adjustment coverage; fills use the next-session open supplied by the point-in-time price adapter.",
+            (
+                "Corporate-action safety depends on adjustment coverage; fills use the "
+                f"{execution_timing.replace('_', '-')} supplied by the point-in-time price adapter."
+            ),
             "A missing held-security bar carries the last observable close and records a stale-mark intervention.",
         ],
         latest_target_weights=latest_target_weights,
@@ -874,13 +1241,15 @@ class CostTieredBacktest(BaseModel):
 def run_cost_tiered_backtest(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"],
+    strategy_key: StrategyKey,
     securities: list[StrategySecurity],
     initial_capital: float = 100_000.0,
     inactive_security_history_complete: bool = False,
     point_in_time_inputs_complete: bool = False,
     risk_policy: PortfolioRiskPolicy | None = None,
     stress_levels_bps: tuple[float, ...] = (10.0, 30.0, 50.0),
+    weight_schedule: dict[dt.date, dict[str, float]] | None = None,
+    execution_timing: ExecutionTiming = "next_open",
 ) -> CostTieredBacktest:
     """Run the strategy at its measured per-name cost and at fixed one-way stress floors.
 
@@ -920,6 +1289,9 @@ def run_cost_tiered_backtest(
                 point_in_time_inputs_complete=point_in_time_inputs_complete,
                 risk_policy=policy,
                 half_spread_bps=measured,
+                weight_schedule=weight_schedule,
+                execution_timing=execution_timing,
+                use_point_in_time_spread=True,
             )
         # Hold total one-way cost at the tier: half-spread = tier - fee (the engine adds fee back).
         flat_half_spread = max(tier.one_way_bps - fee_bps, 0.0)
@@ -932,6 +1304,8 @@ def run_cost_tiered_backtest(
             point_in_time_inputs_complete=point_in_time_inputs_complete,
             risk_policy=policy,
             half_spread_bps=flat_half_spread,
+            weight_schedule=weight_schedule,
+            execution_timing=execution_timing,
         )
 
     outcomes: list[CostTierOutcome] = []
@@ -975,6 +1349,8 @@ def run_cost_tiered_backtest(
             inactive_security_history_complete=inactive_security_history_complete,
             point_in_time_inputs_complete=point_in_time_inputs_complete,
             risk_policy=policy,
+            weight_schedule=weight_schedule,
+            execution_timing=execution_timing,
         )
     return CostTieredBacktest(
         engine_version=ENGINE_VERSION,
@@ -992,17 +1368,21 @@ def run_cost_tiered_backtest(
 def advance_shadow_portfolio(
     *,
     market: Literal["DSE", "US"],
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1", "us_factor_sleeve_v1"],
+    strategy_key: StrategyKey,
     securities: list[StrategySecurity],
     previous: ShadowState,
     target_weights: dict[str, float],
     session_number: int,
     risk_policy: PortfolioRiskPolicy | None = None,
+    execution_timing: ExecutionTiming = "next_open",
+    next_target_weights: dict[str, float] | None = None,
 ) -> ShadowAdvanceResult:
     """Advance one real-time shadow book by one completed market session.
 
-    ``target_weights`` must have been formed after the previous close. It executes at the current
-    session's adjusted open and the function forms the next target only after observing this close.
+    ``target_weights`` must have been formed after the previous completed session. It executes at
+    the strategy's frozen current-session open/close. Event and factor adapters may supply
+    ``next_target_weights`` formed after observing this close; legacy price strategies calculate
+    their next target inside the engine.
     """
 
     strategy = STRATEGIES[strategy_key]
@@ -1028,8 +1408,15 @@ def advance_shadow_portfolio(
     session_fees = 0.0
     session_turnover = 0.0
 
-    opening_nav = cash + sum(
-        position.shares * by_code[code].bars[-1].open
+    def reference(security: StrategySecurity) -> float:
+        return (
+            security.bars[-1].open
+            if execution_timing == "next_open"
+            else security.bars[-1].close
+        )
+
+    execution_nav = cash + sum(
+        position.shares * reference(by_code[code])
         for code, position in positions.items()
         if code in by_code
     )
@@ -1037,9 +1424,9 @@ def advance_shadow_portfolio(
         security = by_code.get(code)
         if security is None or len(security.bars) < 21:
             continue
-        bar = security.bars[-1]
+        reference_price = reference(security)
         current_shares = positions.get(code, _Position(0, 0)).shares
-        desired_shares = int(opening_nav * target_weights.get(code, 0.0) / bar.open)
+        desired_shares = int(execution_nav * target_weights.get(code, 0.0) / reference_price)
         quantity = desired_shares - current_shares
         intended_quantity = abs(quantity)
         average_volume = statistics.fmean(item.volume for item in security.bars[-21:-1])
@@ -1062,7 +1449,7 @@ def advance_shadow_portfolio(
         if quantity == 0:
             continue
         side: Literal["buy", "sell"] = "buy" if quantity > 0 else "sell"
-        fill_price = bar.open * (
+        fill_price = reference_price * (
             1 + policy.slippage_rate if side == "buy" else 1 - policy.slippage_rate
         )
         absolute_quantity = abs(quantity)
@@ -1125,9 +1512,15 @@ def advance_shadow_portfolio(
                 fill_price=round(fill_price, 4),
                 gross_value=round(gross, 2),
                 fee=round(fee, 2),
-                reason="prior-close shadow target",
+                reason=f"prior-session shadow target ({execution_timing.replace('_', '-')})",
                 intended_quantity=intended_quantity,
                 constraint_notes=constraint_notes,
+                decision_reference_price=security.bars[-2].close,
+                implementation_shortfall_bps=_implementation_shortfall_bps(
+                    side=side,
+                    decision_price=security.bars[-2].close,
+                    fill_price=fill_price,
+                ),
             )
         )
 
@@ -1148,11 +1541,33 @@ def advance_shadow_portfolio(
         1 + statistics.fmean(benchmark_returns) if benchmark_returns else 1
     )
     histories = {security.code: security.bars for security in securities}
-    next_targets = (
-        _target_weights(strategy, policy, histories, by_code)
-        if session_number % strategy.rebalance_sessions == 0
-        else target_weights.copy()
-    )
+    if next_target_weights is not None:
+        next_targets, constraint_notes = constrain_target_weights(
+            next_target_weights,
+            security_by_code=by_code,
+            policy=policy,
+        )
+        interventions.extend(
+            RiskIntervention(
+                date=date,
+                rule="target_weight_constraint",
+                detail=detail,
+            )
+            for detail in constraint_notes
+        )
+    elif strategy.key in {
+        "us_activist_13d_v1",
+        "us_insider_cluster_v1",
+        "us_forced_seller_v1",
+        "us_factor_sleeve_v1",
+    }:
+        next_targets = target_weights.copy()
+    else:
+        next_targets = (
+            _target_weights(strategy, policy, histories, by_code)
+            if session_number % strategy.rebalance_sessions == 0
+            else target_weights.copy()
+        )
     for code, position in positions.items():
         security = by_code.get(code)
         if (
@@ -1165,7 +1580,10 @@ def advance_shadow_portfolio(
                     date=date,
                     code=code,
                     rule="position_stop",
-                    detail="Next-open exit required by the deterministic position stop.",
+                    detail=(
+                        f"Next-{execution_timing.removeprefix('next_')} exit required by the "
+                        "deterministic position stop."
+                    ),
                 )
             )
     # Two-rung drawdown ladder with the LIVE freeze semantics: a book that trips the flatten rung

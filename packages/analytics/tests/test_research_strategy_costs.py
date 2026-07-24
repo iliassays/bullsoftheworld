@@ -63,6 +63,81 @@ def test_per_name_half_spread_dict_is_accepted() -> None:
     assert result.trades  # still runs and trades with a partial per-name map
 
 
+def test_external_schedule_is_constrained_by_sector_and_gross_limits() -> None:
+    universe = _universe(4)
+    schedule_date = universe[0].bars[25].date
+    result = run_backtest(
+        market="US",
+        strategy_key="us_factor_sleeve_v1",
+        securities=universe,
+        weight_schedule={schedule_date: {security.code: 0.30 for security in universe}},
+        execution_timing="next_close",
+    )
+
+    assert sum(result.latest_target_weights.values()) <= RISK_POLICIES["US"].max_sector_weight
+    assert max(result.latest_target_weights.values()) <= RISK_POLICIES["US"].max_position_weight
+    assert any(
+        item.rule == "target_weight_constraint" for item in result.risk_interventions
+    )
+
+
+def test_institutional_schedule_executes_on_next_session_close() -> None:
+    security = _trending_security("EVENT", sessions=60)
+    signal_date = security.bars[25].date
+    execution_bar = security.bars[26]
+    result = run_backtest(
+        market="US",
+        strategy_key="us_activist_13d_v1",
+        securities=[security],
+        weight_schedule={signal_date: {"EVENT": 0.05}},
+        execution_timing="next_close",
+    )
+
+    trade = result.trades[0]
+    assert trade.date == execution_bar.date
+    assert trade.fill_price > execution_bar.close
+    assert trade.decision_reference_price == security.bars[25].close
+    assert trade.implementation_shortfall_bps is not None
+
+
+def test_cost_tiers_preserve_external_weight_schedule() -> None:
+    universe = _universe()
+    schedule = {universe[0].bars[25].date: {"T0": 0.05}}
+    result = run_cost_tiered_backtest(
+        market="US",
+        strategy_key="us_factor_sleeve_v1",
+        securities=universe,
+        weight_schedule=schedule,
+        execution_timing="next_close",
+    )
+
+    assert result.primary.trades
+    assert all(outcome.trades > 0 for outcome in result.outcomes)
+
+
+def test_missing_execution_bar_retries_target_on_next_observable_session() -> None:
+    event = _trending_security("EVENT", sessions=60)
+    clock = _trending_security("CLOCK", sessions=60)
+    signal_date = event.bars[25].date
+    missing_date = event.bars[26].date
+    expected_fill_date = event.bars[27].date
+    event.bars = [bar for bar in event.bars if bar.date != missing_date]
+
+    result = run_backtest(
+        market="US",
+        strategy_key="us_activist_13d_v1",
+        securities=[event, clock],
+        weight_schedule={signal_date: {"EVENT": 0.05}},
+        execution_timing="next_close",
+    )
+
+    assert result.trades[0].date == expected_fill_date
+    assert any(
+        item.rule == "execution_bar_missing" and item.date == missing_date
+        for item in result.risk_interventions
+    )
+
+
 def test_cost_tiered_backtest_reports_every_tier() -> None:
     result = run_cost_tiered_backtest(
         market="US", strategy_key="us_breakout_v1", securities=_universe()
@@ -129,6 +204,8 @@ def test_drawdown_ladder_flatten_engages_in_backtest() -> None:
     )
     rules = {intervention.rule for intervention in result.risk_interventions}
     assert "drawdown_ladder_flatten" in rules
+    assert result.latest_target_weights == {}
+    assert any("no unrecorded review" in gate for gate in result.failed_gates)
 
 
 def test_stress_tier_total_cost_reconciles_with_fee() -> None:

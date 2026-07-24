@@ -173,6 +173,47 @@ def qualifying_purchases(
     return kept
 
 
+def qualifying_purchases_point_in_time(
+    history: Iterable[InsiderTrade],
+    *,
+    include_unclassified: bool = False,
+    minimum_years: int = ROUTINE_MINIMUM_YEARS,
+) -> list[InsiderTrade]:
+    """Filter purchases using only the owner's history public by each candidate filing.
+
+    A single classification computed from the final database leaks future trading behavior into
+    earlier signals. This resolver replays the classification clock: for every candidate purchase,
+    the owner is classified from transactions whose dissemination timestamp is no later than that
+    purchase. Sales remain part of the classification history, but can never become signals.
+    """
+
+    ordered = sorted(history, key=lambda trade: (trade.disseminated_at, trade.owner_cik))
+    public_dates: dict[int, list[dt.date]] = defaultdict(list)
+    kept: list[InsiderTrade] = []
+    allowed: set[InsiderClass] = {"opportunistic"}
+    if include_unclassified:
+        allowed.add("unclassified")
+
+    for _, same_timestamp in itertools.groupby(ordered, key=lambda trade: trade.disseminated_at):
+        batch = list(same_timestamp)
+        # All rows in one filing timestamp become public together. Add the whole batch before
+        # classifying any one row so row order inside a filing cannot change the result.
+        for trade in batch:
+            public_dates[trade.owner_cik].append(trade.transaction_date)
+        for trade in batch:
+            classification = classify_insider(
+                public_dates[trade.owner_cik], minimum_years=minimum_years
+            )
+            if (trade.code or "").upper() != "P":
+                continue
+            if trade.is_10b5_1_plan or classification not in allowed:
+                continue
+            if not trade.shares or trade.shares <= 0:
+                continue
+            kept.append(trade)
+    return kept
+
+
 def detect_clusters(
     purchases: Iterable[InsiderTrade],
     *,

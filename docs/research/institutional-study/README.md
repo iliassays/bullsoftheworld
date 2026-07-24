@@ -47,3 +47,6 @@ press-derived; the study says so wherever it applies rather than laundering it i
 
 `ledger.md` — running research ledger (claim / source / contradiction / category / confidence /
 open uncertainty). Update it in every phase; check it before asserting anything numerical.
+
+`implementation-status.md` — binding map from the completed study to the current Atlas
+implementation, including what runs, what fails closed, and what still blocks validation.

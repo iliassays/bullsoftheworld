@@ -60,6 +60,22 @@ _ECONOMIC_HYPOTHESES = {
         "Liquid US securities with persistent positive trend, participation confirmation, and "
         "limited extension may continue as slower capital adjusts to improving price information."
     ),
+    "us_activist_13d_v1": (
+        "New Schedule 13D campaigns by a preregistered set of repeat activists may retain "
+        "follower-capturable post-disclosure drift after point-in-time costs and tradeability gates."
+    ),
+    "us_insider_cluster_v1": (
+        "Unscheduled open-market purchases by historically opportunistic insiders, especially "
+        "multi-insider clusters, may predict returns after the filing becomes public."
+    ),
+    "us_forced_seller_v1": (
+        "Mandate-constrained holders receiving post-spin or forced-distribution securities may "
+        "sell for structural rather than informational reasons, creating a temporary dislocation."
+    ),
+    "us_factor_sleeve_v1": (
+        "A patient, diversified value-momentum-quality-low-issuance composite may deliver "
+        "beta-plus returns only if it beats cap-weighted, eligible-universe 1/N, and naive-factor nulls."
+    ),
 }
 
 

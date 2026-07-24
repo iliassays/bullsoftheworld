@@ -143,6 +143,14 @@ export interface CalibrationSnapshot {
   observations: CalibrationObservation[];
 }
 
+export type BacktestStrategyKey =
+  | "dse_reversal_v1"
+  | "us_breakout_v1"
+  | "us_activist_13d_v1"
+  | "us_insider_cluster_v1"
+  | "us_forced_seller_v1"
+  | "us_factor_sleeve_v1";
+
 export interface AutomationPolicy {
   id: string;
   workspaceId: string;
@@ -611,7 +619,7 @@ export const researchApi = {
   async backtest(
     workspaceId: string,
     payload: {
-      strategy_key: "dse_reversal_v1" | "us_breakout_v1";
+      strategy_key: BacktestStrategyKey;
       start_date?: string;
       end_date?: string;
       cap_tier?: string;

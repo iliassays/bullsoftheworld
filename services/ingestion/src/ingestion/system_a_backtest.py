@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import bisect
 import datetime as dt
 import json
 import sys
@@ -42,7 +43,10 @@ from sqlalchemy import distinct, select
 
 from bulls.analytics.cost_observatory import estimate_spread
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
-from bulls.analytics.factor_sleeve import FundamentalFact, point_in_time_fundamentals
+from bulls.analytics.factor_sleeve import (
+    FundamentalObservation,
+    point_in_time_factor_fundamentals,
+)
 from bulls.analytics.filing_book import (
     BookPolicy,
     CandidateEvent,
@@ -63,7 +67,7 @@ from bulls.analytics.filing_signals import (
 from bulls.analytics.research_strategy import (
     StrategyBar,
     StrategySecurity,
-    run_backtest,
+    run_cost_tiered_backtest,
 )
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
@@ -71,9 +75,10 @@ from bulls.core.models import (
     EdgarFilingEvent,
     InsiderTransaction,
     OwnershipStakeEvent,
-    SecFinancialFact,
+    SecFinancialFactObservation,
     SecurityMaster,
 )
+from bulls.market_data.providers.sec_edgar import METRIC_SPECS
 
 # Documented multi-campaign activists (Phase 1/9 tier). Filer selection IS the strategy: the
 # aggregate 13D universe carries no reliable edge, so this is an allow-list, not a screen.
@@ -83,17 +88,47 @@ _ACTIVIST_FRAGMENTS = (
     "ancora", "politan", "engine capital", "carl c", "value act", "scion", "cannell",
     "barington", "land & buildings", "impactive", "inclusive capital", "sarissa",
 )
+_CONCEPT_PRIORITY = {
+    (spec.metric, concept.taxonomy, concept.concept): priority
+    for spec in METRIC_SPECS
+    for priority, concept in enumerate(spec.concepts)
+}
 
 
 async def _load_events(start: dt.date):
     """Phase 1: everything needed to decide candidates, without touching prices."""
     sm = get_sessionmaker()
     async with sm() as s:
-        # Light projection for routine/opportunistic classification: the pattern lives in an
-        # insider's full trade calendar, so we need every date but only the date and owner.
+        candidate_owners = (
+            select(distinct(InsiderTransaction.owner_cik))
+            .join(
+                EdgarFilingEvent,
+                EdgarFilingEvent.accession_number == InsiderTransaction.accession_number,
+            )
+            .where(
+                InsiderTransaction.code == "P",
+                EdgarFilingEvent.accepted_at.is_not(None),
+                EdgarFilingEvent.accepted_at >= start - dt.timedelta(days=45),
+            )
+        )
+        # Light point-in-time projection for only owners who can enter the test window. Acceptance
+        # time is mandatory: final-history classification would leak later behavior backwards.
         class_rows = list(await s.execute(
-            select(InsiderTransaction.owner_cik, InsiderTransaction.transaction_date)
-            .where(InsiderTransaction.transaction_date.is_not(None))
+            select(
+                InsiderTransaction.owner_cik,
+                InsiderTransaction.transaction_date,
+                EdgarFilingEvent.accepted_at,
+            )
+            .join(
+                EdgarFilingEvent,
+                EdgarFilingEvent.accession_number == InsiderTransaction.accession_number,
+            )
+            .where(
+                InsiderTransaction.owner_cik.in_(candidate_owners),
+                InsiderTransaction.transaction_date.is_not(None),
+                EdgarFilingEvent.accepted_at.is_not(None),
+            )
+            .order_by(InsiderTransaction.owner_cik, EdgarFilingEvent.accepted_at)
         ))
         # CIK -> symbol bridge. The security master is the authoritative source (it resolves
         # activist 13D targets that never appear in the insider stream); the insider table's own
@@ -131,7 +166,7 @@ async def _load_events(start: dt.date):
                 OwnershipStakeEvent.filed_by_name, OwnershipStakeEvent.form,
                 OwnershipStakeEvent.accepted_at, OwnershipStakeEvent.percent_of_class,
             )
-            .where(OwnershipStakeEvent.form.like("%13D%"),
+            .where(OwnershipStakeEvent.form.like("%13%"),
                    OwnershipStakeEvent.accepted_at.is_not(None))
         ))
     return class_rows, master_rows, bridge_rows, purchase_rows, stake_rows
@@ -146,27 +181,49 @@ async def _load_prices(codes: list[str], start: dt.date):
         for i in range(0, len(codes), 400):
             chunk = codes[i : i + 400]
             bar_rows += list(await s.execute(
-                select(DailyBar.code, DailyBar.date, DailyBar.open, DailyBar.high,
-                       DailyBar.low, DailyBar.close, DailyBar.volume)
+                select(
+                    DailyBar.code,
+                    DailyBar.date,
+                    DailyBar.open,
+                    DailyBar.high,
+                    DailyBar.low,
+                    DailyBar.close,
+                    DailyBar.volume,
+                    DailyBar.adjusted_close,
+                )
                 .where(DailyBar.market == "US", DailyBar.code.in_(chunk),
                        DailyBar.date >= start - dt.timedelta(days=400))
                 .order_by(DailyBar.code, DailyBar.date)
             ))
             fact_rows += list(await s.execute(
-                select(SecFinancialFact.code, SecFinancialFact.value,
-                       SecFinancialFact.period_end, SecFinancialFact.filed_at)
-                .where(SecFinancialFact.market == "US", SecFinancialFact.code.in_(chunk),
-                       SecFinancialFact.metric == "shares_outstanding")
+                select(
+                    SecFinancialFactObservation.code,
+                    SecFinancialFactObservation.metric,
+                    SecFinancialFactObservation.value,
+                    SecFinancialFactObservation.unit,
+                    SecFinancialFactObservation.period_start,
+                    SecFinancialFactObservation.period_end,
+                    SecFinancialFactObservation.period_type,
+                    SecFinancialFactObservation.known_at,
+                    SecFinancialFactObservation.accession_number,
+                    SecFinancialFactObservation.taxonomy,
+                    SecFinancialFactObservation.source_concept,
+                )
+                .where(
+                    SecFinancialFactObservation.market == "US",
+                    SecFinancialFactObservation.code.in_(chunk),
+                    SecFinancialFactObservation.metric == "shares_outstanding",
+                )
             ))
     return bar_rows, fact_rows
 
 
 def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows, *, start, sleeve):
-    # Routine/opportunistic per insider, from the light projection.
-    owner_dates: dict[int, list[dt.date]] = defaultdict(list)
-    for owner_cik, txn_date in class_rows:
-        owner_dates[owner_cik].append(txn_date)
-    classes = {owner: classify_insider(dates) for owner, dates in owner_dates.items()}
+    # Each owner's history is ordered by when it became public. A candidate is classified from the
+    # prefix visible at its own dissemination time, never from the final database.
+    owner_history: dict[int, list[tuple[dt.datetime, dt.date]]] = defaultdict(list)
+    for owner_cik, txn_date, accepted_at in class_rows:
+        owner_history[owner_cik].append((accepted_at, txn_date))
 
     # Security master first (authoritative), then the insider pairs fill any gaps.
     cik_to_symbol = {cik: sym for cik, sym in bridge_rows if sym}
@@ -182,7 +239,18 @@ def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows,
         )
         for r in purchase_rows
     ]
-    purchases = [t for t in qualifying_purchases(trades, classes) if t.issuer_symbol]
+    purchases: list[InsiderTrade] = []
+    for trade in sorted(trades, key=lambda item: item.disseminated_at):
+        history = owner_history.get(trade.owner_cik, [])
+        cut = bisect.bisect_right(
+            [known_at for known_at, _ in history],
+            trade.disseminated_at,
+        )
+        classification = classify_insider([date for _, date in history[:cut]])
+        purchases.extend(
+            qualifying_purchases([trade], {trade.owner_cik: classification})
+        )
+    purchases = [trade for trade in purchases if trade.issuer_symbol]
     clusters = detect_clusters(purchases, window_days=30, minimum_insiders=1)
     insider_candidates = [
         CandidateEvent(
@@ -202,6 +270,7 @@ def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows,
             percent_of_class=r.percent_of_class, is_amendment="/A" in (r.form or ""),
         )
         for r in stake_rows
+        if "13D" in (r.form or "").upper()
     ]
     activist_candidates = [
         CandidateEvent(
@@ -214,15 +283,10 @@ def _candidates(class_rows, master_rows, bridge_rows, purchase_rows, stake_rows,
 
     # Sleeve isolation: the two signals differ in kind and volume (thousands of insider clusters
     # vs dozens of activist 13Ds), so testing each alone answers a distinct pre-registered claim.
-    if sleeve == "insider":
-        candidates = insider_candidates
-    elif sleeve == "activist":
-        candidates = activist_candidates
-    else:
-        candidates = insider_candidates + activist_candidates
+    candidates = insider_candidates if sleeve == "insider" else activist_candidates
     diag = {
         "sleeve": sleeve,
-        "classified_insiders": len(classes),
+        "classified_insiders": len(owner_history),
         "opportunistic_purchases": len(purchases),
         "insider_clusters": len(insider_candidates),
         "activist_events": len(activist_candidates),
@@ -246,6 +310,61 @@ def _market_state_on(symbol, as_of, spreads, bars, pit_shares) -> CandidateMarke
     )
 
 
+def _spread_as_of(
+    symbol: str,
+    as_of: dt.date,
+    bars: dict[str, list[StrategyBar]],
+) -> float | None:
+    completed = [bar for bar in bars.get(symbol, []) if bar.date <= as_of][-60:]
+    estimate = estimate_spread(
+        symbol,
+        [bar.high for bar in completed],
+        [bar.low for bar in completed],
+    )
+    return estimate.half_spread_bps if estimate is not None else None
+
+
+def _session_for_signal(
+    signal_at: dt.datetime,
+    session_dates: list[dt.date],
+) -> dt.datetime | None:
+    index = bisect.bisect_left(session_dates, signal_at.date())
+    if index >= len(session_dates):
+        return None
+    return dt.datetime.combine(session_dates[index], dt.time.max, tzinfo=dt.UTC)
+
+
+def _thesis_breaks(
+    stake_rows,
+    *,
+    master_rows,
+    bridge_rows,
+    session_dates: list[dt.date],
+) -> dict[dt.datetime, dict[str, str]]:
+    cik_to_symbol = {cik: symbol for cik, symbol in bridge_rows if symbol}
+    cik_to_symbol.update({cik: symbol for cik, symbol in master_rows if symbol})
+    roster = ActivistRoster(name_fragments=_ACTIVIST_FRAGMENTS)
+    breaks: dict[dt.datetime, dict[str, str]] = defaultdict(dict)
+    for row in stake_rows:
+        if (
+            row.subject_cik not in cik_to_symbol
+            or not roster.matches(cik=row.filed_by_cik, name=row.filed_by_name)
+        ):
+            continue
+        reason = None
+        form = (row.form or "").upper()
+        if "13G" in form:
+            reason = "converted_to_13g"
+        elif "13D/A" in form and row.percent_of_class is not None and row.percent_of_class <= 0.5:
+            reason = "stake_exit"
+        if reason is None:
+            continue
+        session = _session_for_signal(row.accepted_at, session_dates)
+        if session is not None:
+            breaks[session][cik_to_symbol[row.subject_cik]] = reason
+    return dict(breaks)
+
+
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     class_rows, master_rows, bridge_rows, purchase_rows, stake_rows = await _load_events(args.start)
     candidates, diag = _candidates(
@@ -258,21 +377,38 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     codes = sorted({c.symbol for c in candidates})
     bar_rows, fact_rows = await _load_prices(codes, args.start)
     bars: dict[str, list[StrategyBar]] = defaultdict(list)
-    for code, d, o, h, low, cl, v in bar_rows:
+    for code, d, o, h, low, cl, v, adjusted_close in bar_rows:
         if None in (o, h, low, cl) or min(o, h, low, cl) <= 0:
             continue
-        bars[code].append(StrategyBar(date=d, open=o, high=h, low=low, close=cl, volume=int(v or 0)))
-    facts = [FundamentalFact(code=c, metric="shares_outstanding", value=v, period_end=pe, filed_at=fa)
-             for c, v, pe, fa in fact_rows]
-
-    spreads: dict[str, float] = {}
-    for code in codes:
-        history = bars.get(code)
-        if not history:
-            continue
-        est = estimate_spread(code, [b.high for b in history], [b.low for b in history])
-        if est is not None:
-            spreads[code] = est.half_spread_bps
+        adjustment = adjusted_close / cl if adjusted_close is not None and cl > 0 else 1.0
+        bars[code].append(
+            StrategyBar(
+                date=d,
+                open=o * adjustment,
+                high=h * adjustment,
+                low=low * adjustment,
+                close=cl * adjustment,
+                volume=int(v or 0),
+            )
+        )
+    facts = [
+        FundamentalObservation(
+            code=row.code,
+            metric=row.metric,
+            value=row.value,
+            unit=row.unit,
+            period_start=row.period_start,
+            period_end=row.period_end,
+            period_type=row.period_type,
+            known_at=row.known_at,
+            accession_number=row.accession_number,
+            concept_priority=_CONCEPT_PRIORITY.get(
+                (row.metric, row.taxonomy, row.source_concept),
+                len(METRIC_SPECS),
+            ),
+        )
+        for row in fact_rows
+    ]
 
     policy = BookPolicy(
         max_position_pct=0.05, max_concurrent_positions=args.max_positions,
@@ -281,23 +417,57 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         require_market_cap=False,  # spread gate is primary; cap floor applies only when known
     )
 
+    session_dates = sorted(
+        {
+            bar.date
+            for history in bars.values()
+            for bar in history
+            if bar.date >= args.start
+        }
+    )
+    sessions = [
+        dt.datetime.combine(date, dt.time.max, tzinfo=dt.UTC)
+        for date in session_dates
+    ]
     by_session: dict[dt.datetime, list[CandidateEvent]] = defaultdict(list)
-    for c in candidates:
-        by_session[c.signal_at].append(c)
-    sessions = sorted(by_session)
+    for candidate in candidates:
+        session = _session_for_signal(candidate.signal_at, session_dates)
+        if session is not None:
+            by_session[session].append(candidate)
 
     market_state_by_session: dict[dt.datetime, dict[str, CandidateMarketState]] = {}
     all_screened = []
     for sess in sessions:
-        pit_shares = point_in_time_fundamentals(facts, as_of=sess.date())
-        state = {c.symbol: _market_state_on(c.symbol, sess.date(), spreads, bars, pit_shares)
-                 for c in by_session[sess]}
+        if not by_session.get(sess):
+            continue
+        pit_shares = point_in_time_factor_fundamentals(facts, as_of=sess)
+        spreads = {
+            candidate.symbol: _spread_as_of(candidate.symbol, sess.date(), bars)
+            for candidate in by_session[sess]
+        }
+        state = {
+            candidate.symbol: _market_state_on(
+                candidate.symbol,
+                sess.date(),
+                spreads,
+                bars,
+                pit_shares,
+            )
+            for candidate in by_session[sess]
+        }
         market_state_by_session[sess] = state
         all_screened += screen_candidates(by_session[sess], state, policy)
 
     schedule_dt, _advances = build_weight_schedule(
         sessions=sessions, candidates_by_session=by_session,
         market_state_by_session=market_state_by_session, policy=policy,
+        thesis_breaks_by_session=_thesis_breaks(
+            stake_rows,
+            master_rows=master_rows,
+            bridge_rows=bridge_rows,
+            session_dates=session_dates,
+        ),
+        emit_unchanged=False,
     )
     schedule: dict[dt.date, dict[str, float]] = {w.date(): weights for w, weights in schedule_dt.items()}
     held = {s for w in schedule.values() for s in w}
@@ -309,11 +479,17 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         StrategySecurity(code=code, bars=[b for b in bars[code] if b.date >= args.start])
         for code in held if len(bars.get(code, [])) >= 30
     ]
-    result = run_backtest(
-        market="US", strategy_key="us_breakout_v1", securities=securities,
-        weight_schedule=schedule,
-        half_spread_bps={c: spreads[c] for c in held if c in spreads},
+    strategy_key = (
+        "us_insider_cluster_v1"
+        if args.sleeve == "insider"
+        else "us_activist_13d_v1"
     )
+    cost_tiered = run_cost_tiered_backtest(
+        market="US", strategy_key=strategy_key, securities=securities,
+        weight_schedule=schedule,
+        execution_timing="next_close",
+    )
+    result = cost_tiered.primary
     navs = [p.nav for p in result.equity_curve]
     returns = [navs[i] / navs[i - 1] - 1 for i in range(1, len(navs)) if navs[i - 1] > 0]
     dsr = deflated_sharpe_ratio(returns, num_trials=args.trials)
@@ -322,6 +498,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "window": {"start": str(args.start), "sessions_traded": len(navs)},
         "diagnostics": diag,
+        "strategy_key": strategy_key,
         "book": {
             "distinct_names_held": len(held),
             "rebalance_days": len(schedule),
@@ -333,6 +510,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             "clears_overfitting_bar": dsr.passes if dsr else None,
         },
         "rejections": rejection_summary(all_screened),
+        "cost_stress": cost_tiered.model_dump(mode="json", exclude={"primary"}),
         "caveats": [
             "Crowding screen DISABLED: no short-interest-vs-float feed. Book ran two of three gates.",
             "Market-cap floor is secondary: applied where shares data exists (~50% coverage), spread gate primary.",
@@ -349,7 +527,12 @@ def main() -> None:
     p.add_argument("--max-half-spread-bps", type=float, default=100.0)
     p.add_argument("--time-stop-days", type=int, default=365)
     p.add_argument("--trials", type=int, default=1)
-    p.add_argument("--sleeve", choices=["both", "insider", "activist"], default="both")
+    p.add_argument(
+        "--sleeve",
+        choices=["insider", "activist"],
+        default="activist",
+        help="the sleeves are separate preregistered hypotheses and cannot be pooled",
+    )
     args = p.parse_args()
     json.dump(asyncio.run(main_async(args)), sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")

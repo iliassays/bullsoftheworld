@@ -15,10 +15,9 @@ the same universe, and a naive single-factor version. Beating only a strawman is
 
 1. A fact may only be used once it was *published* — filtered on ``filed_at``, never period end.
    A December quarter is not knowable in January.
-2. When a period has been restated, the **first disclosure** is used, not the latest value. Our own
-   data shows 1,798 period-metrics carrying multiple filings; ranking on restated figures would
-   score the strategy on numbers nobody had at the time. This is Phase 13.1.4's restatement
-   quarantine applied to ourselves.
+2. Revisions are applied only from their own publication timestamp. An amended figure may affect a
+   later rebalance, but it can never overwrite what an earlier rebalance knew. This is Phase
+   13.1.4's restatement quarantine applied to ourselves.
 
 Ranks, not z-scores: fundamental ratios have fat tails and a single outlier can dominate a
 z-scored composite. Cross-sectional percentile ranks are the robust standard.
@@ -27,8 +26,10 @@ z-scored composite. Cross-sectional percentile ranks are the robust standard.
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import statistics
 from collections.abc import Iterable, Sequence
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,21 @@ class FundamentalFact(BaseModel):
     value: float
     period_end: dt.date
     filed_at: dt.date
+
+
+class FundamentalObservation(BaseModel):
+    """One append-only fact revision with the timestamp at which Atlas could know it."""
+
+    code: str
+    metric: str
+    value: float
+    unit: str
+    period_start: dt.date | None = None
+    period_end: dt.date
+    period_type: Literal["instant", "quarter", "annual", "ytd"]
+    known_at: dt.datetime
+    accession_number: str
+    concept_priority: int = Field(default=0, ge=0)
 
 
 class PricePoint(BaseModel):
@@ -134,6 +150,155 @@ def point_in_time_fundamentals(
     resolved: dict[str, dict[str, float]] = {}
     for (code, metric), (_, _, value) in best.items():
         resolved.setdefault(code, {})[metric] = value
+    return resolved
+
+
+def _known_cutoff(as_of: dt.date | dt.datetime) -> dt.datetime:
+    if isinstance(as_of, dt.datetime):
+        return as_of if as_of.tzinfo is not None else as_of.replace(tzinfo=dt.UTC)
+    return dt.datetime.combine(as_of, dt.time.max, tzinfo=dt.UTC)
+
+
+def _as_utc(value: dt.datetime) -> dt.datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=dt.UTC)
+
+
+def _latest_known_periods(
+    observations: Iterable[FundamentalObservation],
+    *,
+    as_of: dt.date | dt.datetime,
+) -> dict[str, dict[str, list[FundamentalObservation]]]:
+    """Resolve one preferred, as-known observation for each metric/period."""
+
+    cutoff = _known_cutoff(as_of)
+    selected: dict[
+        tuple[str, str, dt.date, str], FundamentalObservation
+    ] = {}
+    for observation in observations:
+        if _as_utc(observation.known_at) > cutoff:
+            continue
+        key = (
+            observation.code,
+            observation.metric,
+            observation.period_end,
+            observation.period_type,
+        )
+        current = selected.get(key)
+        candidate_rank = (
+            _as_utc(observation.known_at),
+            -observation.concept_priority,
+            observation.accession_number,
+        )
+        current_rank = (
+            _as_utc(current.known_at),
+            -current.concept_priority,
+            current.accession_number,
+        ) if current is not None else None
+        if current_rank is None or candidate_rank > current_rank:
+            selected[key] = observation
+
+    grouped: dict[str, dict[str, list[FundamentalObservation]]] = {}
+    for observation in selected.values():
+        grouped.setdefault(observation.code, {}).setdefault(observation.metric, []).append(
+            observation
+        )
+    for metrics in grouped.values():
+        for rows in metrics.values():
+            rows.sort(key=lambda row: (row.period_end, _as_utc(row.known_at)), reverse=True)
+    return grouped
+
+
+def _standalone_quarters(
+    rows: Sequence[FundamentalObservation],
+) -> list[FundamentalObservation]:
+    """Return direct and safely derivable standalone quarters from as-known observations."""
+
+    quarters = {row.period_end: row for row in rows if row.period_type == "quarter"}
+    cumulative = sorted(
+        (row for row in rows if row.period_type == "ytd"),
+        key=lambda row: row.period_end,
+    )
+    bases = [row for row in rows if row.period_type in {"quarter", "ytd"}]
+    for current in cumulative:
+        if current.period_end in quarters or current.period_start is None:
+            continue
+        prior = max(
+            (
+                row
+                for row in bases
+                if row.period_start == current.period_start
+                and row.period_end < current.period_end
+                and row.unit == current.unit
+                and 60 <= (current.period_end - row.period_end).days <= 150
+            ),
+            key=lambda row: row.period_end,
+            default=None,
+        )
+        if prior is None:
+            continue
+        quarters[current.period_end] = current.model_copy(
+            update={
+                "value": current.value - prior.value,
+                "period_start": prior.period_end + dt.timedelta(days=1),
+                "period_type": "quarter",
+            }
+        )
+    return sorted(quarters.values(), key=lambda row: row.period_end, reverse=True)
+
+
+def _ttm_value(rows: Sequence[FundamentalObservation]) -> float | None:
+    quarters = _standalone_quarters(rows)
+    latest_four = quarters[:4]
+    if len(latest_four) == 4 and all(
+        newer.unit == older.unit
+        and 60 <= (newer.period_end - older.period_end).days <= 130
+        for newer, older in itertools.pairwise(latest_four)
+    ):
+        return sum(row.value for row in latest_four)
+
+    annual = next((row for row in rows if row.period_type == "annual"), None)
+    if annual is None:
+        return None
+    newer = [row for row in quarters if row.period_end > annual.period_end]
+    if not newer:
+        return annual.value
+    replacements: list[tuple[FundamentalObservation, FundamentalObservation]] = []
+    for current in newer:
+        prior = next(
+            (
+                candidate
+                for candidate in quarters
+                if candidate.unit == current.unit
+                and 345 <= (current.period_end - candidate.period_end).days <= 385
+            ),
+            None,
+        )
+        if prior is None:
+            return annual.value
+        replacements.append((current, prior))
+    return annual.value + sum(current.value - prior.value for current, prior in replacements)
+
+
+def point_in_time_factor_fundamentals(
+    observations: Iterable[FundamentalObservation],
+    *,
+    as_of: dt.date | dt.datetime,
+) -> dict[str, dict[str, float]]:
+    """Build factor-ready balance-sheet values and TTM income as known at ``as_of``."""
+
+    grouped = _latest_known_periods(observations, as_of=as_of)
+    resolved: dict[str, dict[str, float]] = {}
+    for code, metrics in grouped.items():
+        values: dict[str, float] = {}
+        for metric in ("equity", "shares_outstanding"):
+            rows = metrics.get(metric, [])
+            if rows:
+                values[metric] = rows[0].value
+        net_income = _ttm_value(metrics.get("net_income", []))
+        if net_income is not None:
+            values["net_income"] = net_income
+        if values:
+            resolved[code] = values
     return resolved
 
 

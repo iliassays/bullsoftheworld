@@ -292,10 +292,13 @@ def test_schedule_holds_a_position_until_its_time_stop() -> None:
         market_state_by_session={sessions[0]: {"AAA": _good_state()}},
         policy=policy,
     )
-    # Held from entry through to the time stop, then gone.
+    # Held through the time stop, then exits in two deterministic legs.
     assert "AAA" in schedule[sessions[0]]
     assert "AAA" in schedule[sessions[2]]
-    assert schedule[sessions[3]] == {}
+    assert schedule[sessions[3]]["AAA"] == pytest.approx(
+        schedule[sessions[2]]["AAA"] * 0.5
+    )
+    assert schedule[sessions[4]] == {}
     assert any(e.reason == "time_stop" for a in advances for e in a.exits)
 
 

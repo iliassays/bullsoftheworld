@@ -62,3 +62,10 @@ ones, and the mandate forbids optimizing for activity.
 - Nothing in Stages 0–2 requires paid data. The first paid-data decision (point-in-time
   fundamentals for System C at full rigor) is deferred until System C survives its cheap
   approximation; if it can't beat the null with free data, it won't with expensive data.
+
+## Implementation checkpoint — Atlas engine v2
+
+The current code status is maintained in `implementation-status.md`. Systems A1/A2 and C now run
+as registered diagnostics through one execution, cost, risk, null-model, and shadow harness.
+System B is deliberately data-blocked. None of the three is a validated edge while the failed
+gates listed in that status file remain.

@@ -3,12 +3,14 @@ import datetime as dt
 import pytest
 
 from bulls.analytics.research_strategy import (
+    EquityPoint,
     ShadowPosition,
     ShadowState,
     StrategyBar,
     StrategySecurity,
     advance_shadow_portfolio,
     evaluate_shadow_promotion,
+    robustness_slices,
     run_backtest,
 )
 
@@ -119,6 +121,71 @@ def test_shadow_book_executes_prior_close_target_at_current_open() -> None:
     assert advanced.state.positions["FLOW"].shares > 0
 
 
+def test_institutional_shadow_uses_close_and_external_next_target() -> None:
+    security = _security("FLOW", market="US", sessions=220)
+    previous = ShadowState(
+        cash=100_000,
+        positions={},
+        peak_nav=100_000,
+        benchmark_nav=100_000,
+    )
+
+    advanced = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_factor_sleeve_v1",
+        securities=[security],
+        previous=previous,
+        target_weights={"FLOW": 0.05},
+        next_target_weights={"FLOW": 0.02},
+        execution_timing="next_close",
+        session_number=1,
+    )
+
+    assert advanced.trades[0].fill_price > security.bars[-1].close
+    assert advanced.trades[0].reason.endswith("(next-close)")
+    assert advanced.trades[0].decision_reference_price == security.bars[-2].close
+    assert advanced.trades[0].implementation_shortfall_bps is not None
+    assert advanced.next_target_weights == {"FLOW": 0.02}
+
+
+def test_named_regime_slices_use_only_observed_points() -> None:
+    points = [
+        {
+            "date": dt.date(2020, 2, 3),
+            "nav": 100.0,
+            "benchmark": 100.0,
+            "cash": 100.0,
+            "gross_exposure_pct": 0.0,
+            "drawdown_pct": 0.0,
+        },
+        {
+            "date": dt.date(2020, 3, 3),
+            "nav": 80.0,
+            "benchmark": 90.0,
+            "cash": 80.0,
+            "gross_exposure_pct": 0.0,
+            "drawdown_pct": 20.0,
+        },
+        {
+            "date": dt.date(2021, 12, 30),
+            "nav": 120.0,
+            "benchmark": 110.0,
+            "cash": 120.0,
+            "gross_exposure_pct": 0.0,
+            "drawdown_pct": 0.0,
+        },
+    ]
+    curve = [EquityPoint.model_validate(point) for point in points]
+
+    slices = robustness_slices(curve)
+
+    assert [item.key for item in slices] == ["pandemic_dislocation_2020_2021"]
+    assert slices[0].sessions == 3
+    assert slices[0].total_return_pct == 20.0
+    assert slices[0].benchmark_return_pct == 10.0
+    assert slices[0].max_drawdown_pct == 20.0
+
+
 def test_shadow_book_stop_schedules_next_open_exit_without_hindsight_fill() -> None:
     security = _security("RISK", market="US", sessions=220)
     previous = ShadowState(
@@ -139,6 +206,13 @@ def test_shadow_book_stop_schedules_next_open_exit_without_hindsight_fill() -> N
 
     assert "RISK" not in advanced.next_target_weights
     assert any(item.rule == "position_stop" for item in advanced.risk_interventions)
+    sell = next(trade for trade in advanced.trades if trade.side == "sell")
+    assert sell.decision_reference_price is not None
+    expected_shortfall = round(
+        (1 - sell.fill_price / sell.decision_reference_price) * 10_000,
+        3,
+    )
+    assert sell.implementation_shortfall_bps == pytest.approx(expected_shortfall, abs=0.1)
 
 
 def test_backtest_carries_last_mark_when_held_security_bar_is_missing() -> None:

@@ -92,7 +92,7 @@ describe("autonomous research JSON adapters", () => {
         positions: {},
         targetWeights: {},
         trades: [
-          { date: "2026-07-16", code: "bsc", side: "buy", quantity: 100, fill_price: 120, gross_value: 12_000, fee: 60, reason: "prior-close shadow target" },
+          { date: "2026-07-16", code: "bsc", side: "buy", quantity: 100, decision_reference_price: 118, implementation_shortfall_bps: 169.492, fill_price: 120, gross_value: 12_000, fee: 60, reason: "prior-close shadow target" },
           { date: "2026-07-16", code: "GP", side: "sell", quantity: 10, fill_price: 300, gross_value: 3_000, fee: 15, reason: "prior-close shadow target" },
           { date: "bad", code: "INVALID", side: "buy", quantity: 0, fill_price: 0, gross_value: 0, fee: 0 },
         ],
@@ -101,7 +101,7 @@ describe("autonomous research JSON adapters", () => {
     };
 
     expect(shadowExecutions(portfolio)).toEqual([
-      expect.objectContaining({ code: "BSC", side: "buy", cashImpact: -12_060 }),
+      expect.objectContaining({ code: "BSC", side: "buy", cashImpact: -12_060, decisionReferencePrice: 118, implementationShortfallBps: 169.492 }),
       expect.objectContaining({ code: "GP", side: "sell", cashImpact: 2_985 }),
     ]);
   });
@@ -175,6 +175,17 @@ describe("autonomous research JSON adapters", () => {
           validation_status: "diagnostic",
           failed_gates: ["Inactive history incomplete"],
           metrics: [{ label: "test", sessions: 100, total_return_pct: 4, annualized_return_pct: 10, annualized_volatility_pct: 15, sharpe: 0.6, sortino: 0.9, max_drawdown_pct: 8 }],
+          robustness_slices: [{
+            key: "recent_2024_onward",
+            label: "Recent regime",
+            start_date: "2024-01-02",
+            end_date: "2026-07-16",
+            sessions: 620,
+            total_return_pct: 14,
+            benchmark_return_pct: 11,
+            excess_return_pct: 3,
+            max_drawdown_pct: 9,
+          }],
           equity_curve: [],
           trades: [],
           risk_interventions: [],
@@ -186,5 +197,10 @@ describe("autonomous research JSON adapters", () => {
     expect(result?.validationStatus).toBe("diagnostic");
     expect(result?.failedGates).toEqual(["Inactive history incomplete"]);
     expect(result?.metrics[0]?.label).toBe("test");
+    expect(result?.robustnessSlices[0]).toMatchObject({
+      key: "recent_2024_onward",
+      excessReturnPct: 3,
+      maxDrawdownPct: 9,
+    });
   });
 });

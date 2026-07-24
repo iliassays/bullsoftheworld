@@ -1,7 +1,6 @@
 """Two-rung drawdown ladder: the book-level risk grammar from Phase 15 (L2).
 
-The backtest engine today has a single binary brake — one drawdown threshold that flattens gross
-exposure to zero. The institutional study's risk rulebook is graduated and, crucially, *sticky*:
+The institutional study's risk rulebook is graduated and, crucially, *sticky*:
 
     halve gross exposure at   -6% / -8% / -12% from book high-water mark   (conservative/mod/agg)
     flatten AND freeze at     -10% / -12% / -18%   → freeze needs a written review before re-entry

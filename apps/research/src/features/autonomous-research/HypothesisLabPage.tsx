@@ -2,6 +2,7 @@ import { AlertTriangle, FileLock2, FlaskConical, Play, ShieldCheck, TestTube2, W
 import { useMemo, useState } from "react";
 
 import { researchDeployment } from "../../app/deployment";
+import type { BacktestStrategyKey } from "../../app/api-client";
 import { Button, SelectField, StatusBadge, type SelectOption } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest } from "./hooks";
@@ -11,6 +12,18 @@ import { PerformanceChart } from "./PerformanceChart";
 const CAP_OPTIONS: readonly SelectOption<string>[] = [
   { value: "all", label: "All capitalization tiers" },
   ...researchDeployment.capTiers.map((tier) => ({ value: tier, label: `${tier.charAt(0).toUpperCase()}${tier.slice(1)} cap` })),
+];
+
+const US_STRATEGIES: readonly SelectOption<BacktestStrategyKey>[] = [
+  { value: "us_activist_13d_v1", label: "A1 · Activist 13D event book" },
+  { value: "us_insider_cluster_v1", label: "A2 · Insider cluster event book" },
+  { value: "us_forced_seller_v1", label: "B · Forced-seller event book (data gated)" },
+  { value: "us_factor_sleeve_v1", label: "C · Factor sleeve" },
+  { value: "us_breakout_v1", label: "Legacy · Liquid trend participation" },
+];
+
+const DSE_STRATEGIES: readonly SelectOption<BacktestStrategyKey>[] = [
+  { value: "dse_reversal_v1", label: "DSE liquid reversal" },
 ];
 
 function value(value: number | null, suffix = ""): string {
@@ -38,7 +51,17 @@ export function HypothesisLabPage() {
   const [universeLimit, setUniverseLimit] = useState(25);
   const [capital, setCapital] = useState(100_000);
   const [bookName, setBookName] = useState(`${researchDeployment.market} systematic shadow`);
-  const strategyKey = researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_breakout_v1";
+  const strategyOptions = researchDeployment.market === "DSE" ? DSE_STRATEGIES : US_STRATEGIES;
+  const [strategyKey, setStrategyKey] = useState<BacktestStrategyKey>(
+    researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_activist_13d_v1",
+  );
+  const institutionalExecution = strategyKey.startsWith("us_") && strategyKey !== "us_breakout_v1";
+  const shadowable = Boolean(
+    activeRun &&
+    result?.endDate &&
+    result.equityCurve.length > 0 &&
+    result.systemReadiness.status !== "data_blocked",
+  );
 
   const submit = () => runBacktest.mutate({
     strategy_key: strategyKey,
@@ -59,17 +82,17 @@ export function HypothesisLabPage() {
       <div className="lab-layout">
         <aside className="atlas-panel lab-config">
           <header><FlaskConical aria-hidden="true" size={16} /><span><strong>Experiment specification</strong><small>Inputs are stored with the run</small></span></header>
-          <label>Registered strategy<input disabled value={strategyKey} /></label>
+          <label>Registered strategy<SelectField label="Registered strategy" onChange={(key) => setStrategyKey(key as BacktestStrategyKey)} options={strategyOptions} value={strategyKey} /></label>
           <label>Capitalization mandate<SelectField label="Capitalization mandate" onChange={setCapTier} options={CAP_OPTIONS} value={capTier} /></label>
           <span className="lab-config__split">
             <label>Start date<input onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} /></label>
             <label>End date<input onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} /></label>
           </span>
-          <label>Universe limit<input max="30" min="5" onChange={(event) => setUniverseLimit(Number(event.target.value))} type="number" value={universeLimit} /></label>
+          <label>Universe limit<input max="500" min="5" onChange={(event) => setUniverseLimit(Number(event.target.value))} type="number" value={universeLimit} /></label>
           <label>Initial capital ({researchDeployment.currency})<input min="1" onChange={(event) => setCapital(Number(event.target.value))} type="number" value={capital} /></label>
           <Button isDisabled={!workspace || runBacktest.isPending} onPress={submit} variant="primary"><Play aria-hidden="true" size={14} />{runBacktest.isPending ? "Running portfolio simulation…" : "Run registered backtest"}</Button>
           {runBacktest.isError && <p className="atlas-error"><AlertTriangle size={13} />{runBacktest.error.message}</p>}
-          <p className="lab-config__policy">The engine is long-only. Signals use completed data through T; fills cannot occur before the next observable open.</p>
+          <p className="lab-config__policy">The engine is long-only. Signals use completed data through T; fills cannot occur before the next observable {institutionalExecution ? "close" : "open"}.</p>
         </aside>
 
         <main className="lab-results">
@@ -97,6 +120,12 @@ export function HypothesisLabPage() {
 
               <section className="atlas-panel result-overview">
                 <header><span><strong>{result.strategy.name}</strong><small>{result.startDate ?? "No first session"} to {result.endDate ?? "No last session"}</small></span><StatusBadge tone={result.validationStatus === "eligible_for_shadow" ? "positive" : "warning"} dot>{result.validationStatus === "eligible_for_shadow" ? "Shadow eligible" : "Diagnostic only"}</StatusBadge></header>
+                <div className={`system-state system-state--${result.systemReadiness.status}`}>
+                  <strong>System state · {result.systemReadiness.status.replace(/_/g, " ")}</strong>
+                  <span>{result.systemReadiness.statement}</span>
+                  <span>Execution clock: {result.systemReadiness.executionTiming.replace("_", " ")}</span>
+                  {result.systemReadiness.missingDatasets.map((dataset) => <span key={dataset}><AlertTriangle size={12} />{dataset}</span>)}
+                </div>
                 <div className="atlas-kpis">
                   <span><small>Ending NAV</small><strong>{result.finalNav.toLocaleString()}</strong></span>
                   <span><small>Benchmark</small><strong>{result.benchmarkFinal.toLocaleString()}</strong></span>
@@ -112,6 +141,21 @@ export function HypothesisLabPage() {
                 <div className="metric-table" role="table">
                   <div role="row"><span>Slice</span><span>Sessions</span><span>Total return</span><span>Ann. return</span><span>Sharpe</span><span>Max drawdown</span></div>
                   {result.metrics.map((metric) => <div key={metric.label} role="row"><strong>{metric.label}</strong><span>{metric.sessions}</span><span className={(metric.totalReturnPct ?? 0) >= 0 ? "value-up" : "value-down"}>{value(metric.totalReturnPct, "%")}</span><span>{value(metric.annualizedReturnPct, "%")}</span><span>{value(metric.sharpe)}</span><span>{value(metric.maxDrawdownPct, "%")}</span></div>)}
+                </div>
+                <div className="cost-stress">
+                  <strong>Named-regime evidence</strong>
+                  <p className="guard-lede">Atlas reports each required market environment separately. A missing period is a validation failure, not a zero return.</p>
+                  {result.robustnessSlices.length > 0 ? <div className="metric-table" role="table">
+                    <div role="row"><span>Regime</span><span>Sessions</span><span>Return</span><span>Benchmark</span><span>Excess</span><span>Max drawdown</span></div>
+                    {result.robustnessSlices.map((slice) => <div key={slice.key} role="row">
+                      <strong title={`${slice.startDate} to ${slice.endDate}`}>{slice.label}</strong>
+                      <span>{slice.sessions}</span>
+                      <span className={slice.totalReturnPct >= 0 ? "value-up" : "value-down"}>{value(slice.totalReturnPct, "%")}</span>
+                      <span>{value(slice.benchmarkReturnPct, "%")}</span>
+                      <span className={slice.excessReturnPct >= 0 ? "value-up" : "value-down"}>{value(slice.excessReturnPct, "%")}</span>
+                      <span>{value(slice.maxDrawdownPct, "%")}</span>
+                    </div>)}
+                  </div> : <p className="guard-note">No named stress window has enough observations to report.</p>}
                 </div>
                 {result.deflatedSharpe && <div className="overfitting-guard">
                   <strong>Overfitting guard</strong>
@@ -143,12 +187,29 @@ export function HypothesisLabPage() {
                     ? `The edge stops beating its benchmark at ${result.costStress.edgeDiesAtBps}bps one-way. Anything that dies by 30bps is not tradeable at retail cost.`
                     : "The edge survives every stress tier tested, including 50bps one-way."}</p>
                 </div>}
+                {result.nullModels.length > 0 && <div className="cost-stress">
+                  <strong>Null-model challenge</strong>
+                  <p className="guard-lede">The active construction must beat simpler portfolios using the same observable universe and execution clock.</p>
+                  <div className="metric-table" role="table">
+                    <div role="row"><span>Comparator</span><span>Realistic return</span><span>30 bps return</span><span>Verdict</span></div>
+                    {result.nullModels.map((model) => {
+                      const passed = model.strategyBeatsRealistic && model.strategyBeatsStress30Bps;
+                      return <div key={model.key} role="row">
+                        <strong>{model.key.replace(/_/g, " ")}</strong>
+                        <span>{value(model.realisticReturnPct, "%")}</span>
+                        <span>{value(model.stress30BpsReturnPct, "%")}</span>
+                        <span className={passed ? "value-up" : "value-down"}>{passed ? "beaten" : "not beaten"}</span>
+                      </div>;
+                    })}
+                  </div>
+                </div>}
                 {result.failedGates.length > 0 && <div className="validation-gates"><strong>Why this is not validated</strong>{result.failedGates.map((gate) => <span key={gate}><AlertTriangle size={12} />{gate}</span>)}</div>}
               </section>
 
               <section className="atlas-panel shadow-launch">
                 <header><WalletCards aria-hidden="true" size={16} /><span><strong>Forward shadow evaluation</strong><small>No broker connection and no capital at risk</small></span></header>
-                <div><label>Book name<input onChange={(event) => setBookName(event.target.value)} value={bookName} /></label><Button isDisabled={!activeRun || bookName.trim().length < 3 || createShadow.isPending} onPress={() => activeRun && createShadow.mutate({ sourceRunId: activeRun.id, name: bookName.trim() })} variant="primary">Start shadow book</Button></div>
+                <div><label>Book name<input onChange={(event) => setBookName(event.target.value)} value={bookName} /></label><Button isDisabled={!shadowable || bookName.trim().length < 3 || createShadow.isPending} onPress={() => activeRun && createShadow.mutate({ sourceRunId: activeRun.id, name: bookName.trim() })} variant="primary">Start shadow book</Button></div>
+                {!shadowable && <p className="portfolio-data-note">A shadow book requires at least one completed market session and a system that is not data-blocked.</p>}
                 {createShadow.isSuccess && <p className="atlas-success">Shadow book created. It will advance only over newly completed market sessions.</p>}
                 {createShadow.isError && <p className="atlas-error"><AlertTriangle size={13} />{createShadow.error.message}</p>}
               </section>

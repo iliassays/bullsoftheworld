@@ -8,11 +8,13 @@ import pytest
 
 from bulls.analytics.factor_sleeve import (
     FundamentalFact,
+    FundamentalObservation,
     PricePoint,
     SecurityFactorInputs,
     SleevePolicy,
     compute_factor_scores,
     equal_weight_null,
+    point_in_time_factor_fundamentals,
     point_in_time_fundamentals,
     rank_universe,
     single_factor_null,
@@ -24,6 +26,29 @@ def _fact(code: str, metric: str, value: float, period_end: str, filed_at: str) 
     return FundamentalFact(
         code=code, metric=metric, value=value,
         period_end=dt.date.fromisoformat(period_end), filed_at=dt.date.fromisoformat(filed_at),
+    )
+
+
+def _observation(
+    metric: str,
+    value: float,
+    period_end: str,
+    known_at: str,
+    *,
+    period_type: str = "instant",
+    period_start: str | None = None,
+    accession: str = "0001",
+) -> FundamentalObservation:
+    return FundamentalObservation(
+        code="AAA",
+        metric=metric,
+        value=value,
+        unit="USD",
+        period_start=dt.date.fromisoformat(period_start) if period_start else None,
+        period_end=dt.date.fromisoformat(period_end),
+        period_type=period_type,
+        known_at=dt.datetime.fromisoformat(known_at),
+        accession_number=accession,
     )
 
 
@@ -77,6 +102,61 @@ def test_multiple_securities_and_metrics_resolve_independently() -> None:
     resolved = point_in_time_fundamentals(facts, as_of=dt.date(2025, 12, 1))
     assert resolved["AAA"] == {"equity": 10.0, "net_income": 2.0}
     assert resolved["BBB"] == {"equity": 50.0}
+
+
+def test_append_only_revision_changes_only_later_rebalances() -> None:
+    observations = [
+        _observation("equity", 100.0, "2025-12-31", "2026-02-01T12:00:00+00:00"),
+        _observation(
+            "equity",
+            80.0,
+            "2025-12-31",
+            "2026-04-01T12:00:00+00:00",
+            accession="0002",
+        ),
+    ]
+
+    before = point_in_time_factor_fundamentals(
+        observations, as_of=dt.date(2026, 3, 1)
+    )
+    after = point_in_time_factor_fundamentals(
+        observations, as_of=dt.date(2026, 5, 1)
+    )
+
+    assert before["AAA"]["equity"] == 100.0
+    assert after["AAA"]["equity"] == 80.0
+
+
+def test_factor_quality_uses_four_standalone_quarters() -> None:
+    observations = [
+        _observation("equity", 200.0, "2025-12-31", "2026-02-01T00:00:00+00:00"),
+        *[
+            _observation(
+                "net_income",
+                value,
+                period_end,
+                known_at,
+                period_type="quarter",
+                period_start=period_start,
+                accession=f"q{index}",
+            )
+            for index, (value, period_start, period_end, known_at) in enumerate(
+                [
+                    (10.0, "2025-01-01", "2025-03-31", "2025-05-01T00:00:00+00:00"),
+                    (20.0, "2025-04-01", "2025-06-30", "2025-08-01T00:00:00+00:00"),
+                    (30.0, "2025-07-01", "2025-09-30", "2025-11-01T00:00:00+00:00"),
+                    (40.0, "2025-10-01", "2025-12-31", "2026-02-01T00:00:00+00:00"),
+                ],
+                start=1,
+            )
+        ],
+    ]
+
+    resolved = point_in_time_factor_fundamentals(
+        observations, as_of=dt.date(2026, 3, 1)
+    )
+
+    assert resolved["AAA"]["net_income"] == 100.0
 
 
 # --- factor computation ------------------------------------------------------------------------

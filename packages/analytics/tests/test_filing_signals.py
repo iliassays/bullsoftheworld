@@ -15,6 +15,7 @@ from bulls.analytics.filing_signals import (
     detect_clusters,
     qualifying_activist_events,
     qualifying_purchases,
+    qualifying_purchases_point_in_time,
 )
 
 
@@ -94,6 +95,35 @@ def test_classify_insiders_uses_full_history_including_sales() -> None:
     ]
     # The routine pattern lives in the scheduled sales; ignoring them would misclassify.
     assert classify_insiders(history)[7] == "routine"
+
+
+def test_purchase_classification_never_uses_later_filings() -> None:
+    oldest = _trade(
+        owner=1,
+        day=dt.date(2023, 1, 10),
+        disseminated=dt.datetime(2023, 1, 12, tzinfo=dt.UTC),
+        code="S",
+    )
+    early = _trade(
+        owner=1,
+        day=dt.date(2024, 1, 10),
+        disseminated=dt.datetime(2024, 1, 12, tzinfo=dt.UTC),
+        code="P",
+    )
+    future = _trade(
+        owner=1,
+        day=dt.date(2025, 1, 10),
+        disseminated=dt.datetime(2025, 1, 12, tzinfo=dt.UTC),
+        code="S",
+    )
+
+    result = qualifying_purchases_point_in_time(
+        [future, early, oldest],
+        include_unclassified=True,
+    )
+
+    assert early in result
+    assert future not in result
 
 
 # --- the Form 4 filter stack ---------------------------------------------------------------

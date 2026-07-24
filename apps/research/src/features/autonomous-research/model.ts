@@ -11,6 +11,8 @@ export interface ShadowExecution {
   grossValue: number;
   fee: number;
   cashImpact: number;
+  decisionReferencePrice: number | null;
+  implementationShortfallBps: number | null;
   reason: string;
 }
 
@@ -109,6 +111,33 @@ export interface CostStress {
   universeSize: number;
 }
 
+export interface NullModelComparison {
+  key: string;
+  realisticReturnPct: number;
+  stress30BpsReturnPct: number;
+  strategyBeatsRealistic: boolean;
+  strategyBeatsStress30Bps: boolean;
+}
+
+export interface RobustnessSlice {
+  key: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  sessions: number;
+  totalReturnPct: number;
+  benchmarkReturnPct: number;
+  excessReturnPct: number;
+  maxDrawdownPct: number;
+}
+
+export interface SystemReadiness {
+  status: "prepared" | "evidence_gaps" | "data_blocked";
+  executionTiming: "next_open" | "next_close";
+  statement: string;
+  missingDatasets: string[];
+}
+
 export interface BacktestResult {
   engineVersion: string;
   strategy: {
@@ -135,6 +164,7 @@ export interface BacktestResult {
   }>;
   riskInterventions: Array<Record<string, unknown>>;
   metrics: BacktestMetric[];
+  robustnessSlices: RobustnessSlice[];
   turnoverPct: number;
   feesPaid: number;
   validationStatus: "diagnostic" | "eligible_for_shadow";
@@ -144,6 +174,8 @@ export interface BacktestResult {
   // absent on runs recorded before those gates existed, so both are nullable.
   deflatedSharpe: DeflatedSharpe | null;
   costStress: CostStress | null;
+  nullModels: NullModelComparison[];
+  systemReadiness: SystemReadiness;
   latestTargetWeights: Record<string, number>;
 }
 
@@ -203,6 +235,8 @@ function execution(
     grossValue,
     fee,
     cashImpact: side === "buy" ? -(grossValue + fee) : grossValue - fee,
+    decisionReferencePrice: nullableNumeric(trade.decision_reference_price),
+    implementationShortfallBps: nullableNumeric(trade.implementation_shortfall_bps),
     reason: text(trade.reason, "Systematic target rebalance"),
   };
 }
@@ -416,6 +450,12 @@ function costStress(run: ResearchRun | undefined): CostStress | null {
 
 export function backtestResult(run: ResearchRun | undefined): BacktestResult | null {
   const output = record(backtestStep(run)?.output);
+  const readinessStep = run?.steps.find((step) => step.kind === "system_readiness");
+  const readinessOutput = record(readinessStep?.output);
+  const readinessDiagnostics = record(readinessOutput?.diagnostics);
+  const forcedSellerReadiness = record(readinessDiagnostics?.readiness);
+  const summary = record(run?.parameters.result_summary);
+  const nullPayload = record(summary?.null_models);
   const strategy = record(output?.strategy);
   const policy = record(output?.risk_policy);
   if (!output || !strategy || !policy) return null;
@@ -452,6 +492,58 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
         }];
       })
     : [];
+  const nullModels = Object.entries(nullPayload ?? {}).flatMap(([key, raw]) => {
+    const item = record(raw);
+    if (!item) return [];
+    return [{
+      key,
+      realisticReturnPct: numeric(item.realistic_return_pct),
+      stress30BpsReturnPct: numeric(item.stress_30bps_return_pct),
+      strategyBeatsRealistic: item.strategy_beats_realistic === true,
+      strategyBeatsStress30Bps: item.strategy_beats_stress_30bps === true,
+    }];
+  });
+  const robustnessSlices = Array.isArray(output.robustness_slices)
+    ? output.robustness_slices.flatMap((raw) => {
+        const item = record(raw);
+        if (
+          !item ||
+          typeof item.key !== "string" ||
+          typeof item.label !== "string" ||
+          typeof item.start_date !== "string" ||
+          typeof item.end_date !== "string"
+        ) return [];
+        return [{
+          key: item.key,
+          label: item.label,
+          startDate: item.start_date,
+          endDate: item.end_date,
+          sessions: numeric(item.sessions),
+          totalReturnPct: numeric(item.total_return_pct),
+          benchmarkReturnPct: numeric(item.benchmark_return_pct),
+          excessReturnPct: numeric(item.excess_return_pct),
+          maxDrawdownPct: numeric(item.max_drawdown_pct),
+        }];
+      })
+    : [];
+  const readinessGates = strings(readinessOutput?.failed_gates);
+  const forcedSellerStatus = text(forcedSellerReadiness?.status);
+  const executionTiming = text(readinessOutput?.execution_timing);
+  const systemReadiness: SystemReadiness = {
+    status: forcedSellerStatus === "data_blocked"
+      ? "data_blocked"
+      : readinessGates.length > 0
+        ? "evidence_gaps"
+        : "prepared",
+    executionTiming: executionTiming === "next_close" ? "next_close" : "next_open",
+    statement: text(
+      forcedSellerReadiness?.statement,
+      readinessGates.length > 0
+        ? "The simulation can run, but named evidence gaps block historical validation."
+        : "The registered system has enough data to run its current diagnostic.",
+    ),
+    missingDatasets: strings(forcedSellerReadiness?.missing_datasets),
+  };
   return {
     engineVersion: text(output.engine_version),
     strategy: {
@@ -475,6 +567,7 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
     equityCurve,
     riskInterventions: Array.isArray(output.risk_interventions) ? output.risk_interventions.filter((item) => record(item) !== null) as Array<Record<string, unknown>> : [],
     metrics,
+    robustnessSlices,
     turnoverPct: numeric(output.turnover_pct),
     feesPaid: numeric(output.fees_paid),
     validationStatus,
@@ -482,6 +575,8 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
     warnings: strings(output.warnings),
     deflatedSharpe: deflatedSharpe(run),
     costStress: costStress(run),
+    nullModels,
+    systemReadiness,
     latestTargetWeights: Object.fromEntries(
       Object.entries(record(output.latest_target_weights) ?? {}).filter(
         (entry): entry is [string, number] => typeof entry[1] === "number",

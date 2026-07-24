@@ -5,10 +5,14 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from decimal import Decimal
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.institutional_research.institutional_backtests import (
+    prepare_institutional_backtest,
+)
 from api.institutional_research.investment import (
     get_active_mandate,
     mandate_snapshot,
@@ -27,6 +31,7 @@ from api.institutional_research.schemas import (
 )
 from api.institutional_research.workflow import _backtest_universe, load_research_run
 from bulls.analytics.research_strategy import (
+    ExecutionTiming,
     ShadowState,
     advance_shadow_portfolio,
     evaluate_shadow_promotion,
@@ -59,6 +64,22 @@ def _snapshot_out(snapshot: ResearchShadowSnapshot) -> ResearchShadowSnapshotOut
         trades=snapshot.trades,
         risk_interventions=snapshot.risk_interventions,
     )
+
+
+_INSTITUTIONAL_STRATEGIES = {
+    "us_activist_13d_v1",
+    "us_insider_cluster_v1",
+    "us_forced_seller_v1",
+    "us_factor_sleeve_v1",
+}
+_EVENT_STRATEGIES = {"us_activist_13d_v1", "us_insider_cluster_v1"}
+
+
+def _execution_timing(configuration: dict) -> ExecutionTiming:
+    value = configuration.get("execution_timing", "next_open")
+    if value not in {"next_open", "next_close"}:
+        raise ValueError(f"Unsupported shadow execution timing: {value!r}")
+    return cast(ExecutionTiming, value)
 
 
 async def _snapshots(
@@ -133,8 +154,14 @@ async def create_shadow_portfolio(
     }
     # A forward test must retain the universe observable at inception. Re-selecting today's most
     # liquid names on every reconciliation would introduce survivorship and universe drift.
-    backtest_request["codes"] = observable_codes
-    backtest_request["universe_limit"] = max(5, min(30, len(observable_codes) or 5))
+    if strategy["key"] in _EVENT_STRATEGIES:
+        # The rule is frozen, not the future event set. A filing published after inception must be
+        # eligible if it passes the preregistered rule.
+        backtest_request["codes"] = []
+        backtest_request["universe_limit"] = 500
+    else:
+        backtest_request["codes"] = observable_codes
+        backtest_request["universe_limit"] = max(5, min(500, len(observable_codes) or 5))
     mandate = await get_active_mandate(session, workspace=workspace)
     if mandate is None:
         raise ValueError("An active investment mandate is required before starting a shadow book")
@@ -161,6 +188,14 @@ async def create_shadow_portfolio(
             "engine_version": result["engine_version"],
             "mandate": pinned_mandate,
             "mandate_binding": "pinned_at_inception",
+            "execution_timing": (
+                "next_close" if strategy["key"] in _INSTITUTIONAL_STRATEGIES else "next_open"
+            ),
+            "universe_binding": (
+                "dynamic_preregistered_event_rule"
+                if strategy["key"] in _EVENT_STRATEGIES
+                else "pinned_at_inception"
+            ),
         },
     )
     session.add(portfolio)
@@ -297,7 +332,16 @@ async def _refresh_shadow_portfolio(
         }
     )
     request = BacktestRequest.model_validate(request_data)
-    securities = await _backtest_universe(session, market=portfolio.market, request=request)
+    preparation = None
+    if portfolio.strategy_key in _INSTITUTIONAL_STRATEGIES:
+        preparation = await prepare_institutional_backtest(
+            session,
+            strategy_key=portfolio.strategy_key,
+            request=request,
+        )
+        securities = preparation.securities
+    else:
+        securities = await _backtest_universe(session, market=portfolio.market, request=request)
     pending_dates = sorted(
         {
             bar.date
@@ -344,6 +388,15 @@ async def _refresh_shadow_portfolio(
             target_weights={key: float(value) for key, value in latest.target_weights.items()},
             session_number=latest.session_number + 1,
             risk_policy=risk_policy,
+            execution_timing=_execution_timing(portfolio.configuration),
+            next_target_weights=(
+                preparation.weight_schedule.get(
+                    current_date,
+                    {key: float(value) for key, value in latest.target_weights.items()},
+                )
+                if preparation is not None
+                else None
+            ),
         )
         latest = ResearchShadowSnapshot(
             id=uuid.uuid4(),

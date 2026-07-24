@@ -247,6 +247,9 @@ class BookState(BaseModel):
     """The book between sessions."""
 
     positions: list[BookPosition] = Field(default_factory=list)
+    # A scheduled time stop sells half on the trigger session and the remainder one session later.
+    # Thesis breaks always override this state and exit in full.
+    staged_exits: dict[str, int] = Field(default_factory=dict)
 
 
 class BookAdvance(BaseModel):
@@ -280,8 +283,35 @@ def advance_book(
     event is dropped rather than traded, which is the point-in-time contract enforced at the book
     boundary as well as the signal boundary.
     """
-    exits = exits_due(state.positions, as_of=as_of, policy=policy, thesis_breaks=thesis_breaks)
-    exiting = {instruction.symbol for instruction in exits}
+    breaks = thesis_breaks or {}
+    prior_staged = dict(state.staged_exits)
+    due = exits_due(
+        [position for position in state.positions if position.symbol not in prior_staged],
+        as_of=as_of,
+        policy=policy,
+        thesis_breaks=breaks,
+    )
+    # A thesis break interrupts a previously staged time exit.
+    for symbol, reason in breaks.items():
+        if symbol in prior_staged:
+            due.append(ExitInstruction(symbol=symbol, reason=reason, immediate=True))
+
+    staged = {
+        symbol: remaining - 1
+        for symbol, remaining in prior_staged.items()
+        if remaining - 1 > 0 and symbol not in breaks
+    }
+    completed_staged = {
+        symbol for symbol, remaining in prior_staged.items() if remaining - 1 <= 0
+    }
+    for instruction in due:
+        if not instruction.immediate:
+            staged[instruction.symbol] = 1
+
+    exits = sorted(due, key=lambda item: item.symbol)
+    exiting = {
+        instruction.symbol for instruction in exits if instruction.immediate
+    } | completed_staged
     surviving = [p for p in state.positions if p.symbol not in exiting]
 
     knowable = [c for c in new_candidates if c.signal_at <= as_of]
@@ -294,11 +324,14 @@ def advance_book(
     ]
     positions = surviving + opened
     weights = target_weights(positions, [], policy)
+    for symbol in staged:
+        if symbol in weights:
+            weights[symbol] = round(weights[symbol] * 0.5, 6)
     positions = [p.model_copy(update={"weight": weights.get(p.symbol, 0.0)}) for p in positions]
 
     return BookAdvance(
         as_of=as_of,
-        state=BookState(positions=positions),
+        state=BookState(positions=positions, staged_exits=staged),
         target_weights=weights,
         exits=exits,
         entries=entries,
@@ -313,6 +346,7 @@ def build_weight_schedule(
     market_state_by_session: dict[dt.datetime, dict[str, CandidateMarketState]],
     policy: BookPolicy,
     thesis_breaks_by_session: dict[dt.datetime, dict[str, ExitReason]] | None = None,
+    emit_unchanged: bool = True,
 ) -> tuple[dict[dt.datetime, dict[str, float]], list[BookAdvance]]:
     """Walk the book forward across sessions, returning the target-weight schedule and the trail.
 
@@ -324,6 +358,7 @@ def build_weight_schedule(
     state = BookState()
     schedule: dict[dt.datetime, dict[str, float]] = {}
     advances: list[BookAdvance] = []
+    previous_weights: dict[str, float] | None = None
     for session in sorted(sessions):
         advance = advance_book(
             as_of=session,
@@ -334,6 +369,8 @@ def build_weight_schedule(
             thesis_breaks=breaks.get(session),
         )
         state = advance.state
-        schedule[session] = advance.target_weights
+        if emit_unchanged or previous_weights != advance.target_weights:
+            schedule[session] = advance.target_weights
+        previous_weights = advance.target_weights
         advances.append(advance)
     return schedule, advances

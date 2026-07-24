@@ -224,12 +224,19 @@ class StartResearchRequest(ApiModel):
 
 class BacktestRequest(ApiModel):
     idempotency_key: str = Field(min_length=8, max_length=96)
-    strategy_key: Literal["dse_reversal_v1", "us_breakout_v1"]
+    strategy_key: Literal[
+        "dse_reversal_v1",
+        "us_breakout_v1",
+        "us_activist_13d_v1",
+        "us_insider_cluster_v1",
+        "us_forced_seller_v1",
+        "us_factor_sleeve_v1",
+    ]
     start_date: dt.date | None = None
     end_date: dt.date | None = None
     cap_tier: Literal["mega", "large", "mid", "small", "micro", "penny"] | None = None
-    codes: list[str] = Field(default_factory=list, max_length=30)
-    universe_limit: int = Field(default=25, ge=5, le=30)
+    codes: list[str] = Field(default_factory=list, max_length=500)
+    universe_limit: int = Field(default=25, ge=5, le=500)
     initial_capital: float = Field(default=100_000, gt=0, le=100_000_000)
 
 
