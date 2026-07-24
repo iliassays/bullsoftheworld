@@ -296,7 +296,7 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
     market === "US"
       ? "Maps to the registered us_breakout_v1 paper book."
       : "No paper book — pending family diagnostics.",
-  methodologyVersion: "squeeze-monitor-v1",
+  methodologyVersion: "squeeze-monitor-v2",
 });
 
 export const previewSqueezeMonitor: SqueezeMonitor = {
@@ -307,11 +307,11 @@ export const previewSqueezeMonitor: SqueezeMonitor = {
   latestDate: "2026-07-23",
   availableDates: ["2026-07-23", "2026-07-22", "2026-07-21"],
   methodology:
-    "States come from the append-only squeeze-monitor-v1 archive written once per completed "
+    "States come from the squeeze-monitor-v2 archive written once per completed "
     + "session after the analytics refresh.",
   limitations: [
     "FINRA daily short-marked volume is not short interest, cannot establish open short positions or days-to-cover, and appears only as labeled supporting context.",
-    "States are a diagnostic taxonomy (squeeze-monitor-v1); no backtest has validated them and nothing here is a prediction or a recommendation.",
+    "States are a diagnostic taxonomy (squeeze-monitor-v2); no backtest has validated them and nothing here is a prediction or a recommendation.",
   ],
   families: [
     ...(market === "DSE"

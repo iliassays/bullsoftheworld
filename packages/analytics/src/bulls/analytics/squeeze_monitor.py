@@ -1,4 +1,4 @@
-"""Deterministic squeeze-taxonomy evaluator (methodology ``squeeze-monitor-v1``).
+"""Deterministic squeeze-taxonomy evaluator (methodology ``squeeze-monitor-v2``).
 
 Design contract (docs/research/squeeze-research-2026-07-24.md): pure functions over completed
 EOD inputs; no I/O, no LLM, no composite score. Each family produces a typed assessment with a
@@ -12,11 +12,17 @@ volume cannot establish positioning.
 from __future__ import annotations
 
 import datetime as dt
+import statistics
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-METHODOLOGY_VERSION = "squeeze-monitor-v1"
+# v2 (2026-07-25) reconciled the engine with its registered specification: breakout
+# participation is measured on the breakout session, the failed-breakdown family enforces the
+# invalidation it displays and the shared eligibility gate, and archived rows carry the
+# classification known on their own session. These change which states the archive contains,
+# so the version moves with them.
+METHODOLOGY_VERSION = "squeeze-monitor-v2"
 
 type SqueezeFamily = Literal[
     "compression_breakout",
@@ -120,6 +126,9 @@ class SqueezeInputs(BaseModel):
     foreign_delta: float | None = None
     # US supporting context only — worded by this module, never as positioning evidence.
     short_marked_share_5d: float | None = None
+    # How many sessions that share actually covers, so the evidence line can state it rather
+    # than assert a session count the query does not guarantee.
+    short_marked_sessions: int | None = None
     # FINRA bi-monthly consolidated short interest, selected on its dissemination date. Unlike
     # short-marked volume these ARE positioning facts, so they may be described as such — but the
     # ratio is against shares outstanding (Atlas has no verified US free float), which understates
@@ -190,9 +199,14 @@ def _common_context(inputs: SqueezeInputs) -> tuple[list[str], list[str], list[s
         and inputs.short_marked_share_5d is not None
         and inputs.short_marked_share_5d >= 0.60
     ):
+        sessions = (
+            f"{inputs.short_marked_sessions} recent sessions"
+            if inputs.short_marked_sessions
+            else "recent sessions"
+        )
         supporting.append(
-            f"Short-marked volume share elevated ({inputs.short_marked_share_5d:.0%} "
-            "5-session, volume-weighted) — this is not short interest and cannot "
+            f"Short-marked volume share elevated ({inputs.short_marked_share_5d:.0%} over "
+            f"{sessions}, volume-weighted) — this is not short interest and cannot "
             "establish positioning."
         )
     # Actual positioning, when a disseminated settlement record exists. Stated with its basis
@@ -236,7 +250,10 @@ def _common_context(inputs: SqueezeInputs) -> tuple[list[str], list[str], list[s
             "Recent financing/dilution filing (S-1/S-3/424B family) within 90 days."
         )
     if inputs.insider_net_selling_30d:
-        counter.append("Net insider open-market selling within 30 days.")
+        counter.append(
+            "Insider open-market sale(s) disclosed within 30 days, excluding 10b5-1 plan "
+            "sales. Not netted against insider purchases."
+        )
     if inputs.market == "DSE":
         quality.append(
             "DSE prices are raw exchange closes without corporate-action adjustment; a bonus "
@@ -354,16 +371,28 @@ def evaluate_compression_breakout(inputs: SqueezeInputs) -> SqueezeAssessment:
     if inputs.obv_slope is not None and inputs.obv_slope > 0:
         supporting.append("Rising on-balance volume (participation leads price).")
 
-    recently_confirmed = (
-        any(bar.close > trigger for bar in bars[-3:])
-        and inputs.relative_volume is not None
-        and inputs.relative_volume >= BREAKOUT_REL_VOLUME
+    # Participation must be measured on the breakout session itself. Pairing "some close in the
+    # last 3 sessions cleared the base" with *today's* relative volume confirmed low-volume
+    # breakouts whenever an unrelated volume spike happened to land today, and printed a reason
+    # that was false about the actual breakout bar.
+    base_volume = (
+        statistics.fmean([bar.volume for bar in base_bars]) if base_bars else 0.0
     )
-    if recently_confirmed:
+    breakout = next(
+        (
+            bar
+            for bar in reversed(bars[-3:])
+            if bar.close > trigger
+            and base_volume > 0
+            and bar.volume >= BREAKOUT_REL_VOLUME * base_volume
+        ),
+        None,
+    )
+    if breakout is not None:
         return assessment(
             "confirmed",
-            "Close exceeded the 20-session base high within the last 3 sessions with "
-            f"relative volume ≥ {BREAKOUT_REL_VOLUME:.1f}x.",
+            f"Close cleared the 20-session base high on {breakout.date.isoformat()} with "
+            f"{breakout.volume / base_volume:.1f}x the base's average session volume.",
         )
     if not near_high:
         return assessment("none", "Price is not within 15% of its 52-week high.")
@@ -386,7 +415,9 @@ def evaluate_compression_breakout(inputs: SqueezeInputs) -> SqueezeAssessment:
 def evaluate_failed_breakdown(inputs: SqueezeInputs) -> SqueezeAssessment:
     supporting, counter, quality = _common_context(inputs)
     bars = inputs.bars
-    missing: list[str] = []
+    # The shared long-side eligibility gate applies here too: this book only buys reclaims
+    # inside an intact medium-term uptrend, not every bounce in a downtrend.
+    eligible, missing = _eligible(inputs)
     if len(bars) < SUPPORT_WINDOW[1] + 5:
         missing.append("Insufficient history to establish a reference support level.")
 
@@ -414,23 +445,30 @@ def evaluate_failed_breakdown(inputs: SqueezeInputs) -> SqueezeAssessment:
             reason=reason,
         )
 
-    if missing:
-        return assessment("none", "Not enough completed history for this family.")
+    if not eligible or missing:
+        return assessment("none", "Eligibility preconditions not met for this family.")
     support = min(bar.low for bar in bars[-SUPPORT_WINDOW[1] : -SUPPORT_WINDOW[0] + 1])
-    recent = bars[-7:]
+    # The undercut window excludes the current session, for the same reason the compression base
+    # does: if today's low could set the invalidation, today's close could never be below it and
+    # the failure branch would be unreachable.
+    recent = bars[-7:-1]
     undercut_bars = [bar for bar in recent if bar.low < support * UNDERCUT_FRACTION]
     if not undercut_bars:
         return assessment("none", "No support undercut in the last 7 sessions.")
     undercut_low = min(bar.low for bar in undercut_bars)
     trigger = support * RECLAIM_FRACTION
-    if inputs.last_close < support * FAILURE_TRIGGER_FRACTION:
+    # Failure is judged against the undercut low — the exact level published to the user as this
+    # setup's invalidation. Enforcing a different threshold than the one displayed is how a card
+    # ends up showing a stop the engine never honoured.
+    if inputs.last_close < undercut_low:
         # "Failed" is only meaningful for something that was previously a live setup. A stock
         # simply breaking down and continuing lower was never a reversal candidate, and
         # archiving it would fill the record with non-setups.
         if inputs.prior_state in {"watch", "forming", "trigger_ready", "confirmed"}:
             return assessment(
                 "failed",
-                "Price closed more than 3% below the broken support; the breakdown succeeded.",
+                "Price closed below the undercut low, the published invalidation for this "
+                "setup; the breakdown succeeded.",
                 trigger=trigger,
                 invalidation=undercut_low,
             )

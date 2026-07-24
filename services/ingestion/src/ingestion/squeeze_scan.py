@@ -1,5 +1,10 @@
 """EOD squeeze-taxonomy scan — the only writer of ``squeeze_daily_states``.
 
+Write semantics: one row per (market, code, family, session), upserted. It is idempotent —
+re-running a session with the same inputs reproduces the same row — but it is NOT append-only:
+re-running after a methodology change rewrites that session's classification in place, with no
+prior version retained. Treat a methodology bump as a rewrite of everything not yet re-scanned.
+
 Runs after the market's analytics refresh. Deterministic: loads completed bars + the persisted
 analytics row per eligible symbol, injects the prior archived state per family, evaluates the
 pure ``squeeze_monitor`` engine, and appends today's states. Only meaningful rows are archived:
@@ -165,6 +170,7 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
         prior_by_pair = {(row.code, row.family): row for row in prior_rows}
 
         short_share_by_code: dict[str, float] = {}
+        short_marked_sessions_by_code: dict[str, int] = {}
         short_interest_by_code: dict[str, ShortInterestObservation] = {}
         shares_outstanding_by_code: dict[str, float] = {}
         dilution_codes: set[str] = set()
@@ -176,6 +182,7 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                         ShortVolumeDaily.code,
                         func.sum(ShortVolumeDaily.short_volume),
                         func.sum(ShortVolumeDaily.total_volume),
+                        func.count(func.distinct(ShortVolumeDaily.date)),
                     )
                     .where(
                         ShortVolumeDaily.market == "US",
@@ -186,9 +193,12 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                     .group_by(ShortVolumeDaily.code)
                 )
             ).all()
-            for code, short_volume, total_volume in short_rows:
+            # The window is 9 calendar days, which is 6-7 sessions in practice — the count is
+            # carried through so the evidence line states what it actually measured.
+            for code, short_volume, total_volume, sessions in short_rows:
                 if total_volume and float(total_volume) > 0:
                     short_share_by_code[code] = float(short_volume) / float(total_volume)
+                    short_marked_sessions_by_code[code] = int(sessions)
             interest_rows = (
                 await session.execute(
                     select(
@@ -295,6 +305,9 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                         .where(
                             InsiderTransaction.issuer_symbol.in_(codes),
                             InsiderTransaction.code == "S",
+                            # Pre-scheduled 10b5-1 sales carry no discretionary signal, so they
+                            # are excluded rather than counted as insiders choosing to sell.
+                            InsiderTransaction.is_10b5_1_plan.is_not(True),
                             EdgarFilingEvent.accepted_at >= selling_floor,
                         )
                         .distinct()
@@ -330,6 +343,7 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                     institute_delta=analytics.institute_delta,
                     foreign_delta=analytics.foreign_delta,
                     short_marked_share_5d=short_share_by_code.get(analytics.code),
+                    short_marked_sessions=short_marked_sessions_by_code.get(analytics.code),
                     short_interest_pct_of_shares_outstanding=(
                         short_interest_pct_of_shares_outstanding(
                             short_interest_by_code[analytics.code].shares_short,
@@ -383,6 +397,14 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                         "risk_per_share": assessment.risk_per_share,
                         "planning_objective_price": assessment.planning_objective_price,
                         "first_discovered_on": first_discovered,
+                        # Snapshotted so an archived session keeps the classification it had.
+                        "cap_tier": analytics.cap_tier,
+                        "average_dollar_volume_mn": (
+                            analytics.last_close * analytics.avg_volume_20 / 1_000_000
+                            if analytics.last_close is not None
+                            and analytics.avg_volume_20 is not None
+                            else None
+                        ),
                         "evidence": {
                             "supporting": assessment.supporting_evidence,
                             "counter": assessment.counter_evidence,
@@ -413,6 +435,8 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                             "risk_per_share",
                             "planning_objective_price",
                             "first_discovered_on",
+                            "cap_tier",
+                            "average_dollar_volume_mn",
                             "evidence",
                             "methodology_version",
                         )

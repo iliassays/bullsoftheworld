@@ -1,4 +1,8 @@
-"""Append-only daily archive of squeeze-taxonomy states (squeeze-monitor-v1).
+"""Daily archive of squeeze-taxonomy states (squeeze-monitor-v2).
+
+One row per (market, code, family, session), upserted by the scan. Idempotent for identical
+inputs, but not append-only: a re-scan after a methodology change rewrites that session in
+place without retaining the prior version.
 
 One row per (market, code, family, session). The scan task is the only writer; rows for closed
 sessions are never rewritten, so "when was this first discovered" and "why did the
@@ -39,6 +43,11 @@ class SqueezeDailyState(Base):
     risk_per_share: Mapped[float | None] = mapped_column(Float)
     planning_objective_price: Mapped[float | None] = mapped_column(Float)
     first_discovered_on: Mapped[dt.date] = mapped_column(Date)
+    # Classification as it was known ON THIS SESSION. Reading these from the current
+    # single-row TickerAnalytics made an archived screen mutate later and carry classification
+    # the market did not yet have; they are therefore snapshotted per session.
+    cap_tier: Mapped[str | None] = mapped_column(String(16))
+    average_dollar_volume_mn: Mapped[float | None] = mapped_column(Float)
     evidence: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )

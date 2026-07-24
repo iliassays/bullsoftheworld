@@ -153,7 +153,7 @@ export function SqueezeMonitorPanel() {
         <span>
           <strong>Squeeze monitor</strong>
           <small>
-            Deterministic setup taxonomy (squeeze-monitor-v1). Families without their required
+            Deterministic setup taxonomy (squeeze-monitor-v2). Families without their required
             datasets are shown blocked — absence is an answer, not a gap.
           </small>
         </span>

@@ -13,7 +13,12 @@ from bulls.analytics.squeeze_monitor import (
 )
 
 
-def _bars(prices: list[tuple[float, float, float, float]], *, volume: float = 500_000):
+def _bars(
+    prices: list[tuple[float, float, float, float]],
+    *,
+    volume: float = 500_000,
+    volumes: list[float] | None = None,
+):
     start = dt.date(2026, 1, 5)
     return [
         SqueezeBar(
@@ -22,7 +27,7 @@ def _bars(prices: list[tuple[float, float, float, float]], *, volume: float = 50
             high=h,
             low=lo,
             close=c,
-            volume=volume,
+            volume=volumes[index] if volumes is not None else volume,
         )
         for index, (o, h, lo, c) in enumerate(prices)
     ]
@@ -65,12 +70,33 @@ def test_compression_base_with_contraction_is_trigger_ready() -> None:
 
 def test_breakout_with_participation_confirms() -> None:
     ramp = [(60 + i * 0.5, 61 + i * 0.5, 59 + i * 0.5, 60.5 + i * 0.5) for i in range(80)]
-    base = _flat(21, 99.0) + [(99.0, 102.0, 98.8, 101.5)] * 3
+    prices = ramp + _flat(21, 99.0) + [(99.0, 102.0, 98.8, 101.5)] * 3
+    # Volume expands on the breakout bars themselves, which is what confirmation means.
+    volumes = [500_000] * (len(prices) - 3) + [1_000_000] * 3
     result = evaluate_compression_breakout(
-        _inputs(bars=_bars(ramp + base), last_close=101.5, relative_volume=2.1)
+        _inputs(bars=_bars(prices, volumes=volumes), last_close=101.5, relative_volume=2.1)
     )
 
     assert result.state == "confirmed"
+    assert "2.0x the base" in result.reason
+
+
+def test_low_volume_breakout_is_not_confirmed_by_an_unrelated_volume_spike_today() -> None:
+    """The breakout session must carry the volume, not merely the day we happen to look.
+
+    Pairing "some close in the last 3 sessions cleared the base" with today's relative volume
+    confirmed weak breakouts whenever an unrelated spike landed today.
+    """
+
+    ramp = [(60 + i * 0.5, 61 + i * 0.5, 59 + i * 0.5, 60.5 + i * 0.5) for i in range(80)]
+    prices = ramp + _flat(21, 99.0) + [(99.0, 102.0, 98.8, 101.5)] + [(101.5, 102.0, 101.0, 101.6)] * 2
+    # The breakout bar traded BELOW the base average; only today is busy, for other reasons.
+    volumes = [500_000] * (len(prices) - 3) + [400_000] + [500_000] * 2
+    result = evaluate_compression_breakout(
+        _inputs(bars=_bars(prices, volumes=volumes), last_close=101.6, relative_volume=3.0)
+    )
+
+    assert result.state != "confirmed"
 
 
 def test_downtrend_is_ineligible() -> None:
@@ -100,7 +126,13 @@ def test_failed_breakdown_reclaim_confirms_with_honest_naming() -> None:
     undercut = [(50.0, 50.2, 47.0, 48.0)] * 3  # support ~49.6 broken
     reclaim = [(48.0, 51.5, 47.9, 51.0)] * 2
     result = evaluate_failed_breakdown(
-        _inputs(bars=_bars(steady + undercut + reclaim), last_close=51.0, relative_volume=1.6)
+        _inputs(
+            bars=_bars(steady + undercut + reclaim),
+            last_close=51.0,
+            relative_volume=1.6,
+            sma_200=45.0,
+            sma_50=49.0,
+        )
     )
 
     assert result.state == "confirmed"
@@ -110,19 +142,40 @@ def test_failed_breakdown_reclaim_confirms_with_honest_naming() -> None:
 
 def test_failed_breakdown_marks_failure_only_for_a_previously_live_setup() -> None:
     steady = _flat(100, 50.0)
+    # Undercut to a 44.0 low, then a session closing BELOW that low: the published invalidation.
     breakdown = [(50.0, 50.0, 46.0, 46.2)] * 3 + [(46.0, 46.1, 44.0, 44.5)] * 2
+    breakdown += [(44.0, 44.2, 42.0, 42.5)]
     bars = _bars(steady + breakdown)
+    common = dict(bars=bars, last_close=42.5, sma_200=40.0, sma_50=44.0)
 
-    was_live = evaluate_failed_breakdown(
-        _inputs(bars=bars, last_close=44.5, prior_state="forming")
-    )
+    was_live = evaluate_failed_breakdown(_inputs(**common, prior_state="forming"))
     assert was_live.state == "failed"
+    # Failure is judged on the level the card publishes, not on a different internal threshold.
+    assert was_live.invalidation_price == 44.0
 
     # A stock that was never a setup and is simply falling must not enter the archive as a
     # "failed setup" — it was never a reversal candidate.
-    never_a_setup = evaluate_failed_breakdown(_inputs(bars=bars, last_close=44.5))
+    never_a_setup = evaluate_failed_breakdown(_inputs(**common))
     assert never_a_setup.state == "none"
     assert "active breakdown" in never_a_setup.reason
+
+
+def test_failed_breakdown_requires_the_shared_uptrend_gate() -> None:
+    """A bounce inside a downtrend is not this family's setup."""
+
+    steady = _flat(100, 50.0)
+    undercut = [(50.0, 50.2, 47.0, 48.0)] * 3
+    reclaim = [(48.0, 51.5, 47.9, 51.0)] * 2
+    result = evaluate_failed_breakdown(
+        _inputs(
+            bars=_bars(steady + undercut + reclaim),
+            last_close=51.0,
+            relative_volume=1.6,
+            sma_200=80.0,  # price is far below its 200-session average
+        )
+    )
+
+    assert result.state == "none"
 
 
 def test_supply_constrained_requires_verified_scarcity() -> None:

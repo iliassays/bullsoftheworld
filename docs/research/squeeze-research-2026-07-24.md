@@ -99,7 +99,7 @@ family, execution is still gated on borrow).
 | 2 | SEC failures-to-deliver + Reg SHO threshold list | free | corroborating borrow-scarcity evidence |
 | 3 | borrow availability, utilization, cost-to-borrow, locates (S3 / Ortex / S&P Global / IB) | paid | **the only stage that can unblock short execution** |
 
-## E. Exact signal definitions (`squeeze-monitor-v1`)
+## E. Exact signal definitions (`squeeze-monitor-v2`)
 
 All from completed EOD data; evaluated after each market's analytics refresh; deterministic;
 thresholds are constants in `bulls.analytics.squeeze_monitor` restated in the API methodology.
@@ -115,8 +115,10 @@ Shared eligibility preconditions per ticker: analytics row fresh for the session
 - *dry-up (supporting)*: `rel_volume_5d < 0.9`.
 - *trigger price*: max high of the last 20 completed sessions (the base high).
 - *states*: `watch` = base only; `forming` = base + contraction; `trigger_ready` = forming +
-  last-5-session range ≤ 1.5 × ATR(14) + close within 3% below trigger; `confirmed` = close >
-  trigger within the last 3 sessions with `relative_volume ≥ 1.5`; `failed` = a previously
+  last-5-session range ≤ 1.5 × ATR(14) + close within 3% below trigger; `confirmed` = a session
+  within the last 3 closed above the trigger **and that same session traded ≥ 1.5× the base's
+  average session volume** (v2: participation is measured on the breakout bar, not on whichever
+  day the scan runs — see the reconciliation note below); `failed` = a previously
   archived `confirmed`/`trigger_ready` whose close falls below 0.97 × trigger;
   `exhausted` = close > 1.25 × sma_50, or 3-session gain > 20% with fading relative volume
   (< 1.0), or ≥ 2 of the last 3 sessions closing in the lower half of their range after a new
@@ -127,10 +129,15 @@ Shared eligibility preconditions per ticker: analytics row fresh for the session
 **failed_breakdown_reversal**:
 - *reference support*: min low of sessions −60…−11 (excludes the recent 10).
 - *undercut*: any low in the last 7 sessions < 0.99 × support.
-- *states*: `forming` = undercut occurred and latest close is back above support but below
-  1.02 × support; `confirmed` = latest close ≥ 1.02 × support with `relative_volume ≥ 1.2`
-  (the reclaim, with participation); `failed` = latest close < the undercut low; `exhausted`
-  as in compression. No `watch`/`trigger_ready` (the setup is inherently event-shaped).
+- *states*: `watch` = undercut occurred, price not yet back above support; `forming` = undercut
+  occurred and latest close is back above support but below 1.02 × support; `confirmed` = latest
+  close ≥ 1.02 × support with `relative_volume ≥ 1.2` (the reclaim, with participation);
+  `failed` = latest close < the undercut low; `exhausted` as in compression. No `trigger_ready`
+  (the setup is event-shaped, with no pre-breakout staging rung).
+- The undercut window is `bars[-7:-1]`, excluding the current session, so the published
+  invalidation cannot be set by the same bar that is being tested against it.
+- The shared eligibility gate applies: this book only buys reclaims inside an intact
+  medium-term uptrend, not every bounce in a downtrend.
 - *invalidation* = undercut low; *trigger* = 1.02 × support.
 
 **supply_constrained_breakout** (DSE only):
@@ -149,6 +156,24 @@ always listed under data quality.
 
 State transitions are archived with a reason string; "why the classification changed" is the
 diff between consecutive `squeeze_daily_states` rows.
+
+### Reconciliation, 2026-07-25 (`squeeze-monitor-v1` → `v2`)
+
+An external review found the engine and this specification had diverged. Every divergence was
+resolved in favour of whichever behaviour is defensible to a user, and the version was bumped
+because these change which states the archive contains:
+
+| Divergence | Resolution |
+|---|---|
+| Breakout confirmation joined "a close in the last 3 sessions cleared the base" to *today's* relative volume | Participation is now measured on the breakout session itself. The old form confirmed below-average-volume breakouts whenever an unrelated volume spike landed today, and printed a reason that was false about that breakout. |
+| Failed-breakdown failed at `0.97 × support` while publishing `undercut_low` as its invalidation | Failure is judged on the published invalidation. A card must never show a level the engine does not enforce. |
+| `undercut_low` included the current session, making the failure branch unreachable | Undercut window excludes the current session, mirroring the compression base. |
+| Failed-breakdown skipped the shared eligibility gate | Gate applied. |
+| Spec said the family has no `watch` state; the engine emitted one | Spec amended: `watch` is retained (undercut seen, not yet reclaimed, is genuinely informative); only `trigger_ready` is absent. |
+| Archived rows read cap tier and capacity from the *current* analytics table | Both are snapshotted onto each row at scan time. Rows archived before the migration are null rather than backfilled, because they genuinely do not know their own session's classification. |
+| "5-session" short-marked share actually covered a 9-calendar-day window | The measured session count is carried through and stated in the evidence line. |
+| "Net insider selling" fired on any `S` transaction | 10b5-1 plan sales excluded; the line states it is not netted against purchases. |
+| Card claimed a setup "maps to the registered us_breakout_v1 paper book" | Removed. No squeeze family feeds any book; the string implied an integration that does not exist. |
 
 ## F. Backtest methodology (specified; to run before any squeeze paper book)
 
