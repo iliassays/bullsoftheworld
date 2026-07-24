@@ -67,7 +67,26 @@ def _utc(value: dt.datetime) -> dt.datetime:
 
 
 def _stable_hash(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    def canonicalize(item: Any) -> Any:
+        if isinstance(item, dict):
+            return {
+                (
+                    key.isoformat()
+                    if isinstance(key, (dt.date, dt.datetime))
+                    else str(key)
+                ): canonicalize(nested)
+                for key, nested in item.items()
+            }
+        if isinstance(item, (list, tuple)):
+            return [canonicalize(nested) for nested in item]
+        return item
+
+    encoded = json.dumps(
+        canonicalize(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 

@@ -11,6 +11,7 @@ from api.institutional_research.institutional_backtests import (
     prepare_institutional_backtest,
 )
 from api.institutional_research.schemas import BacktestRequest
+from api.institutional_research.workflow import _stable_hash
 
 
 def test_event_placebo_moves_each_change_by_completed_sessions() -> None:
@@ -31,6 +32,14 @@ def test_event_placebo_moves_each_change_by_completed_sessions() -> None:
 def test_event_placebo_refuses_non_positive_delay() -> None:
     with pytest.raises(ValueError, match="at least one"):
         _delay_schedule({}, sessions=[], delay_sessions=0)
+
+
+def test_evidence_hash_canonicalizes_date_keyed_schedules() -> None:
+    as_of = dt.date(2026, 1, 2)
+
+    assert _stable_hash({as_of: {"AAA": 0.5}}) == _stable_hash(
+        {as_of.isoformat(): {"AAA": 0.5}}
+    )
 
 
 @pytest.mark.parametrize(
