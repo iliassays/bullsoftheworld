@@ -40,6 +40,7 @@ import {
   type DecisionAction,
 } from "./model";
 import { DecisionBoardPanel } from "./DecisionBoardPanel";
+import { SqueezeMonitorPanel } from "./SqueezeMonitorPanel";
 import { StrategyReadinessPanel } from "./StrategyReadinessPanel";
 
 function dateTime(value: string | null | undefined): string {
@@ -219,6 +220,8 @@ export function InvestmentCommandPage() {
       )}
 
       <DecisionBoardPanel workspaceId={workspace.id} />
+
+      <SqueezeMonitorPanel />
 
       <StrategyReadinessPanel />
 

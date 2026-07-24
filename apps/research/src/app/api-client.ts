@@ -312,6 +312,70 @@ export interface InvestmentOperatingView {
   portfolios: PortfolioOperatingAnalytics[];
 }
 
+export type SqueezeState =
+  | "watch"
+  | "forming"
+  | "trigger_ready"
+  | "confirmed"
+  | "exhausted"
+  | "failed";
+
+export interface SqueezeEntry {
+  market: "DSE" | "US";
+  code: string;
+  company: string;
+  capTier: string;
+  family: string;
+  familyLabel: string;
+  state: SqueezeState;
+  previousState: string | null;
+  stateReason: string;
+  isNew: boolean;
+  firstDiscoveredOn: string;
+  asOfDate: string;
+  sessionsSinceDiscovery: number;
+  discoveryPrice: number | null;
+  asOfPrice: number | null;
+  returnSinceDiscoveryPct: number | null;
+  maxFavorablePct: number | null;
+  maxAdversePct: number | null;
+  setupPrice: number | null;
+  triggerPrice: number | null;
+  invalidationPrice: number | null;
+  riskPerShare: number | null;
+  planningObjectivePrice: number | null;
+  planningRewardRisk: number | null;
+  expectedHolding: string;
+  liquidityCapacityNote: string;
+  supportingEvidence: string[];
+  counterEvidence: string[];
+  dataQuality: string[];
+  missingEvidence: string[];
+  paperBookStatus: string;
+  methodologyVersion: string;
+}
+
+export interface SqueezeFamily {
+  family: string;
+  label: string;
+  status: "available" | "data_blocked";
+  blockedReason: string | null;
+  missingDatasets: string[];
+  entries: SqueezeEntry[];
+}
+
+export interface SqueezeMonitor {
+  market: "DSE" | "US";
+  tenantId: string;
+  generatedAt: string;
+  selectedDate: string | null;
+  latestDate: string | null;
+  availableDates: string[];
+  families: SqueezeFamily[];
+  methodology: string;
+  limitations: string[];
+}
+
 export type StrategyReadinessStatus = "backtest_ready" | "diagnostic_only" | "blocked";
 
 export interface StrategyReadinessEntry {
@@ -854,6 +918,21 @@ export const researchApi = {
       throw new ResearchApiError(502, "The API returned investment data outside this tenant boundary");
     }
     return view;
+  },
+  async squeezeMonitor(asOf?: string): Promise<SqueezeMonitor> {
+    const parameters = new URLSearchParams();
+    if (asOf) parameters.set("as_of", asOf);
+    const query = parameters.size ? `?${parameters.toString()}` : "";
+    const monitor = await request<SqueezeMonitor>(
+      `/institutional-research/squeeze-monitor${query}`,
+    );
+    if (
+      monitor.tenantId !== researchDeployment.tenant ||
+      monitor.market !== researchDeployment.market
+    ) {
+      throw new ResearchApiError(502, "The API returned squeeze data outside this tenant boundary");
+    }
+    return monitor;
   },
   async strategyReadiness(): Promise<StrategyReadinessBoard> {
     const board = await request<StrategyReadinessBoard>(

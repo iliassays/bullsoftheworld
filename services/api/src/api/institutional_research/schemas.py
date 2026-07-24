@@ -613,6 +613,62 @@ class StrategyReadinessBoardOut(ApiModel):
     methodology: str
 
 
+class SqueezeEntryOut(ApiModel):
+    market: Literal["DSE", "US"]
+    code: str
+    company: str
+    cap_tier: str
+    family: str
+    family_label: str
+    state: Literal["watch", "forming", "trigger_ready", "confirmed", "exhausted", "failed"]
+    previous_state: str | None
+    state_reason: str
+    is_new: bool
+    first_discovered_on: dt.date
+    as_of_date: dt.date
+    sessions_since_discovery: int
+    discovery_price: float | None
+    as_of_price: float | None
+    return_since_discovery_pct: float | None
+    max_favorable_pct: float | None
+    max_adverse_pct: float | None
+    setup_price: float | None
+    trigger_price: float | None
+    invalidation_price: float | None
+    risk_per_share: float | None
+    planning_objective_price: float | None
+    planning_reward_risk: float | None
+    expected_holding: str
+    liquidity_capacity_note: str
+    supporting_evidence: list[str]
+    counter_evidence: list[str]
+    data_quality: list[str]
+    missing_evidence: list[str]
+    paper_book_status: str
+    methodology_version: str
+
+
+class SqueezeFamilyOut(ApiModel):
+    family: str
+    label: str
+    status: Literal["available", "data_blocked"]
+    blocked_reason: str | None = None
+    missing_datasets: list[str] = Field(default_factory=list)
+    entries: list[SqueezeEntryOut] = Field(default_factory=list)
+
+
+class SqueezeMonitorOut(ApiModel):
+    market: Literal["DSE", "US"]
+    tenant_id: str
+    generated_at: dt.datetime
+    selected_date: dt.date | None
+    latest_date: dt.date | None
+    available_dates: list[dt.date]
+    families: list[SqueezeFamilyOut]
+    methodology: str
+    limitations: list[str]
+
+
 class PortfolioRiskLimitCheckOut(ApiModel):
     key: str
     status: Literal["within_limit", "breached", "unavailable"]

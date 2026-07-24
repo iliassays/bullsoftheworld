@@ -47,6 +47,7 @@ from ingestion.signals.runner import (
     run_ownership_agents,
     run_volume_agent,
 )
+from ingestion.squeeze_scan import run_squeeze_scan
 from ingestion.trending import compute_trending
 
 log = logging.getLogger(__name__)
@@ -177,6 +178,24 @@ async def refresh_analytics(ctx) -> str:
         counts["patterns"],
     )
     return f"analytics={counts['computed']} patterns={counts['patterns']}"
+
+
+async def run_squeeze_scan_task(ctx) -> str:
+    """Archive today's squeeze-taxonomy states after the analytics refresh — trading days only.
+
+    A scan failure must never disturb the EOD chain; it logs and reports instead of raising.
+    """
+    if not _after_eod_window():
+        return "skipped: before EOD window"
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    try:
+        counts = await run_squeeze_scan(MARKET)
+    except Exception:
+        log.exception("squeeze scan failed for %s", MARKET)
+        return "squeeze scan failed (logged)"
+    return f"squeeze evaluated={counts['evaluated']} archived={counts['archived']}"
 
 
 async def snapshot_portfolios(ctx) -> str:
@@ -529,6 +548,8 @@ class WorkerSettings:
         ),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
+        # Squeeze-taxonomy archive right after analytics; isolated from the EOD chain.
+        cron(run_squeeze_scan_task, hour=13, minute=22, run_at_startup=False),
         # Portfolio growth-chart snapshot — 20 min after the bar pull, same cadence as the other
         # once-daily EOD jobs. Idempotent (upsert by user+date); no weekday filter needed since
         # the task itself skips non-trading days.

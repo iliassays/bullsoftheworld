@@ -435,6 +435,11 @@ Never: auto-deploy; auto-flip readiness statuses; LLM-computed numbers.
 | Stop from pinned mandate | `decision_board.py` (`portfolio_stop_loss`) | `test_decision_board.py::test_portfolio_stop_loss...` |
 | Strategy readiness catalog (blocked strategies registered with missing data) | `strategy_readiness.py` (new) | `test_strategy_readiness.py` (new, 6 tests) |
 | Docs corrected | `institutional-research-os.md`; this document | — |
+| Explicit forward benchmark (SPY/DSEX) in the shadow advance | `research_strategy.py` (`advance_shadow_portfolio(benchmark_return=…)`), `portfolio.py` (series load, per-session compounding, `benchmark_explicit_since`) | `test_research_strategy.py`, `test_portfolio_evidence_window.py` (mixed windows fail closed) |
+| Cap-tier history recording | `ticker_analytics.py` (`CapTierObservation`), migration `b3d5f7a9c1e3`, `ingestion/analytics.py` writer, `decision_board.py` reader with honest fallback | full suite |
+| Squeeze Research module | see `docs/research/squeeze-research-2026-07-24.md` §K | 11 engine tests + API contract tests + preview verification |
+| Registry-driven horizons | `StrategyDefinition.horizon/expected_holding`; `_STRATEGY_HORIZONS` dict deleted | full suite |
+| Form 4 impossible-date guards | `system_a_backtest.py`, `institutional_backtests.py` | full suite |
 
 Verification: `uv run pytest packages/analytics services/api` → **515 passed** before catalog,
 **521 passed** after; `ruff check` and `ruff format` clean on touched files; frontend vitest

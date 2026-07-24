@@ -4,6 +4,7 @@ import type {
   DecisionCandidate,
   DecisionCandidatePath,
   DecisionCandidateState,
+  SqueezeMonitor,
   StrategyReadinessBoard,
 } from "../../app/api-client";
 
@@ -246,4 +247,128 @@ export const previewStrategyReadiness: StrategyReadinessBoard = {
           ],
         },
       ],
+};
+
+const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "confirmed") => ({
+  market,
+  code,
+  company,
+  capTier: "small",
+  family: market === "DSE" ? "supply_constrained_breakout" : "compression_breakout",
+  familyLabel: market === "DSE" ? "Supply-constrained breakout" : "Compression breakout setup",
+  state,
+  previousState: state === "confirmed" ? "trigger_ready" : "forming",
+  stateReason:
+    state === "confirmed"
+      ? "Close exceeded the 20-session base high within the last 3 sessions with relative volume ≥ 1.5x."
+      : "Base is tight (5-session range within 1.5 ATR) and price sits within 3% of the base high.",
+  isNew: state !== "confirmed",
+  firstDiscoveredOn: "2026-07-21",
+  asOfDate: "2026-07-23",
+  sessionsSinceDiscovery: 3,
+  discoveryPrice: market === "DSE" ? 54 : 12.4,
+  asOfPrice: market === "DSE" ? 56.7 : 13.1,
+  returnSinceDiscoveryPct: 5.0,
+  maxFavorablePct: 6.2,
+  maxAdversePct: -1.1,
+  setupPrice: market === "DSE" ? 56.7 : 13.1,
+  triggerPrice: market === "DSE" ? 57.4 : 13.4,
+  invalidationPrice: market === "DSE" ? 53.2 : 11.9,
+  riskPerShare: market === "DSE" ? 4.2 : 1.5,
+  planningObjectivePrice: market === "DSE" ? 65.8 : 16.4,
+  planningRewardRisk: 2.0,
+  expectedHolding: "Approximately 10-40 completed sessions",
+  liquidityCapacityNote: "About 0.42M per session at 2% of 20-session average traded value.",
+  supportingEvidence: [
+    "Volatility contraction: 14-session ATR fell ≥20% over 20 sessions.",
+    ...(market === "DSE"
+      ? ["Free float is only 24% of market capitalization (supply scarcity)."]
+      : ["Short-marked volume share elevated (66% 5-session, volume-weighted) — this is not short interest and cannot establish positioning."]),
+  ],
+  counterEvidence: market === "US" ? ["Recent financing/dilution filing (S-1/S-3/424B family) within 90 days."] : [],
+  dataQuality:
+    market === "DSE"
+      ? ["DSE prices are raw exchange closes without corporate-action adjustment; a bonus or rights ex-date can flip this state."]
+      : ["US universe currently stores survivors only; archived setups over-represent companies that did not delist."],
+  missingEvidence: [],
+  paperBookStatus:
+    market === "US"
+      ? "Maps to the registered us_breakout_v1 paper book."
+      : "No paper book — pending family diagnostics.",
+  methodologyVersion: "squeeze-monitor-v1",
+});
+
+export const previewSqueezeMonitor: SqueezeMonitor = {
+  market,
+  tenantId,
+  generatedAt: "2026-07-24T13:40:00Z",
+  selectedDate: "2026-07-23",
+  latestDate: "2026-07-23",
+  availableDates: ["2026-07-23", "2026-07-22", "2026-07-21"],
+  methodology:
+    "States come from the append-only squeeze-monitor-v1 archive written once per completed "
+    + "session after the analytics refresh.",
+  limitations: [
+    "FINRA daily short-marked volume is not short interest, cannot establish open short positions or days-to-cover, and appears only as labeled supporting context.",
+    "States are a diagnostic taxonomy (squeeze-monitor-v1); no backtest has validated them and nothing here is a prediction or a recommendation.",
+  ],
+  families: [
+    ...(market === "DSE"
+      ? [
+          {
+            family: "supply_constrained_breakout",
+            label: "Supply-constrained breakout",
+            status: "available" as const,
+            blockedReason: null,
+            missingDatasets: [],
+            entries: [squeezeEntry("BXPHARMA", "Beximco Pharmaceuticals", "confirmed")],
+          },
+        ]
+      : []),
+    {
+      family: "compression_breakout",
+      label: "Compression breakout setup",
+      status: "available" as const,
+      blockedReason: null,
+      missingDatasets: [],
+      entries:
+        market === "US"
+          ? [squeezeEntry("NXTC", "NextCure, Inc.", "trigger_ready")]
+          : [squeezeEntry("BRACBANK", "BRAC Bank PLC", "trigger_ready")],
+    },
+    {
+      family: "failed_breakdown_reversal",
+      label: "Failed-breakdown reversal",
+      status: "available" as const,
+      blockedReason: null,
+      missingDatasets: [],
+      entries: [],
+    },
+    ...(market === "US"
+      ? [
+          {
+            family: "us_short_squeeze",
+            label: "US short squeeze",
+            status: "data_blocked" as const,
+            blockedReason:
+              "No authoritative short-positioning data exists in Atlas. FINRA daily short-marked volume cannot establish open positions or days-to-cover.",
+            missingDatasets: [
+              "Point-in-time short interest as % of float and days-to-cover (FINRA bi-monthly settlement data).",
+              "Borrow availability, utilization, cost-to-borrow, locate outcomes.",
+              "SEC failures-to-deliver files and Reg SHO threshold status.",
+            ],
+            entries: [],
+          },
+          {
+            family: "us_gamma_squeeze",
+            label: "US gamma/options squeeze",
+            status: "data_blocked" as const,
+            blockedReason:
+              "No option-chain history exists; option volume without opening/closing classification cannot prove new positioning.",
+            missingDatasets: ["Options OI, volume, IV, Greeks with chain history."],
+            entries: [],
+          },
+        ]
+      : []),
+  ],
 };

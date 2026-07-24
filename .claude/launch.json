@@ -16,6 +16,17 @@
       "env": {
         "VITE_RESEARCH_PREVIEW": "true"
       }
+    },
+    {
+      "name": "atlas-preview-wallst",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/research", "--", "--port", "5181"],
+      "port": 5181,
+      "env": {
+        "VITE_RESEARCH_PREVIEW": "true",
+        "VITE_RESEARCH_TENANT": "bullsofwallst",
+        "VITE_RESEARCH_MARKET": "US"
+      }
     }
   ]
 }

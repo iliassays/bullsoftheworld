@@ -43,6 +43,7 @@ from ingestion.signals.runner import (
     run_market_update,
     run_short_flow_agent,
 )
+from ingestion.squeeze_scan import run_squeeze_scan
 from ingestion.us_eod_snapshot import collect as publish_us_eod
 from ingestion.us_options.pipeline import import_option_sentiment
 
@@ -149,6 +150,12 @@ async def run_us_eod_chain(ctx) -> str:
 
     eod_snapshot = await publish_us_eod()
     analytics = await compute_all(MARKET)
+    # Squeeze-taxonomy archive rides after analytics; its failure never breaks the chain.
+    try:
+        squeeze = await run_squeeze_scan(MARKET)
+        log.info("us squeeze scan: %s", squeeze)
+    except Exception:
+        log.exception("US squeeze scan failed; EOD chain continues")
     levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
     volume = await run_eod_volume_agent(MARKET, tenant_id=TENANT_ID)
     factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)

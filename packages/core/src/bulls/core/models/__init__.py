@@ -94,6 +94,7 @@ from bulls.core.models.sec_events import (
 from bulls.core.models.security_master import SecurityMaster
 from bulls.core.models.short_volume import ShortVolumeDaily
 from bulls.core.models.signal_event import SignalEvent
+from bulls.core.models.squeeze import SqueezeDailyState
 from bulls.core.models.symbol import Symbol
 from bulls.core.models.ticker_analytics import CapTierObservation, TickerAnalytics
 from bulls.core.models.ticker_buzz_daily import TickerBuzzDaily
@@ -185,6 +186,7 @@ __all__ = [
     "ShareholdingSnapshot",
     "ShortVolumeDaily",
     "SignalEvent",
+    "SqueezeDailyState",
     "Symbol",
     "TickerAnalytics",
     "TickerBuzzDaily",

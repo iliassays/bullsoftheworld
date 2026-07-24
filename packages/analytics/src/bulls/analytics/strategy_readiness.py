@@ -408,6 +408,122 @@ STRATEGY_READINESS: dict[str, StrategyReadiness] = {
             ),
             missing_data=[_DSE_ADJUSTMENTS, _DSE_HISTORY],
         ),
+        # ---- Squeeze taxonomy families (docs/research/squeeze-research-2026-07-24.md) ----
+        StrategyReadiness(
+            key="us_short_squeeze",
+            name="US short squeeze",
+            market="US",
+            direction="long",
+            horizon="swing",
+            status="blocked",
+            economic_hypothesis=(
+                "A constrained float with materially elevated short positioning, rising borrow "
+                "pressure, improving structure and abnormal demand may force covering when "
+                "resistance breaks."
+            ),
+            rationale=(
+                "No authoritative short-positioning data exists in Atlas. FINRA daily "
+                "short-marked volume cannot establish open positions or days-to-cover; the "
+                "words 'short squeeze' are forbidden until these datasets land."
+            ),
+            missing_data=[
+                MissingDataset(
+                    key="us_short_interest",
+                    description=(
+                        "Point-in-time short interest as % of float and days-to-cover "
+                        "(FINRA bi-monthly settlement data — free, partial unblock)."
+                    ),
+                ),
+                _BORROW,
+                MissingDataset(
+                    key="us_ftd_regsho",
+                    description=(
+                        "SEC failures-to-deliver files and Reg SHO threshold status "
+                        "(free; not yet ingested)."
+                    ),
+                ),
+            ],
+        ),
+        StrategyReadiness(
+            key="us_gamma_squeeze",
+            name="US gamma/options squeeze",
+            market="US",
+            direction="long",
+            horizon="swing",
+            status="blocked",
+            economic_hypothesis=(
+                "Concentrated near-dated call open interest can force dealer hedge-buying as "
+                "spot approaches high-gamma strikes; decays hard after expiry."
+            ),
+            rationale=(
+                "No option-chain history (OI, volume, IV, Greeks) exists; without "
+                "opening/closing classification, option volume cannot prove new positioning, "
+                "and any dealer-gamma sign would be an assumption that must be labeled."
+            ),
+            missing_data=[_OPTIONS],
+        ),
+        StrategyReadiness(
+            key="us_float_liquidity_squeeze",
+            name="US float/liquidity squeeze",
+            market="US",
+            direction="long",
+            horizon="swing",
+            status="blocked",
+            economic_hypothesis=(
+                "Scarce tradable supply meeting abnormal demand produces outsized moves "
+                "without any short-positioning requirement."
+            ),
+            rationale=(
+                "Verified US free float is absent (0 of ~11k symbols). Shares outstanding "
+                "exists point-in-time but was rejected as a float proxy — it systematically "
+                "understates scarcity and would fabricate the family's core feature."
+            ),
+            missing_data=[
+                MissingDataset(
+                    key="us_verified_free_float",
+                    description=(
+                        "Verified free float (outstanding minus insider/strategic lockups) "
+                        "per symbol with history."
+                    ),
+                )
+            ],
+        ),
+        StrategyReadiness(
+            key="failed_breakdown_reversal",
+            name="Failed-breakdown reversal (squeeze monitor)",
+            market="US",
+            direction="long",
+            horizon="swing",
+            status="diagnostic_only",
+            economic_hypothesis=(
+                "A support undercut that is rapidly reclaimed with participation traps late "
+                "sellers; named honestly — without positioning data it is never called a "
+                "confirmed short squeeze."
+            ),
+            rationale=(
+                "Implemented in the squeeze monitor as a taxonomy (squeeze-monitor-v1); no "
+                "backtest has validated it and the US price store is survivors-only."
+            ),
+            missing_data=[_US_SURVIVORSHIP],
+        ),
+        StrategyReadiness(
+            key="dse_supply_constrained_breakout",
+            name="DSE supply-constrained breakout",
+            market="DSE",
+            direction="long",
+            horizon="swing",
+            status="diagnostic_only",
+            economic_hypothesis=(
+                "Verified scarce free float or sponsor-locked supply meeting compression and "
+                "accumulation resolves upward on demand shocks — a supply/demand condition, "
+                "not a short squeeze (DSE has no short-sale mechanism)."
+            ),
+            rationale=(
+                "Implemented in the squeeze monitor (DSE free float is verified for 359/396 "
+                "symbols); raw closes and ~2 years of history cap it at diagnostic."
+            ),
+            missing_data=[_DSE_ADJUSTMENTS, _DSE_HISTORY],
+        ),
     )
 }
 

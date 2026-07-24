@@ -60,11 +60,13 @@ from api.institutional_research.schemas import (
     ResearchQueueSnapshotOut,
     ResearchRunOut,
     ResearchShadowPortfolioOut,
+    SqueezeMonitorOut,
     StartResearchRequest,
     StrategyReadinessBoardOut,
     StrategyReadinessOut,
     WorkspaceOut,
 )
+from api.institutional_research.squeeze import load_squeeze_monitor
 from api.institutional_research.universe import apply_research_product_scope
 from api.institutional_research.workflow import (
     execute_backtest,
@@ -389,6 +391,31 @@ async def strategy_readiness(
             "does not exist. Changing a status is a reviewed code change, not a runtime "
             "decision."
         ),
+    )
+
+
+@router.get("/squeeze-monitor")
+async def squeeze_monitor(
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    as_of: Annotated[dt.date | None, Query()] = None,
+) -> SqueezeMonitorOut:
+    """Read the archived squeeze-taxonomy states for this tenant's market.
+
+    Blocked families (short squeeze, gamma squeeze, float squeeze) are returned as explicit
+    data-blocked entries with their missing datasets — absence is an answer, never a gap.
+    """
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    return await load_squeeze_monitor(
+        session,
+        tenant_id=tenant.name,
+        market=tenant.market,
+        as_of=as_of,
     )
 
 
