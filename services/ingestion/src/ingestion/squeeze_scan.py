@@ -22,6 +22,12 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics.research_strategy import RISK_POLICIES
+from bulls.analytics.short_interest import (
+    ShortInterestObservation,
+    latest_known,
+    short_interest_change_pct,
+    short_interest_pct_of_shares_outstanding,
+)
 from bulls.analytics.squeeze_monitor import (
     METHODOLOGY_VERSION,
     TERMINAL_STATES,
@@ -37,7 +43,9 @@ from bulls.core.models import (
     DailyBar,
     EdgarFilingEvent,
     InsiderTransaction,
+    SecFinancialFactObservation,
     SecurityMaster,
+    ShortInterestBiweekly,
     ShortVolumeDaily,
     SqueezeDailyState,
     TickerAnalytics,
@@ -157,6 +165,8 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
         prior_by_pair = {(row.code, row.family): row for row in prior_rows}
 
         short_share_by_code: dict[str, float] = {}
+        short_interest_by_code: dict[str, ShortInterestObservation] = {}
+        shares_outstanding_by_code: dict[str, float] = {}
         dilution_codes: set[str] = set()
         insider_selling_codes: set[str] = set()
         if market == "US":
@@ -179,6 +189,69 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
             for code, short_volume, total_volume in short_rows:
                 if total_volume and float(total_volume) > 0:
                     short_share_by_code[code] = float(short_volume) / float(total_volume)
+            interest_rows = (
+                await session.execute(
+                    select(
+                        ShortInterestBiweekly.code,
+                        ShortInterestBiweekly.settlement_date,
+                        ShortInterestBiweekly.known_at,
+                        ShortInterestBiweekly.shares_short,
+                        ShortInterestBiweekly.days_to_cover,
+                        ShortInterestBiweekly.previous_shares_short,
+                    ).where(
+                        ShortInterestBiweekly.market == "US",
+                        ShortInterestBiweekly.code.in_(codes),
+                    )
+                )
+            ).all()
+            grouped: dict[str, list[ShortInterestObservation]] = defaultdict(list)
+            for row in interest_rows:
+                grouped[row.code].append(
+                    ShortInterestObservation(
+                        settlement_date=row.settlement_date,
+                        known_at=row.known_at,
+                        shares_short=float(row.shares_short),
+                        days_to_cover=(
+                            float(row.days_to_cover) if row.days_to_cover is not None else None
+                        ),
+                        previous_shares_short=(
+                            float(row.previous_shares_short)
+                            if row.previous_shares_short is not None
+                            else None
+                        ),
+                    )
+                )
+            # Selected on dissemination date so an archived session never sees a settlement
+            # record the market could not have had that day.
+            for code, observations in grouped.items():
+                observation = latest_known(observations, as_of=session_date)
+                if observation is not None:
+                    short_interest_by_code[code] = observation
+            # Shares outstanding is the ratio's denominator, taken point-in-time from SEC facts
+            # known on or before this session. Atlas has no verified US free float, so the ratio
+            # is explicitly of shares outstanding.
+            cutoff = dt.datetime.combine(session_date, dt.time.max, tzinfo=dt.UTC)
+            shares_rows = (
+                await session.execute(
+                    select(
+                        SecFinancialFactObservation.code,
+                        SecFinancialFactObservation.value,
+                    )
+                    .distinct(SecFinancialFactObservation.code)
+                    .where(
+                        SecFinancialFactObservation.market == "US",
+                        SecFinancialFactObservation.code.in_(codes),
+                        SecFinancialFactObservation.metric == "shares_outstanding",
+                        SecFinancialFactObservation.known_at <= cutoff,
+                        SecFinancialFactObservation.value > 0,
+                    )
+                    .order_by(
+                        SecFinancialFactObservation.code,
+                        SecFinancialFactObservation.known_at.desc(),
+                    )
+                )
+            ).all()
+            shares_outstanding_by_code = {row.code: float(row.value) for row in shares_rows}
             cik_rows = (
                 await session.execute(
                     select(SecurityMaster.symbol, SecurityMaster.cik).where(
@@ -257,6 +330,29 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                     institute_delta=analytics.institute_delta,
                     foreign_delta=analytics.foreign_delta,
                     short_marked_share_5d=short_share_by_code.get(analytics.code),
+                    short_interest_pct_of_shares_outstanding=(
+                        short_interest_pct_of_shares_outstanding(
+                            short_interest_by_code[analytics.code].shares_short,
+                            shares_outstanding_by_code.get(analytics.code),
+                        )
+                        if analytics.code in short_interest_by_code
+                        else None
+                    ),
+                    short_interest_days_to_cover=(
+                        short_interest_by_code[analytics.code].days_to_cover
+                        if analytics.code in short_interest_by_code
+                        else None
+                    ),
+                    short_interest_settlement_date=(
+                        short_interest_by_code[analytics.code].settlement_date
+                        if analytics.code in short_interest_by_code
+                        else None
+                    ),
+                    short_interest_change_pct=(
+                        short_interest_change_pct(short_interest_by_code[analytics.code])
+                        if analytics.code in short_interest_by_code
+                        else None
+                    ),
                     recent_dilution_filing=analytics.code in dilution_codes,
                     insider_net_selling_30d=analytics.code in insider_selling_codes,
                     prior_state=prior.state if prior is not None else "none",

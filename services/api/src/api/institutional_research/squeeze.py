@@ -74,7 +74,9 @@ def _blocked_families(market: str) -> list[SqueezeFamilyOut]:
             SqueezeFamilyOut(
                 family=key,
                 label=entry.name,
-                status="data_blocked",
+                # A family whose datasets have landed is no longer "data blocked" even if no
+                # evaluator exists for it yet — saying otherwise would misreport the reason.
+                status="data_blocked" if entry.status == "blocked" else "not_implemented",
                 blocked_reason=entry.rationale,
                 missing_datasets=[item.description for item in entry.missing_data],
                 entries=[],

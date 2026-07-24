@@ -37,11 +37,11 @@ forward evidence whether any squeeze strategy has durable value. The module must
 | Free float | ✅ DSE only | DSE 359/396 (`free_float_cap_mn`); **US 0/11,072** |
 | Shares outstanding | ✅ US (PIT) | 254,581 SEC `shares_outstanding` observations with `known_at`; NOT a float substitute |
 | Market capitalization | partial | US 4,171/11,072; DSE 395/396; history collection began 2026-07-24 (`cap_tier_observations`) |
-| Short interest | ❌ | not ingested (FINRA bi-monthly settlement-date short interest) |
+| Short interest | ✅ **2026-07-25** | FINRA consolidated short interest, `short_interest_biweekly`. History to 2020, ~22k symbols per settlement date. Gated on `known_at` = settlement + 8 trading days, never on settlement date |
 | FINRA daily short-marked volume | ✅ short history | 2026-06-08 → present, 11,110 codes. **Not short interest; includes market-maker liquidity provision; cannot establish open positions or days-to-cover** |
-| Days to cover | ❌ | requires short interest |
+| Days to cover | ✅ **2026-07-25** | Published by FINRA per settlement date and recorded verbatim, not recomputed (FINRA uses its own volume window) |
 | Borrow availability / utilization / cost-to-borrow / locates | ❌ | no vendor |
-| Reg SHO threshold status | ❌ | not ingested |
+| Reg SHO threshold status | ❌ | not ingested (free; Stage 2) |
 | Failures to deliver (FTD) | ❌ | SEC FTD files not ingested (free; candidate acquisition) |
 | Options OI / volume / IV / Greeks / dealer gamma | ❌ | no options dataset (Cboe evaluation pending); opening/closing classification would require Open-Close product |
 | Institutional ownership | ✅ delayed | 13F, 8 quarters, 45-day lag — **delayed quarterly disclosure, never live flow** |
@@ -69,17 +69,35 @@ Elevated FINRA short-marked share (US) appears only as **supporting evidence tex
 of implementable families, worded exactly: "short-marked volume share elevated (X% 5-session,
 volume-weighted) — this is not short interest and cannot establish positioning."
 
+Since 2026-07-25 the implementable families also carry **real positioning evidence** when a
+disseminated record exists: short interest as % of shares outstanding, days to cover, and the
+change versus the prior settlement date, each stated with its basis and settlement date. Below
+`SHORT_INTEREST_ELEVATED_PCT` the same line is filed as **counter-evidence** ("not elevated
+positioning, so short-covering pressure is not a supported explanation"), and when no record
+covers the session the entry says positioning is *unknown*, never low.
+
 ## D. Blocked squeeze families and missing data
 
 | Family key | Blocked on | Expected value of unblocking |
 |---|---|---|
-| `us_short_squeeze` | point-in-time short interest %float, days-to-cover, borrow utilization/availability, cost-to-borrow trend, FTDs, Reg SHO status | the only family that may ever use the words "potential short squeeze"; FINRA bi-monthly short interest + SEC FTD files are free and would partially unblock (fortnightly resolution, no borrow cost) |
+| `us_short_squeeze` | **partially unblocked 2026-07-25.** Positioning has landed (short interest, days-to-cover, change vs prior settlement). Still missing: verified US free float, borrow/locate/cost-to-borrow, FTDs + Reg SHO | Registry status moved `blocked` → `diagnostic_only`, `implemented_strategy_key=None`. Two defects cap it below promotion: the ratio is of **shares outstanding** (no US free float), and positioning is fortnightly and up to ~2 weeks stale. **Short execution remains blocked** — identifying a squeeze setup and being able to borrow/locate/carry a short are different requirements |
 | `us_gamma_squeeze` | option-chain history: OI, volume, expiry/strike, IV, delta/gamma; opening/closing classification for directional demand | Cboe products under evaluation (see `us-options-flow-research-2026-07.md`); any dealer-gamma sign must ship labeled as an assumption |
 | `us_float_liquidity_squeeze` | verified US free float (insider/institutional lockups vs outstanding) | shares outstanding exists (PIT) but was **rejected as a float proxy** — treating outstanding as float systematically understates scarcity and would fabricate the family's core feature |
 | crowded-institutional-unwind | positioning data at better than quarterly/45-day resolution | 13F depth (8 quarters) additionally too short |
 
 These are registered in `bulls.analytics.strategy_readiness` and surfaced per market by the
-squeeze monitor API as `data_blocked` families with their missing-dataset lists.
+squeeze monitor API with their missing-dataset lists. The API distinguishes two reasons so the
+card never misstates why a family is absent: `data_blocked` (the core dataset does not exist)
+versus `not_implemented` (the data landed but no evaluator has been built and, for the short
+family, execution is still gated on borrow).
+
+### Stage plan for the remaining short datasets
+
+| Stage | Dataset | Cost | Unlocks |
+|---|---|---|---|
+| 1 ✅ done | FINRA consolidated short interest | free | positioning, days-to-cover, and the long books' crowded-short guard |
+| 2 | SEC failures-to-deliver + Reg SHO threshold list | free | corroborating borrow-scarcity evidence |
+| 3 | borrow availability, utilization, cost-to-borrow, locates (S3 / Ortex / S&P Global / IB) | paid | **the only stage that can unblock short execution** |
 
 ## E. Exact signal definitions (`squeeze-monitor-v1`)
 

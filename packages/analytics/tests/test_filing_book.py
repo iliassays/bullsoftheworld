@@ -33,7 +33,7 @@ def _candidate(symbol: str, *, strength: float = 1.0, kind="insider_cluster") ->
 
 
 def _good_state(**overrides) -> CandidateMarketState:
-    base = {"half_spread_bps": 20.0, "short_interest_pct_of_float": 5.0, "market_cap_mn": 500.0}
+    base = {"half_spread_bps": 20.0, "short_interest_pct_of_shares_outstanding": 5.0, "market_cap_mn": 500.0}
     base.update(overrides)
     return CandidateMarketState(**base)
 
@@ -55,7 +55,7 @@ def test_wide_spread_is_rejected_by_the_tradeable_gate() -> None:
 
 
 def test_crowded_short_interest_is_rejected() -> None:
-    state = {"AAA": _good_state(short_interest_pct_of_float=35.0)}
+    state = {"AAA": _good_state(short_interest_pct_of_shares_outstanding=35.0)}
     result = screen_candidates([_candidate("AAA")], state, _POLICY)[0]
     assert "crowded_short_interest" in result.rejection_reasons
 
@@ -68,7 +68,7 @@ def test_below_market_cap_floor_is_rejected() -> None:
 
 def test_unknown_market_data_is_a_rejection_not_a_pass() -> None:
     # Omit over mislead: a name whose cost we cannot price is not a name we can claim to trade.
-    state = {"AAA": _good_state(half_spread_bps=None, short_interest_pct_of_float=None)}
+    state = {"AAA": _good_state(half_spread_bps=None, short_interest_pct_of_shares_outstanding=None)}
     result = screen_candidates([_candidate("AAA")], state, _POLICY)[0]
     assert result.accepted is False
     assert "spread_unknown" in result.rejection_reasons
@@ -86,7 +86,7 @@ def test_every_candidate_is_returned_so_rejections_stay_auditable() -> None:
     state = {
         "AAA": _good_state(),
         "BBB": _good_state(half_spread_bps=400.0),
-        "CCC": _good_state(short_interest_pct_of_float=99.0),
+        "CCC": _good_state(short_interest_pct_of_shares_outstanding=99.0),
     }
     screened = screen_candidates(candidates, state, _POLICY)
     assert len(screened) == 3
@@ -312,7 +312,7 @@ def test_schedule_records_rejections_across_the_whole_run() -> None:
         },
         market_state_by_session={
             sessions[0]: {"WIDE": _good_state(half_spread_bps=900.0)},
-            sessions[1]: {"CROWDED": _good_state(short_interest_pct_of_float=80.0)},
+            sessions[1]: {"CROWDED": _good_state(short_interest_pct_of_shares_outstanding=80.0)},
         },
         policy=_POLICY,
     )
@@ -339,7 +339,7 @@ def test_crowding_screen_can_be_disabled_without_rejecting_unknown_si() -> None:
     # rather than rejecting it as "short_interest_unknown".
     policy = BookPolicy(screen_crowding=False)
     state = {"AAA": CandidateMarketState(
-        half_spread_bps=20.0, short_interest_pct_of_float=None, market_cap_mn=500.0
+        half_spread_bps=20.0, short_interest_pct_of_shares_outstanding=None, market_cap_mn=500.0
     )}
     result = screen_candidates([_candidate("AAA")], state, policy)[0]
     assert result.accepted is True
@@ -349,7 +349,7 @@ def test_crowding_screen_can_be_disabled_without_rejecting_unknown_si() -> None:
 def test_crowding_screen_still_fires_when_enabled() -> None:
     policy = BookPolicy(screen_crowding=True)
     state = {"AAA": CandidateMarketState(
-        half_spread_bps=20.0, short_interest_pct_of_float=None, market_cap_mn=500.0
+        half_spread_bps=20.0, short_interest_pct_of_shares_outstanding=None, market_cap_mn=500.0
     )}
     assert "short_interest_unknown" in screen_candidates([_candidate("AAA")], state, policy)[0].rejection_reasons
 
@@ -358,8 +358,8 @@ def test_market_cap_can_be_a_secondary_gate() -> None:
     # require_market_cap=False: unknown cap passes on the spread gate, but a KNOWN sub-floor cap
     # still rejects. The measured spread is the primary tradeability test.
     policy = BookPolicy(require_market_cap=False)
-    unknown = CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_float=3.0, market_cap_mn=None)
-    tiny = CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_float=3.0, market_cap_mn=5.0)
+    unknown = CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_shares_outstanding=3.0, market_cap_mn=None)
+    tiny = CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_shares_outstanding=3.0, market_cap_mn=5.0)
     results = {r.candidate.symbol: r for r in screen_candidates(
         [_candidate("UNKNOWN"), _candidate("TINY")],
         {"UNKNOWN": unknown, "TINY": tiny}, policy)}
@@ -369,5 +369,5 @@ def test_market_cap_can_be_a_secondary_gate() -> None:
 
 
 def test_market_cap_required_by_default() -> None:
-    state = {"AAA": CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_float=3.0, market_cap_mn=None)}
+    state = {"AAA": CandidateMarketState(half_spread_bps=20.0, short_interest_pct_of_shares_outstanding=3.0, market_cap_mn=None)}
     assert "market_cap_unknown" in screen_candidates([_candidate("AAA")], state, BookPolicy())[0].rejection_reasons

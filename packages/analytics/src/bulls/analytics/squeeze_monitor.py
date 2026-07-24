@@ -84,6 +84,9 @@ RECLAIM_FRACTION = 1.02
 BASE_WINDOW = 20
 FLOAT_SCARCITY_RATIO = 0.35
 SPONSOR_CONCENTRATION_PCT = 50.0
+# Short interest above this share of shares outstanding is treated as elevated positioning.
+# Calibrated on the outstanding basis, which understates %-of-float — see SqueezeInputs.
+SHORT_INTEREST_ELEVATED_PCT = 10.0
 
 
 class SqueezeBar(BaseModel):
@@ -117,6 +120,14 @@ class SqueezeInputs(BaseModel):
     foreign_delta: float | None = None
     # US supporting context only — worded by this module, never as positioning evidence.
     short_marked_share_5d: float | None = None
+    # FINRA bi-monthly consolidated short interest, selected on its dissemination date. Unlike
+    # short-marked volume these ARE positioning facts, so they may be described as such — but the
+    # ratio is against shares outstanding (Atlas has no verified US free float), which understates
+    # the true %-of-float and must never be relabelled.
+    short_interest_pct_of_shares_outstanding: float | None = None
+    short_interest_days_to_cover: float | None = None
+    short_interest_settlement_date: dt.date | None = None
+    short_interest_change_pct: float | None = None
     recent_dilution_filing: bool = False
     insider_net_selling_30d: bool = False
     prior_state: SqueezeState = "none"
@@ -183,6 +194,42 @@ def _common_context(inputs: SqueezeInputs) -> tuple[list[str], list[str], list[s
             f"Short-marked volume share elevated ({inputs.short_marked_share_5d:.0%} "
             "5-session, volume-weighted) — this is not short interest and cannot "
             "establish positioning."
+        )
+    # Actual positioning, when a disseminated settlement record exists. Stated with its basis
+    # and its as-of date, because it is fortnightly and up to ~2 weeks stale by construction.
+    positioning = inputs.short_interest_pct_of_shares_outstanding
+    if inputs.market == "US" and positioning is not None:
+        as_of = (
+            f" as of the {inputs.short_interest_settlement_date.isoformat()} settlement"
+            if inputs.short_interest_settlement_date is not None
+            else ""
+        )
+        cover = (
+            f", {inputs.short_interest_days_to_cover:.1f} days to cover"
+            if inputs.short_interest_days_to_cover is not None
+            else ""
+        )
+        line = (
+            f"Short interest is {positioning:.1f}% of shares outstanding{cover}{as_of} "
+            "(FINRA bi-monthly; not % of float — Atlas has no verified US free float)."
+        )
+        if positioning >= SHORT_INTEREST_ELEVATED_PCT:
+            supporting.append(line)
+        else:
+            counter.append(
+                line + " That is not elevated positioning, so short-covering pressure is "
+                "not a supported explanation here."
+            )
+        change = inputs.short_interest_change_pct
+        if change is not None and abs(change) >= 10:
+            (supporting if change > 0 else counter).append(
+                f"Open short position {'rose' if change > 0 else 'fell'} "
+                f"{abs(change):.0f}% versus the prior settlement date."
+            )
+    elif inputs.market == "US":
+        quality.append(
+            "No disseminated FINRA short-interest record covers this session, so short "
+            "positioning is unknown rather than low."
         )
     if inputs.recent_dilution_filing:
         counter.append(

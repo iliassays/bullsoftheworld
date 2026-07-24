@@ -358,7 +358,7 @@ export interface SqueezeEntry {
 export interface SqueezeFamily {
   family: string;
   label: string;
-  status: "available" | "data_blocked";
+  status: "available" | "data_blocked" | "not_implemented";
   blockedReason: string | null;
   missingDatasets: string[];
   entries: SqueezeEntry[];

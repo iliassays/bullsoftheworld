@@ -44,12 +44,14 @@ class BookPolicy(BaseModel):
     max_concurrent_positions: int = Field(default=20, ge=1)
     # Tradeable gate: measured half-spread ceiling in bps (cost observatory supplies the input).
     max_half_spread_bps: float = Field(default=100.0, gt=0)
-    # Crowding screen: short interest as a percent of float.
+    # Crowding screen: short interest as a percent of point-in-time SHARES OUTSTANDING, fed by
+    # FINRA's bi-monthly consolidated short interest. Because float <= shares outstanding, this
+    # ratio understates the true %-of-float, so a given threshold triggers less often -- the
+    # screen is conservative in the safe direction for a long book, never the reverse.
     max_short_interest_pct: float = Field(default=20.0, gt=0)
-    # The crowding screen needs short-interest-vs-float, a metric we do not yet ingest (we have
-    # daily short *volume*, which is not the same thing). Disabling it is an explicit, recorded
-    # choice -- the book then runs with one fewer gate, and that limitation must be reported, never
-    # hidden. Set True only once a real short-interest feed exists.
+    # Enabled once a real short-interest feed existed (daily short *volume* never qualified).
+    # Callers that still lack the feed must disable it explicitly so the missing gate is a
+    # recorded choice rather than a silent gap.
     screen_crowding: bool = True
     minimum_market_cap_mn: float = Field(default=50.0, ge=0)
     # Market cap is a *secondary* tradeability gate -- the measured spread is the primary one. When
@@ -82,7 +84,7 @@ class CandidateMarketState(BaseModel):
     """Point-in-time market facts required to screen a candidate. ``None`` means unknown."""
 
     half_spread_bps: float | None = None
-    short_interest_pct_of_float: float | None = None
+    short_interest_pct_of_shares_outstanding: float | None = None
     market_cap_mn: float | None = None
 
 
@@ -133,9 +135,9 @@ def screen_candidates(
                 reasons.append("spread_above_tradeable_gate")
 
             if policy.screen_crowding:
-                if state.short_interest_pct_of_float is None:
+                if state.short_interest_pct_of_shares_outstanding is None:
                     reasons.append("short_interest_unknown")
-                elif state.short_interest_pct_of_float > policy.max_short_interest_pct:
+                elif state.short_interest_pct_of_shares_outstanding > policy.max_short_interest_pct:
                     reasons.append("crowded_short_interest")
 
             if state.market_cap_mn is None:

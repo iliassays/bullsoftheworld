@@ -192,7 +192,7 @@ export function SqueezeMonitorPanel() {
         {families.map((family) => (
           <button
             aria-selected={family.family === activeFamily?.family}
-            className={family.status === "data_blocked" ? "is-blocked" : undefined}
+            className={family.status !== "available" ? "is-blocked" : undefined}
             key={family.family}
             onClick={() => {
               setFamilyKey(family.family);
@@ -201,24 +201,35 @@ export function SqueezeMonitorPanel() {
             role="tab"
             type="button"
           >
-            {family.status === "data_blocked" && <Ban aria-hidden="true" size={12} />}
+            {family.status !== "available" && <Ban aria-hidden="true" size={12} />}
             {family.label}
             {family.status === "available" && <em>{family.entries.length}</em>}
           </button>
         ))}
       </div>
 
-      {activeFamily?.status === "data_blocked" ? (
+      {activeFamily && activeFamily.status !== "available" ? (
         <div className="squeeze-monitor__blocked">
           <Ban aria-hidden="true" size={18} />
           <div>
-            <strong>{activeFamily.label} is data-blocked</strong>
+            <strong>
+              {activeFamily.label}{" "}
+              {activeFamily.status === "data_blocked"
+                ? "is data-blocked"
+                : "has its data but no strategy yet"}
+            </strong>
             <p>{activeFamily.blockedReason}</p>
             <ul>
               {activeFamily.missingDatasets.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
+            {activeFamily.status === "not_implemented" && (
+              <p>
+                Short execution stays blocked regardless: identifying a setup and being able to
+                borrow, locate and carry a short are different requirements.
+              </p>
+            )}
           </div>
         </div>
       ) : (

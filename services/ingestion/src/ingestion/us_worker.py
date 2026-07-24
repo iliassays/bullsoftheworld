@@ -222,6 +222,26 @@ async def run_finra_short_chain(ctx) -> str:
     return f"{result} {notes}"
 
 
+async def pull_finra_short_interest(ctx) -> str:
+    """Ingest FINRA bi-monthly consolidated short interest (the open short position).
+
+    Distinct from the daily short-volume job: this is the only source that can support short
+    interest, % of shares outstanding, and days-to-cover. A settlement date that FINRA has not
+    disseminated yet is reported as pending, never as a failure.
+    """
+    from ingestion.finra_short_interest import collect as collect_short_interest
+
+    try:
+        stats = await collect_short_interest()
+    except Exception as exc:
+        log.exception("finra_short_interest_failed")
+        return f"finra_short_interest failed: {exc}"
+    return (
+        f"finra_short_interest dates={stats['dates_fetched']} "
+        f"pending={stats['dates_pending']} rows={stats['rows_upserted']}"
+    )
+
+
 async def refresh_restricted_research(ctx) -> str:
     """Maintain bounded private research data without feeding public product surfaces."""
     try:
@@ -288,6 +308,7 @@ class WorkerSettings:
         pull_finra_short_volume,
         run_short_flow_notes,
         run_finra_short_chain,
+        pull_finra_short_interest,
         refresh_restricted_research,
         import_us_option_sentiment,
     ]
@@ -305,6 +326,11 @@ class WorkerSettings:
         # One ordered job prevents a note evaluation from racing ahead of the file transaction.
         # It is anchored to the latest ingested session and deduped, so restarts cannot double-post.
         cron(run_finra_short_chain, hour=23, minute=45, run_at_startup=True),
+        # Short interest is bi-monthly and disseminated ~8 business days after each settlement
+        # date, so a daily check is cheap and self-healing: already-stored dates are skipped and
+        # an undisseminated date is a no-op until FINRA publishes it. 00:20 UTC keeps it clear of
+        # the 23:45 short-volume chain.
+        cron(pull_finra_short_interest, hour=0, minute=20, run_at_startup=True),
         # Oldest-first batches continue through the post-close window until Atlas-ready names are
         # current. They stay outside EOD coverage, screeners, Ideas, aggregates, and public agents.
         cron(

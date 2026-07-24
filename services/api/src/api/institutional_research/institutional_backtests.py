@@ -51,6 +51,11 @@ from bulls.analytics.research_strategy import (
     StrategyBar,
     StrategySecurity,
 )
+from bulls.analytics.short_interest import (
+    ShortInterestObservation,
+    latest_known,
+    short_interest_pct_of_shares_outstanding,
+)
 from bulls.core.models import (
     DailyBar,
     EdgarFilingEvent,
@@ -58,6 +63,7 @@ from bulls.core.models import (
     OwnershipStakeEvent,
     SecFinancialFactObservation,
     SecurityMaster,
+    ShortInterestBiweekly,
     Symbol,
 )
 from bulls.market_data.providers.sec_edgar import METRIC_SPECS
@@ -378,21 +384,82 @@ def _spread_as_of(
     return estimate.half_spread_bps if estimate is not None else None
 
 
+async def _short_interest_observations(
+    session: AsyncSession, *, codes: list[str]
+) -> dict[str, list[ShortInterestObservation]]:
+    """Load every disseminated short-interest record for these codes, grouped by symbol.
+
+    Rows are returned whole; the point-in-time cut happens in ``latest_known`` at each decision
+    date, so one load serves every session of a backtest.
+    """
+
+    if not codes:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                ShortInterestBiweekly.code,
+                ShortInterestBiweekly.settlement_date,
+                ShortInterestBiweekly.known_at,
+                ShortInterestBiweekly.shares_short,
+                ShortInterestBiweekly.days_to_cover,
+                ShortInterestBiweekly.average_daily_volume,
+                ShortInterestBiweekly.previous_shares_short,
+            )
+            .where(
+                ShortInterestBiweekly.market == "US",
+                ShortInterestBiweekly.code.in_(codes),
+            )
+            .order_by(ShortInterestBiweekly.code, ShortInterestBiweekly.known_at)
+        )
+    ).all()
+    grouped: dict[str, list[ShortInterestObservation]] = defaultdict(list)
+    for row in rows:
+        grouped[row.code].append(
+            ShortInterestObservation(
+                settlement_date=row.settlement_date,
+                known_at=row.known_at,
+                shares_short=float(row.shares_short),
+                days_to_cover=(
+                    float(row.days_to_cover) if row.days_to_cover is not None else None
+                ),
+                average_daily_volume=(
+                    float(row.average_daily_volume)
+                    if row.average_daily_volume is not None
+                    else None
+                ),
+                previous_shares_short=(
+                    float(row.previous_shares_short)
+                    if row.previous_shares_short is not None
+                    else None
+                ),
+            )
+        )
+    return dict(grouped)
+
+
 def _candidate_state(
     symbol: str,
     *,
     as_of: dt.date,
     bars: dict[str, list[StrategyBar]],
     shares: dict[str, dict[str, float]],
+    short_interest: dict[str, list[ShortInterestObservation]] | None = None,
 ) -> CandidateMarketState:
     close = next(
         (bar.close for bar in reversed(bars.get(symbol, [])) if bar.date <= as_of),
         None,
     )
     share_count = shares.get(symbol, {}).get("shares_outstanding")
+    # Selected on dissemination date, not settlement date, so a historical decision only sees
+    # short interest the market could actually have known that day.
+    observation = latest_known((short_interest or {}).get(symbol, []), as_of=as_of)
     return CandidateMarketState(
         half_spread_bps=_spread_as_of(symbol, as_of, bars),
-        short_interest_pct_of_float=None,
+        short_interest_pct_of_shares_outstanding=short_interest_pct_of_shares_outstanding(
+            observation.shares_short if observation is not None else None,
+            share_count,
+        ),
         market_cap_mn=(close * share_count / 1_000_000 if close and share_count else None),
     )
 
@@ -684,8 +751,14 @@ async def _event_preparation(
         max_half_spread_bps=100.0,
         minimum_market_cap_mn=100.0,
         time_stop_days=365,
-        screen_crowding=False,
+        # Re-armed: FINRA consolidated short interest now supplies the point-in-time input this
+        # gate always required. Names with no disseminated record are rejected as
+        # "short_interest_unknown" rather than silently waved through.
+        screen_crowding=True,
         require_market_cap=False,
+    )
+    short_interest = await _short_interest_observations(
+        session, codes=sorted({candidate.symbol for candidate in candidates})
     )
     for session_at, session_candidates in by_session.items():
         shares = point_in_time_factor_fundamentals(
@@ -698,6 +771,7 @@ async def _event_preparation(
                 as_of=session_at.date(),
                 bars=bars,
                 shares=shares,
+                short_interest=short_interest,
             )
             for candidate in session_candidates
         }
@@ -750,7 +824,7 @@ async def _event_preparation(
             "schedule_changes": len(schedule),
             "book_sessions": len(advances),
             "rejections": rejection_summary(all_screened),
-            "crowding_screen": "disabled_missing_short_interest_pct_of_float",
+            "crowding_screen": "disabled_missing_short_interest_pct_of_shares_outstanding",
             "fundamental_observations": len(observations),
             "event_timing_placebo_delay_sessions": 21,
             "invalid_transaction_clocks_rejected": invalid_transaction_clocks,

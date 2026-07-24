@@ -415,23 +415,29 @@ STRATEGY_READINESS: dict[str, StrategyReadiness] = {
             market="US",
             direction="long",
             horizon="swing",
-            status="blocked",
+            status="diagnostic_only",
             economic_hypothesis=(
                 "A constrained float with materially elevated short positioning, rising borrow "
                 "pressure, improving structure and abnormal demand may force covering when "
                 "resistance breaks."
             ),
             rationale=(
-                "No authoritative short-positioning data exists in Atlas. FINRA daily "
-                "short-marked volume cannot establish open positions or days-to-cover; the "
-                "words 'short squeeze' are forbidden until these datasets land."
+                "FINRA bi-monthly consolidated short interest now supplies authoritative "
+                "positioning — open short position, days-to-cover, and change versus the prior "
+                "settlement — gated on its dissemination date, so short interest may finally be "
+                "described as such. Two defects cap every result below promotion: the ratio is "
+                "against shares outstanding because Atlas has no verified US free float (0 of "
+                "~11k symbols), and positioning is fortnightly and up to two weeks stale by "
+                "construction. Borrow, cost-to-borrow, locates and FTDs remain absent, so squeeze "
+                "*mechanics* cannot be confirmed and SHORT EXECUTION STAYS BLOCKED — this is a "
+                "long-side research family only."
             ),
             missing_data=[
                 MissingDataset(
-                    key="us_short_interest",
+                    key="us_free_float",
                     description=(
-                        "Point-in-time short interest as % of float and days-to-cover "
-                        "(FINRA bi-monthly settlement data — free, partial unblock)."
+                        "Verified US free float, so short interest can be expressed as % of "
+                        "float rather than the understating % of shares outstanding."
                     ),
                 ),
                 _BORROW,

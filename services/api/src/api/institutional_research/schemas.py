@@ -651,7 +651,7 @@ class SqueezeEntryOut(ApiModel):
 class SqueezeFamilyOut(ApiModel):
     family: str
     label: str
-    status: Literal["available", "data_blocked"]
+    status: Literal["available", "data_blocked", "not_implemented"]
     blocked_reason: str | None = None
     missing_datasets: list[str] = Field(default_factory=list)
     entries: list[SqueezeEntryOut] = Field(default_factory=list)

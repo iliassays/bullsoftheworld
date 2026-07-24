@@ -413,7 +413,7 @@ def _market_state_on(symbol, as_of, spreads, bars, pit_shares) -> CandidateMarke
     shares = pit_shares.get(symbol, {}).get("shares_outstanding")
     return CandidateMarketState(
         half_spread_bps=spreads.get(symbol),
-        short_interest_pct_of_float=None,
+        short_interest_pct_of_shares_outstanding=None,
         market_cap_mn=(close * shares / 1_000_000) if close and shares else None,
     )
 
