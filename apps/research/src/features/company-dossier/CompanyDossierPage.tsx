@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
+import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { portalTickerUrl, researchDeployment } from "../../app/deployment";
@@ -19,12 +20,16 @@ import { AppTooltip, Button, StatusBadge } from "../../design-system";
 import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import { OptionsLens } from "../options-lens/OptionsLens";
 import {
+  useInvestmentOperatingView,
   useResearchRun,
   useResearchRuns,
+  useShadowPortfolios,
   useStartCompanyResearch,
 } from "../autonomous-research/hooks";
 import { autonomousDecision, type AutonomousDecision } from "../autonomous-research/model";
+import { DecisionTicketPanel } from "./DecisionTicketPanel";
 import { DossierChart } from "./DossierChart";
+import { buildDecisionTicket } from "./decision-ticket";
 import { FACTOR_GUIDANCE, factorReading, METRIC_GUIDANCE, type FactorKey } from "./guidance";
 import type { ResearchCompanyDossier } from "./model";
 import { useCompanyDossier } from "./useCompanyDossier";
@@ -261,8 +266,17 @@ export function CompanyDossierPage() {
   );
   const latestRun = useResearchRun(workspace?.id, latestSummary?.id);
   const startResearch = useStartCompanyResearch(workspace?.id);
+  const shadowPortfolios = useShadowPortfolios(workspace?.id);
+  const operatingView = useInvestmentOperatingView(workspace?.id);
   const analystRun = startResearch.data ?? latestRun.data;
   const decision = autonomousDecision(analystRun);
+  const decisionEvents = useMemo(
+    () =>
+      operatingView.data?.portfolios
+        .flatMap((portfolio) => portfolio.recentEvents)
+        .filter((event) => event.code?.toUpperCase() === ticker?.toUpperCase()) ?? [],
+    [operatingView.data?.portfolios, ticker],
+  );
 
   if (workspaces.isLoading || (workspace && dossierQuery.isLoading)) {
     return <div aria-label="Loading company dossier" className="dossier-loading" />;
@@ -284,6 +298,17 @@ export function CompanyDossierPage() {
   const candidate = dossier.candidate;
   const currency = candidate.currency;
   const evidenceTone = candidate.evidence.freshness === "fresh" ? "positive" : candidate.evidence.freshness === "aging" ? "warning" : "negative";
+  const decisionTicket = buildDecisionTicket({
+    ticker: candidate.ticker,
+    currentPrice: candidate.price,
+    evidenceFreshness: candidate.evidence.freshness,
+    candidateInvalidation: candidate.invalidation,
+    capacity: candidate.liquidity.capacity,
+    exitDays: candidate.liquidity.exitDays,
+    decision,
+    portfolios: shadowPortfolios.data ?? [],
+    operatingView: operatingView.data,
+  });
 
   return (
     <div className="company-dossier-page">
@@ -324,6 +349,8 @@ export function CompanyDossierPage() {
           <span><strong>Research limitations</strong>{dossier.dataQualityNotes.join(" ")}</span>
         </section>
       )}
+
+      <DecisionTicketPanel ticket={decisionTicket} />
 
       <section className="dossier-panel autonomous-analyst">
         <header className="dossier-panel__header">
@@ -398,7 +425,15 @@ export function CompanyDossierPage() {
               <span><Gauge aria-hidden="true" size={15} /><strong>Price and participation</strong></span>
               <small>{dossier.priceHistory.length} completed sessions · adjusted close where available</small>
             </header>
-            <DossierChart points={dossier.priceHistory} />
+            <DossierChart
+              averageCost={decisionTicket.averageCost}
+              benchmarkCode={dossier.marketData.benchmarkCode}
+              decisionEvents={decisionEvents}
+              evidence={candidate.evidence.items}
+              points={dossier.priceHistory}
+              resistance={dossier.marketData.nearestResistance}
+              support={dossier.marketData.nearestSupport}
+            />
             <div className="dossier-chart-stats">
               <Metric label="52-week range" value={`${formatNumber(dossier.marketData.week52Low, 2)} – ${formatNumber(dossier.marketData.week52High, 2)}`} />
               <Metric help={`${METRIC_GUIDANCE.relativeVolume.definition} ${METRIC_GUIDANCE.relativeVolume.reference}`} label="Relative volume" value={dossier.marketData.relativeVolume === null ? "Not available" : `${dossier.marketData.relativeVolume.toFixed(2)}x`} detail="1.00x normal · <0.80x weak" />

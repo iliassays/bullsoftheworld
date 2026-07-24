@@ -535,6 +535,26 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   interventions. Reconciliation is an idempotent write operation; read endpoints remain
   side-effect free, and missed days replay from their original completed bars and prior-close
   targets.
+- **Decision Archive** makes the default command surface action-oriented without relabelling
+  research urgency as a trade. It reconstructs current or prior completed-session entry targets,
+  active positions, exit targets, blocked orders, and closed positions from immutable shadow
+  snapshots and causal decision events. Each item retains its first-discovery date, distinguishes
+  target from fill, measures adjusted-close return/MFE/MAE through the selected archive date, and
+  exposes a chart path with signal, fill, and risk markers. DSE and US use the same read contract
+  but remain independently bound to their tenant, workspace, market, strategies, and price data.
+  The archived session's capitalization classification is filterable. Entry and active-position
+  views expose the engine's cost/reference basis, actual percentage-stop invalidation, and a
+  labelled 2R planning objective; the objective is risk geometry, not a price forecast or an
+  automatic take-profit order.
+- **Historical replay** may reconstruct up to a bounded operator-requested window so a newly
+  provisioned workspace can inspect prior daily decisions. Replayed snapshots use the same
+  point-in-time execution path, are visibly labelled, and are excluded from forward sessions,
+  executions, return, benchmark, and drawdown promotion evidence. Genuine forward collection
+  starts only after the latest session that existed when replay was seeded.
+- **Trade direction** is explicit rather than inferred. Current registered books are long-only.
+  US short execution remains fail-closed until point-in-time borrow availability, locate outcomes,
+  borrow fees, recall/buy-in handling, margin and squeeze controls are available. FINRA daily
+  short-marked volume is not short interest, borrow availability, or a locate.
 - **Lifecycle Control** persists one bounded automation policy per workspace and coordinates the
   queue, evidence-changed research, registered backtest, forward shadow reconciliation, and outcome
   calibration. Jobs carry an exact tenant/market/user/workspace envelope and bind the normal forced

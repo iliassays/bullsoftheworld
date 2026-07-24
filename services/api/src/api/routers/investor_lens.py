@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from api.deps import CurrentLocale, CurrentTenant, DbSession, enforce_market_feature
 from api.eod import latest_completed_session_change_pct
+from api.news_materiality import material_dse_announcement_filter
 from bulls.analytics import InvestorLensResponse, build_investor_lens
 from bulls.core.markets import get_market_profile
 from bulls.core.models import (
@@ -64,16 +65,16 @@ async def get_investor_lens(
     # "none", instead of telling the user to go hunt the news themselves. 90d (a quarter) matches the
     # reporting cadence: a 30d window missed genuinely recent earnings/dividends and read "none".
     since = ta.as_of_date - dt.timedelta(days=90)
+    announcement_query = select(Announcement).where(
+        Announcement.market == tenant.market,
+        Announcement.code == code,
+        Announcement.published_at >= since,
+    )
+    if tenant.market == "DSE":
+        announcement_query = announcement_query.where(material_dse_announcement_filter())
+
     news = list(
-        await session.scalars(
-            select(Announcement)
-            .where(
-                Announcement.market == tenant.market,
-                Announcement.code == code,
-                Announcement.published_at >= since,
-            )
-            .order_by(Announcement.published_at.desc())
-        )
+        await session.scalars(announcement_query.order_by(Announcement.published_at.desc()))
     )
     # Attach a direction cue to the most-recent item so the lens shows the earnings *impact*
     # (up/down), not just that news happened. Arrow only, no colour — it states the fact without

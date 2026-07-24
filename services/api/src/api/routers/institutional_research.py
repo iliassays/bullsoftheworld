@@ -11,6 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from api.deps import CurrentTenant, CurrentUser, DbSession
 from api.institutional_research.audit import record_research_audit_event
 from api.institutional_research.catalysts import load_catalyst_calendar
+from api.institutional_research.decision_board import (
+    load_decision_board,
+    load_decision_candidate_path,
+)
 from api.institutional_research.dossier import (
     ResearchSecurityNotFound,
     build_company_dossier,
@@ -47,6 +51,8 @@ from api.institutional_research.schemas import (
     ClearLadderFreezeRequest,
     CompanyDossierOut,
     CreateShadowPortfolioRequest,
+    DecisionBoardOut,
+    DecisionCandidatePathOut,
     InvestmentMandateOut,
     InvestmentMandateUpdate,
     InvestmentOperatingViewOut,
@@ -350,6 +356,72 @@ async def investment_operating_view(
         return await load_investment_operating_view(session, workspace=authorized.workspace)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/workspaces/{workspace_id}/decision-board")
+async def decision_board(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    as_of: Annotated[dt.date | None, Query()] = None,
+) -> DecisionBoardOut:
+    """Read the current or archived strategy decision snapshot without mutating paper books."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    return await load_decision_board(
+        session,
+        workspace=authorized.workspace,
+        as_of=as_of,
+    )
+
+
+@router.get("/workspaces/{workspace_id}/decision-board/{portfolio_id}/{code}")
+async def decision_candidate_path(
+    workspace_id: uuid.UUID,
+    portfolio_id: uuid.UUID,
+    code: str,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    as_of: Annotated[dt.date | None, Query()] = None,
+) -> DecisionCandidatePathOut:
+    """Read one candidate's discovery-to-snapshot price path and causal strategy events."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    try:
+        return await load_decision_candidate_path(
+            session,
+            workspace=authorized.workspace,
+            portfolio_id=portfolio_id,
+            code=code,
+            as_of=as_of,
+        )
+    except LookupError:
+        raise HTTPException(
+            status_code=404,
+            detail="Decision candidate not found in this workspace snapshot",
+        ) from None
 
 
 @router.post("/workspaces/{workspace_id}/automation/run", status_code=202)

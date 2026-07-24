@@ -22,9 +22,11 @@ from api.institutional_research.schemas import (
     ShortActivityOut,
 )
 from api.institutional_research.universe import apply_research_product_scope
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     DailyBar,
     InstitutionalHoldingSummary,
+    MarketSummary,
     ShareholdingSnapshot,
     ShortVolumeDaily,
     Symbol,
@@ -158,6 +160,20 @@ def _short_activity(rows: list[ShortVolumeDaily]) -> ShortActivityOut | None:
     )
 
 
+def _adjusted_ohlc(row: DailyBar) -> tuple[float, float, float, float]:
+    """Apply the close adjustment ratio consistently across the complete bar."""
+
+    close = float(row.close)
+    adjusted_close = float(row.adjusted_close) if row.adjusted_close is not None else close
+    adjustment = adjusted_close / close if close > 0 else 1.0
+    return (
+        float(row.open) * adjustment,
+        float(row.high) * adjustment,
+        float(row.low) * adjustment,
+        adjusted_close,
+    )
+
+
 async def _price_history(
     session: AsyncSession,
     *,
@@ -177,14 +193,46 @@ async def _price_history(
             .limit(252)
         )
     )
-    return [
-        DossierPricePointOut(
-            date=row.date,
-            close=float(row.adjusted_close if row.adjusted_close is not None else row.close),
-            volume=int(row.volume),
+    if not rows:
+        return []
+
+    ordered_rows = list(reversed(rows))
+    benchmark_rows = list(
+        (
+            await session.execute(
+                select(
+                    MarketSummary.date,
+                    MarketSummary.benchmark_close,
+                    MarketSummary.dsex,
+                ).where(
+                    MarketSummary.market == market,
+                    MarketSummary.date >= ordered_rows[0].date,
+                    MarketSummary.date <= ordered_rows[-1].date,
+                )
+            )
+        ).all()
+    )
+    benchmark_by_date = {
+        date: float(benchmark_close if benchmark_close is not None else dsex)
+        for date, benchmark_close, dsex in benchmark_rows
+        if benchmark_close is not None or dsex is not None
+    }
+
+    points: list[DossierPricePointOut] = []
+    for row in ordered_rows:
+        open_price, high, low, close = _adjusted_ohlc(row)
+        points.append(
+            DossierPricePointOut(
+                date=row.date,
+                open=open_price,
+                high=high,
+                low=low,
+                close=close,
+                volume=int(row.volume),
+                benchmark_close=benchmark_by_date.get(row.date),
+            )
         )
-        for row in reversed(rows)
-    ]
+    return points
 
 
 async def build_company_dossier(
@@ -202,8 +250,7 @@ async def build_company_dossier(
         select(Symbol, TickerAnalytics)
         .join(
             TickerAnalytics,
-            (TickerAnalytics.market == Symbol.market)
-            & (TickerAnalytics.code == Symbol.code),
+            (TickerAnalytics.market == Symbol.market) & (TickerAnalytics.code == Symbol.code),
         )
         .where(
             Symbol.market == market,
@@ -293,11 +340,15 @@ async def build_company_dossier(
         missing = [item.label for item in candidate.evidence.requirements if not item.present]
         data_quality_notes.append("Missing required evidence: " + ", ".join(missing) + ".")
     if market == "DSE" and reported_ownership is None:
-        data_quality_notes.append("No validated DSE ownership disclosure is available at the cutoff.")
+        data_quality_notes.append(
+            "No validated DSE ownership disclosure is available at the cutoff."
+        )
     if market == "US" and institutional_disclosure is None:
         data_quality_notes.append("No matched quarterly 13F aggregate is available at the cutoff.")
     if market == "US" and short_activity is None:
-        data_quality_notes.append("No matched FINRA daily short-volume record is available at the cutoff.")
+        data_quality_notes.append(
+            "No matched FINRA daily short-volume record is available at the cutoff."
+        )
 
     return CompanyDossierOut(
         tenant_id=tenant_id,
@@ -308,6 +359,7 @@ async def build_company_dossier(
         candidate=candidate,
         market_data=DossierMarketDataOut(
             as_of_date=cutoff,
+            benchmark_code=get_market_profile(market).benchmark_code,
             market_cap_mn=analytics.market_cap_mn,
             free_float_cap_mn=analytics.free_float_cap_mn,
             week52_high=analytics.week52_high,

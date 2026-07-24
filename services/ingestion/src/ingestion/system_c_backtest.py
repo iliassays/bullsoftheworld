@@ -35,13 +35,15 @@ from bulls.analytics.factor_sleeve import (
 from bulls.analytics.institutional_schedules import build_factor_schedules
 from bulls.analytics.research_strategy import (
     RISK_POLICIES,
+    BenchmarkPoint,
+    BenchmarkSeries,
     StrategyBar,
     StrategySecurity,
     run_backtest,
     run_cost_tiered_backtest,
 )
 from bulls.core.db import get_sessionmaker
-from bulls.core.models import DailyBar, SecFinancialFactObservation
+from bulls.core.models import DailyBar, SecFinancialFactObservation, SecurityMaster
 from bulls.market_data.providers.sec_edgar import METRIC_SPECS
 
 _FACTOR_METRICS = ("equity", "net_income", "shares_outstanding")
@@ -65,8 +67,14 @@ async def _load(
                 DailyBar.code,
                 func.avg(DailyBar.close * DailyBar.volume).label("average_dollar_volume"),
             )
+            .join(
+                SecurityMaster,
+                (SecurityMaster.market == DailyBar.market)
+                & (SecurityMaster.symbol == DailyBar.code),
+            )
             .where(
                 DailyBar.market == "US",
+                SecurityMaster.instrument_type.in_(("common_stock", "adr")),
                 DailyBar.date < start,
                 DailyBar.date >= start - dt.timedelta(days=180),
             )
@@ -80,8 +88,16 @@ async def _load(
             return {}, []
         bars_rows = list(
             await session.execute(
-                select(DailyBar.code, DailyBar.date, DailyBar.open, DailyBar.high,
-                       DailyBar.low, DailyBar.close, DailyBar.volume, DailyBar.adjusted_close)
+                select(
+                    DailyBar.code,
+                    DailyBar.date,
+                    DailyBar.open,
+                    DailyBar.high,
+                    DailyBar.low,
+                    DailyBar.close,
+                    DailyBar.volume,
+                    DailyBar.adjusted_close,
+                )
                 .where(DailyBar.market == "US", DailyBar.code.in_(codes))
                 .order_by(DailyBar.code, DailyBar.date)
             )
@@ -100,8 +116,7 @@ async def _load(
                     SecFinancialFactObservation.accession_number,
                     SecFinancialFactObservation.taxonomy,
                     SecFinancialFactObservation.source_concept,
-                )
-                .where(
+                ).where(
                     SecFinancialFactObservation.market == "US",
                     SecFinancialFactObservation.code.in_(codes),
                     SecFinancialFactObservation.metric.in_(_FACTOR_METRICS),
@@ -143,6 +158,35 @@ async def _load(
         for row in fact_rows
     ]
     return bars, facts
+
+
+async def _load_benchmark(start: dt.date) -> BenchmarkSeries | None:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as session:
+        rows = (
+            await session.execute(
+                select(DailyBar.date, DailyBar.close, DailyBar.adjusted_close)
+                .where(
+                    DailyBar.market == "US",
+                    DailyBar.code == "SPY",
+                    DailyBar.date >= start,
+                )
+                .order_by(DailyBar.date)
+            )
+        ).all()
+    points = [
+        BenchmarkPoint(
+            date=row.date,
+            close=float(row.adjusted_close if row.adjusted_close is not None else row.close),
+        )
+        for row in rows
+        if (row.adjusted_close if row.adjusted_close is not None else row.close) > 0
+    ]
+    return (
+        BenchmarkSeries(key="spy_total_return_proxy", label="SPY adjusted close", points=points)
+        if points
+        else None
+    )
 
 
 def _build_schedule(
@@ -192,10 +236,10 @@ def _score(result, label: str, trials: int) -> dict[str, Any]:
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     bars, facts = await _load(args.max_symbols, args.start)
     if not bars:
-        return {
-            "error": "no point-in-time universe existed before the requested start date"
-        }
-    sessions = sorted({b.date for history in bars.values() for b in history if b.date >= args.start})
+        return {"error": "no point-in-time universe existed before the requested start date"}
+    sessions = sorted(
+        {b.date for history in bars.values() for b in history if b.date >= args.start}
+    )
     policy = SleevePolicy(target_positions=args.positions, minimum_factors=4)
     schedule, diagnostics = _build_schedule(
         bars,
@@ -212,14 +256,22 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     securities = [
-        StrategySecurity(code=code, sector="Unclassified", cap_tier="unclassified",
-                         bars=[b for b in history if b.date >= args.start])
+        StrategySecurity(
+            code=code,
+            sector="Unclassified",
+            cap_tier="unclassified",
+            bars=[b for b in history if b.date >= args.start],
+        )
         for code, history in bars.items()
     ]
+    benchmark = await _load_benchmark(args.start)
     common = dict(
-        market="US", strategy_key="us_factor_sleeve_v1", securities=securities,
+        market="US",
+        strategy_key="us_factor_sleeve_v1",
+        securities=securities,
         risk_policy=RISK_POLICIES["US"],
         execution_timing="next_close",
+        benchmark_series=benchmark,
     )
     cost_tiered = run_cost_tiered_backtest(
         **common,
@@ -289,11 +341,15 @@ def main() -> None:
     )
     parser.add_argument("--positions", type=int, default=40)
     parser.add_argument(
-        "--max-half-spread-bps", type=float, default=50.0,
+        "--max-half-spread-bps",
+        type=float,
+        default=50.0,
         help="tradeable gate: exclude names whose measured half-spread exceeds this",
     )
     parser.add_argument(
-        "--trials", type=int, default=1,
+        "--trials",
+        type=int,
+        default=1,
         help="specifications tried in this family; raises the overfitting bar",
     )
     args = parser.parse_args()

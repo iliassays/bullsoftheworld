@@ -133,9 +133,7 @@ def _adjusted_bar(row) -> StrategyBar | None:
     if row.adjusted_close is not None and row.adjusted_close <= 0:
         return None
     adjustment = (
-        row.adjusted_close / row.close
-        if row.adjusted_close is not None and row.close > 0
-        else 1.0
+        row.adjusted_close / row.close if row.adjusted_close is not None and row.close > 0 else 1.0
     )
     return StrategyBar(
         date=row.date,
@@ -184,6 +182,9 @@ async def _bars(
 async def _securities(
     session: AsyncSession,
     bars: dict[str, list[StrategyBar]],
+    *,
+    start: dt.date | None = None,
+    end: dt.date | None = None,
 ) -> list[StrategySecurity]:
     if not bars:
         return []
@@ -198,10 +199,17 @@ async def _securities(
             code=code,
             sector=(symbols.get(code).sector if symbols.get(code) else None) or "Unclassified",
             cap_tier="unclassified",
-            bars=history,
+            bars=[
+                bar
+                for bar in history
+                if (start is None or bar.date >= start) and (end is None or bar.date <= end)
+            ],
         )
         for code, history in sorted(bars.items())
-        if history
+        if any(
+            (start is None or bar.date >= start) and (end is None or bar.date <= end)
+            for bar in history
+        )
     ]
 
 
@@ -276,8 +284,14 @@ async def _factor_preparation(
                 DailyBar.code,
                 func.avg(DailyBar.close * DailyBar.volume).label("average_dollar_volume"),
             )
+            .join(
+                SecurityMaster,
+                (SecurityMaster.market == DailyBar.market)
+                & (SecurityMaster.symbol == DailyBar.code),
+            )
             .where(
                 DailyBar.market == "US",
+                SecurityMaster.instrument_type.in_(("common_stock", "adr")),
                 DailyBar.date < start,
                 DailyBar.date >= start - dt.timedelta(days=180),
             )
@@ -308,12 +322,7 @@ async def _factor_preparation(
         end=end,
     )
     sessions = sorted(
-        {
-            bar.date
-            for history in bars.values()
-            for bar in history
-            if start <= bar.date <= end
-        }
+        {bar.date for history in bars.values() for bar in history if start <= bar.date <= end}
     )
     bundle = build_factor_schedules(
         bars=bars,
@@ -327,7 +336,7 @@ async def _factor_preparation(
             "No monthly rebalance had 252 sessions plus all four point-in-time factor inputs."
         )
     return InstitutionalBacktestPreparation(
-        securities=await _securities(session, bars),
+        securities=await _securities(session, bars, start=start, end=end),
         weight_schedule=bundle.strategy,
         comparators={
             "equal_weight_eligible_universe": bundle.equal_weight_null,
@@ -384,9 +393,7 @@ def _candidate_state(
     return CandidateMarketState(
         half_spread_bps=_spread_as_of(symbol, as_of, bars),
         short_interest_pct_of_float=None,
-        market_cap_mn=(
-            close * share_count / 1_000_000 if close and share_count else None
-        ),
+        market_cap_mn=(close * share_count / 1_000_000 if close and share_count else None),
     )
 
 
@@ -426,12 +433,10 @@ async def _event_candidates(
             ).where(
                 OwnershipStakeEvent.form.like("%13%"),
                 OwnershipStakeEvent.accepted_at.is_not(None),
-                OwnershipStakeEvent.accepted_at >= dt.datetime.combine(
-                    start, dt.time.min, tzinfo=dt.UTC
-                ),
-                OwnershipStakeEvent.accepted_at <= dt.datetime.combine(
-                    end, dt.time.max, tzinfo=dt.UTC
-                ),
+                OwnershipStakeEvent.accepted_at
+                >= dt.datetime.combine(start, dt.time.min, tzinfo=dt.UTC),
+                OwnershipStakeEvent.accepted_at
+                <= dt.datetime.combine(end, dt.time.max, tzinfo=dt.UTC),
             )
         )
     ).all()
@@ -492,8 +497,7 @@ async def _event_candidates(
                 InsiderTransaction.transaction_date.is_not(None),
                 EdgarFilingEvent.accepted_at.is_not(None),
                 EdgarFilingEvent.accepted_at
-                >= dt.datetime.combine(start, dt.time.min, tzinfo=dt.UTC)
-                - dt.timedelta(days=45),
+                >= dt.datetime.combine(start, dt.time.min, tzinfo=dt.UTC) - dt.timedelta(days=45),
                 EdgarFilingEvent.accepted_at
                 <= dt.datetime.combine(end, dt.time.max, tzinfo=dt.UTC),
             )
@@ -562,9 +566,7 @@ async def _event_candidates(
             trade.disseminated_at,
         )
         classification = classify_insider([date for _, date in history[:cut]])
-        purchases.extend(
-            qualifying_purchases([trade], {trade.owner_cik: classification})
-        )
+        purchases.extend(qualifying_purchases([trade], {trade.owner_cik: classification}))
     clusters = detect_clusters(
         [trade for trade in purchases if trade.issuer_symbol],
         window_days=30,
@@ -603,9 +605,8 @@ def _thesis_breaks(
     roster = ActivistRoster(name_fragments=_ACTIVIST_FRAGMENTS)
     breaks: dict[dt.datetime, dict[str, str]] = defaultdict(dict)
     for row in stake_rows:
-        if (
-            row.subject_cik not in cik_to_symbol
-            or not roster.matches(cik=row.filed_by_cik, name=row.filed_by_name)
+        if row.subject_cik not in cik_to_symbol or not roster.matches(
+            cik=row.filed_by_cik, name=row.filed_by_name
         ):
             continue
         form = (row.form or "").upper()
@@ -659,17 +660,9 @@ async def _event_preparation(
         metrics=("shares_outstanding",),
     )
     session_dates = sorted(
-        {
-            bar.date
-            for history in bars.values()
-            for bar in history
-            if start <= bar.date <= end
-        }
+        {bar.date for history in bars.values() for bar in history if start <= bar.date <= end}
     )
-    sessions = [
-        dt.datetime.combine(date, dt.time.max, tzinfo=dt.UTC)
-        for date in session_dates
-    ]
+    sessions = [dt.datetime.combine(date, dt.time.max, tzinfo=dt.UTC) for date in session_dates]
     by_session: dict[dt.datetime, list[CandidateEvent]] = defaultdict(list)
     for candidate in candidates:
         session_at = _session_for_signal(candidate.signal_at, session_dates)
@@ -741,7 +734,7 @@ async def _event_preparation(
             "The 21-session event-timing placebo has no executable delayed observations."
         )
     return InstitutionalBacktestPreparation(
-        securities=await _securities(session, bars),
+        securities=await _securities(session, bars, start=start, end=end),
         weight_schedule=schedule,
         comparators={"event_timing_plus_21_sessions": delayed_placebo},
         diagnostics={

@@ -9,13 +9,27 @@ export function previewDossier(workspaceId: string, ticker: string): ResearchCom
   if (!candidate) throw new Error(`No preview dossier exists for ${ticker}`);
 
   const start = new Date("2026-06-30T00:00:00Z");
-  const priceHistory = candidate.sparkline.map((close, index) => {
+  const sessionDates: string[] = [];
+  for (
     const date = new Date(start);
-    date.setUTCDate(start.getUTCDate() + index);
+    sessionDates.length < candidate.sparkline.length;
+    date.setUTCDate(date.getUTCDate() + 1)
+  ) {
+    const weekday = date.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) {
+      sessionDates.push(date.toISOString().slice(0, 10));
+    }
+  }
+  const priceHistory = candidate.sparkline.map((close, index) => {
+    const open = index === 0 ? close * 0.985 : candidate.sparkline[index - 1]!;
     return {
-      date: date.toISOString().slice(0, 10),
+      date: sessionDates[index]!,
+      open,
+      high: Math.max(open, close) * 1.018,
+      low: Math.min(open, close) * 0.982,
       close,
       volume: 150_000 + index * 18_500,
+      benchmarkClose: 100 + index * 0.45,
     };
   });
 
@@ -29,6 +43,7 @@ export function previewDossier(workspaceId: string, ticker: string): ResearchCom
     candidate,
     marketData: {
       asOfDate: candidate.evidence.knownAt.slice(0, 10),
+      benchmarkCode: isDse ? "DSEX" : "SPY",
       marketCapMn: isDse ? 8_720 : 142,
       freeFloatCapMn: isDse ? 3_410 : 77,
       week52High: candidate.price * 1.28,

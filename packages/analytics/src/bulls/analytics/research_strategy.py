@@ -15,7 +15,7 @@ import statistics
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from bulls.analytics.cost_observatory import CostTier, cost_tiers, estimate_spread
 from bulls.analytics.drawdown_ladder import (
@@ -24,7 +24,7 @@ from bulls.analytics.drawdown_ladder import (
     apply_drawdown_ladder,
 )
 
-ENGINE_VERSION = "atlas-portfolio-engine-v2"
+ENGINE_VERSION = "atlas-portfolio-engine-v3"
 
 type StrategyKey = Literal[
     "dse_reversal_v1",
@@ -64,6 +64,28 @@ class StrategySecurity(BaseModel):
     sector: str = "Unclassified"
     cap_tier: str = "unclassified"
     bars: list[StrategyBar]
+
+
+class BenchmarkPoint(BaseModel):
+    """One completed close for an independently specified market benchmark."""
+
+    date: dt.date
+    close: float = Field(gt=0)
+
+
+class BenchmarkSeries(BaseModel):
+    """Benchmark identity and observations, kept separate from the strategy universe."""
+
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_.-]+$")
+    label: str = Field(min_length=1, max_length=120)
+    points: list[BenchmarkPoint]
+
+    @model_validator(mode="after")
+    def unique_dates(self) -> BenchmarkSeries:
+        dates = [point.date for point in self.points]
+        if len(dates) != len(set(dates)):
+            raise ValueError("benchmark points must contain unique dates")
+        return self
 
 
 class StrategyDefinition(BaseModel):
@@ -154,6 +176,11 @@ class BacktestResult(BaseModel):
     initial_capital: float
     final_nav: float
     benchmark_final: float
+    benchmark_key: str
+    benchmark_label: str
+    benchmark_method: Literal["explicit_series", "observable_universe_equal_weight"]
+    benchmark_coverage_pct: float
+    benchmark_valid: bool
     trades: list[BacktestTrade]
     equity_curve: list[EquityPoint]
     risk_interventions: list[RiskIntervention]
@@ -167,9 +194,7 @@ class BacktestResult(BaseModel):
     latest_target_weights: dict[str, float]
 
 
-_ROBUSTNESS_WINDOWS: tuple[
-    tuple[RobustnessKey, str, dt.date, dt.date], ...
-] = (
+_ROBUSTNESS_WINDOWS: tuple[tuple[RobustnessKey, str, dt.date, dt.date], ...] = (
     (
         "global_financial_crisis_2007_2009",
         "Global financial crisis",
@@ -208,11 +233,7 @@ def robustness_slices(equity_curve: list[EquityPoint]) -> list[RobustnessSlice]:
 
     slices: list[RobustnessSlice] = []
     for key, label, window_start, window_end in _ROBUSTNESS_WINDOWS:
-        points = [
-            point
-            for point in equity_curve
-            if window_start <= point.date <= window_end
-        ]
+        points = [point for point in equity_curve if window_start <= point.date <= window_end]
         if len(points) < 2 or points[0].nav <= 0 or points[0].benchmark <= 0:
             continue
         peak = points[0].nav
@@ -490,7 +511,9 @@ class _Position:
     average_cost: float
 
 
-def _half_spread_rate(code: str, half_spread_bps: HalfSpreadInput, policy: PortfolioRiskPolicy) -> float:
+def _half_spread_rate(
+    code: str, half_spread_bps: HalfSpreadInput, policy: PortfolioRiskPolicy
+) -> float:
     """Resolve the one-way slippage rate for ``code`` given the run's half-spread input."""
     if half_spread_bps is None:
         return policy.slippage_rate
@@ -511,9 +534,7 @@ def _implementation_shortfall_bps(
     if decision_price is None or decision_price <= 0:
         return None
     adverse_return = (
-        fill_price / decision_price - 1
-        if side == "buy"
-        else 1 - fill_price / decision_price
+        fill_price / decision_price - 1 if side == "buy" else 1 - fill_price / decision_price
     )
     return round(adverse_return * 10_000, 3)
 
@@ -544,9 +565,7 @@ def constrain_target_weights(
             continue
         weight = min(float(raw_weight), policy.max_position_weight)
         if weight < raw_weight:
-            notes.append(
-                f"{code}: clipped to the {policy.max_position_weight:.1%} position limit"
-            )
+            notes.append(f"{code}: clipped to the {policy.max_position_weight:.1%} position limit")
         constrained[code] = weight
 
     by_sector: dict[str, list[str]] = {}
@@ -559,9 +578,7 @@ def constrain_target_weights(
         scale = policy.max_sector_weight / sector_gross
         for code in codes:
             constrained[code] *= scale
-        notes.append(
-            f"{sector}: scaled to the {policy.max_sector_weight:.1%} sector limit"
-        )
+        notes.append(f"{sector}: scaled to the {policy.max_sector_weight:.1%} sector limit")
 
     gross = sum(constrained.values())
     if gross > policy.max_gross_exposure and gross > 0:
@@ -743,6 +760,7 @@ def run_backtest(
     weight_schedule: dict[dt.date, dict[str, float]] | None = None,
     execution_timing: ExecutionTiming = "next_open",
     use_point_in_time_spread: bool = False,
+    benchmark_series: BenchmarkSeries | None = None,
 ) -> BacktestResult:
     """Run the registered strategy with next-session execution and deterministic risk gates.
 
@@ -779,6 +797,24 @@ def run_backtest(
         for security in securities
     }
     dates = sorted({date for bars in bars_by_code.values() for date in bars})
+    benchmark_by_date = (
+        {point.date: point.close for point in benchmark_series.points}
+        if benchmark_series is not None
+        else {}
+    )
+    benchmark_method: Literal["explicit_series", "observable_universe_equal_weight"] = (
+        "explicit_series" if benchmark_series is not None else "observable_universe_equal_weight"
+    )
+    benchmark_key = (
+        benchmark_series.key
+        if benchmark_series is not None
+        else f"{market.lower()}_observable_universe_equal_weight"
+    )
+    benchmark_label = (
+        benchmark_series.label
+        if benchmark_series is not None
+        else "Observable-universe equal weight (diagnostic)"
+    )
     histories: dict[str, list[StrategyBar]] = {code: [] for code in bars_by_code}
     positions: dict[str, _Position] = {}
     cash = initial_capital
@@ -792,6 +828,8 @@ def run_backtest(
     traded_gross = 0.0
     peak_nav = initial_capital
     benchmark = initial_capital
+    previous_benchmark_close: float | None = None
+    benchmark_observations = 0
     latest_target_weights: dict[str, float] = {}
     ladder_multiplier = 1.0
     ladder_state = LadderState()
@@ -811,7 +849,20 @@ def run_backtest(
                 elif histories[code]:
                     execution_nav += position.shares * histories[code][-1].close
             all_codes = set(positions) | set(pending_weights)
-            for code in sorted(all_codes):
+            prioritized_codes: list[tuple[int, str]] = []
+            for code in all_codes:
+                bar = current.get(code)
+                if bar is None:
+                    prioritized_codes.append((2, code))
+                    continue
+                reference_price = bar.open if execution_timing == "next_open" else bar.close
+                current_shares = positions.get(code, _Position(0, 0.0)).shares
+                desired_shares = int(
+                    execution_nav * pending_weights.get(code, 0.0) / reference_price
+                )
+                prioritized_codes.append((0 if desired_shares < current_shares else 1, code))
+
+            for _, code in sorted(prioritized_codes):
                 bar = current.get(code)
                 if bar is None:
                     retry_pending_target = True
@@ -970,7 +1021,14 @@ def run_backtest(
                 previous_closes.append(history[-1].close)
                 current_closes.append(bar.close)
             history.append(bar)
-        if previous_closes and len(previous_closes) == len(current_closes):
+        if benchmark_series is not None:
+            benchmark_close = benchmark_by_date.get(date)
+            if benchmark_close is not None:
+                benchmark_observations += 1
+                if previous_benchmark_close is not None:
+                    benchmark *= benchmark_close / previous_benchmark_close
+                previous_benchmark_close = benchmark_close
+        elif previous_closes and len(previous_closes) == len(current_closes):
             benchmark *= 1 + statistics.fmean(
                 current_close / previous_close - 1.0
                 for previous_close, current_close in zip(
@@ -1086,15 +1144,15 @@ def run_backtest(
         multiplier_changed = ladder_action.gross_multiplier != ladder_multiplier
         ladder_multiplier = ladder_action.gross_multiplier
         if ladder_multiplier == 0.0:
-            ladder_changed_target = multiplier_changed or proposed_target is not None or stopped_codes
+            ladder_changed_target = (
+                multiplier_changed or proposed_target is not None or stopped_codes
+            )
             latest_target_weights = {}
             if ladder_changed_target:
                 pending_weights = {}
                 pending_reason = "drawdown ladder: flatten"
                 pending_decision_prices = {
-                    code: current[code].close
-                    for code in positions
-                    if current.get(code) is not None
+                    code: current[code].close for code in positions if current.get(code) is not None
                 }
             if ladder_action.frozen and not was_frozen:
                 historical_freeze_triggered = True
@@ -1156,6 +1214,18 @@ def run_backtest(
     ]
     regime_slices = robustness_slices(curve)
     failed_gates: list[str] = []
+    benchmark_coverage_pct = (
+        benchmark_observations / len(dates) * 100.0
+        if benchmark_series is not None and dates
+        else (100.0 if dates else 0.0)
+    )
+    benchmark_valid = (
+        benchmark_series is not None
+        and bool(dates)
+        and benchmark_coverage_pct >= 98.0
+        and dates[0] in benchmark_by_date
+        and dates[-1] in benchmark_by_date
+    )
     if len(dates) < 756:
         failed_gates.append("Fewer than three years of completed sessions.")
     if len(securities) < 20:
@@ -1166,6 +1236,16 @@ def run_backtest(
         failed_gates.append("Point-in-time input revisions are not complete for the test window.")
     if len(trades) < 30:
         failed_gates.append("Fewer than 30 completed executions are available for inference.")
+    if benchmark_series is None:
+        failed_gates.append(
+            "An explicit independent market benchmark was not supplied; the universe baseline "
+            "is diagnostic only."
+        )
+    elif not benchmark_valid:
+        failed_gates.append(
+            "The explicit benchmark does not cover at least 98% of strategy sessions including "
+            "the first and final session."
+        )
     if historical_freeze_triggered:
         failed_gates.append(
             "The drawdown ladder froze the historical book; no unrecorded review was invented to re-arm it."
@@ -1182,6 +1262,11 @@ def run_backtest(
         initial_capital=initial_capital,
         final_nav=round(nav_values[-1] if nav_values else initial_capital, 2),
         benchmark_final=round(benchmark, 2),
+        benchmark_key=benchmark_key,
+        benchmark_label=benchmark_label,
+        benchmark_method=benchmark_method,
+        benchmark_coverage_pct=round(benchmark_coverage_pct, 3),
+        benchmark_valid=benchmark_valid,
         trades=trades,
         equity_curve=curve,
         risk_interventions=interventions,
@@ -1193,7 +1278,12 @@ def run_backtest(
         failed_gates=failed_gates,
         warnings=[
             "Results are research diagnostics, not expected returns or a recommendation.",
-            "The benchmark is an equal-weight observable-universe series and shares current-universe bias.",
+            (
+                "The benchmark is an independently supplied completed-close series."
+                if benchmark_series is not None
+                else "The displayed baseline is an equal-weight observable-universe diagnostic "
+                "and shares current-universe bias; it is not a market benchmark."
+            ),
             "Fundamental and universe filters are validation-safe only when point-in-time input coverage is complete.",
             (
                 "Corporate-action safety depends on adjustment coverage; fills use the "
@@ -1250,6 +1340,7 @@ def run_cost_tiered_backtest(
     stress_levels_bps: tuple[float, ...] = (10.0, 30.0, 50.0),
     weight_schedule: dict[dt.date, dict[str, float]] | None = None,
     execution_timing: ExecutionTiming = "next_open",
+    benchmark_series: BenchmarkSeries | None = None,
 ) -> CostTieredBacktest:
     """Run the strategy at its measured per-name cost and at fixed one-way stress floors.
 
@@ -1292,6 +1383,7 @@ def run_cost_tiered_backtest(
                 weight_schedule=weight_schedule,
                 execution_timing=execution_timing,
                 use_point_in_time_spread=True,
+                benchmark_series=benchmark_series,
             )
         # Hold total one-way cost at the tier: half-spread = tier - fee (the engine adds fee back).
         flat_half_spread = max(tier.one_way_bps - fee_bps, 0.0)
@@ -1306,6 +1398,7 @@ def run_cost_tiered_backtest(
             half_spread_bps=flat_half_spread,
             weight_schedule=weight_schedule,
             execution_timing=execution_timing,
+            benchmark_series=benchmark_series,
         )
 
     outcomes: list[CostTierOutcome] = []
@@ -1328,7 +1421,7 @@ def run_cost_tiered_backtest(
                 max_drawdown_pct=result.metrics[0].max_drawdown_pct,
                 sharpe=result.metrics[0].sharpe,
                 trades=len(result.trades),
-                edge_survives=net - benchmark > 0,
+                edge_survives=result.benchmark_valid and net - benchmark > 0,
             )
         )
 
@@ -1410,9 +1503,7 @@ def advance_shadow_portfolio(
 
     def reference(security: StrategySecurity) -> float:
         return (
-            security.bars[-1].open
-            if execution_timing == "next_open"
-            else security.bars[-1].close
+            security.bars[-1].open if execution_timing == "next_open" else security.bars[-1].close
         )
 
     execution_nav = cash + sum(
@@ -1600,9 +1691,7 @@ def advance_shadow_portfolio(
     if ladder_action.gross_multiplier == 0.0:
         next_targets = {}
         interventions.append(
-            RiskIntervention(
-                date=date, rule="drawdown_ladder_flatten", detail=ladder_action.detail
-            )
+            RiskIntervention(date=date, rule="drawdown_ladder_flatten", detail=ladder_action.detail)
         )
     elif ladder_action.gross_multiplier < 1.0:
         next_targets = {

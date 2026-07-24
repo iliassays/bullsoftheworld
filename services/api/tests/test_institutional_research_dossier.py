@@ -4,15 +4,33 @@ import datetime as dt
 from decimal import Decimal
 
 from api.institutional_research.dossier import (
+    _adjusted_ohlc,
     _institutional_disclosure,
     _reported_ownership,
     _short_activity,
 )
 from bulls.core.models import (
+    DailyBar,
     InstitutionalHoldingSummary,
     ShareholdingSnapshot,
     ShortVolumeDaily,
 )
+
+
+def test_adjusted_ohlc_applies_the_same_split_factor_to_the_complete_bar() -> None:
+    row = DailyBar(
+        market="US",
+        code="SPLT",
+        date=dt.date(2026, 7, 14),
+        open=98,
+        high=104,
+        low=96,
+        close=100,
+        adjusted_close=50,
+        volume=1000,
+    )
+
+    assert _adjusted_ohlc(row) == (49.0, 52.0, 48.0, 50.0)
 
 
 def test_reported_ownership_uses_percentage_point_changes_and_reconciles_total() -> None:

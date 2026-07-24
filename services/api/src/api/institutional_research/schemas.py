@@ -129,12 +129,17 @@ class ResearchQueueSnapshotOut(ApiModel):
 
 class DossierPricePointOut(ApiModel):
     date: dt.date
+    open: float
+    high: float
+    low: float
     close: float
     volume: int
+    benchmark_close: float | None = None
 
 
 class DossierMarketDataOut(ApiModel):
     as_of_date: dt.date
+    benchmark_code: str
     market_cap_mn: float | None
     free_float_cap_mn: float | None
     week52_high: float | None
@@ -506,6 +511,80 @@ class DecisionEventOut(ApiModel):
     payload: dict[str, Any]
     payload_hash: str
     recorded_at: dt.datetime
+
+
+class DecisionDirectionCapabilityOut(ApiModel):
+    direction: Literal["long", "short"]
+    status: Literal["active", "blocked"]
+    reason: str
+
+
+class DecisionCandidateOut(ApiModel):
+    id: str
+    portfolio_id: uuid.UUID
+    portfolio_name: str
+    strategy_key: str
+    strategy_name: str
+    direction: Literal["long", "short"]
+    horizon: Literal["swing", "position"]
+    expected_holding: str
+    code: str
+    company: str
+    cap_tier: str
+    state: Literal["ready", "manage", "exit", "blocked", "closed"]
+    evidence_mode: Literal["forward", "historical_replay"]
+    as_of_date: dt.date
+    first_discovered_on: dt.date
+    is_new: bool
+    discovery_price: float | None
+    as_of_price: float | None
+    return_since_discovery_pct: float | None
+    max_favorable_pct: float | None
+    max_adverse_pct: float | None
+    sessions_since_discovery: int
+    target_weight_pct: float
+    position_weight_pct: float
+    latest_fill_side: Literal["buy", "sell"] | None = None
+    latest_fill_price: float | None = None
+    latest_fill_date: dt.date | None = None
+    risk_reference_price: float | None = None
+    invalidation_price: float | None = None
+    planning_objective_price: float | None = None
+    planning_reward_risk: float | None = None
+    exit_policy: str
+    headline: str
+    story: str
+    risk_notes: list[str] = Field(default_factory=list)
+
+
+class DecisionBoardOut(ApiModel):
+    workspace_id: uuid.UUID
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    generated_at: dt.datetime
+    selected_date: dt.date | None
+    latest_date: dt.date | None
+    available_dates: list[dt.date]
+    direction_capabilities: list[DecisionDirectionCapabilityOut]
+    candidates: list[DecisionCandidateOut]
+    methodology: str
+
+
+class DecisionPricePointOut(ApiModel):
+    date: dt.date
+    close: float
+    volume: int
+    return_since_discovery_pct: float | None
+
+
+class DecisionCandidatePathOut(ApiModel):
+    workspace_id: uuid.UUID
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    candidate: DecisionCandidateOut
+    points: list[DecisionPricePointOut]
+    events: list[DecisionEventOut]
+    price_basis: str
 
 
 class PortfolioRiskLimitCheckOut(ApiModel):

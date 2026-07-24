@@ -65,6 +65,7 @@ class MarketProfile:
     holidays: frozenset[dt.date] = field(default_factory=frozenset)
     early_closes: dict[dt.date, dt.time] = field(default_factory=dict)
     settlement_cycle: str = "T+2"
+    benchmark_code: str = "MARKET"
     benchmark_label: str = "Market"
     default_locale: str = "en"
     price_alert_evaluation: str = "session_close"
@@ -163,6 +164,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         trading_isoweekdays=frozenset({7, 1, 2, 3, 4}),
         holidays=DSE_HOLIDAYS_2026,
         settlement_cycle="T+2",
+        benchmark_code="DSEX",
         benchmark_label="DSEX",
         default_locale="bn",
         price_alert_evaluation="delayed_quote",
@@ -220,6 +222,7 @@ MARKET_PROFILES: dict[str, MarketProfile] = {
         holidays=US_HOLIDAYS_2025_2026,
         early_closes=US_EARLY_CLOSES_2025_2026,
         settlement_cycle="T+1",
+        benchmark_code="SPY",
         # The free EOD adapter stores SPY, not the cash S&P 500 index. Never present an ETF price
         # as the index level; relative-return comparisons remain valid when both use SPY.
         benchmark_label="SPY (S&P 500 ETF)",

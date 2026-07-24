@@ -5,8 +5,10 @@ import datetime as dt
 import pytest
 
 from api.institutional_research.operator import (
+    HistoricalReplayOperatorRequest,
     LifecycleOperatorRequest,
     configure_lifecycle,
+    seed_historical_replay,
 )
 from api.institutional_research.worker import lifecycle_execution_trigger
 
@@ -65,6 +67,33 @@ async def test_operator_refuses_a_strategy_from_another_tenant_market() -> None:
                 handle="analyst",
                 strategy_key="us_breakout_v1",
                 initial_capital=10_000_000,
+                apply=True,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_replay_operator_requires_explicit_apply_acknowledgement() -> None:
+    with pytest.raises(RuntimeError, match="without --apply"):
+        await seed_historical_replay(
+            HistoricalReplayOperatorRequest(
+                tenant="bullsofwallst",
+                handle="analyst",
+                strategy_key="us_breakout_v1",
+                initial_capital=100_000,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_replay_operator_refuses_cross_market_strategy() -> None:
+    with pytest.raises(RuntimeError, match="registered for DSE, not US"):
+        await seed_historical_replay(
+            HistoricalReplayOperatorRequest(
+                tenant="bullsofwallst",
+                handle="analyst",
+                strategy_key="dse_reversal_v1",
+                initial_capital=100_000,
                 apply=True,
             )
         )

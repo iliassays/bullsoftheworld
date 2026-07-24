@@ -2,8 +2,12 @@ import type { ResearchCandidate, ResearchMarket } from "../research-queue/model"
 
 export interface DossierPricePoint {
   date: string;
+  open: number;
+  high: number;
+  low: number;
   close: number;
   volume: number;
+  benchmarkClose: number | null;
 }
 
 export interface ReportedOwnershipCategory {
@@ -22,6 +26,7 @@ export interface ResearchCompanyDossier {
   candidate: ResearchCandidate;
   marketData: {
     asOfDate: string;
+    benchmarkCode: string;
     marketCapMn: number | null;
     freeFloatCapMn: number | null;
     week52High: number | null;

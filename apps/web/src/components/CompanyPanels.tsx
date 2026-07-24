@@ -201,6 +201,7 @@ type NewsTier = "caution" | "important" | "routine";
 
 function newsTier(n: NewsItem): NewsTier {
   if (n.category === "halt") return "caution";
+  if (n.category === "insider" || n.category === "psi") return "important";
   // Dividend/earnings/rating notices earn "Important" ONLY when the decode extracted real
   // substance (a %, an EPS, a grade). An undecoded one — e.g. "dividend by a subsidiary
   // company" — can't be presented helpfully, and a big badge on it is noise pretending to

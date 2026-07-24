@@ -312,6 +312,78 @@ export interface InvestmentOperatingView {
   portfolios: PortfolioOperatingAnalytics[];
 }
 
+export type DecisionCandidateState = "ready" | "manage" | "exit" | "blocked" | "closed";
+
+export interface DecisionCandidate {
+  id: string;
+  portfolioId: string;
+  portfolioName: string;
+  strategyKey: string;
+  strategyName: string;
+  direction: "long" | "short";
+  horizon: "swing" | "position";
+  expectedHolding: string;
+  code: string;
+  company: string;
+  capTier: string;
+  state: DecisionCandidateState;
+  evidenceMode: "forward" | "historical_replay";
+  asOfDate: string;
+  firstDiscoveredOn: string;
+  isNew: boolean;
+  discoveryPrice: number | null;
+  asOfPrice: number | null;
+  returnSinceDiscoveryPct: number | null;
+  maxFavorablePct: number | null;
+  maxAdversePct: number | null;
+  sessionsSinceDiscovery: number;
+  targetWeightPct: number;
+  positionWeightPct: number;
+  latestFillSide: "buy" | "sell" | null;
+  latestFillPrice: number | null;
+  latestFillDate: string | null;
+  riskReferencePrice: number | null;
+  invalidationPrice: number | null;
+  planningObjectivePrice: number | null;
+  planningRewardRisk: number | null;
+  exitPolicy: string;
+  headline: string;
+  story: string;
+  riskNotes: string[];
+}
+
+export interface DecisionBoard {
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  generatedAt: string;
+  selectedDate: string | null;
+  latestDate: string | null;
+  availableDates: string[];
+  directionCapabilities: Array<{
+    direction: "long" | "short";
+    status: "active" | "blocked";
+    reason: string;
+  }>;
+  candidates: DecisionCandidate[];
+  methodology: string;
+}
+
+export interface DecisionCandidatePath {
+  workspaceId: string;
+  tenantId: string;
+  market: "DSE" | "US";
+  candidate: DecisionCandidate;
+  points: Array<{
+    date: string;
+    close: number;
+    volume: number;
+    returnSinceDiscoveryPct: number | null;
+  }>;
+  events: DecisionEvent[];
+  priceBasis: string;
+}
+
 export interface LifecycleDispatch {
   accepted: boolean;
   jobId: string;
@@ -509,6 +581,34 @@ function assertAutomationBoundary(
     throw new ResearchApiError(502, "The API returned automation data outside this tenant boundary");
   }
   return policy;
+}
+
+function assertDecisionBoardBoundary(
+  board: DecisionBoard,
+  workspaceId: string,
+): DecisionBoard {
+  if (
+    board.workspaceId !== workspaceId ||
+    board.tenantId !== researchDeployment.tenant ||
+    board.market !== researchDeployment.market
+  ) {
+    throw new ResearchApiError(502, "The API returned a decision archive outside this tenant boundary");
+  }
+  return board;
+}
+
+function assertDecisionPathBoundary(
+  path: DecisionCandidatePath,
+  workspaceId: string,
+): DecisionCandidatePath {
+  if (
+    path.workspaceId !== workspaceId ||
+    path.tenantId !== researchDeployment.tenant ||
+    path.market !== researchDeployment.market
+  ) {
+    throw new ResearchApiError(502, "The API returned a decision path outside this tenant boundary");
+  }
+  return path;
 }
 
 export const researchApi = {
@@ -731,6 +831,33 @@ export const researchApi = {
       throw new ResearchApiError(502, "The API returned investment data outside this tenant boundary");
     }
     return view;
+  },
+  async decisionBoard(workspaceId: string, asOf?: string): Promise<DecisionBoard> {
+    const parameters = new URLSearchParams();
+    if (asOf) parameters.set("as_of", asOf);
+    const query = parameters.size ? `?${parameters.toString()}` : "";
+    return assertDecisionBoardBoundary(
+      await request<DecisionBoard>(
+        `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/decision-board${query}`,
+      ),
+      workspaceId,
+    );
+  },
+  async decisionCandidatePath(
+    workspaceId: string,
+    portfolioId: string,
+    code: string,
+    asOf?: string,
+  ): Promise<DecisionCandidatePath> {
+    const parameters = new URLSearchParams();
+    if (asOf) parameters.set("as_of", asOf);
+    const query = parameters.size ? `?${parameters.toString()}` : "";
+    return assertDecisionPathBoundary(
+      await request<DecisionCandidatePath>(
+        `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/decision-board/${encodeURIComponent(portfolioId)}/${encodeURIComponent(code.toUpperCase())}${query}`,
+      ),
+      workspaceId,
+    );
   },
   async configureInvestmentMandate(
     workspaceId: string,

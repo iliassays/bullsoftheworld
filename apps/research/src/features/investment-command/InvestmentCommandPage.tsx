@@ -39,6 +39,7 @@ import {
   upcomingCatalysts,
   type DecisionAction,
 } from "./model";
+import { DecisionBoardPanel } from "./DecisionBoardPanel";
 
 function dateTime(value: string | null | undefined): string {
   if (!value) return "Not available";
@@ -215,6 +216,8 @@ export function InvestmentCommandPage() {
           </span>
         </section>
       )}
+
+      <DecisionBoardPanel workspaceId={workspace.id} />
 
       <section aria-label="Decision summary" className="command-decision-strip">
         <button onClick={() => navigate("/portfolio")} type="button">

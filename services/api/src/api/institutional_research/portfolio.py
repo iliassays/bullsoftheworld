@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import cast
 
@@ -82,6 +83,47 @@ def _execution_timing(configuration: dict) -> ExecutionTiming:
     return cast(ExecutionTiming, value)
 
 
+def promotion_evidence_window(
+    snapshots: Sequence[ResearchShadowSnapshot],
+    *,
+    forward_started_on: dt.date,
+) -> tuple[
+    ResearchShadowSnapshot,
+    ResearchShadowSnapshot,
+    list[ResearchShadowSnapshot],
+    float,
+]:
+    """Separate retroactive replay from genuine forward observations.
+
+    Returns the forward baseline, latest evidence snapshot, post-baseline forward observations,
+    and drawdown measured only across that evidence window.
+    """
+
+    if not snapshots:
+        raise ValueError("promotion evidence requires at least one snapshot")
+    ordered = sorted(snapshots, key=lambda item: item.as_of_date)
+    prior = [item for item in ordered if item.as_of_date < forward_started_on]
+    on_or_after = [item for item in ordered if item.as_of_date >= forward_started_on]
+    if prior:
+        baseline = prior[-1]
+        observations = on_or_after
+    elif on_or_after:
+        baseline = on_or_after[0]
+        observations = on_or_after[1:]
+    else:
+        baseline = ordered[-1]
+        observations = []
+    latest = observations[-1] if observations else baseline
+    peak = float(baseline.nav)
+    maximum_drawdown_pct = 0.0
+    for snapshot in observations:
+        nav = float(snapshot.nav)
+        peak = max(peak, nav)
+        if peak > 0:
+            maximum_drawdown_pct = max(maximum_drawdown_pct, (1 - nav / peak) * 100)
+    return baseline, latest, observations, maximum_drawdown_pct
+
+
 async def _snapshots(
     session: AsyncSession, *, portfolio: ResearchShadowPortfolio, limit: int = 260
 ) -> list[ResearchShadowSnapshot]:
@@ -128,6 +170,8 @@ async def create_shadow_portfolio(
     workspace: ResearchWorkspace,
     user_id: int,
     request: CreateShadowPortfolioRequest,
+    forward_evidence_started_on: dt.date | None = None,
+    history_mode: str = "forward",
 ) -> ResearchShadowPortfolioOut:
     run = await load_research_run(session, workspace=workspace, run_id=request.source_run_id)
     if run.run_kind != "hypothesis" or run.status != "succeeded":
@@ -166,6 +210,10 @@ async def create_shadow_portfolio(
     if mandate is None:
         raise ValueError("An active investment mandate is required before starting a shadow book")
     pinned_mandate = mandate_snapshot(mandate)
+    inception_date = dt.date.fromisoformat(end_date)
+    evidence_start = forward_evidence_started_on or inception_date
+    if evidence_start < inception_date:
+        raise ValueError("forward evidence cannot begin before the paper book inception")
     portfolio = ResearchShadowPortfolio(
         id=uuid.uuid4(),
         organization_id=workspace.organization_id,
@@ -178,8 +226,8 @@ async def create_shadow_portfolio(
         strategy_key=strategy["key"],
         status="active",
         initial_capital=initial_capital,
-        inception_date=dt.date.fromisoformat(end_date),
-        last_evaluated_on=dt.date.fromisoformat(end_date),
+        inception_date=inception_date,
+        last_evaluated_on=inception_date,
         configuration={
             "backtest_request": backtest_request,
             "observable_universe": observable_codes,
@@ -196,6 +244,8 @@ async def create_shadow_portfolio(
                 if strategy["key"] in _EVENT_STRATEGIES
                 else "pinned_at_inception"
             ),
+            "history_mode": history_mode,
+            "forward_evidence_started_on": evidence_start.isoformat(),
         },
     )
     session.add(portfolio)
@@ -241,19 +291,30 @@ async def _evaluate_portfolio_promotion(
     snapshots = await _snapshots(session, portfolio=portfolio, limit=5000)
     if not snapshots:
         return
-    first = snapshots[0]
-    latest = snapshots[-1]
+    configured_start = portfolio.configuration.get("forward_evidence_started_on")
+    try:
+        forward_started_on = (
+            dt.date.fromisoformat(configured_start)
+            if isinstance(configured_start, str)
+            else portfolio.inception_date
+        )
+    except ValueError:
+        forward_started_on = portfolio.inception_date
+    baseline, latest, observations, maximum_drawdown_pct = promotion_evidence_window(
+        snapshots,
+        forward_started_on=forward_started_on,
+    )
     decision = evaluate_shadow_promotion(
         source_validation_status=str(
             portfolio.configuration.get("source_validation_status", "diagnostic")
         ),
-        initial_nav=float(first.nav),
+        initial_nav=float(baseline.nav),
         latest_nav=float(latest.nav),
-        initial_benchmark_nav=float(first.benchmark_nav),
+        initial_benchmark_nav=float(baseline.benchmark_nav),
         latest_benchmark_nav=float(latest.benchmark_nav),
-        sessions=latest.session_number,
-        maximum_drawdown_pct=max(float(snapshot.drawdown_pct) for snapshot in snapshots),
-        executions=sum(len(snapshot.trades) for snapshot in snapshots),
+        sessions=len(observations),
+        maximum_drawdown_pct=maximum_drawdown_pct,
+        executions=sum(len(snapshot.trades) for snapshot in observations),
     )
     portfolio.configuration = {
         **portfolio.configuration,
@@ -261,6 +322,10 @@ async def _evaluate_portfolio_promotion(
             **decision.model_dump(mode="json"),
             "policy_version": "atlas-promotion-policy-v1",
             "evaluated_on": latest.as_of_date.isoformat(),
+            "forward_evidence_started_on": forward_started_on.isoformat(),
+            "retroactive_replay_sessions": len(
+                [snapshot for snapshot in snapshots if snapshot.as_of_date < forward_started_on]
+            ),
             "capital_action": "none",
         },
     }
@@ -426,7 +491,10 @@ async def _refresh_shadow_portfolio(
         )
         session.add(latest)
         portfolio.last_evaluated_on = advanced.date
-        if bool(portfolio.configuration.get("ladder_frozen", False)) != advanced.state.ladder_frozen:
+        if (
+            bool(portfolio.configuration.get("ladder_frozen", False))
+            != advanced.state.ladder_frozen
+        ):
             portfolio.configuration = {
                 **portfolio.configuration,
                 "ladder_frozen": advanced.state.ladder_frozen,
@@ -514,13 +582,15 @@ async def reconcile_shadow_portfolios(
 
     portfolios = list(
         await session.scalars(
-            select(ResearchShadowPortfolio).where(
+            select(ResearchShadowPortfolio)
+            .where(
                 ResearchShadowPortfolio.workspace_id == workspace.id,
                 ResearchShadowPortfolio.organization_id == workspace.organization_id,
                 ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
                 ResearchShadowPortfolio.market == workspace.market,
                 ResearchShadowPortfolio.status == "active",
-            ).with_for_update()
+            )
+            .with_for_update()
         )
     )
     for portfolio in portfolios:

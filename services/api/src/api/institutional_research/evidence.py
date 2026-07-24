@@ -7,6 +7,7 @@ from typing import Protocol
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.news_materiality import material_dse_announcement_filter
 from bulls.core.models import (
     Announcement,
     InstitutionalHoldingSummary,
@@ -89,6 +90,7 @@ class DseEvidenceAdapter:
                 Announcement.code.in_(codes),
                 Announcement.published_at <= cutoff,
                 Announcement.published_at >= cutoff - dt.timedelta(days=365),
+                material_dse_announcement_filter(),
             )
             .subquery()
         )
@@ -115,7 +117,7 @@ class DseEvidenceAdapter:
             bundle.requirements.append(
                 EvidenceRequirement(
                     key="official_disclosures",
-                    label="Official DSE disclosures",
+                    label="Material DSE disclosures",
                     present=_present_date(bundle.latest_official_date),
                     as_of=bundle.latest_official_date,
                 )

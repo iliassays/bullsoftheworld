@@ -40,6 +40,8 @@ from bulls.analytics.research_loop import (
 from bulls.analytics.research_strategy import (
     ENGINE_VERSION,
     STRATEGIES,
+    BenchmarkPoint,
+    BenchmarkSeries,
     EquityPoint,
     StrategyBar,
     StrategySecurity,
@@ -50,6 +52,7 @@ from bulls.core.models import (
     DailyBar,
     EvidenceDocument,
     EvidenceSpan,
+    MarketSummary,
     ResearchClaim,
     ResearchClaimCitation,
     ResearchOutcomeObservation,
@@ -71,9 +74,7 @@ def _stable_hash(value: Any) -> str:
         if isinstance(item, dict):
             return {
                 (
-                    key.isoformat()
-                    if isinstance(key, (dt.date, dt.datetime))
-                    else str(key)
+                    key.isoformat() if isinstance(key, (dt.date, dt.datetime)) else str(key)
                 ): canonicalize(nested)
                 for key, nested in item.items()
             }
@@ -712,6 +713,66 @@ async def _backtest_universe(
     ]
 
 
+async def _backtest_benchmark(
+    session: AsyncSession,
+    *,
+    market: str,
+    start_date: dt.date,
+    end_date: dt.date,
+) -> BenchmarkSeries | None:
+    """Load an independent completed-close benchmark for the exact evaluation window."""
+
+    if market == "US":
+        rows = (
+            await session.execute(
+                select(DailyBar.date, DailyBar.close, DailyBar.adjusted_close)
+                .where(
+                    DailyBar.market == "US",
+                    DailyBar.code == "SPY",
+                    DailyBar.date >= start_date,
+                    DailyBar.date <= end_date,
+                )
+                .order_by(DailyBar.date)
+            )
+        ).all()
+        points = [
+            BenchmarkPoint(
+                date=row.date,
+                close=float(row.adjusted_close if row.adjusted_close is not None else row.close),
+            )
+            for row in rows
+            if (row.adjusted_close if row.adjusted_close is not None else row.close) > 0
+        ]
+        return (
+            BenchmarkSeries(key="spy_total_return_proxy", label="SPY adjusted close", points=points)
+            if points
+            else None
+        )
+
+    rows = (
+        await session.execute(
+            select(MarketSummary.date, MarketSummary.dsex)
+            .where(
+                MarketSummary.market == "DSE",
+                MarketSummary.date >= start_date,
+                MarketSummary.date <= end_date,
+                MarketSummary.dsex.is_not(None),
+            )
+            .order_by(MarketSummary.date)
+        )
+    ).all()
+    points = [
+        BenchmarkPoint(date=row.date, close=float(row.dsex))
+        for row in rows
+        if row.dsex is not None and row.dsex > 0
+    ]
+    return (
+        BenchmarkSeries(key="dsex_price_index", label="DSEX close", points=points)
+        if points
+        else None
+    )
+
+
 def _deflated_sharpe_gate(
     equity_curve: list[EquityPoint],
     *,
@@ -827,6 +888,17 @@ async def execute_backtest(
         securities = preparation.securities
     else:
         securities = await _backtest_universe(session, market=workspace.market, request=request)
+    evaluation_dates = [bar.date for security in securities for bar in security.bars]
+    benchmark_series = (
+        await _backtest_benchmark(
+            session,
+            market=workspace.market,
+            start_date=min(evaluation_dates),
+            end_date=max(evaluation_dates),
+        )
+        if evaluation_dates
+        else None
+    )
     cost_tiered = run_cost_tiered_backtest(
         market=workspace.market,
         strategy_key=request.strategy_key,
@@ -837,6 +909,7 @@ async def execute_backtest(
         risk_policy=risk_policy,
         weight_schedule=preparation.weight_schedule if institutional_strategy else None,
         execution_timing=execution_timing,
+        benchmark_series=benchmark_series,
     )
     # The realistic (measured-cost) run is authoritative for the gate and the record; the stress
     # tiers ride alongside as robustness evidence (Phase 13.2 — where does the edge die?).
@@ -881,9 +954,7 @@ async def execute_backtest(
     comparator_summary: dict[str, dict[str, Any]] = {}
     if preparation.comparators:
         main_realistic_return = (
-            result.final_nav / result.initial_capital - 1.0
-            if result.initial_capital > 0
-            else 0.0
+            result.final_nav / result.initial_capital - 1.0 if result.initial_capital > 0 else 0.0
         )
         main_stress_30 = next(
             (
@@ -905,6 +976,7 @@ async def execute_backtest(
                 weight_schedule=schedule,
                 execution_timing=execution_timing,
                 use_point_in_time_spread=True,
+                benchmark_series=benchmark_series,
             )
             stressed = run_backtest(
                 market=workspace.market,
@@ -915,6 +987,7 @@ async def execute_backtest(
                 weight_schedule=schedule,
                 execution_timing=execution_timing,
                 half_spread_bps=stress_half_spread,
+                benchmark_series=benchmark_series,
             )
             realistic_return = (
                 realistic.final_nav / realistic.initial_capital - 1.0
@@ -927,9 +1000,7 @@ async def execute_backtest(
                 else 0.0
             )
             beats_realistic = main_realistic_return > realistic_return
-            beats_stressed = (
-                main_stress_30 is not None and main_stress_30 > stressed_return_pct
-            )
+            beats_stressed = main_stress_30 is not None and main_stress_30 > stressed_return_pct
             comparator_summary[label] = {
                 "realistic_return_pct": round(realistic_return * 100.0, 3),
                 "stress_30bps_return_pct": round(stressed_return_pct, 3),
@@ -944,9 +1015,7 @@ async def execute_backtest(
             result = result.model_copy(
                 update={
                     "validation_status": "diagnostic",
-                    "failed_gates": list(
-                        dict.fromkeys([*result.failed_gates, *failed_nulls])
-                    ),
+                    "failed_gates": list(dict.fromkeys([*result.failed_gates, *failed_nulls])),
                 }
             )
     deflated_sharpe_summary, overfitting_gate = _deflated_sharpe_gate(
@@ -1067,8 +1136,7 @@ async def execute_backtest(
             metrics={
                 "nulls_tested": len(comparator_summary),
                 "nulls_beaten_at_both_costs": sum(
-                    item["strategy_beats_realistic"]
-                    and item["strategy_beats_stress_30bps"]
+                    item["strategy_beats_realistic"] and item["strategy_beats_stress_30bps"]
                     for item in comparator_summary.values()
                 ),
             },

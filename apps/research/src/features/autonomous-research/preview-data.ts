@@ -1,6 +1,7 @@
 import { researchDeployment } from "../../app/deployment";
 import type {
   AutomationPolicy,
+  DecisionEvent,
   InvestmentMandate,
   InvestmentOperatingView,
   ResearchRun,
@@ -8,19 +9,65 @@ import type {
 } from "../../app/api-client";
 
 function sessionDate(daysAgo: number): string {
-  const date = new Date();
+  const date = new Date("2026-07-14T00:00:00Z");
   date.setUTCDate(date.getUTCDate() - daysAgo);
   return date.toISOString().slice(0, 10);
 }
 
 const isDse = researchDeployment.market === "DSE";
-const primaryCode = isDse ? "BRACBANK" : "NXTC";
+const primaryCode = isDse ? "BSC" : "NXTC";
 const secondaryCode = isDse ? "BXPHARMA" : "AEON";
 const strategyKey = isDse ? "dse_reversal_v1" : "us_breakout_v1";
 const initialCapital = isDse ? 10_000_000 : 100_000;
 const primaryShares = isDse ? 7300 : 1180;
 const primaryFillPrice = isDse ? 142.4 : 8.42;
 const primaryGrossValue = primaryShares * primaryFillPrice;
+
+const previewDecisionEvents: DecisionEvent[] = [
+  {
+    id: "00000000-0000-0000-0000-000000000801",
+    portfolioId: "00000000-0000-0000-0000-000000000101",
+    snapshotId: "00000000-0000-0000-0000-000000000301",
+    correlationId: "00000000-0000-0000-0000-000000000901",
+    sequence: 1,
+    eventKey: `s1:target:${primaryCode}:entry`,
+    causedByEventKey: `s1:signal:${primaryCode}:entry`,
+    eventType: "target",
+    eventState: "intended",
+    code: primaryCode,
+    effectiveDate: sessionDate(4),
+    payload: {
+      code: primaryCode,
+      previous_weight: 0,
+      target_weight: 0.1,
+      action: "entry",
+    },
+    payloadHash: "2".repeat(64),
+    recordedAt: `${sessionDate(4)}T18:00:00Z`,
+  },
+  {
+    id: "00000000-0000-0000-0000-000000000802",
+    portfolioId: "00000000-0000-0000-0000-000000000101",
+    snapshotId: "00000000-0000-0000-0000-000000000302",
+    correlationId: "00000000-0000-0000-0000-000000000902",
+    sequence: 2,
+    eventKey: `s2:fill:0:${primaryCode}`,
+    causedByEventKey: `s2:order:0:${primaryCode}`,
+    eventType: "fill",
+    eventState: "executed",
+    code: primaryCode,
+    effectiveDate: sessionDate(0),
+    payload: {
+      code: primaryCode,
+      side: "buy",
+      quantity: primaryShares,
+      fill_price: primaryFillPrice,
+      gross_value: primaryGrossValue,
+    },
+    payloadHash: "3".repeat(64),
+    recordedAt: `${sessionDate(0)}T18:00:00Z`,
+  },
+];
 
 export const previewInvestmentMandate: InvestmentMandate = {
   id: "00000000-0000-0000-0000-000000000601",
@@ -278,7 +325,7 @@ export const previewInvestmentOperatingView: InvestmentOperatingView = {
         rejectedActions: 1,
         methodologyVersion: "atlas-additive-attribution-v1",
       },
-      recentEvents: [],
+      recentEvents: previewDecisionEvents,
     },
   ],
 };

@@ -53,6 +53,7 @@ export default defineConfig(({ command, mode }) => {
             if (!id.includes("/node_modules/")) return undefined;
             if (id.includes("/@tanstack/")) return "vendor-data";
             if (id.includes("/lucide-react/")) return "vendor-icons";
+            if (id.includes("/lightweight-charts/")) return "vendor-chart";
             return "vendor-framework";
           },
         },
