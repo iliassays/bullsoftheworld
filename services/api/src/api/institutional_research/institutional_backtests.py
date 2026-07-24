@@ -37,6 +37,7 @@ from bulls.analytics.filing_signals import (
     InsiderTrade,
     classify_insider,
     detect_clusters,
+    has_plausible_transaction_clock,
     qualifying_activist_events,
     qualifying_purchases,
 )
@@ -388,7 +389,7 @@ async def _event_candidates(
     strategy_key: str,
     start: dt.date,
     end: dt.date,
-) -> tuple[list[CandidateEvent], list[Any], list[Any], list[Any]]:
+) -> tuple[list[CandidateEvent], list[Any], list[Any], list[Any], int]:
     master_rows = (
         await session.execute(
             select(SecurityMaster.cik, SecurityMaster.symbol).where(
@@ -457,7 +458,7 @@ async def _event_candidates(
             for event in qualifying_activist_events(events, roster)
             if event.subject_cik in cik_to_symbol
         ]
-        return candidates, stake_rows, master_rows, bridge_rows
+        return candidates, stake_rows, master_rows, bridge_rows, 0
 
     purchase_rows = (
         await session.execute(
@@ -515,6 +516,20 @@ async def _event_candidates(
                 .order_by(InsiderTransaction.owner_cik, EdgarFilingEvent.accepted_at)
             )
         ).all()
+    invalid_transaction_clocks = sum(
+        not has_plausible_transaction_clock(transaction_date, accepted_at)
+        for _, transaction_date, accepted_at in history_rows
+    )
+    history_rows = [
+        row
+        for row in history_rows
+        if has_plausible_transaction_clock(row.transaction_date, row.accepted_at)
+    ]
+    purchase_rows = [
+        row
+        for row in purchase_rows
+        if has_plausible_transaction_clock(row.transaction_date, row.accepted_at)
+    ]
     owner_history: dict[int, list[tuple[dt.datetime, dt.date]]] = defaultdict(list)
     for owner_cik, transaction_date, accepted_at in history_rows:
         owner_history[owner_cik].append((accepted_at, transaction_date))
@@ -560,7 +575,13 @@ async def _event_candidates(
         for cluster in clusters
         if cluster.issuer_symbol and cluster.signal_at.date() >= start
     ]
-    return candidates, stake_rows, master_rows, bridge_rows
+    return (
+        candidates,
+        stake_rows,
+        master_rows,
+        bridge_rows,
+        invalid_transaction_clocks,
+    )
 
 
 def _thesis_breaks(
@@ -602,7 +623,13 @@ async def _event_preparation(
     start: dt.date,
     end: dt.date,
 ) -> InstitutionalBacktestPreparation:
-    candidates, stake_rows, master_rows, bridge_rows = await _event_candidates(
+    (
+        candidates,
+        stake_rows,
+        master_rows,
+        bridge_rows,
+        invalid_transaction_clocks,
+    ) = await _event_candidates(
         session,
         strategy_key=strategy_key,
         start=start,
@@ -718,6 +745,7 @@ async def _event_preparation(
             "crowding_screen": "disabled_missing_short_interest_pct_of_float",
             "fundamental_observations": len(observations),
             "event_timing_placebo_delay_sessions": 21,
+            "invalid_transaction_clocks_rejected": invalid_transaction_clocks,
         },
         failed_gates=failed_gates,
     )

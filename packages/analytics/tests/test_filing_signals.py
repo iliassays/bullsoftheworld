@@ -13,6 +13,7 @@ from bulls.analytics.filing_signals import (
     classify_insider,
     classify_insiders,
     detect_clusters,
+    has_plausible_transaction_clock,
     qualifying_activist_events,
     qualifying_purchases,
     qualifying_purchases_point_in_time,
@@ -95,6 +96,22 @@ def test_classify_insiders_uses_full_history_including_sales() -> None:
     ]
     # The routine pattern lives in the scheduled sales; ignoring them would misclassify.
     assert classify_insiders(history)[7] == "routine"
+
+
+def test_impossible_form_4_dates_are_rejected_before_classification() -> None:
+    accepted = dt.datetime(2026, 3, 4, 21, tzinfo=dt.UTC)
+
+    assert not has_plausible_transaction_clock(dt.date(24, 3, 2), accepted)
+    assert not has_plausible_transaction_clock(dt.date(2026, 3, 5), accepted)
+    assert has_plausible_transaction_clock(dt.date(2026, 3, 2), accepted)
+
+    invalid = _trade(
+        owner=7,
+        day=dt.date(2027, 3, 2),
+        disseminated=accepted,
+    )
+    assert classify_insiders([invalid]) == {}
+    assert qualifying_purchases([invalid], {7: "opportunistic"}) == []
 
 
 def test_purchase_classification_never_uses_later_filings() -> None:

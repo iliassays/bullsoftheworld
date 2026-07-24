@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 # Cohen-Malloy-Pomorski classify an insider as routine when they trade in the same calendar month
 # across several consecutive years. Below this much history the honest answer is "we cannot tell".
 ROUTINE_MINIMUM_YEARS = 3
+FORM_4_EFFECTIVE_DATE = dt.date(1934, 6, 6)
 
 InsiderClass = Literal["routine", "opportunistic", "unclassified"]
 
@@ -61,6 +62,15 @@ class InsiderTrade(BaseModel):
     is_officer: bool = False
     is_director: bool = False
     is_ten_percent_owner: bool = False
+
+
+def has_plausible_transaction_clock(
+    transaction_date: dt.date,
+    disseminated_at: dt.datetime,
+) -> bool:
+    """Reject impossible Form 4 dates before they can affect point-in-time classification."""
+
+    return FORM_4_EFFECTIVE_DATE <= transaction_date <= disseminated_at.date()
 
 
 class InsiderCluster(BaseModel):
@@ -138,6 +148,11 @@ def classify_insiders(
     """
     dates: dict[int, list[dt.date]] = defaultdict(list)
     for trade in history:
+        if not has_plausible_transaction_clock(
+            trade.transaction_date,
+            trade.disseminated_at,
+        ):
+            continue
         dates[trade.owner_cik].append(trade.transaction_date)
     return {
         owner: classify_insider(owner_dates, minimum_years=minimum_years)
@@ -161,6 +176,11 @@ def qualifying_purchases(
     if include_unclassified:
         allowed.add("unclassified")
     for trade in trades:
+        if not has_plausible_transaction_clock(
+            trade.transaction_date,
+            trade.disseminated_at,
+        ):
+            continue
         if (trade.code or "").upper() != "P":
             continue
         if trade.is_10b5_1_plan:
@@ -195,7 +215,14 @@ def qualifying_purchases_point_in_time(
         allowed.add("unclassified")
 
     for _, same_timestamp in itertools.groupby(ordered, key=lambda trade: trade.disseminated_at):
-        batch = list(same_timestamp)
+        batch = [
+            trade
+            for trade in same_timestamp
+            if has_plausible_transaction_clock(
+                trade.transaction_date,
+                trade.disseminated_at,
+            )
+        ]
         # All rows in one filing timestamp become public together. Add the whole batch before
         # classifying any one row so row order inside a filing cannot change the result.
         for trade in batch:
