@@ -1669,6 +1669,36 @@
   gap: 6px;
 }
 
+.squeeze-chart__discovery {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 6px 10px;
+}
+
+.squeeze-chart__discovery-dot {
+  background: #1f6feb;
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+}
+
+.squeeze-chart__discovery strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.squeeze-chart__discovery em {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.squeeze-chart__discovery em::before {
+  content: "·";
+  margin-right: 8px;
+}
+
 .squeeze-chart__reading {
   align-items: baseline;
   color: var(--text-muted);

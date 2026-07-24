@@ -39,6 +39,34 @@ FAMILY_LABELS: dict[SqueezeFamily, str] = {
     "supply_constrained_breakout": "Supply-constrained breakout",
 }
 
+# A setup episode ends when it reaches one of these; a fresh formation afterward is a NEW
+# discovery, not a continuation of the old one. Kept here (not in the scan) so the rule is
+# unit-tested and shared.
+TERMINAL_STATES: frozenset[str] = frozenset({"none", "failed", "exhausted"})
+
+
+def resolve_episode(
+    *,
+    has_prior: bool,
+    prior_state: str,
+    prior_first_discovered: dt.date | None,
+    session_date: dt.date,
+) -> tuple[dt.date, str]:
+    """Resolve one archived row's (first_discovered_on, recorded previous_state).
+
+    A live prior episode carries its original discovery date forward. A prior that was absent
+    or terminal (none/failed/exhausted) means today is a genuinely new discovery, so the date
+    resets to ``session_date`` and the recorded previous state is ``"none"`` — the marker that
+    a new episode began, which is what lets the same ticker be discovered multiple times.
+    """
+
+    episode_continues = (
+        has_prior and prior_first_discovered is not None and prior_state not in TERMINAL_STATES
+    )
+    if episode_continues:
+        return prior_first_discovered, prior_state  # type: ignore[return-value]
+    return session_date, "none"
+
 # v1 thresholds — priors, not fitted values. Changing any of them is a methodology bump.
 NEAR_HIGH_PCT = -15.0
 ATR_CONTRACTION_RATIO = 0.8

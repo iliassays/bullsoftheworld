@@ -698,6 +698,10 @@ class SqueezePathOut(ApiModel):
     entry: SqueezeEntryOut
     points: list[SqueezeChartPointOut]
     state_history: list[SqueezeStateMarkerOut]
+    # Which discovery episode this is for the ticker/family (1 = first ever seen), and the start
+    # dates of every prior episode up to this archive date — so "discovered before" is explicit.
+    discovery_number: int
+    prior_discovery_dates: list[dt.date]
     atr_14: float | None
     atr_14_prior: float | None
     atr_change_pct: float | None

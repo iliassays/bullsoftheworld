@@ -200,6 +200,15 @@ drift apart. Rules that must survive future edits:
   action, and the DSE raw-close caveat is restated in `price_basis`.
 - Only genuine state *transitions* become markers; repeating an unchanged state every session
   would bury the progression.
+- **Discovery is per-episode, and a ticker can be discovered many times.** An episode ends at a
+  terminal state (`failed`/`exhausted`/gone); a fresh formation afterward is a *new* discovery
+  with a new `first_discovered_on`, not a continuation of the old one. `resolve_episode`
+  (`bulls.analytics.squeeze_monitor`, unit-tested) is the single rule the scan uses, so the
+  buggy carry-forward that kept a stale discovery date across a fail→reform is gone. The chart
+  labels the current episode's start "Discovered (#N)" with a dotted discovery price line, the
+  header states "Nth discovery … at {price}", and `prior_discovery_dates` surfaces how many
+  earlier setups this ticker/family had. Prior episodes remain separate archived rows, reachable
+  by the archive-date selector.
 
 ## J. Atlas UI specification
 

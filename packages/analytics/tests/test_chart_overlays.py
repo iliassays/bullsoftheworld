@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 
 import pytest
@@ -10,6 +11,7 @@ from bulls.analytics.chart_overlays import (
     average_true_range,
     exponential_moving_average,
 )
+from bulls.analytics.squeeze_monitor import resolve_episode
 
 
 @dataclass
@@ -88,3 +90,39 @@ def test_atr_contraction_reports_a_negative_percentage_when_range_narrows() -> N
 
 def test_atr_contraction_fails_closed_without_enough_history() -> None:
     assert atr_contraction([bar(10) for _ in range(5)]) == (None, None, None)
+
+
+def test_resolve_episode_continues_a_live_setup() -> None:
+    discovered, previous = resolve_episode(
+        has_prior=True,
+        prior_state="trigger_ready",
+        prior_first_discovered=dt.date(2026, 7, 1),
+        session_date=dt.date(2026, 7, 10),
+    )
+
+    assert discovered == dt.date(2026, 7, 1)
+    assert previous == "trigger_ready"
+
+
+def test_resolve_episode_restarts_after_a_terminal_state() -> None:
+    for terminal in ("failed", "exhausted", "none"):
+        discovered, previous = resolve_episode(
+            has_prior=True,
+            prior_state=terminal,
+            prior_first_discovered=dt.date(2026, 6, 1),
+            session_date=dt.date(2026, 7, 20),
+        )
+        assert discovered == dt.date(2026, 7, 20), terminal
+        assert previous == "none", terminal
+
+
+def test_resolve_episode_treats_absent_prior_as_a_new_discovery() -> None:
+    discovered, previous = resolve_episode(
+        has_prior=False,
+        prior_state="none",
+        prior_first_discovered=None,
+        session_date=dt.date(2026, 7, 20),
+    )
+
+    assert discovered == dt.date(2026, 7, 20)
+    assert previous == "none"

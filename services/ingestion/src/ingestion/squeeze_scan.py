@@ -24,11 +24,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from bulls.analytics.research_strategy import RISK_POLICIES
 from bulls.analytics.squeeze_monitor import (
     METHODOLOGY_VERSION,
+    TERMINAL_STATES,
     SqueezeBar,
     SqueezeInputs,
     evaluate_compression_breakout,
     evaluate_failed_breakdown,
     evaluate_supply_constrained,
+    resolve_episode,
 )
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
@@ -261,13 +263,14 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                     prior_trigger_price=prior.trigger_price if prior is not None else None,
                 )
                 assessment = _EVALUATORS[family](inputs)
-                previous_state = prior.state if prior is not None else "none"
-                if assessment.state == "none" and previous_state in ("none", "failed", "exhausted"):
+                prior_state = prior.state if prior is not None else "none"
+                if assessment.state == "none" and prior_state in TERMINAL_STATES:
                     continue  # nothing to archive: no setup, and no live state to close out
-                first_discovered = (
-                    prior.first_discovered_on
-                    if prior is not None and previous_state not in ("none",)
-                    else session_date
+                first_discovered, previous_state = resolve_episode(
+                    has_prior=prior is not None,
+                    prior_state=prior_state,
+                    prior_first_discovered=prior.first_discovered_on if prior is not None else None,
+                    session_date=session_date,
                 )
                 payloads.append(
                     {

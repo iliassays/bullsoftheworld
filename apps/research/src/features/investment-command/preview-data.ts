@@ -430,6 +430,8 @@ export function previewSqueezePath(family: string, code: string): SqueezePath {
       { date: points[points.length - 2]!.date, state: "trigger_ready", previousState: "watch", reason: "Base is tight and price sits within 3% of the base high." },
       { date: points[points.length - 1]!.date, state: "confirmed", previousState: "trigger_ready", reason: "Close exceeded the 20-session base high with relative volume ≥ 1.5x." },
     ],
+    discoveryNumber: 2,
+    priorDiscoveryDates: [points[Math.max(0, points.length - 40)]!.date],
     atr14: market === "DSE" ? 1.12 : 0.26,
     atr14Prior: market === "DSE" ? 1.68 : 0.39,
     atrChangePct: -33.3,

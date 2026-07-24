@@ -403,6 +403,8 @@ export interface SqueezePath {
   entry: SqueezeEntry;
   points: SqueezeChartPoint[];
   stateHistory: SqueezeStateMarker[];
+  discoveryNumber: number;
+  priorDiscoveryDates: string[];
   atr14: number | null;
   atr14Prior: number | null;
   atrChangePct: number | null;

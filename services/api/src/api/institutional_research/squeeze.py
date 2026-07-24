@@ -365,6 +365,26 @@ async def load_squeeze_path(
         )
     )
 
+    # Each distinct first_discovered_on for this ticker/family is one discovery episode. The
+    # current one is entry.first_discovered_on; anything earlier is a prior discovery.
+    episode_dates = list(
+        await session.scalars(
+            select(SqueezeDailyState.first_discovered_on)
+            .where(
+                SqueezeDailyState.market == market,
+                SqueezeDailyState.code == normalized,
+                SqueezeDailyState.family == family,
+                SqueezeDailyState.as_of_date <= monitor.selected_date,
+            )
+            .distinct()
+            .order_by(SqueezeDailyState.first_discovered_on)
+        )
+    )
+    prior_discovery_dates = [
+        value for value in episode_dates if value < entry.first_discovered_on
+    ]
+    discovery_number = len(prior_discovery_dates) + 1
+
     return SqueezePathOut(
         market=market,
         tenant_id=tenant_id,
@@ -397,6 +417,8 @@ async def load_squeeze_path(
             for row in history
             if row.state != row.previous_state
         ],
+        discovery_number=discovery_number,
+        prior_discovery_dates=prior_discovery_dates,
         atr_14=round(atr_now, 6) if atr_now is not None else None,
         atr_14_prior=round(atr_prior, 6) if atr_prior is not None else None,
         atr_change_pct=round(atr_change, 3) if atr_change is not None else None,

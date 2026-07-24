@@ -18,6 +18,7 @@ const COLORS = {
   vwap: "#8a4fa8",
   trigger: "#14835f",
   invalidation: "#bd3e43",
+  discovery: "#1f6feb",
 };
 
 const STATE_TEXT: Record<string, string> = {
@@ -82,20 +83,40 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
     );
 
     // State transitions are the research story: when the setup was first seen and every time
-    // the taxonomy re-classified it.
-    const markers: SeriesMarker<Time>[] = path.stateHistory.map((change) => ({
-      time: change.date as Time,
-      position: change.state === "failed" || change.state === "exhausted" ? "aboveBar" : "belowBar",
-      color:
-        change.state === "confirmed"
-          ? COLORS.up
-          : change.state === "failed" || change.state === "exhausted"
-            ? COLORS.down
-            : COLORS.ema20,
-      shape:
-        change.state === "failed" || change.state === "exhausted" ? "arrowDown" : "arrowUp",
-      text: STATE_TEXT[change.state] ?? change.state,
-    }));
+    // the taxonomy re-classified it. The first transition of the episode (previousState is the
+    // episode-start marker "none") is labelled "Discovered" so the user sees exactly when this
+    // episode began — distinct from later re-classifications.
+    const discoveryDate = path.entry.firstDiscoveredOn;
+    const markers: SeriesMarker<Time>[] = path.stateHistory.map((change) => {
+      const isDiscovery = change.date === discoveryDate || change.previousState === "none";
+      const late = change.state === "failed" || change.state === "exhausted";
+      return {
+        time: change.date as Time,
+        position: late ? "aboveBar" : "belowBar",
+        color: isDiscovery
+          ? COLORS.discovery
+          : change.state === "confirmed"
+            ? COLORS.up
+            : late
+              ? COLORS.down
+              : COLORS.ema20,
+        shape: late ? "arrowDown" : "arrowUp",
+        text: isDiscovery
+          ? `Discovered${path.discoveryNumber > 1 ? ` (#${path.discoveryNumber})` : ""}`
+          : (STATE_TEXT[change.state] ?? change.state),
+      };
+    });
+    // If the episode's first archived row was not itself a transition (rare), still anchor a
+    // discovery marker at the discovery date so "when discovered" is never missing.
+    if (!markers.some((marker) => marker.time === (discoveryDate as Time))) {
+      markers.push({
+        time: discoveryDate as Time,
+        position: "belowBar",
+        color: COLORS.discovery,
+        shape: "arrowUp",
+        text: `Discovered${path.discoveryNumber > 1 ? ` (#${path.discoveryNumber})` : ""}`,
+      });
+    }
     candles.setMarkers(
       markers.sort((left, right) => String(left.time).localeCompare(String(right.time))),
     );
@@ -138,6 +159,7 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
     // invalidation is where it dies. The 2R objective is derived arithmetic reported in the
     // metrics — drawing it as a chart line reads as a price forecast, and it frequently sits
     // outside the autoscaled range anyway, so the line would be invisible as often as not.
+    level(path.entry.discoveryPrice, COLORS.discovery, "Discovered", LineStyle.Dotted);
     level(path.entry.triggerPrice, COLORS.trigger, "Trigger", LineStyle.Dashed);
     level(path.entry.invalidationPrice, COLORS.invalidation, "Invalidation", LineStyle.Dashed);
 
@@ -184,8 +206,29 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
         }
       : null);
 
+  const ordinal = (value: number) => {
+    const suffix = value === 1 ? "st" : value === 2 ? "nd" : value === 3 ? "rd" : "th";
+    return `${value}${suffix}`;
+  };
+
   return (
     <div className="squeeze-chart">
+      <div className="squeeze-chart__discovery">
+        <span className="squeeze-chart__discovery-dot" aria-hidden="true" />
+        <span>
+          {path.discoveryNumber > 1 ? `${ordinal(path.discoveryNumber)} discovery` : "Discovered"}{" "}
+          <strong>{path.entry.firstDiscoveredOn}</strong>
+          {path.entry.discoveryPrice !== null && (
+            <> at {path.entry.discoveryPrice.toFixed(2)}</>
+          )}
+        </span>
+        {path.priorDiscoveryDates.length > 0 && (
+          <em title={`Prior setups on ${path.priorDiscoveryDates.join(", ")}`}>
+            {path.priorDiscoveryDates.length} earlier setup
+            {path.priorDiscoveryDates.length === 1 ? "" : "s"} on record
+          </em>
+        )}
+      </div>
       <div className="squeeze-chart__reading" aria-live="polite">
         <span>{reading?.date ?? "No completed prices"}</span>
         {reading && (
@@ -209,6 +252,7 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
         ref={containerRef}
       />
       <div className="squeeze-chart__legend">
+        <span><i style={{ background: COLORS.discovery }} />Discovered</span>
         <span><i style={{ background: COLORS.ema20 }} />EMA 20</span>
         <span><i style={{ background: COLORS.ema50 }} />EMA 50</span>
         <span><i style={{ background: COLORS.vwap }} />Anchored VWAP</span>
