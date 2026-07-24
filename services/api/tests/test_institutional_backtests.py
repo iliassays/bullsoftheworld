@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import datetime as dt
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
 from api.institutional_research.institutional_backtests import (
+    _adjusted_bar,
     _bars,
     _delay_schedule,
     prepare_institutional_backtest,
@@ -87,6 +89,62 @@ async def test_institutional_bar_adapter_is_hard_bound_to_us_market() -> None:
     )
     assert "daily_bars.market = 'US'" in sql
     assert "'DSE'" not in sql
+
+
+def _bar_row(
+    code: str,
+    *,
+    day: dt.date,
+    adjusted_close: float | None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        code=code,
+        date=day,
+        open=10.0,
+        high=11.0,
+        low=9.0,
+        close=10.0,
+        volume=1_000,
+        adjusted_close=adjusted_close,
+    )
+
+
+def test_adjusted_bar_rejects_non_positive_economic_prices() -> None:
+    assert _adjusted_bar(
+        _bar_row(
+            "BAD",
+            day=dt.date(2026, 1, 2),
+            adjusted_close=-10.0,
+        )
+    ) is None
+
+
+class _RowsSession:
+    def __init__(self, rows) -> None:
+        self.rows = rows
+
+    async def scalars(self, _statement):
+        return self.rows
+
+
+async def test_bar_adapter_excludes_the_whole_security_when_history_is_corrupt() -> None:
+    day = dt.date(2026, 1, 2)
+    session = _RowsSession(
+        [
+            _bar_row("BAD", day=day, adjusted_close=10.0),
+            _bar_row("BAD", day=day + dt.timedelta(days=1), adjusted_close=0.0),
+            _bar_row("GOOD", day=day, adjusted_close=10.0),
+        ]
+    )
+
+    bars = await _bars(
+        session,
+        codes=["BAD", "GOOD"],
+        start=day,
+        end=day + dt.timedelta(days=1),
+    )
+
+    assert set(bars) == {"GOOD"}
 
 
 async def test_system_b_fails_closed_without_querying_proxy_datasets() -> None:

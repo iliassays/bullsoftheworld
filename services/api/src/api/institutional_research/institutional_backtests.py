@@ -130,6 +130,8 @@ class InstitutionalBacktestPreparation:
 def _adjusted_bar(row) -> StrategyBar | None:
     if min(row.open or 0, row.high or 0, row.low or 0, row.close or 0) <= 0:
         return None
+    if row.adjusted_close is not None and row.adjusted_close <= 0:
+        return None
     adjustment = (
         row.adjusted_close / row.close
         if row.adjusted_close is not None and row.close > 0
@@ -167,10 +169,15 @@ async def _bars(
         )
     )
     grouped: dict[str, list[StrategyBar]] = defaultdict(list)
+    invalid_codes: set[str] = set()
     for row in rows:
         bar = _adjusted_bar(row)
-        if bar is not None:
-            grouped[row.code].append(bar)
+        if bar is None:
+            invalid_codes.add(row.code)
+            continue
+        grouped[row.code].append(bar)
+    for code in invalid_codes:
+        grouped.pop(code, None)
     return dict(grouped)
 
 
