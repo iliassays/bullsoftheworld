@@ -31,6 +31,7 @@ from bulls.market_data import get_provider
 from bulls.market_data.calendar import most_recent_completed_session, to_market_tz
 from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 from ingestion.cohorts import load_cohort
+from ingestion.db_batch import parameter_safe_batches
 from ingestion.lineage import record_daily_bar_observations
 
 BACKFILL_DAYS = 760  # a bit over 2y; the endpoint caps at ~474 rows anyway
@@ -57,12 +58,16 @@ async def _upsert_bars(session, bars) -> int:
         observed_at=dt.datetime.now(dt.UTC),
     )
     rows = [b.model_dump() for b in bars]
-    stmt = pg_insert(DailyBar).values(rows)
-    update_cols = {
-        c: getattr(stmt.excluded, c) for c in rows[0] if c not in ("market", "code", "date")
-    }
-    stmt = stmt.on_conflict_do_update(index_elements=["market", "code", "date"], set_=update_cols)
-    await session.execute(stmt)
+    for batch in parameter_safe_batches(rows):
+        stmt = pg_insert(DailyBar).values(batch)
+        update_cols = {
+            c: getattr(stmt.excluded, c) for c in batch[0] if c not in ("market", "code", "date")
+        }
+        await session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["market", "code", "date"], set_=update_cols
+            )
+        )
     return len(rows)
 
 

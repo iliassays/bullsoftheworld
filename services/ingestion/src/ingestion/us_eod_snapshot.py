@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from bulls.core.db import get_sessionmaker
 from bulls.core.markets import get_market_profile
 from bulls.core.models import DailyBar, MarketSummary, QuoteSnapshot, Symbol
+from ingestion.db_batch import parameter_safe_batches
 
 MARKET = "US"
 BENCHMARK_CODE = "SPY"
@@ -85,11 +86,13 @@ async def publish_quotes(*, codes: Sequence[str] | None = None) -> int:
                     "is_delayed": True,
                 }
             )
-        if quote_rows:
-            stmt = pg_insert(QuoteSnapshot).values(quote_rows)
+        # Batched: 13 columns per symbol means a single statement blew the 32767
+        # bind-parameter ceiling once the US universe passed ~2,520 names.
+        for batch in parameter_safe_batches(quote_rows):
+            stmt = pg_insert(QuoteSnapshot).values(batch)
             updates = {
                 key: getattr(stmt.excluded, key)
-                for key in quote_rows[0]
+                for key in batch[0]
                 if key not in {"market", "code"}
             }
             await session.execute(
