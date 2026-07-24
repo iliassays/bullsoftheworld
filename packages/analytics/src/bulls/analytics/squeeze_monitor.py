@@ -349,11 +349,20 @@ def evaluate_failed_breakdown(inputs: SqueezeInputs) -> SqueezeAssessment:
     undercut_low = min(bar.low for bar in undercut_bars)
     trigger = support * RECLAIM_FRACTION
     if inputs.last_close < support * FAILURE_TRIGGER_FRACTION:
+        # "Failed" is only meaningful for something that was previously a live setup. A stock
+        # simply breaking down and continuing lower was never a reversal candidate, and
+        # archiving it would fill the record with non-setups.
+        if inputs.prior_state in {"watch", "forming", "trigger_ready", "confirmed"}:
+            return assessment(
+                "failed",
+                "Price closed more than 3% below the broken support; the breakdown succeeded.",
+                trigger=trigger,
+                invalidation=undercut_low,
+            )
         return assessment(
-            "failed",
-            "Price closed more than 3% below the broken support; the breakdown succeeded.",
-            trigger=trigger,
-            invalidation=undercut_low,
+            "none",
+            "Price is extending below support; this is an active breakdown, not a reversal "
+            "setup.",
         )
     late = _exhaustion(inputs)
     if late is not None:

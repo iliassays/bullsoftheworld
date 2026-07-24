@@ -108,14 +108,21 @@ def test_failed_breakdown_reclaim_confirms_with_honest_naming() -> None:
     assert result.invalidation_price == 47.0
 
 
-def test_failed_breakdown_extension_below_undercut_low_fails() -> None:
+def test_failed_breakdown_marks_failure_only_for_a_previously_live_setup() -> None:
     steady = _flat(100, 50.0)
     breakdown = [(50.0, 50.0, 46.0, 46.2)] * 3 + [(46.0, 46.1, 44.0, 44.5)] * 2
-    result = evaluate_failed_breakdown(
-        _inputs(bars=_bars(steady + breakdown), last_close=44.5)
-    )
+    bars = _bars(steady + breakdown)
 
-    assert result.state == "failed"
+    was_live = evaluate_failed_breakdown(
+        _inputs(bars=bars, last_close=44.5, prior_state="forming")
+    )
+    assert was_live.state == "failed"
+
+    # A stock that was never a setup and is simply falling must not enter the archive as a
+    # "failed setup" — it was never a reversal candidate.
+    never_a_setup = evaluate_failed_breakdown(_inputs(bars=bars, last_close=44.5))
+    assert never_a_setup.state == "none"
+    assert "active breakdown" in never_a_setup.reason
 
 
 def test_supply_constrained_requires_verified_scarcity() -> None:
