@@ -61,6 +61,8 @@ from api.institutional_research.schemas import (
     ResearchRunOut,
     ResearchShadowPortfolioOut,
     StartResearchRequest,
+    StrategyReadinessBoardOut,
+    StrategyReadinessOut,
     WorkspaceOut,
 )
 from api.institutional_research.universe import apply_research_product_scope
@@ -81,6 +83,7 @@ from api.research_access import (
     authorize_research_workspace,
     bind_research_tenant_context,
 )
+from bulls.analytics.strategy_readiness import readiness_for_market
 from bulls.core.models import Symbol
 from bulls.core.research_access import ResearchPermission
 from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
@@ -356,6 +359,37 @@ async def investment_operating_view(
         return await load_investment_operating_view(session, workspace=authorized.workspace)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/strategy-readiness")
+async def strategy_readiness(
+    tenant: CurrentTenant,
+    user: CurrentUser,
+) -> StrategyReadinessBoardOut:
+    """List every evaluated strategy family for this market, including blocked ones.
+
+    The catalog is declarative code (`bulls.analytics.strategy_readiness`), not a computation:
+    blocked strategies are registered with the exact datasets they are missing so the UI shows
+    the audited reason, never render-time prose.
+    """
+
+    _require_research_access(tenant)
+    return StrategyReadinessBoardOut(
+        market=tenant.market,
+        tenant_id=tenant.name,
+        generated_at=dt.datetime.now(dt.UTC),
+        entries=[
+            StrategyReadinessOut.model_validate(entry.model_dump())
+            for entry in readiness_for_market(tenant.market)
+        ],
+        methodology=(
+            "Statuses come from the 2026-07-24 data audit: backtest_ready requires "
+            "point-in-time inputs for a gated historical run; diagnostic_only means a known "
+            "data defect caps every result below promotion; blocked means a required dataset "
+            "does not exist. Changing a status is a reviewed code change, not a runtime "
+            "decision."
+        ),
+    )
 
 
 @router.get("/workspaces/{workspace_id}/decision-board")

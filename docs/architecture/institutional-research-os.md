@@ -539,18 +539,27 @@ as Atlas portfolios because they encode platform-strategy and DSE settlement ass
   research urgency as a trade. It reconstructs current or prior completed-session entry targets,
   active positions, exit targets, blocked orders, and closed positions from immutable shadow
   snapshots and causal decision events. Each item retains its first-discovery date, distinguishes
-  target from fill, measures adjusted-close return/MFE/MAE through the selected archive date, and
-  exposes a chart path with signal, fill, and risk markers. DSE and US use the same read contract
-  but remain independently bound to their tenant, workspace, market, strategies, and price data.
-  The archived session's capitalization classification is filterable. Entry and active-position
+  target from fill, measures completed-close return/MFE/MAE through the selected archive date
+  (split/distribution-adjusted where audited adjustment factors exist — US yes, DSE currently
+  raw closes with an explicit per-candidate corporate-action warning), and exposes a chart path
+  with signal, fill, and risk markers. DSE and US use the same read contract but remain
+  independently bound to their tenant, workspace, market, strategies, and price data.
+  Capitalization filtering uses the latest known classification; Atlas keeps no historical
+  capitalization archive and the methodology states so. Entry and active-position
   views expose the engine's cost/reference basis, actual percentage-stop invalidation, and a
   labelled 2R planning objective; the objective is risk geometry, not a price forecast or an
   automatic take-profit order.
 - **Historical replay** may reconstruct up to a bounded operator-requested window so a newly
-  provisioned workspace can inspect prior daily decisions. Replayed snapshots use the same
-  point-in-time execution path, are visibly labelled, and are excluded from forward sessions,
-  executions, return, benchmark, and drawdown promotion evidence. Genuine forward collection
-  starts only after the latest session that existed when replay was seeded.
+  provisioned workspace can inspect prior daily decisions. Replayed snapshots use the engine's
+  execution rules over completed historical bars, but universe membership, liquidity ranking and
+  capitalization filters come from current classifications (no point-in-time universe archive
+  exists yet); the archive labels this limitation on every replayed candidate. Replay is visibly
+  labelled and excluded from forward sessions, executions, return, benchmark, and drawdown
+  promotion evidence. Genuine forward collection starts only after the latest session that
+  existed when replay was seeded. Forward promotion additionally fails closed on the benchmark
+  basis: the snapshot benchmark is the equal-weight observable-universe diagnostic, which cannot
+  support an "eligible" verdict until an explicit independent market series is wired into the
+  forward advance.
 - **Trade direction** is explicit rather than inferred. Current registered books are long-only.
   US short execution remains fail-closed until point-in-time borrow availability, locate outcomes,
   borrow fees, recall/buy-in handling, margin and squeeze controls are available. FINRA daily

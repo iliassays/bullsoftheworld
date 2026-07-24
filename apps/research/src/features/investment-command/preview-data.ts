@@ -4,6 +4,7 @@ import type {
   DecisionCandidate,
   DecisionCandidatePath,
   DecisionCandidateState,
+  StrategyReadinessBoard,
 } from "../../app/api-client";
 
 const market = researchDeployment.market;
@@ -153,3 +154,96 @@ export function previewDecisionPath(
     priceBasis: "Adjusted completed-session close.",
   };
 }
+
+export const previewStrategyReadiness: StrategyReadinessBoard = {
+  market,
+  tenantId,
+  generatedAt: "2026-07-24T12:00:00Z",
+  methodology:
+    "Statuses come from the 2026-07-24 data audit: backtest_ready requires point-in-time "
+    + "inputs for a gated historical run; diagnostic_only means a known data defect caps every "
+    + "result below promotion; blocked means a required dataset does not exist.",
+  entries: market === "DSE"
+    ? [
+        {
+          key: "dse_reversal_v1",
+          name: "DSE liquid mean reversion",
+          market,
+          direction: "long",
+          horizon: "swing",
+          implementedStrategyKey: "dse_reversal_v1",
+          status: "diagnostic_only",
+          economicHypothesis:
+            "Retail-dominated overreaction in liquid DSE names mean-reverts over days to weeks.",
+          rationale:
+            "Runs on raw closes with bonus/rights issues unadjusted, on ~2 years of history.",
+          missingData: [
+            {
+              key: "dse_corporate_action_adjustments",
+              description: "DSE daily bars carry no adjusted closes.",
+            },
+            {
+              key: "dse_price_history_depth",
+              description: "DSE bars start 2024-06-27 (~492 sessions).",
+            },
+          ],
+        },
+        {
+          key: "dse_scalp",
+          name: "DSE intraday scalping",
+          market,
+          direction: "long",
+          horizon: "scalp",
+          implementedStrategyKey: null,
+          status: "blocked",
+          economicHypothesis: "Intraday liquidity provision / momentum bursts.",
+          rationale: "Four sessions of intraday data; no execution evidence of any kind.",
+          missingData: [
+            {
+              key: "dse_intraday_history",
+              description: "DSE intraday capture began 2026-07-20 (four sessions).",
+            },
+          ],
+        },
+      ]
+    : [
+        {
+          key: "us_breakout_v1",
+          name: "US volatility-contraction breakout",
+          market,
+          direction: "long",
+          horizon: "swing",
+          implementedStrategyKey: "us_breakout_v1",
+          status: "diagnostic_only",
+          economicHypothesis:
+            "Range compression with rising participation resolves upward when supply is absorbed.",
+          rationale:
+            "The stored universe is survivors-only and historical membership is unreconstructable.",
+          missingData: [
+            {
+              key: "us_delisted_price_history",
+              description: "Delisted/acquired US price histories are missing.",
+            },
+          ],
+        },
+        {
+          key: "us_short_breakdown",
+          name: "US short-side breakdown / failed breakout",
+          market,
+          direction: "short",
+          horizon: "swing",
+          implementedStrategyKey: null,
+          status: "blocked",
+          economicHypothesis: "Distribution and failed breakouts resolve downward.",
+          rationale:
+            "No paper short may ever fill without borrow/locate/fee/recall data.",
+          missingData: [
+            {
+              key: "us_borrow_locate_dataset",
+              description:
+                "Point-in-time borrow availability, locate outcomes, borrow fees and squeeze controls.",
+            },
+          ],
+        },
+      ],
+};

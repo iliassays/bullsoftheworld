@@ -312,6 +312,29 @@ export interface InvestmentOperatingView {
   portfolios: PortfolioOperatingAnalytics[];
 }
 
+export type StrategyReadinessStatus = "backtest_ready" | "diagnostic_only" | "blocked";
+
+export interface StrategyReadinessEntry {
+  key: string;
+  name: string;
+  market: "DSE" | "US";
+  direction: "long" | "short" | "long_short";
+  horizon: "scalp" | "swing" | "position";
+  implementedStrategyKey: string | null;
+  status: StrategyReadinessStatus;
+  economicHypothesis: string;
+  rationale: string;
+  missingData: Array<{ key: string; description: string }>;
+}
+
+export interface StrategyReadinessBoard {
+  market: "DSE" | "US";
+  tenantId: string;
+  generatedAt: string;
+  entries: StrategyReadinessEntry[];
+  methodology: string;
+}
+
 export type DecisionCandidateState = "ready" | "manage" | "exit" | "blocked" | "closed";
 
 export interface DecisionCandidate {
@@ -831,6 +854,18 @@ export const researchApi = {
       throw new ResearchApiError(502, "The API returned investment data outside this tenant boundary");
     }
     return view;
+  },
+  async strategyReadiness(): Promise<StrategyReadinessBoard> {
+    const board = await request<StrategyReadinessBoard>(
+      "/institutional-research/strategy-readiness",
+    );
+    if (
+      board.tenantId !== researchDeployment.tenant ||
+      board.market !== researchDeployment.market
+    ) {
+      throw new ResearchApiError(502, "The API returned readiness data outside this tenant boundary");
+    }
+    return board;
   },
   async decisionBoard(workspaceId: string, asOf?: string): Promise<DecisionBoard> {
     const parameters = new URLSearchParams();

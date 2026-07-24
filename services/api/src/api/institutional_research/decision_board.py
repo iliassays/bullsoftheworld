@@ -16,6 +16,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.institutional_research.investment import risk_policy_from_snapshot
 from api.institutional_research.schemas import (
     DecisionBoardOut,
     DecisionCandidateOut,
@@ -26,6 +27,7 @@ from api.institutional_research.schemas import (
 )
 from bulls.analytics.research_strategy import RISK_POLICIES, STRATEGIES
 from bulls.core.models import (
+    CapTierObservation,
     DailyBar,
     ResearchDecisionEvent,
     ResearchShadowPortfolio,
@@ -43,15 +45,6 @@ _STATE_ORDER: dict[DecisionState, int] = {
     "ready": 2,
     "manage": 3,
     "closed": 4,
-}
-
-_STRATEGY_HORIZONS: dict[str, tuple[Literal["swing", "position"], str]] = {
-    "dse_reversal_v1": ("swing", "Approximately 5-20 completed sessions"),
-    "us_breakout_v1": ("swing", "Approximately 10-40 completed sessions"),
-    "us_activist_13d_v1": ("position", "Campaign-driven, with a 12-month time stop"),
-    "us_insider_cluster_v1": ("position", "Approximately 20-120 completed sessions"),
-    "us_forced_seller_v1": ("position", "Event-driven, up to 24 months"),
-    "us_factor_sleeve_v1": ("position", "Monthly rebalance; multi-month holding"),
 }
 
 
@@ -76,6 +69,34 @@ def direction_capabilities(market: str) -> list[DecisionDirectionCapabilityOut]:
 
 def adjusted_close(bar: DailyBar) -> float:
     return float(bar.adjusted_close if bar.adjusted_close is not None else bar.close)
+
+
+def adjustment_complete(bars: Sequence[DailyBar]) -> bool:
+    """True only when every bar carries an audited adjustment factor.
+
+    DSE bars currently store no adjusted closes at all, so DSE performance is measured on raw
+    exchange closes. That must be said, never implied away: a bonus or rights issue shows up as
+    a price drop, not as a neutral adjustment.
+    """
+
+    return bool(bars) and all(bar.adjusted_close is not None for bar in bars)
+
+
+def portfolio_stop_loss(portfolio: ResearchShadowPortfolio, market: str) -> float:
+    """Resolve the stop the engine actually enforces for this book.
+
+    Each book pins its mandate at inception; the market default is only the fallback for legacy
+    configurations. The displayed invalidation price must come from the same policy the engine
+    uses, or the archive would show a stop the book never had.
+    """
+
+    pinned = portfolio.configuration.get("mandate")
+    if isinstance(pinned, dict):
+        try:
+            return risk_policy_from_snapshot(pinned, market).position_stop_loss
+        except (ValueError, TypeError):
+            pass
+    return RISK_POLICIES[market].position_stop_loss
 
 
 def price_plan(
@@ -348,8 +369,19 @@ async def load_decision_board(
     for snapshot in selected_snapshots:
         portfolio = portfolio_by_id[snapshot.portfolio_id]
         snapshot_events = events_by_snapshot[snapshot.id]
-        for code in sorted(_candidate_codes(snapshot, snapshot_events)):
+        current_codes = _candidate_codes(snapshot, snapshot_events)
+        for code in sorted(current_codes):
             candidate_pairs.append((portfolio, snapshot, code))
+        # Recently closed positions stay visible for accountability: a code whose last strategy
+        # event fell inside the trailing window but which no longer carries a target, position,
+        # or same-snapshot event is shown in its terminal "closed" state instead of vanishing
+        # the day after it exited.
+        recency_floor = selected_date - dt.timedelta(days=30)
+        for (portfolio_id, code), pair_events in events_by_pair.items():
+            if portfolio_id != portfolio.id or code in current_codes:
+                continue
+            if pair_events and pair_events[-1].effective_date >= recency_floor:
+                candidate_pairs.append((portfolio, snapshot, code))
 
     codes = sorted({code for _, _, code in candidate_pairs})
     symbols = {
@@ -360,19 +392,40 @@ async def load_decision_board(
             )
         )
     }
+    # Capitalization basis: prefer the recorded classification on or before the archived
+    # session (cap_tier_observations, collection began 2026-07-24); fall back to the current
+    # TickerAnalytics row where no history was ever recorded — and the methodology says which
+    # basis applies. A tier the platform never recorded is never invented.
     analytics_rows = list(
         await session.scalars(
-            select(TickerAnalytics)
-            .where(
+            select(TickerAnalytics).where(
                 TickerAnalytics.market == workspace.market,
                 TickerAnalytics.code.in_(codes),
-                TickerAnalytics.as_of_date <= selected_date,
             )
-            .distinct(TickerAnalytics.code)
-            .order_by(TickerAnalytics.code, TickerAnalytics.as_of_date.desc())
         )
     )
     analytics_by_code = {row.code: row for row in analytics_rows}
+    recorded_tier_rows = list(
+        await session.scalars(
+            select(CapTierObservation)
+            .where(
+                CapTierObservation.market == workspace.market,
+                CapTierObservation.code.in_(codes),
+                CapTierObservation.as_of_date <= selected_date,
+            )
+            .distinct(CapTierObservation.code)
+            .order_by(CapTierObservation.code, CapTierObservation.as_of_date.desc())
+        )
+    )
+    recorded_tier_by_code = {row.code: row.cap_tier for row in recorded_tier_rows if row.cap_tier}
+
+    def candidate_cap_tier(code: str) -> str:
+        recorded = recorded_tier_by_code.get(code)
+        if recorded:
+            return recorded
+        current = analytics_by_code.get(code)
+        return current.cap_tier if current is not None and current.cap_tier else "unclassified"
+
     first_dates: dict[tuple[uuid.UUID, str], dt.date] = {}
     for portfolio, _, code in candidate_pairs:
         pair_events = events_by_pair[(portfolio.id, code)]
@@ -453,18 +506,16 @@ async def load_decision_board(
             if isinstance(average_cost_value, (int, float)) and average_cost_value > 0
             else None
         )
-        stop_loss = RISK_POLICIES[workspace.market].position_stop_loss
+        stop_loss = portfolio_stop_loss(portfolio, workspace.market)
         risk_reference, invalidation_price, planning_objective = price_plan(
             state=state,
             as_of_price=as_of_price,
             average_cost=average_cost,
             stop_loss=stop_loss,
         )
-        strategy_name = STRATEGIES[portfolio.strategy_key].name
-        horizon, expected_holding = _STRATEGY_HORIZONS.get(
-            portfolio.strategy_key,
-            ("position", "Defined by the registered strategy"),
-        )
+        strategy = STRATEGIES[portfolio.strategy_key]
+        strategy_name = strategy.name
+        horizon, expected_holding = strategy.horizon, strategy.expected_holding
         headline, story = _candidate_story(
             state=state,
             strategy_name=strategy_name,
@@ -479,8 +530,22 @@ async def load_decision_board(
         )
         if evidence_mode == "historical_replay":
             risk_notes.append(
-                "This archived state was reconstructed point-in-time from completed historical "
-                "sessions. It is excluded from forward paper-promotion evidence."
+                "This archived state was replayed from completed historical sessions using the "
+                "engine's execution rules, but universe membership, liquidity ranking and "
+                "capitalization filters use current classifications, not point-in-time records. "
+                "It is excluded from forward paper-promotion evidence."
+            )
+        if not adjustment_complete(
+            [
+                bar
+                for bar in code_bars
+                if reference_bar is not None and bar.date >= reference_bar.date
+            ]
+        ):
+            risk_notes.append(
+                "Prices are raw exchange closes without corporate-action adjustment. A split, "
+                "bonus or rights issue in this window would distort the measured return, MFE "
+                "and MAE."
             )
         if snapshot.as_of_date < selected_date:
             risk_notes.append(
@@ -505,11 +570,7 @@ async def load_decision_board(
                 expected_holding=expected_holding,
                 code=code,
                 company=symbols[code].name_en if code in symbols else code,
-                cap_tier=(
-                    analytics_by_code[code].cap_tier
-                    if code in analytics_by_code and analytics_by_code[code].cap_tier
-                    else "unclassified"
-                ),
+                cap_tier=candidate_cap_tier(code),
                 state=state,
                 evidence_mode=evidence_mode,
                 as_of_date=snapshot.as_of_date,
@@ -559,11 +620,21 @@ async def load_decision_board(
         direction_capabilities=direction_capabilities(workspace.market),
         candidates=candidates,
         methodology=(
-            "Archived states come from immutable shadow snapshots and decision events. Performance "
-            "uses split/distribution-adjusted completed closes from first discovery through the "
-            "selected date. Capitalization uses the latest classification known on that archived "
-            "session. A target is not a completed fill or a recommendation; a 2R objective is a "
-            "risk-planning reference, not a price forecast."
+            "Archived states come from immutable shadow snapshots and decision events. "
+            + (
+                "Performance uses split/distribution-adjusted completed closes from first "
+                "discovery through the selected date. "
+                if adjustment_complete(bars)
+                else "Performance uses completed closes from first discovery through the "
+                "selected date; where no audited adjustment factor exists the close is the raw "
+                "exchange print, and affected candidates carry an explicit corporate-action "
+                "warning. "
+            )
+            + "Capitalization uses the classification recorded on or before the archived "
+            "session where a recorded history exists (collection began 2026-07-24); earlier "
+            "archive dates fall back to the latest known classification. A target is not a "
+            "completed fill or a recommendation; a 2R objective is a risk-planning reference, "
+            "not a price forecast."
         ),
     )
 
@@ -642,7 +713,16 @@ async def load_decision_candidate_path(
         points=points,
         events=[_event_out(event) for event in events],
         price_basis=(
-            "Adjusted completed-session close. The archived strategy state is immutable; later "
-            "corporate-action adjustments may restate the displayed historical price scale."
+            (
+                "Adjusted completed-session close. The archived strategy state is immutable; "
+                "later corporate-action adjustments may restate the displayed historical price "
+                "scale."
+            )
+            if adjustment_complete(bars)
+            else (
+                "Raw completed-session close — no audited corporate-action adjustment exists "
+                "for this history. A split, bonus or rights issue inside this window appears as "
+                "a price move, not a neutral adjustment."
+            )
         ),
     )

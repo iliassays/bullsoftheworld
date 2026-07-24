@@ -89,3 +89,25 @@ class TickerAnalytics(Base):
     point_in_time_complete: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+
+
+class CapTierObservation(Base):
+    """Append-only daily record of each symbol's capitalization classification.
+
+    TickerAnalytics keeps only the current row per symbol, so before this table existed no one
+    could answer "what tier was this on an archived session". Each EOD analytics refresh appends
+    the classification it just computed; historical rows are never rewritten after their day
+    closes. Collection began 2026-07-24 — earlier archive dates have no recorded tier, and the
+    decision archive says so instead of guessing.
+    """
+
+    __tablename__ = "cap_tier_observations"
+
+    market: Mapped[str] = mapped_column(String(8), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    as_of_date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    cap_tier: Mapped[str | None] = mapped_column(String(16))
+    market_cap_mn: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

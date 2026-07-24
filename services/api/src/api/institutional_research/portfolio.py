@@ -30,10 +30,15 @@ from api.institutional_research.schemas import (
     ResearchShadowPortfolioOut,
     ResearchShadowSnapshotOut,
 )
-from api.institutional_research.workflow import _backtest_universe, load_research_run
+from api.institutional_research.workflow import (
+    _backtest_benchmark,
+    _backtest_universe,
+    load_research_run,
+)
 from bulls.analytics.research_strategy import (
     ExecutionTiming,
     ShadowState,
+    StrategySecurity,
     advance_shadow_portfolio,
     evaluate_shadow_promotion,
 )
@@ -122,6 +127,69 @@ def promotion_evidence_window(
         if peak > 0:
             maximum_drawdown_pct = max(maximum_drawdown_pct, (1 - nav / peak) * 100)
     return baseline, latest, observations, maximum_drawdown_pct
+
+
+def explicit_benchmark_since(configuration: dict) -> dt.date | None:
+    """Date from which this book's benchmark_nav compounds an explicit independent series."""
+
+    raw = configuration.get("benchmark_explicit_since")
+    if isinstance(raw, str):
+        try:
+            return dt.date.fromisoformat(raw)
+        except ValueError:
+            return None
+    return None
+
+
+def benchmark_independent_for_window(
+    configuration: dict, observations: Sequence[ResearchShadowSnapshot]
+) -> bool:
+    """True only when every forward observation compounded the explicit independent series.
+
+    A window that mixes the equal-weight diagnostic with the explicit series produces a
+    meaningless benchmark ratio, so independence requires the switch to predate the first
+    forward observation. Books started before the explicit series was wired stay diagnostic;
+    reseeding a fresh book is the honest way to obtain an independent window.
+    """
+
+    since = explicit_benchmark_since(configuration)
+    return since is not None and bool(observations) and since <= observations[0].as_of_date
+
+
+def detect_price_scale_restatement(
+    stored_positions: dict[str, object],
+    securities: Sequence[StrategySecurity],
+    *,
+    as_of: dt.date,
+    tolerance: float = 0.001,
+) -> list[str]:
+    """Return held codes whose persisted valuation close no longer matches the rebuilt history.
+
+    A shadow book persists integer share counts and cost basis in the price scale that existed
+    when its last snapshot was written. If a later corporate action (split, bonus or rights
+    issue) or an upstream data revision restates that history, silently advancing the book would
+    mark the old share count against a new price scale and fabricate paper P&L — for example a
+    10:1 split would appear as a -90% position loss and trip the stop. Each held position's
+    stored ``valuation_close`` is compared with the freshly loaded close for the same completed
+    session; any mismatch beyond ``tolerance`` requires an operator review instead of a silent
+    advance.
+    """
+
+    bars_by_code = {security.code: security.bars for security in securities}
+    restated: list[str] = []
+    for code, position in stored_positions.items():
+        stored_close = position.get("valuation_close") if isinstance(position, dict) else None
+        if not isinstance(stored_close, (int, float)) or stored_close <= 0:
+            continue
+        current = next(
+            (bar.close for bar in reversed(bars_by_code.get(code, [])) if bar.date <= as_of),
+            None,
+        )
+        if current is None or current <= 0:
+            continue
+        if abs(current / stored_close - 1) > tolerance:
+            restated.append(code)
+    return sorted(restated)
 
 
 async def _snapshots(
@@ -315,12 +383,22 @@ async def _evaluate_portfolio_promotion(
         sessions=len(observations),
         maximum_drawdown_pct=maximum_drawdown_pct,
         executions=sum(len(snapshot.trades) for snapshot in observations),
+        # Independence requires every forward observation to have compounded the explicit
+        # SPY/DSEX series; mixed or diagnostic-only windows fail closed.
+        benchmark_independent=benchmark_independent_for_window(
+            portfolio.configuration, observations
+        ),
     )
     portfolio.configuration = {
         **portfolio.configuration,
         "promotion": {
             **decision.model_dump(mode="json"),
-            "policy_version": "atlas-promotion-policy-v1",
+            "policy_version": "atlas-promotion-policy-v2",
+            "benchmark_basis": (
+                str(portfolio.configuration.get("benchmark_basis"))
+                if benchmark_independent_for_window(portfolio.configuration, observations)
+                else "observable_universe_equal_weight_diagnostic"
+            ),
             "evaluated_on": latest.as_of_date.isoformat(),
             "forward_evidence_started_on": forward_started_on.isoformat(),
             "retroactive_replay_sessions": len(
@@ -407,6 +485,20 @@ async def _refresh_shadow_portfolio(
         securities = preparation.securities
     else:
         securities = await _backtest_universe(session, market=portfolio.market, request=request)
+    restated = detect_price_scale_restatement(latest.positions, securities, as_of=latest.as_of_date)
+    if restated:
+        portfolio.status = "paused"
+        portfolio.configuration = {
+            **portfolio.configuration,
+            "refresh_error": (
+                "Shadow advancement stopped because the adjusted price history was restated "
+                f"under held positions ({', '.join(restated)}). A corporate action or data "
+                "revision changed the price scale; persisted shares and cost basis no longer "
+                "match it, so advancing would fabricate paper P&L. Operator review required."
+            ),
+        }
+        await session.flush()
+        return
     pending_dates = sorted(
         {
             bar.date
@@ -414,6 +506,28 @@ async def _refresh_shadow_portfolio(
             for bar in security.bars
             if latest.as_of_date < bar.date <= latest_market_date
         }
+    )
+    # Explicit independent benchmark (SPY / DSEX). Loaded with a lookback so the close prior to
+    # the first pending session anchors the first compound; when the series is unavailable the
+    # advance falls back to the equal-weight diagnostic, which promotion fails closed on.
+    benchmark_series = await _backtest_benchmark(
+        session,
+        market=portfolio.market,
+        start_date=latest.as_of_date - dt.timedelta(days=14),
+        end_date=latest_market_date,
+    )
+    benchmark_by_date = (
+        {point.date: point.close for point in benchmark_series.points}
+        if benchmark_series is not None
+        else {}
+    )
+    previous_benchmark_close = next(
+        (
+            benchmark_by_date[value]
+            for value in sorted(benchmark_by_date, reverse=True)
+            if value <= latest.as_of_date
+        ),
+        None,
     )
     for current_date in pending_dates:
         current_securities = []
@@ -445,6 +559,16 @@ async def _refresh_shadow_portfolio(
             # otherwise a frozen book would silently re-arm on the next advance.
             ladder_frozen=bool(portfolio.configuration.get("ladder_frozen", False)),
         )
+        benchmark_return: float | None = None
+        if previous_benchmark_close is not None and previous_benchmark_close > 0:
+            benchmark_close = benchmark_by_date.get(current_date)
+            if benchmark_close is not None and benchmark_close > 0:
+                benchmark_return = benchmark_close / previous_benchmark_close - 1
+                previous_benchmark_close = benchmark_close
+            else:
+                # Calendar gap in the explicit series: carry the level rather than silently
+                # switching back to the diagnostic basis mid-window.
+                benchmark_return = 0.0
         advanced = advance_shadow_portfolio(
             market=portfolio.market,
             strategy_key=portfolio.strategy_key,
@@ -462,7 +586,18 @@ async def _refresh_shadow_portfolio(
                 if preparation is not None
                 else None
             ),
+            benchmark_return=benchmark_return,
         )
+        if (
+            benchmark_return is not None
+            and benchmark_series is not None
+            and explicit_benchmark_since(portfolio.configuration) is None
+        ):
+            portfolio.configuration = {
+                **portfolio.configuration,
+                "benchmark_explicit_since": current_date.isoformat(),
+                "benchmark_basis": f"explicit:{benchmark_series.key}",
+            }
         latest = ResearchShadowSnapshot(
             id=uuid.uuid4(),
             portfolio_id=portfolio.id,
@@ -480,7 +615,19 @@ async def _refresh_shadow_portfolio(
             cumulative_fees=Decimal(str(advanced.state.cumulative_fees)),
             cumulative_turnover=Decimal(str(advanced.state.cumulative_turnover)),
             positions={
-                code: position.model_dump(mode="json")
+                code: {
+                    **position.model_dump(mode="json"),
+                    # The close this share count was marked against; the next refresh compares
+                    # it with the reloaded history to detect corporate-action restatements.
+                    "valuation_close": next(
+                        (
+                            security.bars[-1].close
+                            for security in current_securities
+                            if security.code == code and security.bars
+                        ),
+                        None,
+                    ),
+                }
                 for code, position in advanced.state.positions.items()
             },
             target_weights=advanced.next_target_weights,

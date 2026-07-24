@@ -149,6 +149,10 @@ async def _load_events(start: dt.date):
                 .where(
                     InsiderTransaction.owner_cik.in_(candidate_owners),
                     InsiderTransaction.transaction_date.is_not(None),
+                    # Guard against residual impossible Form 4 dates that predate the
+                    # ingestion-time rejection (commit 82cdd8e); 32 such rows remain in prod.
+                    InsiderTransaction.transaction_date >= dt.date(1990, 1, 1),
+                    InsiderTransaction.transaction_date <= dt.date(2030, 12, 31),
                     EdgarFilingEvent.accepted_at.is_not(None),
                 )
                 .order_by(InsiderTransaction.owner_cik, EdgarFilingEvent.accepted_at)
@@ -196,6 +200,10 @@ async def _load_events(start: dt.date):
                 .where(
                     InsiderTransaction.code == "P",
                     InsiderTransaction.transaction_date.is_not(None),
+                    # Guard against residual impossible Form 4 dates that predate the
+                    # ingestion-time rejection (commit 82cdd8e); 32 such rows remain in prod.
+                    InsiderTransaction.transaction_date >= dt.date(1990, 1, 1),
+                    InsiderTransaction.transaction_date <= dt.date(2030, 12, 31),
                     EdgarFilingEvent.accepted_at.is_not(None),
                     EdgarFilingEvent.accepted_at >= start - dt.timedelta(days=45),
                 )

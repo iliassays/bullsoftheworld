@@ -62,3 +62,30 @@ def test_future_forward_boundary_has_zero_forward_observations() -> None:
     assert latest is rows[-1]
     assert observations == []
     assert drawdown == 0
+
+
+def test_benchmark_independence_requires_explicit_series_for_the_whole_window() -> None:
+    from api.institutional_research.portfolio import (
+        benchmark_independent_for_window,
+        explicit_benchmark_since,
+    )
+
+    observations = [snapshot(6, 102), snapshot(7, 99)]
+
+    # No explicit series ever wired: diagnostic.
+    assert not benchmark_independent_for_window({}, observations)
+    # Switched mid-window (after the first observation): still diagnostic — a mixed ratio
+    # is meaningless.
+    assert not benchmark_independent_for_window(
+        {"benchmark_explicit_since": "2026-07-07"}, observations
+    )
+    # Explicit from the first observation onward: independent.
+    assert benchmark_independent_for_window(
+        {"benchmark_explicit_since": "2026-07-06"}, observations
+    )
+    # Empty windows can never claim independence.
+    assert not benchmark_independent_for_window(
+        {"benchmark_explicit_since": "2026-07-01"}, []
+    )
+    # Corrupt values parse to None instead of raising during a refresh.
+    assert explicit_benchmark_since({"benchmark_explicit_since": "not-a-date"}) is None

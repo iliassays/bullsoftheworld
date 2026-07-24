@@ -97,6 +97,10 @@ class StrategyDefinition(BaseModel):
     rebalance_sessions: int
     maximum_positions: int
     description: str
+    # Holding-horizon description belongs to the registered strategy, not to whichever
+    # presentation layer happens to render it.
+    horizon: Literal["swing", "position"] = "position"
+    expected_holding: str = "Defined by the registered strategy"
 
 
 class PortfolioRiskPolicy(BaseModel):
@@ -318,6 +322,7 @@ def evaluate_shadow_promotion(
     sessions: int,
     maximum_drawdown_pct: float,
     executions: int,
+    benchmark_independent: bool = False,
     minimum_sessions: int = 60,
     minimum_excess_return_pct: float = 2.0,
     maximum_allowed_drawdown_pct: float = 15.0,
@@ -344,6 +349,17 @@ def evaluate_shadow_promotion(
             requirement=f"At least {minimum_sessions} completed forward sessions.",
         ),
         PromotionCheck(
+            key="independent_benchmark",
+            passed=benchmark_independent,
+            actual="explicit_series"
+            if benchmark_independent
+            else "observable_universe_equal_weight",
+            requirement=(
+                "The forward benchmark must be an explicit independent market series; the "
+                "current-universe equal-weight diagnostic cannot support promotion."
+            ),
+        ),
+        PromotionCheck(
             key="benchmark_relative_return",
             passed=excess_return >= minimum_excess_return_pct,
             actual=round(excess_return, 3),
@@ -367,6 +383,13 @@ def evaluate_shadow_promotion(
         status: Literal["diagnostic", "collecting", "eligible", "rejected"] = "diagnostic"
         headline = (
             "Forward paper evidence is collecting, but historical data gates block promotion."
+        )
+    elif "independent_benchmark" in failed:
+        status = "diagnostic"
+        headline = (
+            "Forward paper evidence is collecting, but the benchmark basis is the "
+            "current-universe equal-weight diagnostic; promotion requires an explicit "
+            "independent market series."
         )
     elif sessions < minimum_sessions:
         status = "collecting"
@@ -395,6 +418,8 @@ STRATEGIES = {
         key="dse_reversal_v1",
         market="DSE",
         name="DSE liquid reversal",
+        horizon="swing",
+        expected_holding="Approximately 5-20 completed sessions",
         methodology_version="dse-liquid-reversal-v1",
         minimum_lookback=126,
         rebalance_sessions=5,
@@ -408,6 +433,8 @@ STRATEGIES = {
         key="us_breakout_v1",
         market="US",
         name="US liquid trend participation",
+        horizon="swing",
+        expected_holding="Approximately 10-40 completed sessions",
         methodology_version="us-liquid-trend-v1",
         minimum_lookback=200,
         rebalance_sessions=5,
@@ -420,6 +447,8 @@ STRATEGIES = {
         key="us_activist_13d_v1",
         market="US",
         name="US activist 13D event book",
+        horizon="position",
+        expected_holding="Campaign-driven, with a 12-month time stop",
         methodology_version="us-activist-13d-v1",
         minimum_lookback=20,
         rebalance_sessions=1,
@@ -433,6 +462,8 @@ STRATEGIES = {
         key="us_insider_cluster_v1",
         market="US",
         name="US opportunistic insider cluster book",
+        horizon="position",
+        expected_holding="Approximately 20-120 completed sessions",
         methodology_version="us-insider-cluster-v1",
         minimum_lookback=20,
         rebalance_sessions=1,
@@ -446,6 +477,8 @@ STRATEGIES = {
         key="us_forced_seller_v1",
         market="US",
         name="US forced-seller post-spin book",
+        horizon="position",
+        expected_holding="Event-driven, up to 24 months",
         methodology_version="us-forced-seller-post-spin-v1",
         minimum_lookback=20,
         rebalance_sessions=1,
@@ -462,6 +495,8 @@ STRATEGIES["us_factor_sleeve_v1"] = StrategyDefinition(
     key="us_factor_sleeve_v1",
     market="US",
     name="US factor sleeve",
+    horizon="position",
+    expected_holding="Monthly rebalance; multi-month holding",
     methodology_version="us-factor-sleeve-v1",
     # A year of history is required before the 12-1 momentum leg exists at all.
     minimum_lookback=252,
@@ -1469,6 +1504,7 @@ def advance_shadow_portfolio(
     risk_policy: PortfolioRiskPolicy | None = None,
     execution_timing: ExecutionTiming = "next_open",
     next_target_weights: dict[str, float] | None = None,
+    benchmark_return: float | None = None,
 ) -> ShadowAdvanceResult:
     """Advance one real-time shadow book by one completed market session.
 
@@ -1476,6 +1512,11 @@ def advance_shadow_portfolio(
     the strategy's frozen current-session open/close. Event and factor adapters may supply
     ``next_target_weights`` formed after observing this close; legacy price strategies calculate
     their next target inside the engine.
+
+    ``benchmark_return`` is the completed-session return of an explicit independent market
+    series (SPY / DSEX). When supplied, ``benchmark_nav`` compounds it; when None, the legacy
+    equal-weight observable-universe diagnostic is used — a basis that can never support
+    promotion (see ``evaluate_shadow_promotion``).
     """
 
     strategy = STRATEGIES[strategy_key]
@@ -1623,14 +1664,17 @@ def advance_shadow_portfolio(
     peak_nav = max(previous.peak_nav, nav)
     drawdown = 1 - nav / peak_nav if peak_nav > 0 else 0.0
     gross_exposure = (nav - cash) / nav if nav > 0 else 0.0
-    benchmark_returns = [
-        security.bars[-1].close / security.bars[-2].close - 1
-        for security in securities
-        if len(security.bars) >= 2 and security.bars[-2].close > 0
-    ]
-    benchmark_nav = previous.benchmark_nav * (
-        1 + statistics.fmean(benchmark_returns) if benchmark_returns else 1
-    )
+    if benchmark_return is not None:
+        benchmark_nav = previous.benchmark_nav * (1 + benchmark_return)
+    else:
+        benchmark_returns = [
+            security.bars[-1].close / security.bars[-2].close - 1
+            for security in securities
+            if len(security.bars) >= 2 and security.bars[-2].close > 0
+        ]
+        benchmark_nav = previous.benchmark_nav * (
+            1 + statistics.fmean(benchmark_returns) if benchmark_returns else 1
+        )
     histories = {security.code: security.bars for security in securities}
     if next_target_weights is not None:
         next_targets, constraint_notes = constrain_target_weights(

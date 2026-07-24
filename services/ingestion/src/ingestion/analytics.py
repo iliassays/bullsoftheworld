@@ -24,6 +24,7 @@ from bulls.core.db import get_sessionmaker
 from bulls.core.markets import cap_tier
 from bulls.core.models import (
     AnnualFinancial,
+    CapTierObservation,
     CompanyProfile,
     DailyBar,
     DividendRecord,
@@ -292,9 +293,7 @@ def analytics_cutoff_date(
     return most_recent_completed_session(
         now or dt.datetime.now(dt.UTC),
         market=normalized_market,
-        publication_delay=(
-            EOD_PUBLICATION_DELAY if normalized_market == "US" else dt.timedelta()
-        ),
+        publication_delay=(EOD_PUBLICATION_DELAY if normalized_market == "US" else dt.timedelta()),
     )
 
 
@@ -354,9 +353,7 @@ async def _load_bar_batch(
 ) -> dict[str, list]:
     """Load the latest lookback per code through the `(market, code, date)` primary-key index."""
     rows = (
-        await session.execute(
-            _bar_batch_statement(market, codes, through_date=through_date)
-        )
+        await session.execute(_bar_batch_statement(market, codes, through_date=through_date))
     ).mappings()
     grouped: dict[str, list] = defaultdict(list)
     for row in rows:
@@ -604,6 +601,31 @@ async def compute_all(
                             .values(pe_vs_sector=round(float(pe) / median, 2))
                         )
             await session.commit()
+
+    # Append today's capitalization classification to the point-in-time archive. Same-day
+    # recomputation may correct the row; a closed day is never rewritten (the primary key is
+    # (market, code, as_of_date) and later refreshes carry later as_of_dates).
+    async with sm() as session:
+        observation_stmt = pg_insert(CapTierObservation).from_select(
+            ["market", "code", "as_of_date", "cap_tier", "market_cap_mn"],
+            select(
+                TickerAnalytics.market,
+                TickerAnalytics.code,
+                TickerAnalytics.as_of_date,
+                TickerAnalytics.cap_tier,
+                TickerAnalytics.market_cap_mn,
+            ).where(TickerAnalytics.market == market),
+        )
+        await session.execute(
+            observation_stmt.on_conflict_do_update(
+                index_elements=["market", "code", "as_of_date"],
+                set_={
+                    "cap_tier": observation_stmt.excluded.cap_tier,
+                    "market_cap_mn": observation_stmt.excluded.market_cap_mn,
+                },
+            )
+        )
+        await session.commit()
 
     return {"symbols": len(code_rows), "computed": computed, "patterns": patterns_found}
 

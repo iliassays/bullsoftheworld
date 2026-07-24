@@ -121,6 +121,39 @@ def test_shadow_book_executes_prior_close_target_at_current_open() -> None:
     assert advanced.state.positions["FLOW"].shares > 0
 
 
+def test_shadow_benchmark_compounds_explicit_return_when_supplied() -> None:
+    security = _security("FLOW", market="US", sessions=220)
+    previous = ShadowState(
+        cash=100_000,
+        positions={},
+        peak_nav=100_000,
+        benchmark_nav=100_000,
+    )
+
+    explicit = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=[security],
+        previous=previous,
+        target_weights={},
+        session_number=1,
+        benchmark_return=0.0125,
+    )
+    diagnostic = advance_shadow_portfolio(
+        market="US",
+        strategy_key="us_breakout_v1",
+        securities=[security],
+        previous=previous,
+        target_weights={},
+        session_number=1,
+    )
+
+    assert explicit.state.benchmark_nav == 101_250
+    # The diagnostic fallback compounds the universe's own return, not the explicit series.
+    last_return = security.bars[-1].close / security.bars[-2].close - 1
+    assert diagnostic.state.benchmark_nav != explicit.state.benchmark_nav or last_return == 0.0125
+
+
 def test_institutional_shadow_uses_close_and_external_next_target() -> None:
     security = _security("FLOW", market="US", sessions=220)
     previous = ShadowState(
@@ -264,6 +297,7 @@ def test_shadow_promotion_requires_forward_window_and_all_risk_gates() -> None:
         sessions=40,
         maximum_drawdown_pct=8,
         executions=12,
+        benchmark_independent=True,
     )
     eligible = evaluate_shadow_promotion(
         source_validation_status="eligible_for_shadow",
@@ -274,6 +308,7 @@ def test_shadow_promotion_requires_forward_window_and_all_risk_gates() -> None:
         sessions=65,
         maximum_drawdown_pct=9,
         executions=22,
+        benchmark_independent=True,
     )
     rejected = evaluate_shadow_promotion(
         source_validation_status="eligible_for_shadow",
@@ -284,8 +319,31 @@ def test_shadow_promotion_requires_forward_window_and_all_risk_gates() -> None:
         sessions=65,
         maximum_drawdown_pct=18,
         executions=22,
+        benchmark_independent=True,
     )
 
     assert collecting.status == "collecting"
     assert eligible.status == "eligible"
     assert rejected.status == "rejected"
+
+
+def test_shadow_promotion_fails_closed_on_diagnostic_benchmark_basis() -> None:
+    """A book beating the equal-weight universe diagnostic can never become eligible on it."""
+
+    decision = evaluate_shadow_promotion(
+        source_validation_status="eligible_for_shadow",
+        initial_nav=100_000,
+        latest_nav=108_000,
+        initial_benchmark_nav=100_000,
+        latest_benchmark_nav=103_000,
+        sessions=65,
+        maximum_drawdown_pct=9,
+        executions=22,
+    )
+
+    assert decision.status == "diagnostic"
+    benchmark_check = next(
+        check for check in decision.checks if check.key == "independent_benchmark"
+    )
+    assert not benchmark_check.passed
+    assert benchmark_check.actual == "observable_universe_equal_weight"

@@ -587,6 +587,32 @@ class DecisionCandidatePathOut(ApiModel):
     price_basis: str
 
 
+class MissingDatasetOut(ApiModel):
+    key: str
+    description: str
+
+
+class StrategyReadinessOut(ApiModel):
+    key: str
+    name: str
+    market: Literal["DSE", "US"]
+    direction: Literal["long", "short", "long_short"]
+    horizon: Literal["scalp", "swing", "position"]
+    implemented_strategy_key: str | None
+    status: Literal["backtest_ready", "diagnostic_only", "blocked"]
+    economic_hypothesis: str
+    rationale: str
+    missing_data: list[MissingDatasetOut]
+
+
+class StrategyReadinessBoardOut(ApiModel):
+    market: Literal["DSE", "US"]
+    tenant_id: str
+    generated_at: dt.datetime
+    entries: list[StrategyReadinessOut]
+    methodology: str
+
+
 class PortfolioRiskLimitCheckOut(ApiModel):
     key: str
     status: Literal["within_limit", "breached", "unavailable"]
