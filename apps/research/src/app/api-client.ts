@@ -376,6 +376,40 @@ export interface SqueezeMonitor {
   limitations: string[];
 }
 
+export interface SqueezeChartPoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  ema20: number | null;
+  ema50: number | null;
+  anchoredVwap: number | null;
+}
+
+export interface SqueezeStateMarker {
+  date: string;
+  state: string;
+  previousState: string | null;
+  reason: string;
+}
+
+export interface SqueezePath {
+  market: "DSE" | "US";
+  tenantId: string;
+  family: string;
+  familyLabel: string;
+  entry: SqueezeEntry;
+  points: SqueezeChartPoint[];
+  stateHistory: SqueezeStateMarker[];
+  atr14: number | null;
+  atr14Prior: number | null;
+  atrChangePct: number | null;
+  priceBasis: string;
+  overlayBasis: string;
+}
+
 export type StrategyReadinessStatus = "backtest_ready" | "diagnostic_only" | "blocked";
 
 export interface StrategyReadinessEntry {
@@ -933,6 +967,21 @@ export const researchApi = {
       throw new ResearchApiError(502, "The API returned squeeze data outside this tenant boundary");
     }
     return monitor;
+  },
+  async squeezePath(family: string, code: string, asOf?: string): Promise<SqueezePath> {
+    const parameters = new URLSearchParams();
+    if (asOf) parameters.set("as_of", asOf);
+    const query = parameters.size ? `?${parameters.toString()}` : "";
+    const path = await request<SqueezePath>(
+      `/institutional-research/squeeze-monitor/${encodeURIComponent(family)}/${encodeURIComponent(code.toUpperCase())}${query}`,
+    );
+    if (
+      path.tenantId !== researchDeployment.tenant ||
+      path.market !== researchDeployment.market
+    ) {
+      throw new ResearchApiError(502, "The API returned squeeze data outside this tenant boundary");
+    }
+    return path;
   },
   async strategyReadiness(): Promise<StrategyReadinessBoard> {
     const board = await request<StrategyReadinessBoard>(

@@ -61,12 +61,13 @@ from api.institutional_research.schemas import (
     ResearchRunOut,
     ResearchShadowPortfolioOut,
     SqueezeMonitorOut,
+    SqueezePathOut,
     StartResearchRequest,
     StrategyReadinessBoardOut,
     StrategyReadinessOut,
     WorkspaceOut,
 )
-from api.institutional_research.squeeze import load_squeeze_monitor
+from api.institutional_research.squeeze import load_squeeze_monitor, load_squeeze_path
 from api.institutional_research.universe import apply_research_product_scope
 from api.institutional_research.workflow import (
     execute_backtest,
@@ -417,6 +418,37 @@ async def squeeze_monitor(
         market=tenant.market,
         as_of=as_of,
     )
+
+
+@router.get("/squeeze-monitor/{family}/{code}")
+async def squeeze_path(
+    family: str,
+    code: str,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    as_of: Annotated[dt.date | None, Query()] = None,
+) -> SqueezePathOut:
+    """Read candles, overlays and the archived state progression for one squeeze setup."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    try:
+        return await load_squeeze_path(
+            session,
+            tenant_id=tenant.name,
+            market=tenant.market,
+            family=family,
+            code=code,
+            as_of=as_of,
+        )
+    except LookupError:
+        raise HTTPException(
+            status_code=404,
+            detail="Squeeze setup not found in this archived session",
+        ) from None
 
 
 @router.get("/workspaces/{workspace_id}/decision-board")

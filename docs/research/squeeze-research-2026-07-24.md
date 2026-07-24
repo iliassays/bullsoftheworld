@@ -179,6 +179,28 @@ promotion status and decision events, via the existing shadow-book machinery. Sq
 membership never auto-creates a target: research discovery, trade eligibility, target formation
 and completed paper fill remain the existing separate states of the decision archive.
 
+### Setup chart (`SqueezeChart`, added 2026-07-24)
+
+A squeeze setup is a technical thesis, so the detail pane renders the evidence rather than only
+asserting it: daily candlesticks, EMA 20/50, anchored VWAP, a volume histogram, the trigger and
+invalidation levels, state-transition markers, and an OHLC + ATR-change readout. Overlays are
+computed server-side in `bulls.analytics.chart_overlays` so the chart and the evaluator cannot
+drift apart. Rules that must survive future edits:
+
+- **Never label the purple overlay plain "VWAP".** It is an *anchored* VWAP built from daily
+  typical price x volume, anchored at first discovery. A true VWAP is intraday and session-based;
+  Atlas has effectively no intraday history (§B). The UI and the API `overlay_basis` both say so.
+- **Only operational levels are drawn** — trigger (where the setup activates) and invalidation
+  (where it dies). The 2R planning objective is deliberately *not* a chart line: it is derived
+  arithmetic already reported in the metrics, a line reads as a price forecast, and it commonly
+  falls outside the autoscaled range so the line would be invisible as often as not.
+- Overlays return `None` before their lookback exists rather than seeding a value, so no average
+  is drawn over history that did not exist.
+- The window ends at the archived session, so selecting a past date can never reveal later price
+  action, and the DSE raw-close caveat is restated in `price_basis`.
+- Only genuine state *transitions* become markers; repeating an unchanged state every session
+  would bury the progression.
+
 ## J. Atlas UI specification
 
 "Squeeze monitor" panel (investment command page): market-appropriate family tabs (blocked

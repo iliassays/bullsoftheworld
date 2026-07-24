@@ -1663,3 +1663,57 @@
   gap: 4px;
   padding-left: 18px;
 }
+
+.squeeze-chart {
+  display: grid;
+  gap: 6px;
+}
+
+.squeeze-chart__reading {
+  align-items: baseline;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  gap: 10px;
+}
+
+.squeeze-chart__ohlc b {
+  color: var(--text-muted);
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.squeeze-chart__legend {
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 10px;
+  gap: 10px;
+}
+
+.squeeze-chart__legend span {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+}
+
+.squeeze-chart__legend i {
+  border-radius: 1px;
+  display: inline-block;
+  height: 2px;
+  width: 12px;
+}
+
+.squeeze-chart__basis {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.squeeze-monitor__chart-loading {
+  background: var(--surface-subtle);
+  border-radius: 10px;
+  height: 320px;
+}

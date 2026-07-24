@@ -24,7 +24,8 @@ import {
   StatusBadge,
   type StatusTone,
 } from "../../design-system";
-import { previewSqueezeMonitor } from "./preview-data";
+import { SqueezeChart } from "./SqueezeChart";
+import { previewSqueezeMonitor, previewSqueezePath } from "./preview-data";
 
 const STATE_LABEL: Record<SqueezeState, string> = {
   watch: "Watch",
@@ -110,10 +111,27 @@ export function SqueezeMonitorPanel() {
     setSelectedId(entries[0] ? id(entries[0]) : undefined);
   }, [entries, selectedId]);
 
-  if (monitor.isLoading || monitor.isError || !monitor.data) return null;
-  const data = monitor.data;
+  // Resolved before the early return below: hooks may not run conditionally.
   const selected =
     entries.find((entry) => `${entry.family}:${entry.code}` === selectedId) ?? entries[0];
+  const archiveDate = monitor.data?.selectedDate ?? undefined;
+  const path = useQuery({
+    queryKey: [
+      "research",
+      "squeeze-path",
+      selected?.family,
+      selected?.code,
+      archiveDate ?? "latest",
+    ],
+    queryFn: () =>
+      isResearchPreview
+        ? Promise.resolve(previewSqueezePath(selected!.family, selected!.code))
+        : researchApi.squeezePath(selected!.family, selected!.code, archiveDate),
+    enabled: Boolean(selected),
+  });
+
+  if (monitor.isLoading || monitor.isError || !monitor.data) return null;
+  const data = monitor.data;
   const dates = data.availableDates;
   const selectedDate = data.selectedDate ?? "";
   const dateIndex = dates.indexOf(selectedDate);
@@ -342,6 +360,15 @@ export function SqueezeMonitorPanel() {
                       <strong>Counter-evidence</strong>
                       <ul>{selected.counterEvidence.map((item) => <li key={item}>{item}</li>)}</ul>
                     </div>
+                  )}
+                  {path.isLoading ? (
+                    <div className="squeeze-monitor__chart-loading" aria-label="Loading price history" />
+                  ) : path.data && path.data.points.length > 1 ? (
+                    <SqueezeChart path={path.data} />
+                  ) : (
+                    <p className="squeeze-monitor__note">
+                      No completed price history is available to chart this setup.
+                    </p>
                   )}
                   {[...selected.dataQuality, ...selected.missingEvidence].map((note) => (
                     <span className="squeeze-monitor__note" key={note}>

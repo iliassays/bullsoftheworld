@@ -21,9 +21,17 @@ from api.institutional_research.decision_board import (
     discovery_performance,
 )
 from api.institutional_research.schemas import (
+    SqueezeChartPointOut,
     SqueezeEntryOut,
     SqueezeFamilyOut,
     SqueezeMonitorOut,
+    SqueezePathOut,
+    SqueezeStateMarkerOut,
+)
+from bulls.analytics.chart_overlays import (
+    anchored_vwap,
+    atr_contraction,
+    exponential_moving_average,
 )
 from bulls.analytics.squeeze_monitor import FAMILY_LABELS
 from bulls.analytics.strategy_readiness import STRATEGY_READINESS
@@ -184,8 +192,7 @@ async def load_squeeze_monitor(
         ):
             capacity_value = analytics.avg_volume_20 * analytics.last_close * 0.02 / 1_000_000
             capacity = (
-                f"About {capacity_value:.2f}M per session at 2% of 20-session average traded "
-                "value."
+                f"About {capacity_value:.2f}M per session at 2% of 20-session average traded value."
             )
         evidence = row.evidence or {}
         entries_by_family[row.family].append(
@@ -262,4 +269,146 @@ async def load_squeeze_monitor(
         families=families,
         methodology=methodology,
         limitations=LIMITATIONS,
+    )
+
+
+class _AdjustedBar:
+    """Split/distribution-adjusted OHLCV view of one stored bar.
+
+    US bars carry audited adjustment factors; DSE bars do not, so the ratio is 1.0 there and
+    the caller states the raw-close caveat. Applying the close ratio across the whole bar keeps
+    the candle internally consistent — adjusting the close alone would distort every wick.
+    """
+
+    __slots__ = ("close", "date", "high", "low", "open", "volume")
+
+    def __init__(self, bar: DailyBar) -> None:
+        close = float(bar.close)
+        adjusted = float(bar.adjusted_close) if bar.adjusted_close is not None else close
+        ratio = adjusted / close if close > 0 else 1.0
+        self.date = bar.date
+        self.open = float(bar.open) * ratio
+        self.high = float(bar.high) * ratio
+        self.low = float(bar.low) * ratio
+        self.close = adjusted
+        self.volume = float(bar.volume)
+
+
+async def load_squeeze_path(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    market: str,
+    family: str,
+    code: str,
+    as_of: dt.date | None = None,
+) -> SqueezePathOut:
+    """Load candles, overlays and the archived state progression for one squeeze setup.
+
+    The entry is resolved from the same archive read the list uses, so the chart can never show
+    a setup the board is not showing. Raises LookupError when the code is absent from the
+    selected session's archive.
+    """
+
+    normalized = code.strip().upper()
+    monitor = await load_squeeze_monitor(session, tenant_id=tenant_id, market=market, as_of=as_of)
+    entry = next(
+        (
+            item
+            for group in monitor.families
+            if group.family == family
+            for item in group.entries
+            if item.code == normalized
+        ),
+        None,
+    )
+    if entry is None or monitor.selected_date is None:
+        raise LookupError("squeeze setup not found in this archived session")
+
+    # Context before discovery is what makes a base readable; the window never extends past the
+    # archived session, so an archived date cannot render future price action.
+    context_start = entry.first_discovered_on - dt.timedelta(days=240)
+    rows = list(
+        await session.scalars(
+            select(DailyBar)
+            .where(
+                DailyBar.market == market,
+                DailyBar.code == normalized,
+                DailyBar.date >= context_start,
+                DailyBar.date <= entry.as_of_date,
+            )
+            .order_by(DailyBar.date)
+        )
+    )
+    bars = [_AdjustedBar(row) for row in rows]
+    closes = [bar.close for bar in bars]
+    ema_20 = exponential_moving_average(closes, 20)
+    ema_50 = exponential_moving_average(closes, 50)
+    anchor = next(
+        (index for index, bar in enumerate(bars) if bar.date >= entry.first_discovered_on),
+        len(bars),
+    )
+    vwap = anchored_vwap(bars, anchor_index=anchor)
+    atr_now, atr_prior, atr_change = atr_contraction(bars)
+
+    history = list(
+        await session.scalars(
+            select(SqueezeDailyState)
+            .where(
+                SqueezeDailyState.market == market,
+                SqueezeDailyState.code == normalized,
+                SqueezeDailyState.family == family,
+                SqueezeDailyState.as_of_date <= monitor.selected_date,
+                SqueezeDailyState.as_of_date >= entry.first_discovered_on,
+            )
+            .order_by(SqueezeDailyState.as_of_date)
+        )
+    )
+
+    return SqueezePathOut(
+        market=market,
+        tenant_id=tenant_id,
+        family=family,
+        family_label=entry.family_label,
+        entry=entry,
+        points=[
+            SqueezeChartPointOut(
+                date=bar.date,
+                open=round(bar.open, 6),
+                high=round(bar.high, 6),
+                low=round(bar.low, 6),
+                close=round(bar.close, 6),
+                volume=int(bar.volume),
+                ema_20=round(ema_20[index], 6) if ema_20[index] is not None else None,
+                ema_50=round(ema_50[index], 6) if ema_50[index] is not None else None,
+                anchored_vwap=round(vwap[index], 6) if vwap[index] is not None else None,
+            )
+            for index, bar in enumerate(bars)
+        ],
+        # Only transitions carry information; repeating an unchanged state every session would
+        # bury the progression the user is trying to read.
+        state_history=[
+            SqueezeStateMarkerOut(
+                date=row.as_of_date,
+                state=row.state,
+                previous_state=row.previous_state,
+                reason=row.reason,
+            )
+            for row in history
+            if row.state != row.previous_state
+        ],
+        atr_14=round(atr_now, 6) if atr_now is not None else None,
+        atr_14_prior=round(atr_prior, 6) if atr_prior is not None else None,
+        atr_change_pct=round(atr_change, 3) if atr_change is not None else None,
+        price_basis=(
+            "Split/distribution-adjusted completed sessions."
+            if market == "US"
+            else "Raw completed DSE exchange closes — no corporate-action adjustment exists, "
+            "so a bonus or rights ex-date appears as a price drop."
+        ),
+        overlay_basis=(
+            "EMA 20/50 from completed closes. Anchored VWAP is computed from daily typical "
+            "price x volume anchored at first discovery — Atlas has no intraday history, so "
+            "this is not an intraday session VWAP."
+        ),
     )

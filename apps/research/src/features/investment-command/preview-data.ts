@@ -5,6 +5,7 @@ import type {
   DecisionCandidatePath,
   DecisionCandidateState,
   SqueezeMonitor,
+  SqueezePath,
   StrategyReadinessBoard,
 } from "../../app/api-client";
 
@@ -372,3 +373,71 @@ export const previewSqueezeMonitor: SqueezeMonitor = {
       : []),
   ],
 };
+
+/** Deterministic synthetic candles so the preview chart exercises every overlay and level. */
+export function previewSqueezePath(family: string, code: string): SqueezePath {
+  const anchorPrice = market === "DSE" ? 54 : 12.4;
+  const start = new Date("2026-02-02T00:00:00Z");
+  const closes: number[] = [];
+  for (let index = 0; index < 120; index += 1) {
+    // A drifting base that tightens, then breaks out over the final sessions.
+    const drift = anchorPrice * (0.9 + index * 0.0012);
+    const wobble = Math.sin(index / 6) * anchorPrice * (index > 90 ? 0.004 : 0.02);
+    const thrust = index > 110 ? anchorPrice * 0.008 * (index - 110) : 0;
+    closes.push(Number((drift + wobble + thrust).toFixed(2)));
+  }
+  const ema = (period: number) => {
+    const out: (number | null)[] = closes.map(() => null);
+    if (closes.length < period) return out;
+    const multiplier = 2 / (period + 1);
+    let value = closes.slice(0, period).reduce((sum, item) => sum + item, 0) / period;
+    out[period - 1] = value;
+    for (let index = period; index < closes.length; index += 1) {
+      value = (closes[index]! - value) * multiplier + value;
+      out[index] = Number(value.toFixed(4));
+    }
+    return out;
+  };
+  const ema20 = ema(20);
+  const ema50 = ema(50);
+  const anchorIndex = closes.length - 3;
+  let cumulativeValue = 0;
+  let cumulativeVolume = 0;
+  const points = closes.map((close, index) => {
+    const date = new Date(start.getTime() + index * 86_400_000).toISOString().slice(0, 10);
+    const spread = close * (index > 90 ? 0.006 : 0.018);
+    const open = Number((close - spread * 0.3).toFixed(2));
+    const high = Number((close + spread).toFixed(2));
+    const low = Number((close - spread).toFixed(2));
+    const volume = Math.round(400_000 * (index > 110 ? 2.2 : index > 90 ? 0.7 : 1));
+    let anchoredVwap: number | null = null;
+    if (index >= anchorIndex) {
+      cumulativeValue += ((high + low + close) / 3) * volume;
+      cumulativeVolume += volume;
+      anchoredVwap = Number((cumulativeValue / cumulativeVolume).toFixed(4));
+    }
+    return { date, open, high, low, close, volume, ema20: ema20[index] ?? null, ema50: ema50[index] ?? null, anchoredVwap };
+  });
+  return {
+    market,
+    tenantId,
+    family,
+    familyLabel: market === "DSE" ? "Supply-constrained breakout" : "Compression breakout setup",
+    entry: squeezeEntry(code, market === "DSE" ? "Beximco Pharmaceuticals" : "Preview Industries", "confirmed"),
+    points,
+    stateHistory: [
+      { date: points[points.length - 3]!.date, state: "watch", previousState: null, reason: "Within 15% of the 52-week high." },
+      { date: points[points.length - 2]!.date, state: "trigger_ready", previousState: "watch", reason: "Base is tight and price sits within 3% of the base high." },
+      { date: points[points.length - 1]!.date, state: "confirmed", previousState: "trigger_ready", reason: "Close exceeded the 20-session base high with relative volume ≥ 1.5x." },
+    ],
+    atr14: market === "DSE" ? 1.12 : 0.26,
+    atr14Prior: market === "DSE" ? 1.68 : 0.39,
+    atrChangePct: -33.3,
+    priceBasis:
+      market === "US"
+        ? "Split/distribution-adjusted completed sessions."
+        : "Raw completed DSE exchange closes — no corporate-action adjustment exists, so a bonus or rights ex-date appears as a price drop.",
+    overlayBasis:
+      "EMA 20/50 from completed closes. Anchored VWAP is computed from daily typical price x volume anchored at first discovery — Atlas has no intraday history, so this is not an intraday session VWAP.",
+  };
+}

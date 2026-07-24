@@ -669,6 +669,42 @@ class SqueezeMonitorOut(ApiModel):
     limitations: list[str]
 
 
+class SqueezeChartPointOut(ApiModel):
+    date: dt.date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    ema_20: float | None = None
+    ema_50: float | None = None
+    # Anchored at first discovery, computed from DAILY typical price x volume. Never label
+    # this plain "VWAP" in the UI: Atlas has no meaningful intraday history.
+    anchored_vwap: float | None = None
+
+
+class SqueezeStateMarkerOut(ApiModel):
+    date: dt.date
+    state: str
+    previous_state: str | None
+    reason: str
+
+
+class SqueezePathOut(ApiModel):
+    market: Literal["DSE", "US"]
+    tenant_id: str
+    family: str
+    family_label: str
+    entry: SqueezeEntryOut
+    points: list[SqueezeChartPointOut]
+    state_history: list[SqueezeStateMarkerOut]
+    atr_14: float | None
+    atr_14_prior: float | None
+    atr_change_pct: float | None
+    price_basis: str
+    overlay_basis: str
+
+
 class PortfolioRiskLimitCheckOut(ApiModel):
     key: str
     status: Literal["within_limit", "breached", "unavailable"]
