@@ -44,6 +44,11 @@ const STATE_TONE: Record<SqueezeState, StatusTone> = {
   failed: "negative",
 };
 
+/** Humanize a persisted state key: the archive stores snake_case, users read prose. */
+function stateLabel(state: string): string {
+  return STATE_LABEL[state as SqueezeState] ?? state.replace(/_/g, " ");
+}
+
 type StateFilter = "all" | "actionable" | "confirmed" | "late";
 
 function matchesState(entry: SqueezeEntry, filter: StateFilter): boolean {
@@ -88,14 +93,15 @@ export function SqueezeMonitorPanel() {
   const activeFamily: SqueezeFamily | undefined =
     families.find((family) => family.family === familyKey) ??
     families.find((family) => family.status === "available");
+  const familyEntries = activeFamily?.entries ?? [];
   const entries = useMemo(
     () =>
-      (activeFamily?.entries ?? []).filter(
+      familyEntries.filter(
         (entry) =>
           matchesState(entry, stateFilter) &&
           (capTier === "all" || entry.capTier === capTier),
       ),
-    [activeFamily?.entries, stateFilter, capTier],
+    [familyEntries, stateFilter, capTier],
   );
 
   useEffect(() => {
@@ -204,10 +210,22 @@ export function SqueezeMonitorPanel() {
               label="Setup states"
               onChange={setStateFilter}
               options={[
-                { value: "all", label: "All" },
-                { value: "actionable", label: "Forming" },
-                { value: "confirmed", label: "Confirmed" },
-                { value: "late", label: "Late/failed" },
+                { value: "all", label: "All", count: familyEntries.length },
+                {
+                  value: "actionable",
+                  label: "Forming",
+                  count: familyEntries.filter((entry) => matchesState(entry, "actionable")).length,
+                },
+                {
+                  value: "confirmed",
+                  label: "Confirmed",
+                  count: familyEntries.filter((entry) => entry.state === "confirmed").length,
+                },
+                {
+                  value: "late",
+                  label: "Late/failed",
+                  count: familyEntries.filter((entry) => matchesState(entry, "late")).length,
+                },
               ]}
               value={stateFilter}
             />
@@ -236,7 +254,12 @@ export function SqueezeMonitorPanel() {
             </div>
           ) : (
             <div className="squeeze-monitor__layout">
-              <div className="squeeze-monitor__list" role="list">
+              <div className="squeeze-monitor__column">
+                <p className="squeeze-monitor__count">
+                  {entries.length} {entries.length === 1 ? "setup" : "setups"}
+                  {entries.length > 8 ? " · strongest state first, scroll for more" : ""}
+                </p>
+                <div className="squeeze-monitor__list" role="list">
                 {entries.map((entry) => (
                   <button
                     aria-current={
@@ -251,27 +274,28 @@ export function SqueezeMonitorPanel() {
                     type="button"
                   >
                     <span className="squeeze-monitor__identity">
-                      <span>
-                        <strong>${entry.code}</strong>
-                        {entry.isNew && <em>New today</em>}
-                      </span>
-                      <small>{entry.capTier} cap · {entry.sessionsSinceDiscovery} sessions</small>
+                      <strong>${entry.code}</strong>
+                      {entry.isNew && <em>New</em>}
                     </span>
+                    <StatusBadge tone={STATE_TONE[entry.state]}>
+                      {STATE_LABEL[entry.state]}
+                    </StatusBadge>
+                    <small className="squeeze-monitor__meta">
+                      {entry.capTier} cap · {entry.sessionsSinceDiscovery}{" "}
+                      {entry.sessionsSinceDiscovery === 1 ? "session" : "sessions"}
+                    </small>
                     <span className="squeeze-monitor__return">
-                      <strong
+                      <b
                         className={
                           (entry.returnSinceDiscoveryPct ?? 0) >= 0 ? "value-up" : "value-down"
                         }
                       >
                         {signed(entry.returnSinceDiscoveryPct)}
-                      </strong>
-                      <small>since {entry.firstDiscoveredOn}</small>
+                      </b>
                     </span>
-                    <StatusBadge tone={STATE_TONE[entry.state]}>
-                      {STATE_LABEL[entry.state]}
-                    </StatusBadge>
                   </button>
                 ))}
+                </div>
               </div>
 
               {selected && (
@@ -295,7 +319,13 @@ export function SqueezeMonitorPanel() {
                     <span><small>Planning objective</small><strong>{price(selected.planningObjectivePrice)}</strong><em>{selected.planningRewardRisk !== null ? `${selected.planningRewardRisk.toFixed(1)}R · not a forecast` : "not applicable"}</em></span>
                   </div>
                   <p className="squeeze-monitor__reason">
-                    <strong>{selected.previousState && selected.previousState !== "none" ? `${selected.previousState} → ${selected.state}. ` : ""}</strong>
+                    <strong>
+                      {selected.previousState &&
+                      selected.previousState !== "none" &&
+                      selected.previousState !== selected.state
+                        ? `${stateLabel(selected.previousState)} → ${stateLabel(selected.state)}. `
+                        : ""}
+                    </strong>
                     {selected.stateReason}
                   </p>
                   <span className="squeeze-monitor__holding">
