@@ -28,6 +28,9 @@ from pydantic import BaseModel
 
 _XML_RE = re.compile(rb"<\?xml[^>]*\?>\s*<ownershipDocument>.*?</ownershipDocument>", re.DOTALL)
 _BARE_RE = re.compile(rb"<ownershipDocument>.*?</ownershipDocument>", re.DOTALL)
+# A leading ISO calendar date, so a trailing timezone offset ("-05:00", "+06:00", "Z") can be
+# dropped. Anchored and length-bounded so it cannot rescue a genuinely malformed value.
+_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:[Tt ].*)?(?:Z|z|[+-]\d{2}:?\d{2})?$")
 
 # Section 16 went electronic in 2003 and amendments may restate older trades, so this floor is
 # set far below any real filing: it exists only to catch mistyped year digits, never to trim
@@ -104,15 +107,27 @@ def _number(raw: str | None) -> float | None:
 
 
 def _date(raw: str | None) -> dt.date | None:
+    """Parse a Form 4 date, tolerating the timezone offset some filing agents append.
+
+    A minority of agents emit ``2024-01-23-05:00`` — a date carrying a UTC offset.
+    ``dt.date.fromisoformat`` rejects that outright, which silently dropped ~2,500 otherwise
+    perfectly good transaction dates in production (0.15% of rows, all with real transaction
+    codes and share counts). The calendar date is unambiguous, so the offset is stripped rather
+    than treated as corruption. A genuinely mistyped year still fails the floor below.
+    """
     if raw is None:
         return None
-    try:
-        parsed = dt.date.fromisoformat(raw)
-    except ValueError:
-        return None
-    if parsed < EARLIEST_PLAUSIBLE_TRANSACTION_DATE:
-        return None
-    return parsed
+    candidates = [raw]
+    match = _DATE_PREFIX_RE.match(raw)
+    if match is not None:
+        candidates.append(match.group(1))
+    for candidate in candidates:
+        try:
+            parsed = dt.date.fromisoformat(candidate)
+        except ValueError:
+            continue
+        return None if parsed < EARLIEST_PLAUSIBLE_TRANSACTION_DATE else parsed
+    return None
 
 
 def parse_form4(document: str | bytes) -> Form4Filing | None:

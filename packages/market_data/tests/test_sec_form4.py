@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+
 from bulls.market_data.providers.sec_form4 import (
     Form4Filing,
+    _date,
     extract_ownership_xml,
     parse_form4,
 )
@@ -169,6 +172,42 @@ def test_parse_form4_drops_mistyped_year_below_the_floor() -> None:
     assert filing.implausible_transaction_dates == 1
     # Everything else on the row is filed fact and must survive.
     assert filing.transactions[0].code == "S"
+
+
+def test_parse_form4_recovers_dates_carrying_a_timezone_offset() -> None:
+    """Some filing agents emit ``2024-01-23-05:00``. ``date.fromisoformat`` rejects it outright,
+    which silently dropped ~2,500 real transaction dates in production."""
+    xml = _OWNERSHIP_XML.replace(
+        "<transactionDate><value>2026-07-15</value></transactionDate>",
+        "<transactionDate><value>2026-07-15-05:00</value></transactionDate>",
+        1,
+    )
+    filing = parse_form4(xml)
+
+    assert filing is not None
+    assert filing.transactions[0].transaction_date == dt.date(2026, 7, 15)
+    # Recovered, so it is NOT counted as implausible.
+    assert filing.implausible_transaction_dates == 0
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-07-15", dt.date(2026, 7, 15)),
+        ("2026-07-15-05:00", dt.date(2026, 7, 15)),
+        ("2026-07-15+06:00", dt.date(2026, 7, 15)),
+        ("2026-07-15Z", dt.date(2026, 7, 15)),
+        ("2026-07-15T00:00:00-05:00", dt.date(2026, 7, 15)),
+        # A mistyped year is still corruption, offset or not — the floor must still catch it.
+        ("0022-10-12", None),
+        ("0022-10-12-05:00", None),
+        ("2026-13-45", None),
+        ("garbage", None),
+        ("", None),
+    ],
+)
+def test_date_tolerates_offsets_without_rescuing_corruption(raw, expected) -> None:
+    assert _date(raw) == expected
 
 
 def test_parse_form4_counts_no_implausible_dates_on_a_clean_filing() -> None:
