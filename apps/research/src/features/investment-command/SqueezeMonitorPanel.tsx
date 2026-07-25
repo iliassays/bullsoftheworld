@@ -4,7 +4,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  DatabaseZap,
   Gauge,
+  RefreshCw,
   ShieldAlert,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +20,7 @@ import {
 } from "../../app/api-client";
 import { isResearchPreview, researchDeployment } from "../../app/deployment";
 import {
+  Button,
   IconButton,
   SegmentedControl,
   SelectField,
@@ -130,7 +133,54 @@ export function SqueezeMonitorPanel() {
     enabled: Boolean(selected),
   });
 
-  if (monitor.isLoading || monitor.isError || !monitor.data) return null;
+  if (monitor.isLoading) {
+    return (
+      <section className="atlas-panel squeeze-monitor">
+        <header className="squeeze-monitor__header">
+          <span>
+            <strong>Squeeze monitor</strong>
+            <small>Loading the tenant-bound setup archive.</small>
+          </span>
+          <span className="squeeze-monitor__no-date">Loading archive</span>
+        </header>
+        <div className="squeeze-monitor__loading" aria-label="Loading squeeze monitor">
+          <span /><span /><span />
+        </div>
+      </section>
+    );
+  }
+
+  if (monitor.isError || !monitor.data) {
+    const detail =
+      monitor.error instanceof Error
+        ? monitor.error.message
+        : "The tenant-bound squeeze archive did not return a usable response.";
+    return (
+      <section className="atlas-panel squeeze-monitor">
+        <header className="squeeze-monitor__header">
+          <span>
+            <strong>Squeeze monitor</strong>
+            <small>
+              Deterministic setup taxonomy. Missing data is shown explicitly, never hidden.
+            </small>
+          </span>
+          <span className="squeeze-monitor__no-date">Archive unavailable</span>
+        </header>
+        <div className="squeeze-monitor__unavailable" role="alert">
+          <DatabaseZap aria-hidden="true" size={20} />
+          <span>
+            <strong>Squeeze monitor unavailable</strong>
+            <small>{detail}</small>
+          </span>
+          <Button onPress={() => monitor.refetch()} variant="quiet">
+            <RefreshCw aria-hidden="true" size={14} />
+            Retry
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   const data = monitor.data;
   const dates = data.availableDates;
   const selectedDate = data.selectedDate ?? "";

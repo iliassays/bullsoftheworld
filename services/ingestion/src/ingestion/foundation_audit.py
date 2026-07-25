@@ -200,12 +200,23 @@ async def _market_data_snapshot(
     first_bar = await session.scalar(
         select(func.min(DailyBar.date)).where(DailyBar.market == market)
     )
-    bar_count = int(
-        await session.scalar(
-            select(func.count()).select_from(DailyBar).where(DailyBar.market == market)
+    bar_count, invalid_adjustment_rows, invalid_adjustment_symbols = (
+        await session.execute(
+            select(
+                func.count(),
+                func.count().filter(
+                    DailyBar.adjusted_close.is_not(None),
+                    DailyBar.adjusted_close <= 0,
+                ),
+                func.count(func.distinct(DailyBar.code)).filter(
+                    DailyBar.adjusted_close.is_not(None),
+                    DailyBar.adjusted_close <= 0,
+                ),
+            )
+            .select_from(DailyBar)
+            .where(DailyBar.market == market)
         )
-        or 0
-    )
+    ).one()
     latest_coverage = 0
     if latest_bar is not None:
         latest_coverage = int(
@@ -296,11 +307,13 @@ async def _market_data_snapshot(
     return {
         "bars": {
             "latest_completed_session": completed_session,
-            "rows": bar_count,
+            "rows": int(bar_count or 0),
             "first_date": first_bar,
             "latest_date": latest_bar,
             "latest_ready_symbols": latest_coverage,
             "ready_coverage_ratio": _ratio(latest_coverage, ready),
+            "nonpositive_adjusted_close_rows": int(invalid_adjustment_rows or 0),
+            "nonpositive_adjusted_close_symbols": int(invalid_adjustment_symbols or 0),
         },
         "analytics": {
             "rows": int(analytics_count or 0),
@@ -610,6 +623,8 @@ def health_issues(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         issues.append({"severity": "critical", "code": "latest_bar_coverage_below_90pct"})
     if bars["latest_date"] is not None and analytics["latest_date"] != bars["latest_date"]:
         issues.append({"severity": "critical", "code": "analytics_not_aligned_to_latest_bar"})
+    if bars.get("nonpositive_adjusted_close_rows"):
+        issues.append({"severity": "warning", "code": "invalid_adjusted_prices_quarantined"})
     if any(identity.values()):
         issues.append({"severity": "critical", "code": "security_identity_drift"})
     if snapshot["onboarding"]["stale_running"]:

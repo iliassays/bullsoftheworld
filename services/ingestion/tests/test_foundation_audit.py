@@ -26,6 +26,8 @@ def _snapshot(market: str = "US") -> dict:
                 "rows": 1_000,
                 "latest_date": date,
                 "ready_coverage_ratio": 0.98,
+                "nonpositive_adjusted_close_rows": 0,
+                "nonpositive_adjusted_close_symbols": 0,
             },
             "analytics": {
                 "rows": 100,
@@ -83,6 +85,16 @@ def test_foundation_audit_separates_research_warnings_from_critical_health() -> 
     assert [(item["severity"], item["code"]) for item in issues] == [
         ("warning", "recent_gate_failures_need_disposition"),
         ("warning", "unclassified_market_cap"),
+    ]
+
+
+def test_foundation_audit_reports_quarantined_adjusted_prices() -> None:
+    snapshot = _snapshot()
+    snapshot["market_data"]["bars"]["nonpositive_adjusted_close_rows"] = 3_251
+    snapshot["market_data"]["bars"]["nonpositive_adjusted_close_symbols"] = 3
+
+    assert [(item["severity"], item["code"]) for item in health_issues(snapshot)] == [
+        ("warning", "invalid_adjusted_prices_quarantined")
     ]
 
 

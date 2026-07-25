@@ -101,6 +101,40 @@ def test_parse_filing_routes_13d() -> None:
     assert outcome.stake_row["filed_by_cik"] == 902012
 
 
+def test_parse_filing_nulls_transaction_date_after_the_filing_date() -> None:
+    """Section 16 allows two business days, so a trade cannot postdate its own filing.
+
+    Production held dates out to 2033 from exactly this class of filer typo.
+    """
+    xml = _FORM4_XML.replace("2026-07-17", "2033-12-11")
+    outcome = parse_filing(_entry("4", "0000000001-26-000010"), xml.encode())
+
+    assert outcome.parse_status == "parsed"
+    # The date is dropped; the rest of the row is filed fact and survives.
+    assert outcome.insider_rows[0]["transaction_date"] is None
+    assert outcome.insider_rows[0]["shares"] == 100
+    assert outcome.implausible_dates == 1
+
+
+def test_parse_filing_nulls_mistyped_year_below_the_floor() -> None:
+    """``0022-10-12`` is valid ISO and was accepted until the floor existed."""
+    xml = _FORM4_XML.replace("2026-07-17", "0022-10-12")
+    outcome = parse_filing(_entry("4", "0000000001-26-000011"), xml.encode())
+
+    assert outcome.parse_status == "parsed"
+    assert outcome.insider_rows[0]["transaction_date"] is None
+    assert outcome.implausible_dates == 1
+
+
+def test_parse_filing_keeps_a_transaction_dated_one_day_after_filing() -> None:
+    """Timezone skew between a filer's local date and EDGAR's index date is tolerated."""
+    xml = _FORM4_XML.replace("2026-07-17", "2026-07-18")
+    outcome = parse_filing(_entry("4", "0000000001-26-000012"), xml.encode())
+
+    assert outcome.insider_rows[0]["transaction_date"] == dt.date(2026, 7, 18)
+    assert outcome.implausible_dates == 0
+
+
 def test_parse_filing_failure_is_soft() -> None:
     outcome = parse_filing(_entry("4", "0000000001-26-000009"), b"garbage")
     assert outcome.parse_status == "failed"
@@ -135,6 +169,4 @@ def test_archive_replay_is_byte_identical(tmp_path) -> None:
 def test_object_keys_are_stable() -> None:
     # Keys are part of the archive contract; changing them breaks historical replay.
     assert index_object_key(dt.date(2026, 7, 17)) == "edgar/daily-index/2026/07/17/master.idx"
-    assert (
-        filing_object_key("0000902012-26-000011") == "edgar/filings/0000902012-26-000011.txt"
-    )
+    assert filing_object_key("0000902012-26-000011") == "edgar/filings/0000902012-26-000011.txt"

@@ -27,6 +27,7 @@ from typing import Any
 
 from sqlalchemy import desc, func, select
 
+from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
 from bulls.analytics.factor_sleeve import (
     FundamentalObservation,
@@ -56,7 +57,7 @@ _CONCEPT_PRIORITY = {
 
 async def _load(
     max_symbols: int, start: dt.date
-) -> tuple[dict[str, list[StrategyBar]], list[FundamentalObservation]]:
+) -> tuple[dict[str, list[StrategyBar]], list[FundamentalObservation], int]:
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as session:
         # Select the research universe from liquidity observable before the test begins. Current
@@ -85,7 +86,7 @@ async def _load(
             liquidity = liquidity.limit(max_symbols)
         codes = [code for code, _ in (await session.execute(liquidity)).all()]
         if not codes:
-            return {}, []
+            return {}, [], 0
         bars_rows = list(
             await session.execute(
                 select(
@@ -125,10 +126,14 @@ async def _load(
         )
 
     bars: dict[str, list[StrategyBar]] = {}
+    quarantined_adjustments = 0
     for code, date, open_, high, low, close, volume, adjusted_close in bars_rows:
         if min(open_ or 0, high or 0, low or 0, close or 0) <= 0:
             continue
-        adjustment = adjusted_close / close if adjusted_close is not None and close > 0 else 1.0
+        adjustment = adjustment_factor(float(close), adjusted_close)
+        if adjustment is None:
+            quarantined_adjustments += 1
+            continue
         bars.setdefault(code, []).append(
             StrategyBar(
                 date=date,
@@ -157,7 +162,7 @@ async def _load(
         )
         for row in fact_rows
     ]
-    return bars, facts
+    return bars, facts, quarantined_adjustments
 
 
 async def _load_benchmark(start: dt.date) -> BenchmarkSeries | None:
@@ -234,7 +239,7 @@ def _score(result, label: str, trials: int) -> dict[str, Any]:
 
 
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
-    bars, facts = await _load(args.max_symbols, args.start)
+    bars, facts, quarantined_adjustments = await _load(args.max_symbols, args.start)
     if not bars:
         return {"error": "no point-in-time universe existed before the requested start date"}
     sessions = sorted(
@@ -297,6 +302,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 
     report = {
         "universe_symbols": len(bars),
+        "quarantined_invalid_adjustments": quarantined_adjustments,
         "universe_selection": "pre-start trailing dollar volume; includes inactive historical bars",
         "universe_truncated": args.max_symbols > 0,
         "rejected_by_point_in_time_spread_gate": diagnostics["rejected_by_spread"],

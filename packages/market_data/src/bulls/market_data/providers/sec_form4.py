@@ -8,6 +8,14 @@ mistake the parsed share counts for the whole filing.
 
 Accepts either the bare ownershipDocument XML or the full SGML dissemination ``.txt``
 (the byte-exact artifact the daily-index poller archives).
+
+Filers hand-type transaction dates, so a minority are typos that are still valid ISO dates
+(``0022-10-12`` for ``2022-10-12``). ``dt.date.fromisoformat`` accepts those happily, which is
+how 32 rows with years between 0022 and 2033 reached production. Dates below
+``EARLIEST_PLAUSIBLE_TRANSACTION_DATE`` are therefore dropped to ``None`` rather than repaired:
+the digits a filer *meant* are a guess, and a null date is an honest "we do not know when".
+The upper bound needs the filing date, which lives in the daily index, so the poller enforces
+it (see ``ingestion.edgar_events.parse_filing``).
 """
 
 from __future__ import annotations
@@ -20,6 +28,11 @@ from pydantic import BaseModel
 
 _XML_RE = re.compile(rb"<\?xml[^>]*\?>\s*<ownershipDocument>.*?</ownershipDocument>", re.DOTALL)
 _BARE_RE = re.compile(rb"<ownershipDocument>.*?</ownershipDocument>", re.DOTALL)
+
+# Section 16 went electronic in 2003 and amendments may restate older trades, so this floor is
+# set far below any real filing: it exists only to catch mistyped year digits, never to trim
+# genuine history.
+EARLIEST_PLAUSIBLE_TRANSACTION_DATE = dt.date(1990, 1, 1)
 
 
 class Form4Owner(BaseModel):
@@ -51,6 +64,9 @@ class Form4Filing(BaseModel):
     owners: list[Form4Owner]
     transactions: list[Form4Transaction]
     has_derivative_transactions: bool = False
+    # Rows that carried a transaction date we could not use (unparseable, or below the floor).
+    # Their ``transaction_date`` is None; the count is kept so the rate stays observable.
+    implausible_transaction_dates: int = 0
 
 
 def extract_ownership_xml(raw: bytes) -> str | None:
@@ -91,9 +107,12 @@ def _date(raw: str | None) -> dt.date | None:
     if raw is None:
         return None
     try:
-        return dt.date.fromisoformat(raw)
+        parsed = dt.date.fromisoformat(raw)
     except ValueError:
         return None
+    if parsed < EARLIEST_PLAUSIBLE_TRANSACTION_DATE:
+        return None
+    return parsed
 
 
 def parse_form4(document: str | bytes) -> Form4Filing | None:
@@ -132,12 +151,17 @@ def parse_form4(document: str | bytes) -> Form4Filing | None:
         )
 
     transactions = []
+    implausible_dates = 0
     for txn in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
         amounts = txn.find("transactionAmounts")
+        raw_date = _value(txn, "transactionDate")
+        transaction_date = _date(raw_date)
+        if raw_date is not None and transaction_date is None:
+            implausible_dates += 1
         transactions.append(
             Form4Transaction(
                 security_title=_value(txn, "securityTitle"),
-                transaction_date=_date(_value(txn, "transactionDate")),
+                transaction_date=transaction_date,
                 code=_text(txn, "transactionCoding/transactionCode"),
                 shares=_number(_value(amounts, "transactionShares")),
                 price_per_share=_number(_value(amounts, "transactionPricePerShare")),
@@ -145,9 +169,7 @@ def parse_form4(document: str | bytes) -> Form4Filing | None:
                 shares_owned_after=_number(
                     _value(txn.find("postTransactionAmounts"), "sharesOwnedFollowingTransaction")
                 ),
-                direct_or_indirect=_value(
-                    txn.find("ownershipNature"), "directOrIndirectOwnership"
-                ),
+                direct_or_indirect=_value(txn.find("ownershipNature"), "directOrIndirectOwnership"),
             )
         )
 
@@ -160,4 +182,5 @@ def parse_form4(document: str | bytes) -> Form4Filing | None:
         owners=owners,
         transactions=transactions,
         has_derivative_transactions=root.find("derivativeTable/derivativeTransaction") is not None,
+        implausible_transaction_dates=implausible_dates,
     )

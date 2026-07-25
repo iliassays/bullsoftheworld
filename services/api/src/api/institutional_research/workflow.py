@@ -30,6 +30,7 @@ from api.institutional_research.lineage import (
 )
 from api.institutional_research.schemas import BacktestRequest, ResearchRunOut
 from api.institutional_research.universe import apply_research_product_scope
+from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
@@ -686,11 +687,11 @@ async def _backtest_universe(
     )
     grouped: dict[str, list[StrategyBar]] = {code: [] for code in symbols}
     for bar in bars:
-        adjustment = (
-            float(bar.adjusted_close) / float(bar.close)
-            if bar.adjusted_close is not None and bar.close > 0
-            else 1.0
-        )
+        if min(bar.open or 0, bar.high or 0, bar.low or 0, bar.close or 0) <= 0:
+            continue
+        adjustment = adjustment_factor(float(bar.close), bar.adjusted_close)
+        if adjustment is None:
+            continue
         grouped[bar.code].append(
             StrategyBar(
                 date=bar.date,

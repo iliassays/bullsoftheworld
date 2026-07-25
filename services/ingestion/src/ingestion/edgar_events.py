@@ -58,6 +58,13 @@ TARGET_FORMS = frozenset(
 
 _MAX_FILING_BYTES = 50 * 1024 * 1024
 
+# A Section 16 transaction is reportable within two business days, so it cannot happen after the
+# filing that reports it. The tolerance absorbs timezone skew between the filer's local
+# transaction date and EDGAR's index date; anything beyond it is a filer typo (production held
+# transaction dates out to 2033). Such a date is nulled, never repaired — the intended digits
+# are unknowable, and the rest of the row (owner, code, shares, price) is still true.
+_FILED_DATE_TOLERANCE = dt.timedelta(days=1)
+
 
 def _user_agent() -> str:
     settings = get_settings()
@@ -83,6 +90,20 @@ class ParsedFiling:
     # point-in-time anchor every filings signal is stamped with (institutional study 13.1.1),
     # so it must be captured for Form 4 exactly as it is for 13D/G.
     accepted_at: dt.datetime | None = None
+    # Transaction dates nulled as unusable — the parser's floor plus dates the filing date
+    # disproves. Surfaced so the rate is observable instead of silently absorbed.
+    implausible_dates: int = 0
+
+
+def _plausible_transaction_date(
+    transaction_date: dt.date | None, filed_date: dt.date | None
+) -> dt.date | None:
+    """Drop a transaction date the filing date proves impossible. The floor is the parser's."""
+    if transaction_date is None or filed_date is None:
+        return transaction_date
+    if transaction_date > filed_date + _FILED_DATE_TOLERANCE:
+        return None
+    return transaction_date
 
 
 def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
@@ -93,8 +114,16 @@ def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
         if filing is None:
             return ParsedFiling(parse_status="failed", accepted_at=accepted_at)
         rows = []
+        # Dates the parser already rejected against its floor, plus the ones the filing date
+        # disproves below — so the counter means "unusable transaction dates", full stop.
+        implausible = filing.implausible_transaction_dates
         for owner in filing.owners:
             for row_index, txn in enumerate(filing.transactions):
+                transaction_date = _plausible_transaction_date(
+                    txn.transaction_date, entry.date_filed
+                )
+                if transaction_date is None and txn.transaction_date is not None:
+                    implausible += 1
                 rows.append(
                     {
                         "accession_number": entry.accession_number,
@@ -110,7 +139,7 @@ def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
                         "officer_title": owner.officer_title,
                         "is_10b5_1_plan": filing.is_10b5_1_plan,
                         "security_title": txn.security_title,
-                        "transaction_date": txn.transaction_date,
+                        "transaction_date": transaction_date,
                         "code": txn.code,
                         "shares": txn.shares,
                         "price_per_share": txn.price_per_share,
@@ -120,7 +149,12 @@ def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
                         "has_derivative_transactions": filing.has_derivative_transactions,
                     }
                 )
-        return ParsedFiling(parse_status="parsed", insider_rows=rows, accepted_at=accepted_at)
+        return ParsedFiling(
+            parse_status="parsed",
+            insider_rows=rows,
+            accepted_at=accepted_at,
+            implausible_dates=implausible,
+        )
 
     stake = parse_13dg(raw)
     if stake is None:
@@ -142,9 +176,7 @@ def parse_filing(entry: DailyIndexEntry, raw: bytes) -> ParsedFiling:
     )
 
 
-def plan_new_entries(
-    entries: list[DailyIndexEntry], existing: set[str]
-) -> list[DailyIndexEntry]:
+def plan_new_entries(entries: list[DailyIndexEntry], existing: set[str]) -> list[DailyIndexEntry]:
     """Keep target-form entries whose accession is new. Pure function.
 
     The daily index lists one row per filer CIK, so a single Form 4 (issuer +
@@ -185,7 +217,14 @@ async def collect_day(
 ) -> dict[str, int]:
     """Capture one day's target filings: archive, parse, persist. Idempotent."""
     client = client or SecDailyIndexClient(user_agent=_user_agent())
-    counts = {"index_entries": 0, "captured": 0, "parsed": 0, "failed": 0, "skipped": 0}
+    counts = {
+        "index_entries": 0,
+        "captured": 0,
+        "parsed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "implausible_dates": 0,
+    }
 
     raw_index, entries = await client.fetch_day(day, forms=set(TARGET_FORMS))
     if raw_index is None:
@@ -218,6 +257,7 @@ async def collect_day(
             outcome = parse_filing(entry, raw)
             counts["captured"] += 1
             counts["parsed" if outcome.parse_status == "parsed" else "failed"] += 1
+            counts["implausible_dates"] += outcome.implausible_dates
 
             await session.execute(
                 pg_insert(EdgarFilingEvent)

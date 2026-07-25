@@ -152,3 +152,28 @@ def test_parse_form4_without_10b51_checkbox_defaults_false() -> None:
     assert filing is not None
     # Pre-2023 documents have no checkbox; absence means "not marked", never "unknown crash".
     assert filing.is_10b5_1_plan is False
+
+
+def test_parse_form4_drops_mistyped_year_below_the_floor() -> None:
+    """A dropped digit is still valid ISO-8601, which is how year 0022 reached production."""
+    xml = _OWNERSHIP_XML.replace(
+        "<transactionDate><value>2026-07-15</value></transactionDate>",
+        "<transactionDate><value>0022-07-15</value></transactionDate>",
+        1,
+    )
+    filing = parse_form4(xml)
+
+    assert filing is not None
+    # Nulled rather than corrected to 2022 — the intended digits are a guess.
+    assert filing.transactions[0].transaction_date is None
+    assert filing.implausible_transaction_dates == 1
+    # Everything else on the row is filed fact and must survive.
+    assert filing.transactions[0].code == "S"
+
+
+def test_parse_form4_counts_no_implausible_dates_on_a_clean_filing() -> None:
+    filing = parse_form4(_OWNERSHIP_XML)
+
+    assert filing is not None
+    assert filing.implausible_transaction_dates == 0
+    assert filing.transactions[0].transaction_date == dt.date(2026, 7, 15)

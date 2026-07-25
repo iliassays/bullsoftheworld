@@ -41,6 +41,7 @@ from typing import Any
 
 from sqlalchemy import distinct, select
 
+from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.cost_observatory import estimate_spread
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
 from bulls.analytics.factor_sleeve import (
@@ -489,10 +490,14 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     codes = sorted({c.symbol for c in candidates})
     bar_rows, fact_rows = await _load_prices(codes, args.start)
     bars: dict[str, list[StrategyBar]] = defaultdict(list)
+    quarantined_adjustments = 0
     for code, d, o, h, low, cl, v, adjusted_close in bar_rows:
         if None in (o, h, low, cl) or min(o, h, low, cl) <= 0:
             continue
-        adjustment = adjusted_close / cl if adjusted_close is not None and cl > 0 else 1.0
+        adjustment = adjustment_factor(float(cl), adjusted_close)
+        if adjustment is None:
+            quarantined_adjustments += 1
+            continue
         bars[code].append(
             StrategyBar(
                 date=d,
@@ -503,6 +508,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
                 volume=int(v or 0),
             )
         )
+    diag = {**diag, "quarantined_invalid_adjustments": quarantined_adjustments}
     facts = [
         FundamentalObservation(
             code=row.code,

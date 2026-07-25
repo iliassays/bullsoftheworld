@@ -26,6 +26,7 @@ from collections import defaultdict
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.research_strategy import RISK_POLICIES
 from bulls.analytics.short_interest import (
     ShortInterestObservation,
@@ -126,12 +127,10 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                 )
             ).all()
             for row in bar_rows:
-                adjustment = (
-                    float(row.adjusted_close) / float(row.close)
-                    if row.adjusted_close is not None and row.close and row.close > 0
-                    else 1.0
-                )
                 if row.open <= 0 or row.high <= 0 or row.low <= 0 or row.close <= 0:
+                    continue
+                adjustment = adjustment_factor(float(row.close), row.adjusted_close)
+                if adjustment is None:
                     continue
                 bars_by_code[row.code].append(
                     SqueezeBar(

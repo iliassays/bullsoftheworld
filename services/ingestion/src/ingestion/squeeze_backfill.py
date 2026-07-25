@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.engine import compute
 from bulls.analytics.research_strategy import RISK_POLICIES
 from bulls.analytics.squeeze_monitor import (
@@ -89,11 +90,9 @@ def _strategy_bar(row) -> SqueezeBar | None:
 
     if min(row.open or 0, row.high or 0, row.low or 0, row.close or 0) <= 0:
         return None
-    adjustment = (
-        float(row.adjusted_close) / float(row.close)
-        if row.adjusted_close is not None and row.close and row.close > 0
-        else 1.0
-    )
+    adjustment = adjustment_factor(float(row.close), row.adjusted_close)
+    if adjustment is None:
+        return None
     return SqueezeBar(
         date=row.date,
         open=float(row.open) * adjustment,

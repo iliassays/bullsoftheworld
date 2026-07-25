@@ -77,6 +77,13 @@ class InsiderTransaction(Base):
             "row_index",
             name="uq_insider_transactions_row",
         ),
+        # Filers hand-type transaction dates and some typos are still valid ISO dates, so the
+        # floor is enforced in the database as well as in the parser. NULL stays legal: it is
+        # how an unknowable date is recorded once the typo is detected.
+        CheckConstraint(
+            "transaction_date IS NULL OR transaction_date >= DATE '1990-01-01'",
+            name="ck_insider_transactions_transaction_date_floor",
+        ),
         Index("ix_insider_transactions_issuer_date", "issuer_cik", "transaction_date"),
         Index("ix_insider_transactions_code_date", "code", "transaction_date"),
     )

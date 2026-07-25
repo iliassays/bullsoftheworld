@@ -1330,6 +1330,51 @@
   font-size: 11px;
 }
 
+.squeeze-monitor__loading {
+  background: var(--border);
+  display: grid;
+  gap: 1px;
+}
+
+.squeeze-monitor__loading span {
+  animation: research-shimmer 1.4s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    var(--surface-subtle) 50%,
+    var(--surface) 100%
+  );
+  background-size: 220% 100%;
+  display: block;
+  height: 58px;
+}
+
+.squeeze-monitor__unavailable {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  min-height: 140px;
+  padding: 24px;
+}
+
+.squeeze-monitor__unavailable > span {
+  display: grid;
+  gap: 4px;
+  max-width: 560px;
+}
+
+.squeeze-monitor__unavailable strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.squeeze-monitor__unavailable small {
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .squeeze-monitor__families {
   display: flex;
   flex-wrap: wrap;
