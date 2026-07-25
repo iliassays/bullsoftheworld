@@ -433,10 +433,17 @@ export interface DailyShortlistRow {
   // English renderings of the same facts — the fallback when a `kind` has no local string yet.
   reasons: string[];
   unknowns: string[];
+  return_since_pct?: number | null;
+  max_went_pct?: number | null;
+  sessions_since: number;
+  outcome_as_of?: string | null;
 }
 export interface DailyShortlist {
   market: string;
   as_of: string;
+  available_dates: string[];
+  latest_date?: string | null;
+  evidence_mode: "forward" | "reconstructed" | "live";
   quote_as_of?: string | null;
   is_delayed: boolean;
   size: number;
@@ -450,6 +457,7 @@ export interface DailyShortlist {
   methodology_version: string;
   base_rates: Record<string, unknown>;
   notes: string[];
+  source: "bulls_daily_shortlist_eod";
 }
 export interface ScreensResponse {
   as_of: string | null; // EOD analytics date — screen rankings are as-of this close
@@ -1121,7 +1129,11 @@ export const api = {
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketConfig: () => request<MarketConfig>("/market/config"),
   marketStatus: () => request<MarketStatus>("/market/status"),
-  dailyShortlist: (size = 5) => request<DailyShortlist>(`/shortlist/daily?size=${size}`),
+  dailyShortlist: (size = 5, asOf?: string) => {
+    const params = new URLSearchParams({ size: String(size) });
+    if (asOf) params.set("as_of", asOf);
+    return request<DailyShortlist>(`/shortlist/daily?${params.toString()}`);
+  },
   scannerRadar: (tab: string, watched: boolean, limit?: number, size?: string) => {
     const params = new URLSearchParams({ tab });
     if (watched) params.set("watched", "true");

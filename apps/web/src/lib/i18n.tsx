@@ -77,10 +77,35 @@ const STRINGS: Record<string, Entry> = {
     en: "Research lists are unavailable. Try again shortly.",
     bn: "গবেষণার তালিকা এখন পাওয়া যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।",
   },
-  "shortlist.title": { en: "Today's five to look at", bn: "আজ দেখার মতো পাঁচটি" },
+  "shortlist.title": { en: "Five names to research", bn: "গবেষণার জন্য পাঁচটি শেয়ার" },
   "shortlist.subtitle": {
-    en: "Where to start your research today — not predictions, and not a buy list.",
-    bn: "আজ গবেষণা শুরু করার জায়গা — কোনো ভবিষ্যদ্বাণী নয়, কেনার তালিকাও নয়।",
+    en: "A completed-session attention list — not predictions, and not a buy list.",
+    bn: "সম্পূর্ণ সেশনের মনোযোগ তালিকা — ভবিষ্যদ্বাণী বা কেনার তালিকা নয়।",
+  },
+  "shortlist.source": {
+    en: "Source: deterministic Bulls of Dhaka EOD market scan. Separate from Atlas; no AI selection.",
+    bn: "উৎস: Bulls of Dhaka-এর নিয়মভিত্তিক দিনশেষের বাজার স্ক্যান। Atlas গবেষণা থেকে নয়; এআই দিয়ে বাছাই নয়।",
+  },
+  "shortlist.previous": { en: "Previous archived session", bn: "আগের আর্কাইভ সেশন" },
+  "shortlist.next": { en: "Next archived session", bn: "পরের আর্কাইভ সেশন" },
+  "shortlist.latest": { en: "latest", bn: "সর্বশেষ" },
+  "shortlist.reconstructed": {
+    en: "Reconstructed from stored bars; it was not recorded live on that date.",
+    bn: "সংরক্ষিত বার থেকে পরে পুনর্গঠন করা; ওই দিনে সরাসরি রেকর্ড করা হয়নি।",
+  },
+  "shortlist.latestReturn": {
+    en: "Latest close return",
+    bn: "সর্বশেষ ক্লোজের পরিবর্তন",
+  },
+  "shortlist.peakMove": {
+    en: "Peak price move",
+    bn: "সর্বোচ্চ দামের পরিবর্তন",
+  },
+  "shortlist.sessions": { en: "sessions", bn: "সেশন" },
+  "shortlist.noOutcome": { en: "No later close yet", bn: "পরের ক্লোজ এখনও নেই" },
+  "shortlist.outcomeCaveat": {
+    en: "Outcome uses raw DSE prices after the listed session; corporate actions can distort it. Highest traded is an excursion, not a captured return.",
+    bn: "ফলাফল তালিকাভুক্ত সেশনের পরের কাঁচা ডিএসই দাম থেকে; কর্পোরেট অ্যাকশনে এটি বিকৃত হতে পারে। সর্বোচ্চ দাম অর্জিত রিটার্ন নয়।",
   },
   "shortlist.whyThese": { en: "Why these five", bn: "কেন এই পাঁচটি" },
   "shortlist.eligible": {

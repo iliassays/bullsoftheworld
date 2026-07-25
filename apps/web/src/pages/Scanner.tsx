@@ -14,6 +14,7 @@ import { trackProductEvent } from "../lib/analytics";
 import { Watchlist } from "./Watchlist";
 import { useUniverse } from "../lib/universe";
 import { ALL_UNIVERSE } from "../lib/universe-policy";
+import { useTenantConfig } from "../lib/tenant";
 
 type ResearchTab = ScannerResponse["tabs"][number];
 type Picked = { board: Screen; item: ScreenItem };
@@ -610,6 +611,7 @@ export function Scanner() {
   const { t, lang } = useLang();
   const { user } = useAuth();
   const { tier } = useUniverse();
+  const { config } = useTenantConfig();
   const [tab, setTab] = useState("today");
   const [researchTabs, setResearchTabs] = useState<ResearchTab[]>([
     { key: "today", title: "Today", description: "Latest research conditions." },
@@ -720,7 +722,7 @@ export function Scanner() {
               nothing qualifies (Scheme-3 is blank on 78% of sessions), and the whole point of the
               shortlist is that the researcher always has somewhere to start. Whole-market only —
               a watchlist-filtered slate would not be the ranked market universe. */}
-          {!watched && <DailyShortlistPanel />}
+          {!watched && config.market === "DSE" && <DailyShortlistPanel />}
           {user && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted">{t("scanner.scope")}:</span>

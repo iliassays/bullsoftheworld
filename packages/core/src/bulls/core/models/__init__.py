@@ -17,6 +17,7 @@ from bulls.core.models.company import (
     ShareholdingSnapshot,
 )
 from bulls.core.models.company_logo import CompanyLogo
+from bulls.core.models.daily_shortlist import DailyShortlistState
 from bulls.core.models.data_foundation import (
     CompanyDataObservation,
     DailyBarObservation,
@@ -126,6 +127,7 @@ __all__ = [
     "CompanyProfile",
     "DailyBar",
     "DailyBarObservation",
+    "DailyShortlistState",
     "DataSourceSnapshot",
     "DividendRecord",
     "EdgarFilingEvent",

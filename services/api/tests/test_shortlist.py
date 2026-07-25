@@ -15,9 +15,13 @@ from api.routers.shortlist import (
     ShortlistFactOut,
     ShortlistResponse,
     ShortlistRow,
+    _fact_outputs,
+    _outcome,
     _range_position_pct,
+    _select_archive_date,
 )
 from bulls.analytics.daily_shortlist import BASE_RATES, METHODOLOGY_VERSION
+from bulls.core.models import DailyBar
 
 
 class _Analytics:
@@ -155,3 +159,57 @@ def test_cautions_are_structured_too():
 
     assert row.cautions[0].kind == "extreme_pe"
     assert row.cautions[0].value == 820.0
+
+
+def _bar(day: int, *, close: float, high: float) -> DailyBar:
+    return DailyBar(
+        market="DSE",
+        code="GP",
+        date=dt.date(2026, 7, day),
+        open=close,
+        high=high,
+        low=close,
+        close=close,
+        volume=10_000,
+        adjusted_close=None,
+        source="test",
+    )
+
+
+def test_outcome_uses_later_bars_and_reports_the_latest_observation():
+    result = _outcome(
+        100.0,
+        [
+            _bar(25, close=104.0, high=107.0),
+            _bar(24, close=102.0, high=105.0),
+        ],
+    )
+
+    return_since, highest_since, sessions, outcome_as_of = result
+    assert return_since == pytest.approx(4.0)
+    assert highest_since == pytest.approx(7.0)
+    assert sessions == 2
+    assert outcome_as_of == dt.date(2026, 7, 25)
+
+
+def test_outcome_does_not_manufacture_data_when_no_later_session_exists():
+    assert _outcome(100.0, []) == (None, None, 0, None)
+
+
+def test_archive_date_never_moves_forward_past_the_request():
+    dates = [
+        dt.date(2026, 7, 25),
+        dt.date(2026, 7, 23),
+        dt.date(2026, 7, 22),
+    ]
+
+    assert _select_archive_date(dates, None) == dt.date(2026, 7, 25)
+    assert _select_archive_date(dates, dt.date(2026, 7, 24)) == dt.date(2026, 7, 23)
+    assert _select_archive_date(dates, dt.date(2026, 7, 1)) is None
+
+
+def test_archived_structured_facts_regenerate_the_matching_fallback():
+    facts, rendered = _fact_outputs([{"kind": "move", "value": 2.5}])
+
+    assert facts == [ShortlistFactOut(kind="move", value=2.5)]
+    assert rendered == ["rose 2.50% today"]

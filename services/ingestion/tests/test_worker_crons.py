@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import datetime as dt
 
+import pytest
+
+import ingestion.worker as worker_module
 from ingestion.research_worker import WorkerSettings as ResearchWorkerSettings
 from ingestion.sec_worker import WorkerSettings as SecWorkerSettings
 from ingestion.us_worker import WorkerSettings as UsWorkerSettings
@@ -66,6 +69,38 @@ def test_weekly_company_refresh_has_a_realistic_bounded_timeout() -> None:
 
     assert jobs["cron:refresh_company"].timeout_s == COMPANY_REFRESH_TIMEOUT_SECONDS
     assert COMPANY_REFRESH_TIMEOUT_SECONDS == 30 * 60
+
+
+def test_daily_shortlist_archive_runs_after_analytics_and_recovers_on_startup() -> None:
+    jobs = {job.name: job for job in WorkerSettings.cron_jobs}
+    shortlist = jobs["cron:run_daily_shortlist_scan_task"]
+    analytics = jobs["cron:refresh_analytics"]
+
+    assert shortlist.hour == analytics.hour == 13
+    assert shortlist.minute > analytics.minute
+    assert shortlist.run_at_startup
+
+
+@pytest.mark.asyncio
+async def test_daily_shortlist_archive_supplies_the_current_market_date_guard(monkeypatch) -> None:
+    market_now = dt.datetime(2026, 7, 9, 19, 0, tzinfo=dt.UTC)
+    received: dict[str, dt.date] = {}
+
+    monkeypatch.setattr(worker_module, "_after_eod_window", lambda: True)
+    monkeypatch.setattr(worker_module, "to_market_tz", lambda _: market_now)
+    monkeypatch.setattr(worker_module, "is_trading_day", lambda _: True)
+
+    async def run_scan(market: str, *, expected_as_of: dt.date) -> dict[str, int]:
+        assert market == "DSE"
+        received["expected_as_of"] = expected_as_of
+        return {"archived": 0}
+
+    monkeypatch.setattr(worker_module, "run_daily_shortlist_scan", run_scan)
+
+    result = await worker_module.run_daily_shortlist_scan_task({})
+
+    assert received["expected_as_of"] == market_now.date()
+    assert result == "daily shortlist archived=0"
 
 
 def test_market_date_utc_guard_handles_dhaka_rollover() -> None:

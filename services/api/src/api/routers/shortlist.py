@@ -12,23 +12,39 @@ pool. See ``docs/research/dse-daily-slate-study-2026-07-25.md``.
 
 Freshness is explicit per the platform rule: the slate carries the analytics session date, the
 quote timestamp and ``is_delayed``, so the UI can never present a stale slate as live.
+
+Past slates are served from the ``daily_shortlist_states`` archive so "what did you show me on
+Tuesday" is answerable and outcomes can be measured; the live ranking is the fallback for a
+market whose archive has not been scanned yet. Outcome figures are measured from the close the
+row was RANKED on to the latest completed close, with the peak taken strictly after the ranking
+session — so a slate can never take credit for the move that got it noticed.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from collections import defaultdict
 
-from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, select
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature
 from bulls.analytics.daily_shortlist import (
+    BASE_RATES,
     METHODOLOGY_VERSION,
     ShortlistCandidate,
+    ShortlistFact,
     build_daily_shortlist,
+    render_fact_en,
 )
-from bulls.core.models import CompanyProfile, QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.core.models import (
+    CompanyProfile,
+    DailyBar,
+    DailyShortlistState,
+    Symbol,
+    TickerAnalytics,
+)
 
 router = APIRouter(tags=["shortlist"])
 
@@ -60,11 +76,23 @@ class ShortlistRow(BaseModel):
     cautions: list[ShortlistFactOut]
     reasons: list[str]
     unknowns: list[str]
+    # Outcome since the row was ranked. None on the newest slate — nothing has happened yet.
+    return_since_pct: float | None = None
+    # Highest the price traded AFTER the ranking session. An excursion, not a captured return.
+    max_went_pct: float | None = None
+    sessions_since: int = 0
+    outcome_as_of: dt.date | None = None
 
 
 class ShortlistResponse(BaseModel):
     market: str
     as_of: dt.date
+    # Archived sessions the reader can step through, newest first. Empty until the scan runs.
+    available_dates: list[dt.date] = Field(default_factory=list)
+    latest_date: dt.date | None = None
+    # "forward" = recorded on the session itself; "reconstructed" = replayed from stored bars;
+    # "live" = computed now because no archive row exists for this market yet.
+    evidence_mode: str = "live"
     quote_as_of: dt.datetime | None = None
     is_delayed: bool = True
     size: int
@@ -75,8 +103,9 @@ class ShortlistResponse(BaseModel):
     # Always false. The slate ranks attention, never expected return.
     is_return_claim: bool = False
     methodology_version: str = METHODOLOGY_VERSION
-    base_rates: dict
+    base_rates: dict = Field(default_factory=lambda: dict(BASE_RATES))
     notes: list[str]
+    source: str = "bulls_daily_shortlist_eod"
 
 
 def _range_position_pct(row: TickerAnalytics) -> float | None:
@@ -89,14 +118,182 @@ def _range_position_pct(row: TickerAnalytics) -> float | None:
     return (row.last_close - row.week52_low) / span * 100.0
 
 
+def _fact_outputs(values: list | None) -> tuple[list[ShortlistFactOut], list[str]]:
+    """Validate archived JSON and produce the English fallback from the same structured facts."""
+    outputs: list[ShortlistFactOut] = []
+    rendered: list[str] = []
+    for value in values or []:
+        fact = ShortlistFactOut.model_validate(value)
+        outputs.append(fact)
+        rendered.append(render_fact_en(ShortlistFact(kind=fact.kind, value=fact.value)))
+    return outputs, rendered
+
+
+def _outcome(
+    reference_close: float, bars: list[DailyBar]
+) -> tuple[float | None, float | None, int, dt.date | None]:
+    """Measure only bars after discovery; the discovery-session move can never become performance."""
+    if reference_close <= 0 or not bars:
+        return None, None, 0, None
+    ordered = sorted(bars, key=lambda bar: bar.date)
+    latest = ordered[-1]
+    return_since = (latest.close / reference_close - 1.0) * 100.0
+    highest = max(bar.high for bar in ordered)
+    max_went = (highest / reference_close - 1.0) * 100.0
+    return return_since, max_went, len(ordered), latest.date
+
+
+def _select_archive_date(
+    available_dates: list[dt.date], requested_date: dt.date | None
+) -> dt.date | None:
+    """Resolve to the newest archived session not later than the requested calendar date."""
+    return next(
+        (
+            value
+            for value in available_dates
+            if requested_date is None or value <= requested_date
+        ),
+        None,
+    )
+
+
+async def _archived_response(
+    session: DbSession,
+    *,
+    market: str,
+    requested_date: dt.date | None,
+    size: int,
+) -> ShortlistResponse | None:
+    available_dates = list(
+        await session.scalars(
+            select(DailyShortlistState.as_of_date)
+            .where(DailyShortlistState.market == market)
+            .distinct()
+            .order_by(DailyShortlistState.as_of_date.desc())
+            .limit(260)
+        )
+    )
+    if not available_dates:
+        return None
+
+    selected_date = _select_archive_date(available_dates, requested_date)
+    if selected_date is None:
+        raise HTTPException(status_code=404, detail="No archived shortlist on or before this date")
+    archived = list(
+        await session.scalars(
+            select(DailyShortlistState)
+            .where(
+                DailyShortlistState.market == market,
+                DailyShortlistState.as_of_date == selected_date,
+            )
+            .order_by(DailyShortlistState.rank)
+            .limit(size)
+        )
+    )
+    if not archived:
+        raise HTTPException(status_code=404, detail="Archived shortlist is empty")
+
+    codes = [row.code for row in archived]
+    names = {
+        code: (name_en, name_bn)
+        for code, name_en, name_bn in (
+            await session.execute(
+                select(Symbol.code, Symbol.name_en, Symbol.name_bn).where(
+                    Symbol.market == market,
+                    Symbol.code.in_(codes),
+                )
+            )
+        )
+    }
+    outcome_bars = list(
+        await session.scalars(
+            select(DailyBar)
+            .where(
+                DailyBar.market == market,
+                DailyBar.code.in_(codes),
+                DailyBar.date > selected_date,
+            )
+            .order_by(DailyBar.code, DailyBar.date)
+        )
+    )
+    bars_by_code: dict[str, list[DailyBar]] = defaultdict(list)
+    for bar in outcome_bars:
+        bars_by_code[bar.code].append(bar)
+
+    response_rows: list[ShortlistRow] = []
+    for row in archived:
+        facts, reasons = _fact_outputs(row.facts)
+        cautions, unknowns = _fact_outputs(row.cautions)
+        return_since, max_went, sessions_since, outcome_as_of = _outcome(
+            row.close, bars_by_code.get(row.code, [])
+        )
+        name_en, name_bn = names.get(row.code, (None, None))
+        response_rows.append(
+            ShortlistRow(
+                code=row.code,
+                name_en=name_en,
+                name_bn=name_bn,
+                rank=row.rank,
+                attention_score=row.attention_score,
+                close=row.close,
+                change_pct=row.change_pct,
+                sector=row.sector,
+                pe=row.pe,
+                facts=facts,
+                cautions=cautions,
+                reasons=reasons,
+                unknowns=unknowns,
+                return_since_pct=return_since,
+                max_went_pct=max_went,
+                sessions_since=sessions_since,
+                outcome_as_of=outcome_as_of,
+            )
+        )
+
+    first = archived[0]
+    return ShortlistResponse(
+        market=market,
+        as_of=selected_date,
+        available_dates=available_dates,
+        latest_date=available_dates[0],
+        evidence_mode=first.evidence_mode,
+        quote_as_of=None,
+        is_delayed=True,
+        size=first.slate_size,
+        rows=response_rows,
+        eligible_names=first.eligible_names,
+        excluded_illiquid=first.excluded_illiquid,
+        excluded_short_history=first.excluded_short_history,
+        methodology_version=first.methodology_version,
+        base_rates=dict(first.base_rates or BASE_RATES),
+        notes=list(first.notes or []),
+    )
+
+
 @router.get("/shortlist/daily")
 async def daily_shortlist(
     tenant: CurrentTenant,
     session: DbSession,
     size: int = Query(5, ge=1, le=MAX_SIZE),
+    as_of: dt.date | None = None,
 ) -> ShortlistResponse:
     enforce_market_feature(tenant, "interpreted_analytics")
     market = tenant.market
+    # The methodology and disclosed base rates were validated on DSE data. Reusing them for US
+    # names would be a market-boundary error, not graceful generalisation.
+    if market != "DSE":
+        raise HTTPException(status_code=404, detail="Daily Shortlist is not validated for this market")
+
+    archived = await _archived_response(
+        session,
+        market=market,
+        requested_date=as_of,
+        size=size,
+    )
+    if archived is not None:
+        return archived
+    if as_of is not None:
+        raise HTTPException(status_code=404, detail="No archived shortlist is available")
 
     latest_date = (
         select(func.max(TickerAnalytics.as_of_date))
@@ -107,7 +304,12 @@ async def daily_shortlist(
     # rule the scanner boards use, so the two surfaces cannot disagree about the universe.
     stmt = (
         select(
-            TickerAnalytics, Symbol.name_en, Symbol.name_bn, CompanyProfile.sector, QuoteSnapshot
+            TickerAnalytics,
+            Symbol.name_en,
+            Symbol.name_bn,
+            CompanyProfile.sector,
+            CompanyProfile.eps,
+            CompanyProfile.nav_per_share,
         )
         .join(
             Symbol,
@@ -118,14 +320,6 @@ async def daily_shortlist(
             and_(
                 CompanyProfile.market == TickerAnalytics.market,
                 CompanyProfile.code == TickerAnalytics.code,
-            ),
-            isouter=True,
-        )
-        .join(
-            QuoteSnapshot,
-            and_(
-                QuoteSnapshot.market == TickerAnalytics.market,
-                QuoteSnapshot.code == TickerAnalytics.code,
             ),
             isouter=True,
         )
@@ -147,45 +341,69 @@ async def daily_shortlist(
     rows = (await session.execute(stmt)).all()
     names: dict[str, tuple[str | None, str | None]] = {}
     candidates: list[ShortlistCandidate] = []
-    as_of = dt.date.today()
-    quote_as_of: dt.datetime | None = None
-    is_delayed = True
+    selected_date = rows[0][0].as_of_date if rows else dt.date.today()
+    session_dates = list(
+        await session.scalars(
+            select(DailyBar.date)
+            .where(DailyBar.market == market, DailyBar.date <= selected_date)
+            .distinct()
+            .order_by(DailyBar.date.desc())
+            .limit(2)
+        )
+    )
+    session_bars = list(
+        await session.scalars(
+            select(DailyBar).where(
+                DailyBar.market == market,
+                DailyBar.date.in_(session_dates),
+            )
+        )
+    )
+    bars_by_code: dict[str, list[DailyBar]] = defaultdict(list)
+    for bar in session_bars:
+        bars_by_code[bar.code].append(bar)
+    for code_bars in bars_by_code.values():
+        code_bars.sort(key=lambda bar: bar.date)
 
-    for analytics, name_en, name_bn, sector, quote in rows:
-        as_of = analytics.as_of_date
+    for analytics, name_en, name_bn, sector, eps, nav_per_share in rows:
+        code_bars = bars_by_code.get(analytics.code, [])
+        if not code_bars or code_bars[-1].date != selected_date:
+            continue
+        today = code_bars[-1]
+        previous = code_bars[-2] if len(code_bars) > 1 else None
         names[analytics.code] = (name_en, name_bn)
-        if quote is not None and (quote_as_of is None or quote.as_of > quote_as_of):
-            quote_as_of = quote.as_of
-            is_delayed = quote.is_delayed
-        volume = None
-        if analytics.relative_volume is not None and analytics.avg_volume_20:
-            volume = analytics.relative_volume * analytics.avg_volume_20
         candidates.append(
             ShortlistCandidate(
                 code=analytics.code,
-                close=analytics.last_close,
+                close=today.close,
                 avg_volume_20=analytics.avg_volume_20,
                 # None: the SQL seasoning gate above already enforced history.
                 bars_seen=None,
-                change_pct=quote.change_pct if quote is not None else None,
-                volume=volume,
+                change_pct=(
+                    (today.close / previous.close - 1.0) * 100.0
+                    if previous is not None and previous.close > 0
+                    else None
+                ),
+                volume=today.volume,
                 pct_from_52w_high=analytics.pct_from_52w_high,
                 range_position_pct=_range_position_pct(analytics),
                 sma_200=analytics.sma_200,
-                # pe_ratio is NULL when EPS <= 0, so a present ratio implies positive earnings.
-                eps=1.0 if analytics.pe_ratio is not None else None,
-                nav_per_share=1.0 if analytics.pb_ratio is not None else None,
+                eps=eps,
+                nav_per_share=nav_per_share,
                 pe=analytics.pe_ratio,
                 sector=sector,
             )
         )
 
-    slate = build_daily_shortlist(candidates, market=market, as_of=as_of, size=size)
+    slate = build_daily_shortlist(candidates, market=market, as_of=selected_date, size=size)
     return ShortlistResponse(
         market=slate.market,
         as_of=slate.as_of,
-        quote_as_of=quote_as_of,
-        is_delayed=is_delayed,
+        available_dates=[],
+        latest_date=slate.as_of,
+        evidence_mode="live",
+        quote_as_of=None,
+        is_delayed=True,
         size=slate.size,
         rows=[
             ShortlistRow(

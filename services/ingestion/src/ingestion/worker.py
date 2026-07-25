@@ -33,6 +33,7 @@ from ingestion.analytics import compute_all
 from ingestion.block_trades import pull_block_trades as collect_block_trades
 from ingestion.buzz import snapshot_all
 from ingestion.company import collect as collect_company
+from ingestion.daily_shortlist_scan import run_forward as run_daily_shortlist_scan
 from ingestion.growth_retention import prune_raw_events
 from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
@@ -198,6 +199,21 @@ async def run_squeeze_scan_task(ctx) -> str:
     return f"squeeze evaluated={counts['evaluated']} archived={counts['archived']}"
 
 
+async def run_daily_shortlist_scan_task(ctx) -> str:
+    """Archive the deterministic DSE attention slate after completed-session analytics."""
+    if not _after_eod_window():
+        return "skipped: before EOD window"
+    today = to_market_tz(dt.datetime.now(dt.UTC)).date()
+    if not is_trading_day(today):
+        return "skipped: non-trading day"
+    try:
+        counts = await run_daily_shortlist_scan(MARKET, expected_as_of=today)
+    except Exception:
+        log.exception("daily shortlist scan failed for %s", MARKET)
+        return "daily shortlist scan failed (logged)"
+    return f"daily shortlist archived={counts['archived']}"
+
+
 async def snapshot_portfolios(ctx) -> str:
     """Daily portfolio value snapshot (growth-over-time chart) — only on trading days, once EOD
     quotes have settled (the last intraday poll ~08:45 UTC is effectively the close)."""
@@ -247,6 +263,13 @@ async def recover_eod_chain(ctx) -> str:
         )
 
     analytics = await compute_all(MARKET)
+    try:
+        shortlist = await run_daily_shortlist_scan(MARKET, expected_as_of=today)
+    except Exception:
+        # A public attention-list archive must not block recovery of portfolio, trending, and
+        # signal products. Its dedicated cron can retry independently.
+        log.exception("daily shortlist scan failed during EOD recovery for %s", MARKET)
+        shortlist = {"archived": 0}
     portfolios = await snapshot_portfolios_run(MARKET, tenant_id=TENANT_ID)
     trending = await compute_trending(MARKET)
     buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
@@ -256,11 +279,12 @@ async def recover_eod_chain(ctx) -> str:
     if redis is not None:
         await redis.set(completion_key, "1", ex=_EOD_COMPLETION_TTL_S)
     log.info(
-        "eod recovery: bars=%s summary=%s analytics=%s portfolios=%s trending=%s "
+        "eod recovery: bars=%s summary=%s analytics=%s shortlist=%s portfolios=%s trending=%s "
         "buzz=%s levels=%s factors=%s market=%s",
         bars["bars_upserted"],
         summary["days_upserted"],
         analytics["computed"],
+        shortlist["archived"],
         portfolios["users"],
         trending["stored"],
         buzz["symbols"],
@@ -270,7 +294,8 @@ async def recover_eod_chain(ctx) -> str:
     )
     return (
         f"recovered bars={bars['bars_upserted']} summary={summary['days_upserted']} "
-        f"analytics={analytics['computed']} portfolios={portfolios['users']} "
+        f"analytics={analytics['computed']} shortlist={shortlist['archived']} "
+        f"portfolios={portfolios['users']} "
         f"trending={trending['stored']} buzz={buzz['symbols']} levels={levels['published']} "
         f"factors={factors['published']} market={market_note['published']}"
     )
@@ -550,6 +575,10 @@ class WorkerSettings:
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
         # Squeeze-taxonomy archive right after analytics; isolated from the EOD chain.
         cron(run_squeeze_scan_task, hour=13, minute=22, run_at_startup=False),
+        # Public Daily Shortlist archive follows the same completed analytics snapshot. The task is
+        # idempotent and preserves an existing forward row, so restart recovery cannot rewrite
+        # what readers saw.
+        cron(run_daily_shortlist_scan_task, hour=13, minute=24, run_at_startup=True),
         # Portfolio growth-chart snapshot — 20 min after the bar pull, same cadence as the other
         # once-daily EOD jobs. Idempotent (upsert by user+date); no weekday filter needed since
         # the task itself skips non-trading days.
