@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CompanyLogo } from "../components/CompanyLogo";
+import { DailyShortlistPanel } from "../components/DailyShortlistPanel";
 import { EvidenceChip, evidenceExplain } from "../components/EvidenceChip";
 import { SizeChips } from "../components/SizeChips";
 import { FreshnessTag } from "../components/FreshnessTag";
@@ -715,6 +716,11 @@ export function Scanner() {
         </div>
       ) : (
         <>
+          {/* Above the boards, and outside <Boards> on purpose: the boards render <Empty> when
+              nothing qualifies (Scheme-3 is blank on 78% of sessions), and the whole point of the
+              shortlist is that the researcher always has somewhere to start. Whole-market only —
+              a watchlist-filtered slate would not be the ranked market universe. */}
+          {!watched && <DailyShortlistPanel />}
           {user && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted">{t("scanner.scope")}:</span>

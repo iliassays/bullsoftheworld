@@ -2,11 +2,37 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "granian",
+        "--interface",
+        "asgi",
+        "api.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8090"
+      ],
+      "port": 8090
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "comment": "Same web app but pointed at the LOCAL api. apps/web/.env.local sets VITE_API_BASE to production, whose CORS rejects the localhost origin, so every board renders 'unavailable' against it. Shell env wins over .env files in Vite, so this override sticks.",
+      "name": "web-local-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "5173"],
+      "port": 5173,
+      "env": {
+        "VITE_API_BASE": "http://127.0.0.1:8090"
+      }
     },
     {
       "name": "atlas-preview",

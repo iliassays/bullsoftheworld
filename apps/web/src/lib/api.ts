@@ -412,6 +412,45 @@ export interface ScannerResponse {
   market_regime?: "above_200dma" | "below_200dma" | null;
   boards: Screen[];
 }
+// A localisable statement about a row: the server sends `kind` (+ at most one number) and the
+// client renders it, so a Bangla reader gets Bangla evidence rather than English prose.
+export interface ShortlistFact {
+  kind: string;
+  value?: number | null;
+}
+export interface DailyShortlistRow {
+  code: string;
+  name_en?: string | null;
+  name_bn?: string | null;
+  rank: number;
+  attention_score: number;
+  close: number;
+  change_pct?: number | null;
+  sector?: string | null;
+  pe?: number | null;
+  facts: ShortlistFact[];
+  cautions: ShortlistFact[];
+  // English renderings of the same facts — the fallback when a `kind` has no local string yet.
+  reasons: string[];
+  unknowns: string[];
+}
+export interface DailyShortlist {
+  market: string;
+  as_of: string;
+  quote_as_of?: string | null;
+  is_delayed: boolean;
+  size: number;
+  rows: DailyShortlistRow[];
+  eligible_names: number;
+  excluded_illiquid: number;
+  excluded_short_history: number;
+  // Always false from the server. The slate ranks where to LOOK, never expected return —
+  // measured: a return-seeking rank did 1.24pp worse than a random draw from the same pool.
+  is_return_claim: boolean;
+  methodology_version: string;
+  base_rates: Record<string, unknown>;
+  notes: string[];
+}
 export interface ScreensResponse {
   as_of: string | null; // EOD analytics date — screen rankings are as-of this close
   quote_as_of?: string | null; // latest 15-min quote snapshot — price/"today's move" freshness
@@ -1082,6 +1121,7 @@ export const api = {
   marketMood: () => request<MoodIndex>("/market-mood"),
   marketConfig: () => request<MarketConfig>("/market/config"),
   marketStatus: () => request<MarketStatus>("/market/status"),
+  dailyShortlist: (size = 5) => request<DailyShortlist>(`/shortlist/daily?size=${size}`),
   scannerRadar: (tab: string, watched: boolean, limit?: number, size?: string) => {
     const params = new URLSearchParams({ tab });
     if (watched) params.set("watched", "true");

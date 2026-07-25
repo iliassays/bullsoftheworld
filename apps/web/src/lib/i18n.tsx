@@ -77,6 +77,25 @@ const STRINGS: Record<string, Entry> = {
     en: "Research lists are unavailable. Try again shortly.",
     bn: "গবেষণার তালিকা এখন পাওয়া যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।",
   },
+  "shortlist.title": { en: "Today's five to look at", bn: "আজ দেখার মতো পাঁচটি" },
+  "shortlist.subtitle": {
+    en: "Where to start your research today — not predictions, and not a buy list.",
+    bn: "আজ গবেষণা শুরু করার জায়গা — কোনো ভবিষ্যদ্বাণী নয়, কেনার তালিকাও নয়।",
+  },
+  "shortlist.whyThese": { en: "Why these five", bn: "কেন এই পাঁচটি" },
+  "shortlist.eligible": {
+    en: "Ranked from {n} liquid, seasoned companies",
+    bn: "{n}টি তরল, পুরনো কোম্পানি থেকে বাছাই",
+  },
+  "shortlist.unknowns": { en: "What we can't tell you", bn: "যা আমরা বলতে পারছি না" },
+  "shortlist.evidence": {
+    en: "Over 232 tested sessions, no selection rule beat picking at random from the same pool. This ranks attention, not expected return.",
+    bn: "২৩২টি পরীক্ষিত সেশনে কোনো বাছাই-নিয়মই একই পুল থেকে এলোমেলো বাছাইকে হারাতে পারেনি। এটি মনোযোগের ক্রম, প্রত্যাশিত রিটার্ন নয়।",
+  },
+  "shortlist.unavailable": {
+    en: "Today's shortlist is unavailable. Try again shortly.",
+    bn: "আজকের সংক্ষিপ্ত তালিকা পাওয়া যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।",
+  },
   "nav.me": { en: "Me", bn: "আমি" },
   "home.earningsToday": { en: "Earnings today", bn: "আজকের আয়" },
   "home.earningsTodayEmpty": {
