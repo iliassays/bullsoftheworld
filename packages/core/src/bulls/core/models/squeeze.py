@@ -47,6 +47,13 @@ class SqueezeDailyState(Base):
     # single-row TickerAnalytics made an archived screen mutate later and carry classification
     # the market did not yet have; they are therefore snapshotted per session.
     cap_tier: Mapped[str | None] = mapped_column(String(16))
+    # "forward"      — written by the nightly scan on the session it describes.
+    # "reconstructed" — computed later from stored bars. Reconstructions inherit the store's
+    # survivorship (delisted names are simply absent) and cannot see inputs that were never
+    # recorded historically, so they may never be quoted as forward performance.
+    evidence_mode: Mapped[str] = mapped_column(
+        String(16), default="forward", server_default="forward"
+    )
     average_dollar_volume_mn: Mapped[float | None] = mapped_column(Float)
     evidence: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")

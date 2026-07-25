@@ -1747,3 +1747,28 @@
   border-radius: 10px;
   height: 320px;
 }
+
+/* Reconstructed rows must never read as forward evidence — distinct colour, always labelled. */
+.squeeze-monitor__replay {
+  background: color-mix(in srgb, #5b6bb5 16%, transparent);
+  color: #5b6bb5;
+}
+
+.squeeze-monitor__replay-note {
+  align-items: flex-start;
+  background: color-mix(in srgb, #5b6bb5 8%, transparent);
+  border-left: 2px solid #5b6bb5;
+  border-radius: 4px;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 10.5px;
+  gap: 6px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.squeeze-monitor__replay-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

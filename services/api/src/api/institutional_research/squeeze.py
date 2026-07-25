@@ -56,6 +56,9 @@ LIMITATIONS = [
     "and nothing here is a prediction or a recommendation.",
     "A 2R planning objective is risk geometry from the trigger/invalidation pair, not a "
     "price forecast.",
+    "Rows marked reconstructed were computed later from stored bars. Only currently-listed "
+    "symbols exist in the store, so delisted names are absent and reconstructed outcomes are "
+    "biased upward; they are diagnostics, never forward performance.",
 ]
 
 _BLOCKED_FAMILY_KEYS = {

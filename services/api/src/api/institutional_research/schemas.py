@@ -621,6 +621,9 @@ class SqueezeEntryOut(ApiModel):
     family: str
     family_label: str
     state: Literal["watch", "forming", "trigger_ready", "confirmed", "exhausted", "failed"]
+    # "forward" was written by the scan on the session it describes; "reconstructed" was computed
+    # later from stored bars and inherits the store's survivorship — never forward performance.
+    evidence_mode: Literal["forward", "reconstructed"]
     previous_state: str | None
     state_reason: str
     is_new: bool

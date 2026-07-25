@@ -255,6 +255,7 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
   code,
   company,
   capTier: "small",
+  evidenceMode: "forward" as const,
   family: market === "DSE" ? "supply_constrained_breakout" : "compression_breakout",
   familyLabel: market === "DSE" ? "Supply-constrained breakout" : "Compression breakout setup",
   state,

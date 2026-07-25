@@ -305,6 +305,11 @@ export function SqueezeMonitorPanel() {
                     <span className="squeeze-monitor__identity">
                       <strong>${entry.code}</strong>
                       {entry.isNew && <em>New</em>}
+                      {entry.evidenceMode === "reconstructed" && (
+                        <em className="squeeze-monitor__replay" title="Reconstructed from stored bars, not collected on this session">
+                          Replay
+                        </em>
+                      )}
                     </span>
                     <StatusBadge tone={STATE_TONE[entry.state]}>
                       {STATE_LABEL[entry.state]}
@@ -371,6 +376,14 @@ export function SqueezeMonitorPanel() {
                       <strong>Counter-evidence</strong>
                       <ul>{selected.counterEvidence.map((item) => <li key={item}>{item}</li>)}</ul>
                     </div>
+                  )}
+                  {selected.evidenceMode === "reconstructed" && (
+                    <p className="squeeze-monitor__replay-note">
+                      <ShieldAlert aria-hidden="true" size={12} />
+                      Reconstructed from stored bars, not collected on this session. Only
+                      currently-listed symbols exist in the store, so delisted names are absent and
+                      the outcome shown is biased upward — a diagnostic, never forward performance.
+                    </p>
                   )}
                   {path.isLoading ? (
                     <div className="squeeze-monitor__chart-loading" aria-label="Loading price history" />

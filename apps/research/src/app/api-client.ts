@@ -321,6 +321,7 @@ export type SqueezeState =
   | "failed";
 
 export interface SqueezeEntry {
+  evidenceMode: "forward" | "reconstructed";
   market: "DSE" | "US";
   code: string;
   company: string;
