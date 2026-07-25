@@ -125,7 +125,12 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
             {formatSessionDate(data.as_of, lang)}
           </div>
         ) : (
-          <FreshnessTag asOf={data.as_of} quoteAsOf={data.quote_as_of} className="mt-0.5" />
+          <FreshnessTag
+            asOf={data.as_of}
+            quoteAsOf={data.quote_as_of}
+            refreshOffsetMinutes={9}
+            className="mt-0.5"
+          />
         )}
       </header>
 

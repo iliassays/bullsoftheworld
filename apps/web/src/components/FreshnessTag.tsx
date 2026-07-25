@@ -35,6 +35,7 @@ export function FreshnessTag({
   detail = false,
   scope = "eod",
   priceMode = "eod",
+  refreshOffsetMinutes = 0,
   className = "shrink-0 ml-2",
 }: {
   asOf: string | null;
@@ -42,6 +43,7 @@ export function FreshnessTag({
   detail?: boolean;
   scope?: "eod" | "mixed";
   priceMode?: "eod" | "mixed";
+  refreshOffsetMinutes?: number;
   className?: string;
 }) {
   const { lang } = useLang();
@@ -68,8 +70,13 @@ export function FreshnessTag({
   );
   const sourceDate = sessionDate(asOf, lang);
   const expectedDate = sessionDate(status?.expected_analysis_date ?? null, lang);
+  const nextRefreshAt = status?.next_analysis_at
+    ? new Date(
+        new Date(status.next_analysis_at).getTime() + refreshOffsetMinutes * 60_000,
+      ).toISOString()
+    : null;
   const nextRefresh = scheduledTime(
-    status?.next_analysis_at ?? null,
+    nextRefreshAt,
     lang,
     config.timezone,
     config.timezone_label,
