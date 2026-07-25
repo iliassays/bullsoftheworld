@@ -259,7 +259,7 @@ async def _archived_response(
         evidence_mode=first.evidence_mode,
         quote_as_of=None,
         is_delayed=True,
-        size=first.slate_size,
+        size=size,
         rows=response_rows,
         eligible_names=first.eligible_names,
         excluded_illiquid=first.excluded_illiquid,
