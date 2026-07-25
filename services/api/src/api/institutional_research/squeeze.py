@@ -133,6 +133,7 @@ def _build_entry(
         family=row.family,
         family_label=FAMILY_LABELS.get(row.family, row.family),
         state=row.state,
+        evidence_mode=row.evidence_mode,
         previous_state=row.previous_state,
         state_reason=row.reason,
         is_new=row.first_discovered_on == selected_date,

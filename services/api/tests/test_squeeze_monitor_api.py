@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from api.institutional_research.squeeze import LIMITATIONS, _blocked_families
+import datetime as dt
+
+from api.institutional_research.squeeze import LIMITATIONS, _blocked_families, _build_entry
+from bulls.core.models import SqueezeDailyState
 
 
 def test_us_blocked_families_are_explicit_with_missing_datasets() -> None:
@@ -40,3 +43,30 @@ def test_limitations_enforce_the_language_rules() -> None:
     assert "never live flow" in blob
     assert "nothing here is a prediction" in blob
     assert "not a price forecast" in blob
+
+
+def test_archived_entry_preserves_its_evidence_mode() -> None:
+    archive_date = dt.date(2026, 7, 24)
+    row = SqueezeDailyState(
+        market="US",
+        code="TEST",
+        family="compression_breakout",
+        as_of_date=archive_date,
+        state="forming",
+        evidence_mode="reconstructed",
+        previous_state="watch",
+        reason="The base remains compressed.",
+        first_discovered_on=archive_date,
+        evidence={},
+        methodology_version="squeeze-monitor-v2",
+    )
+
+    entry = _build_entry(
+        row,
+        market="US",
+        company="Test Company",
+        code_bars=[],
+        selected_date=archive_date,
+    )
+
+    assert entry.evidence_mode == "reconstructed"
