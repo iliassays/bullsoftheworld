@@ -161,12 +161,40 @@ def derive_decision_state(
 def discovery_performance(
     prices: Sequence[float], *, reference_price: float | None
 ) -> tuple[float | None, float | None, float | None]:
-    """Return current, maximum favorable, and maximum adverse percentage moves."""
+    """Return current, maximum favorable, and maximum adverse percentage moves.
+
+    Close-to-close. Because the first element of ``prices`` is the discovery bar itself, the
+    favorable figure can never be below 0 and the adverse figure can never be above it — so an
+    adverse reading of exactly 0.00% means only "never *closed* below discovery", which is a much
+    weaker statement than "never went against you". Use
+    :func:`intraday_excursion` for the traded extremes.
+    """
 
     if reference_price is None or reference_price <= 0 or not prices:
         return None, None, None
     returns = [(price / reference_price - 1) * 100 for price in prices]
     return round(returns[-1], 3), round(max(returns), 3), round(min(returns), 3)
+
+
+def intraday_excursion(
+    highs: Sequence[float], lows: Sequence[float], *, reference_price: float | None
+) -> tuple[float | None, float | None]:
+    """Peak and trough the price actually *traded* at, as percentages of the discovery price.
+
+    The close-to-close pair understates both sides, sometimes badly: on 2026-07-15 AEHR showed a
+    close-based +29.31%/+0.00% while the tape ran +62.32% and -6.73%, the latter touching the
+    setup's own invalidation level. Reporting only the close-based pair let 680 of 930
+    zero-adverse setups (73%) present as though they had never traded against the reader.
+
+    These are excursions, not achievable returns — nobody exits at the exact high — so they must
+    be labelled as the traded range and never summed into a performance claim.
+    """
+
+    if reference_price is None or reference_price <= 0 or not highs or not lows:
+        return None, None
+    peak = (max(highs) / reference_price - 1) * 100
+    trough = (min(lows) / reference_price - 1) * 100
+    return round(peak, 3), round(trough, 3)
 
 
 def _event_out(event: ResearchDecisionEvent) -> DecisionEventOut:

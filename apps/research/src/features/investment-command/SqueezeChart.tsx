@@ -61,7 +61,8 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
       grid: { vertLines: { color: border }, horzLines: { color: border } },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: { borderColor: border, scaleMargins: { top: 0.08, bottom: 0.26 } },
-      timeScale: { borderColor: border, fixLeftEdge: true, fixRightEdge: true, rightOffset: 3 },
+      // rightOffset keeps the newest candles clear of the price axis and its level labels.
+      timeScale: { borderColor: border, fixLeftEdge: true, fixRightEdge: true, rightOffset: 6 },
       localization: { priceFormatter: (value: number) => value.toFixed(2) },
     });
 
@@ -87,25 +88,36 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
     // episode-start marker "none") is labelled "Discovered" so the user sees exactly when this
     // episode began — distinct from later re-classifications.
     const discoveryDate = path.entry.firstDiscoveredOn;
-    const markers: SeriesMarker<Time>[] = path.stateHistory.map((change) => {
-      const isDiscovery = change.date === discoveryDate || change.previousState === "none";
-      const late = change.state === "failed" || change.state === "exhausted";
-      return {
-        time: change.date as Time,
-        position: late ? "aboveBar" : "belowBar",
-        color: isDiscovery
-          ? COLORS.discovery
-          : change.state === "confirmed"
-            ? COLORS.up
-            : late
-              ? COLORS.down
-              : COLORS.ema20,
-        shape: late ? "arrowDown" : "arrowUp",
-        text: isDiscovery
-          ? `Discovered${path.discoveryNumber > 1 ? ` (#${path.discoveryNumber})` : ""}`
-          : (STATE_TEXT[change.state] ?? change.state),
-      };
-    });
+    // Early states churn between watch and forming on adjacent sessions, and their labels
+    // collide into an unreadable stack at the right edge. Only the transitions that change what
+    // a reader would do are drawn; the full history stays in the state list beside the chart.
+    const NOTABLE = new Set(["trigger_ready", "confirmed", "failed", "exhausted"]);
+    const markers: SeriesMarker<Time>[] = path.stateHistory
+      .filter(
+        (change) =>
+          change.date === discoveryDate ||
+          change.previousState === "none" ||
+          NOTABLE.has(change.state),
+      )
+      .map((change) => {
+        const isDiscovery = change.date === discoveryDate || change.previousState === "none";
+        const late = change.state === "failed" || change.state === "exhausted";
+        return {
+          time: change.date as Time,
+          position: late ? "aboveBar" : "belowBar",
+          color: isDiscovery
+            ? COLORS.discovery
+            : change.state === "confirmed"
+              ? COLORS.up
+              : late
+                ? COLORS.down
+                : COLORS.ema20,
+          shape: late ? "arrowDown" : "arrowUp",
+          text: isDiscovery
+            ? `Discovered${path.discoveryNumber > 1 ? ` (#${path.discoveryNumber})` : ""}`
+            : (STATE_TEXT[change.state] ?? change.state),
+        };
+      });
     // If the episode's first archived row was not itself a transition (rare), still anchor a
     // discovery marker at the discovery date so "when discovered" is never missing.
     if (!markers.some((marker) => marker.time === (discoveryDate as Time))) {
@@ -144,7 +156,11 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
     overlay("ema50", COLORS.ema50, LineStyle.Solid);
     overlay("anchoredVwap", COLORS.vwap, LineStyle.Dashed);
 
-    const level = (price: number | null, color: string, title: string, style: LineStyle) => {
+    // No `title`: lightweight-charts renders a price-line title INSIDE the pane, pinned to the
+    // right edge, which buried the most recent candles under a stack of coloured chips — the
+    // newest bars are the ones a reader actually needs. The price still appears on the right
+    // axis (outside the plot) and the levels row below names each line with its value.
+    const level = (price: number | null, color: string, style: LineStyle) => {
       if (price === null) return;
       candles.createPriceLine({
         price,
@@ -152,16 +168,15 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
         lineWidth: 1,
         lineStyle: style,
         axisLabelVisible: true,
-        title,
       });
     };
     // Only operational levels are drawn: the trigger is where the setup activates and the
     // invalidation is where it dies. The 2R objective is derived arithmetic reported in the
     // metrics — drawing it as a chart line reads as a price forecast, and it frequently sits
     // outside the autoscaled range anyway, so the line would be invisible as often as not.
-    level(path.entry.discoveryPrice, COLORS.discovery, "Discovered", LineStyle.Dotted);
-    level(path.entry.triggerPrice, COLORS.trigger, "Trigger", LineStyle.Dashed);
-    level(path.entry.invalidationPrice, COLORS.invalidation, "Invalidation", LineStyle.Dashed);
+    level(path.entry.discoveryPrice, COLORS.discovery, LineStyle.Dotted);
+    level(path.entry.triggerPrice, COLORS.trigger, LineStyle.Dashed);
+    level(path.entry.invalidationPrice, COLORS.invalidation, LineStyle.Dashed);
 
     const volume = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
@@ -251,13 +266,28 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
         aria-label={`${path.entry.code} daily candles with EMA and anchored VWAP overlays`}
         ref={containerRef}
       />
+      {/* The level names live here rather than inside the pane, where they used to sit on top
+          of the most recent candles. Value included so the axis label is identifiable. */}
+      <div className="squeeze-chart__levels">
+        {(
+          [
+            ["Trigger", path.entry.triggerPrice, COLORS.trigger],
+            ["Discovered", path.entry.discoveryPrice, COLORS.discovery],
+            ["Invalidation", path.entry.invalidationPrice, COLORS.invalidation],
+          ] as const
+        )
+          .filter(([, value]) => value !== null)
+          .map(([label, value, color]) => (
+            <span key={label}>
+              <i style={{ background: color }} />
+              {label} <strong>{(value as number).toFixed(2)}</strong>
+            </span>
+          ))}
+      </div>
       <div className="squeeze-chart__legend">
-        <span><i style={{ background: COLORS.discovery }} />Discovered</span>
         <span><i style={{ background: COLORS.ema20 }} />EMA 20</span>
         <span><i style={{ background: COLORS.ema50 }} />EMA 50</span>
         <span><i style={{ background: COLORS.vwap }} />Anchored VWAP</span>
-        <span><i style={{ background: COLORS.trigger }} />Trigger</span>
-        <span><i style={{ background: COLORS.invalidation }} />Invalidation</span>
       </div>
       <p className="squeeze-chart__basis">
         {path.priceBasis} {path.overlayBasis}

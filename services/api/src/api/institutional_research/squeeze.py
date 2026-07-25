@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.institutional_research.decision_board import (
     adjusted_close,
     discovery_performance,
+    intraday_excursion,
 )
 from api.institutional_research.schemas import (
     SqueezeChartPointOut,
@@ -102,17 +103,22 @@ def _build_entry(
     rebuild every family's entries to find one row.
     """
 
-    path = [
-        adjusted_close(bar)
-        for bar in code_bars
-        if row.first_discovered_on <= bar.date <= selected_date
-    ]
+    window = [bar for bar in code_bars if row.first_discovered_on <= bar.date <= selected_date]
+    path = [adjusted_close(bar) for bar in window]
     discovery_bar = next(
         (bar for bar in reversed(code_bars) if bar.date <= row.first_discovered_on), None
     )
     discovery_price = adjusted_close(discovery_bar) if discovery_bar is not None else None
     as_of_bar = code_bars[-1] if code_bars else None
     return_pct, favorable, adverse = discovery_performance(path, reference_price=discovery_price)
+    # What the tape actually did, not just where it closed. See intraday_excursion's docstring:
+    # the close-based pair reports 0.00% adverse for setups that traded through their own
+    # invalidation level intraday.
+    peak_pct, trough_pct = intraday_excursion(
+        [bar.high for bar in window if bar.high is not None],
+        [bar.low for bar in window if bar.low is not None],
+        reference_price=discovery_price,
+    )
     # Classification comes from the archived row, not from current analytics: reading the
     # live single-row table made an archived screen change after the fact and show a tier
     # the market did not have on that session.
@@ -145,6 +151,8 @@ def _build_entry(
         return_since_discovery_pct=return_pct,
         max_favorable_pct=favorable,
         max_adverse_pct=adverse,
+        peak_traded_pct=peak_pct,
+        trough_traded_pct=trough_pct,
         setup_price=row.setup_price,
         trigger_price=row.trigger_price,
         invalidation_price=row.invalidation_price,

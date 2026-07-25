@@ -633,8 +633,14 @@ class SqueezeEntryOut(ApiModel):
     discovery_price: float | None
     as_of_price: float | None
     return_since_discovery_pct: float | None
+    # Close-to-close. Adverse can read 0.00% for a setup that traded well against the reader,
+    # so the traded extremes below are shown beside them, never instead of them.
     max_favorable_pct: float | None
     max_adverse_pct: float | None
+    # Highest high / lowest low actually traded since discovery. Excursions, not achievable
+    # returns — nobody exits at the exact high.
+    peak_traded_pct: float | None = None
+    trough_traded_pct: float | None = None
     setup_price: float | None
     trigger_price: float | None
     invalidation_price: float | None

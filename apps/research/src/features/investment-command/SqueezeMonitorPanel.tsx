@@ -397,7 +397,15 @@ export function SqueezeMonitorPanel() {
                   <div className="squeeze-monitor__metrics">
                     <span><small>First discovery</small><strong>{selected.firstDiscoveredOn}</strong><em>{price(selected.discoveryPrice)}</em></span>
                     <span><small>As-of price</small><strong>{price(selected.asOfPrice)}</strong><em>{selected.asOfDate}</em></span>
-                    <span><small>Best / worst path</small><strong>{signed(selected.maxFavorablePct)} / {signed(selected.maxAdversePct)}</strong><em>MFE / MAE</em></span>
+                    <span><small>Best / worst close</small><strong>{signed(selected.maxFavorablePct)} / {signed(selected.maxAdversePct)}</strong><em>MFE / MAE · close-to-close</em></span>
+                    {/* The close-based pair reports 0.00% adverse for setups that traded through
+                        their own invalidation intraday (680 of 930 such rows on 2026-07-15), so
+                        the traded extremes sit beside it. Excursions, not achievable returns. */}
+                    <span title="Highest high and lowest low actually traded since discovery. An excursion, not a return you could have captured.">
+                      <small>Peak / trough traded</small>
+                      <strong>{signed(selected.peakTradedPct)} / {signed(selected.troughTradedPct)}</strong>
+                      <em>intraday high / low</em>
+                    </span>
                     <span><small>Trigger</small><strong>{price(selected.triggerPrice)}</strong><em>base high</em></span>
                     <span><small>Invalidation</small><strong>{price(selected.invalidationPrice)}</strong><em>{selected.riskPerShare !== null ? `${selected.riskPerShare.toFixed(2)} risk/share` : "—"}</em></span>
                     <span><small>Planning objective</small><strong>{price(selected.planningObjectivePrice)}</strong><em>{selected.planningRewardRisk !== null ? `${selected.planningRewardRisk.toFixed(1)}R · not a forecast` : "not applicable"}</em></span>

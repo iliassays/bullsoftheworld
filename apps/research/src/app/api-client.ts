@@ -338,8 +338,12 @@ export interface SqueezeEntry {
   discoveryPrice: number | null;
   asOfPrice: number | null;
   returnSinceDiscoveryPct: number | null;
+  // Close-to-close. maxAdversePct can read 0.00% for a setup that traded well against you.
   maxFavorablePct: number | null;
   maxAdversePct: number | null;
+  // Highest high / lowest low actually traded since discovery — excursions, not returns.
+  peakTradedPct: number | null;
+  troughTradedPct: number | null;
   setupPrice: number | null;
   triggerPrice: number | null;
   invalidationPrice: number | null;

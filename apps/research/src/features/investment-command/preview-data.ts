@@ -273,6 +273,9 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
   returnSinceDiscoveryPct: 5.0,
   maxFavorablePct: 6.2,
   maxAdversePct: -1.1,
+  // Traded extremes always bracket the close-based pair.
+  peakTradedPct: 8.9,
+  troughTradedPct: -3.4,
   setupPrice: market === "DSE" ? 56.7 : 13.1,
   triggerPrice: market === "DSE" ? 57.4 : 13.4,
   invalidationPrice: market === "DSE" ? 53.2 : 11.9,

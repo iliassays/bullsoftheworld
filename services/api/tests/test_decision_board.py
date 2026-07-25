@@ -3,11 +3,14 @@ from __future__ import annotations
 import datetime as dt
 from types import SimpleNamespace
 
+import pytest
+
 from api.institutional_research.decision_board import (
     adjustment_complete,
     derive_decision_state,
     direction_capabilities,
     discovery_performance,
+    intraday_excursion,
     portfolio_stop_loss,
     price_plan,
 )
@@ -136,3 +139,40 @@ def test_short_capability_fails_closed_without_borrow_contract() -> None:
     assert us["short"].status == "blocked"
     assert "borrow availability" in us["short"].reason
     assert "FINRA daily short volume is not a substitute" in us["short"].reason
+
+
+def test_intraday_excursion_reports_what_actually_traded() -> None:
+    """Real case: AEHR discovered 2026-07-08 at 67.89, viewed 2026-07-15.
+
+    Close-to-close said +29.31% / +0.00%. The tape ran to 110.20 and down to 63.32 — and 63.32
+    was the setup's own invalidation level, so "worst path 0.00%" was actively misleading.
+    """
+    highs = [68.47, 79.49, 74.40, 71.49, 73.92, 110.20]
+    lows = [63.32, 74.46, 70.76, 67.23, 68.23, 86.28]
+
+    peak, trough = intraday_excursion(highs, lows, reference_price=67.89)
+
+    assert peak == pytest.approx(62.322, abs=0.01)
+    assert trough == pytest.approx(-6.732, abs=0.01)
+
+    # And the close-based pair on the same window understates BOTH sides.
+    closes = [67.89, 76.21, 72.60, 68.02, 72.01, 87.79]
+    _, favorable, adverse = discovery_performance(closes, reference_price=67.89)
+    assert favorable < peak
+    assert adverse > trough
+    # The specific defect: close-based adverse rounds to zero while the tape fell 6.7%.
+    assert adverse == 0.0
+
+
+def test_intraday_excursion_brackets_the_close_based_pair() -> None:
+    """A high is never below its close and a low never above it, so the traded pair must bracket."""
+    peak, trough = intraday_excursion([110, 120], [90, 95], reference_price=100)
+
+    assert peak == 20.0
+    assert trough == -10.0
+
+
+def test_intraday_excursion_abstains_without_a_usable_reference() -> None:
+    assert intraday_excursion([110], [90], reference_price=None) == (None, None)
+    assert intraday_excursion([110], [90], reference_price=0) == (None, None)
+    assert intraday_excursion([], [], reference_price=100) == (None, None)

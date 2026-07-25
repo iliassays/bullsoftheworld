@@ -1759,6 +1759,35 @@
   opacity: 0.75;
 }
 
+/* Operational levels, moved out of the chart pane: their in-pane titles used to sit on top of
+   the most recent candles, hiding exactly the bars a reader needs. */
+.squeeze-chart__levels {
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 14px;
+  padding-top: 6px;
+}
+
+.squeeze-chart__levels span {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+}
+
+.squeeze-chart__levels strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.squeeze-chart__levels i {
+  border-radius: 1px;
+  display: inline-block;
+  height: 2px;
+  width: 14px;
+}
+
 .squeeze-chart__legend {
   color: var(--text-muted);
   display: flex;
