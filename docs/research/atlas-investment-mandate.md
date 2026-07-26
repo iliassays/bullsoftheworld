@@ -70,6 +70,26 @@ The squeeze monitor remains broad research inventory. Its `forming` and `confirm
 orders and are not copied into Agent decisions. Only a target produced by an admitted registered
 strategy appears there.
 
+## US research decision ledger
+
+The same admission rules apply to US research. A spectacular reconstructed case does not override
+the population result.
+
+| Experiment | Horizon | State | Decision |
+|---|---|---|---|
+| `us_former_runner_reactivation_v1` | EOD watch for a three-session expansion | Rejected | The fixed former-runner, deep-pullback and repeated-volume sequence correctly identified STAK on 23 July 2026 before its next stored expansion, but only 13.79% of 87 completed historical episodes reached the +20% opportunity barrier versus 14.25% for date/liquidity/volatility-matched controls. The 2026 retrospective subset was 0/17. Do not schedule it, create Agent Decisions, or paper trade it. `SLND` was an unresolved 24 July observation, not a recommendation. See `us-former-runner-reactivation-2026-07-26.md`. |
+
+Atlas has no stored US intraday bars, verified free-float history, point-in-time borrow availability
+or cost-to-borrow, halt/order-book tape, or independent external social-velocity history. The
+former-runner hypothesis cannot be repaired by substituting daily OHLCV for those missing inputs.
+Any successor must wait for the required data, receive a new experiment key, and be preregistered
+before another holdout is inspected.
+
+Do not transfer the US sequence mechanically to DSE. DSE price limits, liquidity, settlement,
+corporate actions and raw-close contamination make a one-session `+40%` runner definition
+non-equivalent. The existing DSE demand-signature study is the relevant evidence: volume and price
+structure improved sharp-move identification, but the tested next-open strategy lost money.
+
 ## Strategy admission process
 
 1. **Economic thesis:** state who is forced, slow, constrained, or behaviorally biased and why the

@@ -60,6 +60,35 @@ The three-session outcome window is still open, but both the +20% and +50% oppor
 have already been reached. This does not reconstruct an executable trade: the daily bar cannot
 tell whether the $1.17 low happened before or after a $1.43 stop-entry trigger.
 
+## Production evidence audit
+
+The following inventory was queried from production on 26 July 2026. It separates evidence Atlas
+actually stores from observations in the external STAK investigation:
+
+| Evidence source | Production finding | Research use |
+|---|---|---|
+| Security master | Active, product-eligible Nasdaq common stock; CIK `2002453` | Identity verified |
+| Adjusted EOD bars | 354 sessions from 26 February 2025 through 24 July 2026 | Sufficient to reconstruct the frozen daily sequence |
+| US intraday observations/bars | 0 / 0 | Cannot test alert timing, previous-day-high entry, VWAP hold, spread, halt sequence or stop/trigger ordering |
+| SEC filing projection | Eleven 2026 filings through 8 June, including four 6-Ks; no filing on 24 July | Supports "no fresh stored filing on the move date", not a complete news-causality claim |
+| Append-only EDGAR event stream | No STAK rows | Filing-event research coverage is incomplete for this issuer |
+| SEC point-in-time facts | Latest shares-outstanding observation is 13,210,349 for 30 June 2025, known 5 November 2025 | Stale; cannot be presented as July 2026 tradable float |
+| Parsed insider transactions | No rows | Absence from Atlas is not proof that no insider transaction existed |
+| Parsed 13D/13G stake events | No rows | No ownership-activist evidence available in Atlas |
+| 13F summary | Five managers and 117,892 aggregate shares for 31 March 2026 | Lagged quarterly context only, not live institutional accumulation |
+| FINRA short interest known by 23 July | 620,724 shares for 30 June, known 13 July; 1.48 days to cover | Valid point-in-time short-position context; denominator is not verified free float |
+| FINRA daily short volume | 33 sessions from 8 June through 24 July | Short-marked execution flow only; not bearish positioning or short interest |
+| Atlas catalysts/announcements | No rows | No stored structured catalyst; does not prove no external narrative existed |
+| Platform attention | Four posts on 24 July; no earlier external social history | Cannot test pre-move social acceleration |
+| Licensed option snapshots | None | No historical options evidence |
+| Unofficial delayed option preview | No contracts returned on 26 July | No usable current chain from the preview provider |
+
+Atlas also has no point-in-time borrow availability, cost-to-borrow history, verified free float,
+premarket tape, exchange halt tape, order book, or independent social firehose. Therefore the
+external claims about `107.95%` borrow cost, `6x-11.7x` time-adjusted intraday volume, premarket
+behavior, promotional timing and social acceleration were **not** validated by Atlas. They remain
+external case-study observations until a cited, retainable dataset is onboarded.
+
 ## Historical result
 
 The production study covered 5,888 current common-stock and ADR symbols from 2023 onward. Controls
@@ -102,3 +131,12 @@ entry policy make it selective.
 Do not weaken thresholds after seeing these results. A successor is justified only after US
 intraday collection exists and must receive a new experiment key and trial count. Until then STAK
 is a valuable case study, not an algorithm.
+
+## DSE transfer decision
+
+Do not port this specification to DSE. A one-session `+40%` runner is structurally incompatible
+with ordinary DSE price-limit behavior, while raw DSE closes still contain corporate-action
+contamination. DSE's separately frozen `dse_demand_signature_v1` found that volume trajectories
+improve sharp-move identification when combined with price structure, but its next-open entries
+lost 1.30% per holdout candidate and the constrained holdout book lost 17.95%. The defensible DSE
+conclusion is "volume can prioritize research", not "high volume predicts a profitable long."
