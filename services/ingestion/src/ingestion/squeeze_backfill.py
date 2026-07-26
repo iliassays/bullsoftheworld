@@ -103,6 +103,19 @@ def _strategy_bar(row) -> SqueezeBar | None:
     )
 
 
+def _forward_protected(
+    cutoffs: dict[tuple[str, str], dt.date],
+    *,
+    code: str,
+    family: str,
+    as_of: dt.date,
+) -> bool:
+    """Return whether replay would cross a live evidence boundary."""
+
+    cutoff = cutoffs.get((code, family))
+    return cutoff is not None and as_of >= cutoff
+
+
 async def run_squeeze_backfill(
     market: str, *, sessions: int, replace: bool = False
 ) -> dict[str, int]:
@@ -128,21 +141,29 @@ async def run_squeeze_backfill(
         target_dates = ordered[-sessions:]
         window_start = ordered[0]
 
-        existing: set[tuple[str, str, dt.date]] = set()
-        if not replace:
-            rows = (
-                await session.execute(
-                    select(
-                        SqueezeDailyState.code,
-                        SqueezeDailyState.family,
-                        SqueezeDailyState.as_of_date,
-                    ).where(
-                        SqueezeDailyState.market == market,
-                        SqueezeDailyState.as_of_date >= target_dates[0],
-                    )
+        rows = (
+            await session.execute(
+                select(
+                    SqueezeDailyState.code,
+                    SqueezeDailyState.family,
+                    SqueezeDailyState.as_of_date,
+                    SqueezeDailyState.evidence_mode,
+                ).where(
+                    SqueezeDailyState.market == market,
+                    SqueezeDailyState.as_of_date >= target_dates[0],
                 )
-            ).all()
-            existing = {(row.code, row.family, row.as_of_date) for row in rows}
+            )
+        ).all()
+        existing = {(row.code, row.family, row.as_of_date) for row in rows}
+        forward_cutoffs: dict[tuple[str, str], dt.date] = {}
+        for row in rows:
+            if row.evidence_mode != "forward":
+                continue
+            pair = (row.code, row.family)
+            forward_cutoffs[pair] = min(
+                row.as_of_date,
+                forward_cutoffs.get(pair, row.as_of_date),
+            )
 
         # Liquidity gate uses the same mandate floor as the scan, measured on the reconstruction's
         # own window rather than on today's analytics row.
@@ -244,7 +265,17 @@ async def run_squeeze_backfill(
                     first_discovered,
                     assessment.trigger_price,
                 )
-                if (code, family, as_of) in existing:
+                # Once live collection begins, that ticker/family timeline is immutable. A replay
+                # must not fill gaps after the cutoff or replace a live row with hindsight data.
+                if _forward_protected(
+                    forward_cutoffs,
+                    code=code,
+                    family=family,
+                    as_of=as_of,
+                ):
+                    skipped += 1
+                    continue
+                if not replace and (code, family, as_of) in existing:
                     skipped += 1
                     continue
                 payloads.append(
@@ -337,7 +368,7 @@ def main() -> None:
     parser.add_argument(
         "--replace",
         action="store_true",
-        help="overwrite rows already archived for these sessions",
+        help="overwrite reconstructed rows; live forward timelines remain immutable",
     )
     arguments = parser.parse_args()
     stats = asyncio.run(

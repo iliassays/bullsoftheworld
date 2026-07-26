@@ -271,6 +271,10 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
   discoveryPrice: market === "DSE" ? 54 : 12.4,
   asOfPrice: market === "DSE" ? 56.7 : 13.1,
   returnSinceDiscoveryPct: 5.0,
+  firstConfirmedOn: state === "confirmed" ? "2026-07-22" : null,
+  nextObservableOn: state === "confirmed" ? "2026-07-23" : null,
+  nextObservablePrice: state === "confirmed" ? (market === "DSE" ? 55.8 : 12.9) : null,
+  returnSinceNextObservablePct: state === "confirmed" ? 1.61 : null,
   maxFavorablePct: 6.2,
   maxAdversePct: -1.1,
   // Traded extremes always bracket the close-based pair.
@@ -297,10 +301,10 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
       : ["US universe currently stores survivors only; archived setups over-represent companies that did not delist."],
   missingEvidence: [],
   paperBookStatus:
-    market === "US"
-      ? "Maps to the registered us_breakout_v1 paper book."
-      : "No paper book — pending family diagnostics.",
-  methodologyVersion: "squeeze-monitor-v2",
+    market === "DSE"
+      ? "Locked forward collection only; this remains outside paper capital."
+      : "No paper book — this family has not passed its promotion gates.",
+  methodologyVersion: "squeeze-monitor-v3",
 });
 
 export const previewSqueezeMonitor: SqueezeMonitor = {
@@ -310,12 +314,13 @@ export const previewSqueezeMonitor: SqueezeMonitor = {
   selectedDate: "2026-07-23",
   latestDate: "2026-07-23",
   availableDates: ["2026-07-23", "2026-07-22", "2026-07-21"],
+  methodologyVersion: "squeeze-monitor-v3",
   methodology:
-    "States come from the squeeze-monitor-v2 archive written once per completed "
-    + "session after the analytics refresh.",
+    "The current engine is squeeze-monitor-v3. States are written once per completed "
+    + "session after the analytics refresh; historical rows retain their own method.",
   limitations: [
     "FINRA daily short-marked volume is not short interest, cannot establish open short positions or days-to-cover, and appears only as labeled supporting context.",
-    "States are a diagnostic taxonomy (squeeze-monitor-v2); no backtest has validated them and nothing here is a prediction or a recommendation.",
+    "States are a diagnostic taxonomy (squeeze-monitor-v3); no family has passed the registered validation and promotion gates.",
   ],
   families: [
     ...(market === "DSE"

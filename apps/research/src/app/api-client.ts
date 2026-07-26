@@ -338,6 +338,10 @@ export interface SqueezeEntry {
   discoveryPrice: number | null;
   asOfPrice: number | null;
   returnSinceDiscoveryPct: number | null;
+  firstConfirmedOn: string | null;
+  nextObservableOn: string | null;
+  nextObservablePrice: number | null;
+  returnSinceNextObservablePct: number | null;
   // Close-to-close. maxAdversePct can read 0.00% for a setup that traded well against you.
   maxFavorablePct: number | null;
   maxAdversePct: number | null;
@@ -376,6 +380,7 @@ export interface SqueezeMonitor {
   selectedDate: string | null;
   latestDate: string | null;
   availableDates: string[];
+  methodologyVersion: string;
   families: SqueezeFamily[];
   methodology: string;
   limitations: string[];

@@ -1,4 +1,4 @@
-"""Deterministic squeeze-taxonomy evaluator (methodology ``squeeze-monitor-v2``).
+"""Deterministic squeeze-taxonomy evaluator (methodology ``squeeze-monitor-v3``).
 
 Design contract (docs/research/squeeze-research-2026-07-24.md): pure functions over completed
 EOD inputs; no I/O, no LLM, no composite score. Each family produces a typed assessment with a
@@ -17,12 +17,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# v2 (2026-07-25) reconciled the engine with its registered specification: breakout
-# participation is measured on the breakout session, the failed-breakdown family enforces the
-# invalidation it displays and the shared eligibility gate, and archived rows carry the
-# classification known on their own session. These change which states the archive contains,
-# so the version moves with them.
-METHODOLOGY_VERSION = "squeeze-monitor-v2"
+# v3 (2026-07-26) closes a remaining specification gap: confirmation now inherits the registered
+# near-high and volatility-contraction gates. v2 could label any high-volume 20-session high a
+# "compression breakout" because its confirmation branch ran before those gates. This changes
+# which states the archive contains, so the version moves with it.
+METHODOLOGY_VERSION = "squeeze-monitor-v3"
 
 type SqueezeFamily = Literal[
     "compression_breakout",
@@ -388,7 +387,10 @@ def evaluate_compression_breakout(inputs: SqueezeInputs) -> SqueezeAssessment:
         ),
         None,
     )
-    if breakout is not None:
+    # Confirmation inherits the setup's defining conditions. Without these gates this family is
+    # merely a high-relative-volume breakout, not a compression breakout, and it no longer matches
+    # the independently evaluated hypothesis.
+    if breakout is not None and near_high and contraction:
         return assessment(
             "confirmed",
             f"Close cleared the 20-session base high on {breakout.date.isoformat()} with "

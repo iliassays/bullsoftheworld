@@ -81,6 +81,39 @@ def test_breakout_with_participation_confirms() -> None:
     assert "2.0x the base" in result.reason
 
 
+def test_high_volume_breakout_without_contraction_is_not_confirmed() -> None:
+    prices = _flat(101, 99.0) + [(99.0, 102.0, 98.8, 101.5)] * 3
+    volumes = [500_000] * (len(prices) - 3) + [1_000_000] * 3
+
+    result = evaluate_compression_breakout(
+        _inputs(
+            bars=_bars(prices, volumes=volumes),
+            last_close=101.5,
+            relative_volume=2.0,
+        )
+    )
+
+    assert result.state == "watch"
+    assert result.state != "confirmed"
+
+
+def test_high_volume_breakout_far_from_52_week_high_is_not_confirmed() -> None:
+    ramp = [(60 + i * 0.5, 61 + i * 0.5, 59 + i * 0.5, 60.5 + i * 0.5) for i in range(80)]
+    prices = ramp + _flat(21, 99.0) + [(99.0, 102.0, 98.8, 101.5)] * 3
+    volumes = [500_000] * (len(prices) - 3) + [1_000_000] * 3
+
+    result = evaluate_compression_breakout(
+        _inputs(
+            bars=_bars(prices, volumes=volumes),
+            last_close=101.5,
+            relative_volume=2.0,
+            pct_from_52w_high=-25.0,
+        )
+    )
+
+    assert result.state == "none"
+
+
 def test_low_volume_breakout_is_not_confirmed_by_an_unrelated_volume_spike_today() -> None:
     """The breakout session must carry the volume, not merely the day we happen to look.
 
@@ -190,6 +223,25 @@ def test_supply_constrained_requires_verified_scarcity() -> None:
     assert any("supply scarcity" in item.lower() for item in scarce.supporting_evidence)
     # DSE data-quality caveat is always present.
     assert any("corporate-action" in item for item in scarce.data_quality)
+
+
+def test_supply_constrained_breakout_inherits_compression_gate() -> None:
+    prices = _flat(101, 99.0) + [(99.0, 102.0, 98.8, 101.5)] * 3
+    volumes = [500_000] * (len(prices) - 3) + [1_000_000] * 3
+
+    result = evaluate_supply_constrained(
+        _inputs(
+            market="DSE",
+            bars=_bars(prices, volumes=volumes),
+            last_close=101.5,
+            relative_volume=2.0,
+            market_cap_mn=10_000,
+            free_float_cap_mn=2_500,
+        )
+    )
+
+    assert result.state == "watch"
+    assert result.state != "confirmed"
 
 
 def test_short_marked_share_is_supporting_context_with_exact_disclaimer() -> None:

@@ -507,7 +507,7 @@ STRATEGY_READINESS: dict[str, StrategyReadiness] = {
                 "confirmed short squeeze."
             ),
             rationale=(
-                "Implemented in the squeeze monitor as a taxonomy (squeeze-monitor-v2); no "
+                "Implemented in the squeeze monitor as a taxonomy (squeeze-monitor-v3); no "
                 "backtest has validated it and the US price store is survivors-only."
             ),
             missing_data=[_US_SURVIVORSHIP],

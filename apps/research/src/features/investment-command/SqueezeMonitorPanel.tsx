@@ -203,8 +203,9 @@ export function SqueezeMonitorPanel() {
         <span>
           <strong>Squeeze monitor</strong>
           <small>
-            Deterministic setup taxonomy (squeeze-monitor-v2). Families without their required
-            datasets are shown blocked — absence is an answer, not a gap.
+            Current engine: {data.methodologyVersion}. Discovery, confirmation and the next
+            observable session remain separate evidence states; archived rows retain their
+            original method.
           </small>
         </span>
         <div className="squeeze-monitor__date">
@@ -339,46 +340,55 @@ export function SqueezeMonitorPanel() {
                   {entries.length > 8 ? " · strongest state first, scroll for more" : ""}
                 </p>
                 <div className="squeeze-monitor__list" role="list">
-                {entries.map((entry) => (
-                  <button
-                    aria-current={
-                      `${entry.family}:${entry.code}` ===
-                      (selected ? `${selected.family}:${selected.code}` : undefined)
-                        ? "true"
-                        : undefined
-                    }
-                    key={`${entry.family}:${entry.code}`}
-                    onClick={() => setSelectedId(`${entry.family}:${entry.code}`)}
-                    role="listitem"
-                    type="button"
-                  >
-                    <span className="squeeze-monitor__identity">
-                      <strong>${entry.code}</strong>
-                      {entry.isNew && <em>New</em>}
-                      {entry.evidenceMode === "reconstructed" && (
-                        <em className="squeeze-monitor__replay" title="Reconstructed from stored bars, not collected on this session">
-                          Replay
-                        </em>
-                      )}
-                    </span>
-                    <StatusBadge tone={STATE_TONE[entry.state]}>
-                      {STATE_LABEL[entry.state]}
-                    </StatusBadge>
-                    <small className="squeeze-monitor__meta">
-                      {entry.capTier} cap · {entry.sessionsSinceDiscovery}{" "}
-                      {entry.sessionsSinceDiscovery === 1 ? "session" : "sessions"}
-                    </small>
-                    <span className="squeeze-monitor__return">
-                      <b
-                        className={
-                          (entry.returnSinceDiscoveryPct ?? 0) >= 0 ? "value-up" : "value-down"
-                        }
-                      >
-                        {signed(entry.returnSinceDiscoveryPct)}
-                      </b>
-                    </span>
-                  </button>
-                ))}
+                {entries.map((entry) => {
+                  const hasObservableEntry = entry.returnSinceNextObservablePct !== null;
+                  const displayedReturn = hasObservableEntry
+                    ? entry.returnSinceNextObservablePct
+                    : entry.returnSinceDiscoveryPct;
+                  return (
+                    <button
+                      aria-current={
+                        `${entry.family}:${entry.code}` ===
+                        (selected ? `${selected.family}:${selected.code}` : undefined)
+                          ? "true"
+                          : undefined
+                      }
+                      key={`${entry.family}:${entry.code}`}
+                      onClick={() => setSelectedId(`${entry.family}:${entry.code}`)}
+                      role="listitem"
+                      type="button"
+                    >
+                      <span className="squeeze-monitor__identity">
+                        <strong>${entry.code}</strong>
+                        {entry.isNew && <em>New</em>}
+                        {entry.evidenceMode === "reconstructed" && (
+                          <em className="squeeze-monitor__replay" title="Reconstructed from stored bars, not collected on this session">
+                            Replay
+                          </em>
+                        )}
+                      </span>
+                      <StatusBadge tone={STATE_TONE[entry.state]}>
+                        {STATE_LABEL[entry.state]}
+                      </StatusBadge>
+                      <small className="squeeze-monitor__meta">
+                        {entry.capTier} cap · {entry.sessionsSinceDiscovery}{" "}
+                        {entry.sessionsSinceDiscovery === 1 ? "session" : "sessions"}
+                      </small>
+                      <span className="squeeze-monitor__return">
+                        <b
+                          className={
+                            (displayedReturn ?? 0) >= 0 ? "value-up" : "value-down"
+                          }
+                        >
+                          {signed(displayedReturn)}
+                        </b>
+                        <small>
+                          {hasObservableEntry ? "after confirmation" : "from discovery"}
+                        </small>
+                      </span>
+                    </button>
+                  );
+                })}
                 </div>
               </div>
 
@@ -394,8 +404,38 @@ export function SqueezeMonitorPanel() {
                       {STATE_LABEL[selected.state]}
                     </StatusBadge>
                   </header>
+                  <div className="squeeze-monitor__timeline" aria-label="Setup evidence timeline">
+                    <span>
+                      <small>Discovered</small>
+                      <strong>{selected.firstDiscoveredOn}</strong>
+                      <em>{price(selected.discoveryPrice)}</em>
+                    </span>
+                    <span>
+                      <small>First confirmed</small>
+                      <strong>{selected.firstConfirmedOn ?? "Not reached"}</strong>
+                      <em>condition, not an order</em>
+                    </span>
+                    <span>
+                      <small>Next observable open</small>
+                      <strong>{selected.nextObservableOn ?? "Not available"}</strong>
+                      <em>{price(selected.nextObservablePrice)}</em>
+                    </span>
+                    <span>
+                      <small>Gross follow-through</small>
+                      <strong
+                        className={
+                          (selected.returnSinceNextObservablePct ?? 0) >= 0
+                            ? "value-up"
+                            : "value-down"
+                        }
+                      >
+                        {signed(selected.returnSinceNextObservablePct)}
+                      </strong>
+                      <em>after confirmation · not P&amp;L</em>
+                    </span>
+                  </div>
                   <div className="squeeze-monitor__metrics">
-                    <span><small>First discovery</small><strong>{selected.firstDiscoveredOn}</strong><em>{price(selected.discoveryPrice)}</em></span>
+                    <span><small>Discovery follow-through</small><strong>{signed(selected.returnSinceDiscoveryPct)}</strong><em>pre-confirmation move included</em></span>
                     <span><small>As-of price</small><strong>{price(selected.asOfPrice)}</strong><em>{selected.asOfDate}</em></span>
                     <span><small>Best / worst close</small><strong>{signed(selected.maxFavorablePct)} / {signed(selected.maxAdversePct)}</strong><em>MFE / MAE · close-to-close</em></span>
                     {/* The close-based pair reports 0.00% adverse for setups that traded through
@@ -421,7 +461,7 @@ export function SqueezeMonitorPanel() {
                     {selected.stateReason}
                   </p>
                   <span className="squeeze-monitor__holding">
-                    <Clock3 aria-hidden="true" size={12} />{selected.expectedHolding} · {selected.liquidityCapacityNote}
+                    <Clock3 aria-hidden="true" size={12} />{selected.expectedHolding} · Archive method {selected.methodologyVersion} · {selected.liquidityCapacityNote}
                   </span>
                   {selected.supportingEvidence.length > 0 && (
                     <div className="squeeze-monitor__evidence">

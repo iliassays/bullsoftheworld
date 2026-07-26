@@ -34,7 +34,7 @@ from bulls.analytics.chart_overlays import (
     atr_contraction,
     exponential_moving_average,
 )
-from bulls.analytics.squeeze_monitor import FAMILY_LABELS
+from bulls.analytics.squeeze_monitor import FAMILY_LABELS, METHODOLOGY_VERSION
 from bulls.analytics.strategy_readiness import STRATEGY_READINESS
 from bulls.core.models import DailyBar, SqueezeDailyState, Symbol
 
@@ -53,13 +53,17 @@ LIMITATIONS = [
     "Atlas has no borrow, locate, cost-to-borrow, failures-to-deliver, or options data; the "
     "families that require them are shown as data-blocked, never approximated.",
     "13F institutional ownership is delayed quarterly disclosure, never live flow.",
-    "States are a diagnostic taxonomy (squeeze-monitor-v2); no backtest has validated them "
-    "and nothing here is a prediction or a recommendation.",
+    f"States are a diagnostic taxonomy ({METHODOLOGY_VERSION}); no family has passed the "
+    "registered validation and promotion gates, and nothing here is a prediction or a "
+    "recommendation.",
     "A 2R planning objective is risk geometry from the trigger/invalidation pair, not a "
     "price forecast.",
     "Rows marked reconstructed were computed later from stored bars. Only currently-listed "
     "symbols exist in the store, so delisted names are absent and reconstructed outcomes are "
     "biased upward; they are diagnostics, never forward performance.",
+    "The next-observable return begins at the following completed session's adjusted open. It is "
+    "gross follow-through before fees, slippage, capacity and portfolio constraints — not a fill "
+    "or paper P&L.",
 ]
 
 _BLOCKED_FAMILY_KEYS = {
@@ -96,6 +100,7 @@ def _build_entry(
     company: str,
     code_bars: list[DailyBar],
     selected_date: dt.date,
+    episode_rows: list[SqueezeDailyState] | None = None,
 ) -> SqueezeEntryOut:
     """Build one entry from an archived row plus that code's completed bars.
 
@@ -111,6 +116,35 @@ def _build_entry(
     discovery_price = adjusted_close(discovery_bar) if discovery_bar is not None else None
     as_of_bar = code_bars[-1] if code_bars else None
     return_pct, favorable, adverse = discovery_performance(path, reference_price=discovery_price)
+    episode = [
+        item
+        for item in (episode_rows or [row])
+        if item.first_discovered_on == row.first_discovered_on
+        and item.as_of_date <= selected_date
+    ]
+    confirmed_dates = [item.as_of_date for item in episode if item.state == "confirmed"]
+    first_confirmed_on = min(confirmed_dates) if confirmed_dates else None
+    next_observable_bar = next(
+        (
+            bar
+            for bar in code_bars
+            if first_confirmed_on is not None and bar.date > first_confirmed_on
+        ),
+        None,
+    )
+    next_observable_price = (
+        _adjusted_ohlc(next_observable_bar, "open")
+        if next_observable_bar is not None
+        else None
+    )
+    as_of_price = adjusted_close(as_of_bar) if as_of_bar is not None else None
+    return_since_next_observable_pct = (
+        round((as_of_price / next_observable_price - 1) * 100, 3)
+        if as_of_price is not None
+        and next_observable_price is not None
+        and next_observable_price > 0
+        else None
+    )
     # What the tape actually did, not just where it closed. See intraday_excursion's docstring:
     # the close-based pair reports 0.00% adverse for setups that traded through their own
     # invalidation level intraday.
@@ -147,8 +181,14 @@ def _build_entry(
         as_of_date=row.as_of_date,
         sessions_since_discovery=len(path),
         discovery_price=discovery_price,
-        as_of_price=adjusted_close(as_of_bar) if as_of_bar is not None else None,
+        as_of_price=as_of_price,
         return_since_discovery_pct=return_pct,
+        first_confirmed_on=first_confirmed_on,
+        next_observable_on=(
+            next_observable_bar.date if next_observable_bar is not None else None
+        ),
+        next_observable_price=next_observable_price,
+        return_since_next_observable_pct=return_since_next_observable_pct,
         max_favorable_pct=favorable,
         max_adverse_pct=adverse,
         peak_traded_pct=peak_pct,
@@ -171,8 +211,22 @@ def _build_entry(
         # its own schedule; claiming this monitor "maps to" it implied an integration
         # that does not exist.
         paper_book_status=(
-            "No paper book. This is archived research evidence, not a trade candidate; "
-            "no squeeze family has run its historical diagnostics."
+            (
+                "Locked forward collection only: this v3 DSE confirmation is observed from the "
+                "next completed session open for 20 sessions. It remains outside paper capital "
+                "until the preregistered evidence gates pass."
+                if row.evidence_mode == "forward"
+                and row.methodology_version == METHODOLOGY_VERSION
+                else (
+                    "Replay diagnostic only: this row does not count toward the locked v3 DSE "
+                    "forward trial or paper capital."
+                )
+            )
+            if market == "DSE" and row.family == "compression_breakout"
+            else (
+                "No paper book. This is archived research evidence, not a trade candidate; "
+                "this family has not passed its promotion gates."
+            )
         ),
         methodology_version=row.methodology_version,
     )
@@ -199,11 +253,12 @@ async def load_squeeze_monitor(
     selected_date = eligible[0] if eligible else None
 
     methodology = (
-        "States come from the squeeze-monitor-v2 archive written once per "
+        f"The current engine is {METHODOLOGY_VERSION}. States are written once per "
         "completed session after the analytics refresh. Discovery performance uses completed "
         "closes (split/distribution-adjusted where audited factors exist — US yes, DSE raw "
-        "closes) from first discovery through the selected archive date. Blocked families are "
-        "registered with their exact missing datasets."
+        "closes) from first discovery through the selected archive date. Historical rows retain "
+        "their own methodology version. Blocked families are registered with their exact missing "
+        "datasets."
     )
 
     if selected_date is None:
@@ -214,6 +269,7 @@ async def load_squeeze_monitor(
             selected_date=None,
             latest_date=latest_date,
             available_dates=available_dates,
+            methodology_version=METHODOLOGY_VERSION,
             families=_blocked_families(market),
             methodology=methodology,
             limitations=LIMITATIONS,
@@ -253,6 +309,25 @@ async def load_squeeze_monitor(
     bars_by_code: dict[str, list[DailyBar]] = defaultdict(list)
     for bar in bars:
         bars_by_code[bar.code].append(bar)
+    episode_rows = list(
+        await session.scalars(
+            select(SqueezeDailyState).where(
+                SqueezeDailyState.market == market,
+                SqueezeDailyState.code.in_(codes),
+                SqueezeDailyState.as_of_date >= earliest,
+                SqueezeDailyState.as_of_date <= selected_date,
+            )
+        )
+    )
+    episode_rows_by_key: dict[tuple[str, str, dt.date], list[SqueezeDailyState]] = defaultdict(list)
+    for episode_row in episode_rows:
+        episode_rows_by_key[
+            (
+                episode_row.code,
+                episode_row.family,
+                episode_row.first_discovered_on,
+            )
+        ].append(episode_row)
 
     entries_by_family: dict[str, list[SqueezeEntryOut]] = defaultdict(list)
     for row in rows:
@@ -263,6 +338,9 @@ async def load_squeeze_monitor(
                 company=symbols[row.code].name_en if row.code in symbols else row.code,
                 code_bars=bars_by_code.get(row.code, []),
                 selected_date=selected_date,
+                episode_rows=episode_rows_by_key.get(
+                    (row.code, row.family, row.first_discovered_on), []
+                ),
             )
         )
 
@@ -290,6 +368,7 @@ async def load_squeeze_monitor(
         selected_date=selected_date,
         latest_date=latest_date,
         available_dates=available_dates,
+        methodology_version=METHODOLOGY_VERSION,
         families=families,
         methodology=methodology,
         limitations=LIMITATIONS,
@@ -316,6 +395,15 @@ class _AdjustedBar:
         self.low = float(bar.low) * ratio
         self.close = adjusted
         self.volume = float(bar.volume)
+
+
+def _adjusted_ohlc(bar: DailyBar, field: str) -> float:
+    """Return one OHLC field in the same adjusted scale as ``adjusted_close``."""
+
+    close = float(bar.close)
+    adjusted = float(bar.adjusted_close) if bar.adjusted_close is not None else close
+    ratio = adjusted / close if close > 0 else 1.0
+    return float(getattr(bar, field)) * ratio
 
 
 async def load_squeeze_path(
@@ -372,12 +460,26 @@ async def load_squeeze_path(
             .order_by(DailyBar.date)
         )
     )
+    history = list(
+        await session.scalars(
+            select(SqueezeDailyState)
+            .where(
+                SqueezeDailyState.market == market,
+                SqueezeDailyState.code == normalized,
+                SqueezeDailyState.family == family,
+                SqueezeDailyState.as_of_date <= selected_date,
+                SqueezeDailyState.as_of_date >= row.first_discovered_on,
+            )
+            .order_by(SqueezeDailyState.as_of_date)
+        )
+    )
     entry = _build_entry(
         row,
         market=market,
         company=symbol.name_en if symbol is not None else normalized,
         code_bars=entry_bars,
         selected_date=selected_date,
+        episode_rows=history,
     )
 
     # Context before discovery is what makes a base readable; the window never extends past the
@@ -405,20 +507,6 @@ async def load_squeeze_path(
     )
     vwap = anchored_vwap(bars, anchor_index=anchor)
     atr_now, atr_prior, atr_change = atr_contraction(bars)
-
-    history = list(
-        await session.scalars(
-            select(SqueezeDailyState)
-            .where(
-                SqueezeDailyState.market == market,
-                SqueezeDailyState.code == normalized,
-                SqueezeDailyState.family == family,
-                SqueezeDailyState.as_of_date <= selected_date,
-                SqueezeDailyState.as_of_date >= entry.first_discovered_on,
-            )
-            .order_by(SqueezeDailyState.as_of_date)
-        )
-    )
 
     # Each distinct first_discovered_on for this ticker/family is one discovery episode. The
     # current one is entry.first_discovered_on; anything earlier is a prior discovery.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 
 from api.institutional_research.squeeze import LIMITATIONS, _blocked_families, _build_entry
-from bulls.core.models import SqueezeDailyState
+from bulls.core.models import DailyBar, SqueezeDailyState
 
 
 def test_us_blocked_families_are_explicit_with_missing_datasets() -> None:
@@ -70,3 +70,114 @@ def test_archived_entry_preserves_its_evidence_mode() -> None:
     )
 
     assert entry.evidence_mode == "reconstructed"
+
+
+def test_entry_separates_discovery_from_next_observable_confirmation_return() -> None:
+    discovery_date = dt.date(2026, 7, 20)
+    confirmation_date = dt.date(2026, 7, 21)
+    observable_date = dt.date(2026, 7, 22)
+    selected_date = dt.date(2026, 7, 23)
+    selected = SqueezeDailyState(
+        market="DSE",
+        code="TEST",
+        family="compression_breakout",
+        as_of_date=selected_date,
+        state="confirmed",
+        evidence_mode="forward",
+        previous_state="confirmed",
+        reason="The setup remains confirmed.",
+        first_discovered_on=discovery_date,
+        evidence={},
+        methodology_version="squeeze-monitor-v3",
+    )
+    history = [
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=discovery_date,
+            state="forming",
+            evidence_mode="forward",
+            previous_state="none",
+            reason="The base is forming.",
+            first_discovered_on=discovery_date,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=confirmation_date,
+            state="confirmed",
+            evidence_mode="forward",
+            previous_state="forming",
+            reason="The breakout confirmed.",
+            first_discovered_on=discovery_date,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+        selected,
+    ]
+    bars = [
+        DailyBar(
+            market="DSE",
+            code="TEST",
+            date=discovery_date,
+            open=99,
+            high=101,
+            low=98,
+            close=100,
+            volume=1_000,
+            source="test",
+        ),
+        DailyBar(
+            market="DSE",
+            code="TEST",
+            date=confirmation_date,
+            open=100,
+            high=106,
+            low=99,
+            close=105,
+            volume=2_000,
+            source="test",
+        ),
+        DailyBar(
+            market="DSE",
+            code="TEST",
+            date=observable_date,
+            open=106,
+            high=109,
+            low=104,
+            close=108,
+            volume=1_500,
+            source="test",
+        ),
+        DailyBar(
+            market="DSE",
+            code="TEST",
+            date=selected_date,
+            open=108,
+            high=111,
+            low=107,
+            close=110,
+            volume=1_200,
+            source="test",
+        ),
+    ]
+
+    entry = _build_entry(
+        selected,
+        market="DSE",
+        company="Test Company",
+        code_bars=bars,
+        selected_date=selected_date,
+        episode_rows=history,
+    )
+
+    assert entry.return_since_discovery_pct == 10.0
+    assert entry.first_confirmed_on == confirmation_date
+    assert entry.next_observable_on == observable_date
+    assert entry.next_observable_price == 106.0
+    assert entry.return_since_next_observable_pct == 3.774
+    assert "locked forward collection" in entry.paper_book_status.lower()

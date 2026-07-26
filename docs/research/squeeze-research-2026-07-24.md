@@ -99,7 +99,7 @@ family, execution is still gated on borrow).
 | 2 | SEC failures-to-deliver + Reg SHO threshold list | free | corroborating borrow-scarcity evidence |
 | 3 | borrow availability, utilization, cost-to-borrow, locates (S3 / Ortex / S&P Global / IB) | paid | **the only stage that can unblock short execution** |
 
-## E. Exact signal definitions (`squeeze-monitor-v2`)
+## E. Exact signal definitions (`squeeze-monitor-v3`)
 
 All from completed EOD data; evaluated after each market's analytics refresh; deterministic;
 thresholds are constants in `bulls.analytics.squeeze_monitor` restated in the API methodology.
@@ -157,6 +157,18 @@ always listed under data quality.
 State transitions are archived with a reason string; "why the classification changed" is the
 diff between consecutive `squeeze_daily_states` rows.
 
+### Reconciliation, 2026-07-26 (`squeeze-monitor-v2` → `v3`)
+
+The `confirmed` branch previously ran before the near-52-week-high and ATR-contraction gates. That
+made a high-volume 20-session high sufficient for confirmation even when no compression setup
+existed. It also made the production monitor broader than the independently evaluated
+`compression_breakout` hypothesis. Version 3 requires `near_high AND contraction AND breakout`
+for confirmation. The DSE supply-constrained family inherits the same correction.
+
+Reconstructed rows may be regenerated under v3 and remain explicitly marked `reconstructed`.
+Forward rows retain the methodology that classified their session; they are not rewritten as if
+v3 had existed earlier.
+
 ### Reconciliation, 2026-07-25 (`squeeze-monitor-v1` → `v2`)
 
 An external review found the engine and this specification had diverged. Every divergence was
@@ -190,12 +202,21 @@ high-rel-volume breakout has no reason to exist.
 
 ## G. Backtest results
 
-**None run yet — deliberately.** The families implementable today inherit the same data
-defects that keep every Atlas strategy diagnostic (US survivorship, DSE adjustments/depth).
-Running "results" now would manufacture numbers the promotion gates would rightly reject.
-The monitor therefore ships as a forward-evidence collector: every daily state is archived
-point-in-time from its first production day, which builds the exact discovery-before-breakout
-dataset the backtests need. No claims of profitability exist anywhere in the module.
+The module originally shipped without a backtest because the available store carried US
+survivorship and DSE adjustment/depth defects. The independent 2026-07-25 diagnostics later
+confirmed that restraint: US compression and failed-breakdown implementations were rejected;
+DSE replay results were skewed and unstable. `dse_compression_breakout_20d_candidate` remains a
+locked forward-collection hypothesis, not a paper book or validated edge. See
+`atlas-edge-discovery-2026-07-25-codex-independent.md`.
+
+Every daily state continues to be archived point-in-time. No profitability claim is permitted
+until next-observable execution, costs, benchmark, capacity and portfolio constraints pass the
+mandate's forward gates.
+
+Forward rows are immutable. Re-running a completed session cannot relabel evidence after observing
+the outcome; a live scan may only replace a reconstructed placeholder for the same session. A
+methodology revision begins on the next unobserved session, while archived rows retain the version
+that classified them.
 
 ## H. Agent and typed-contract design
 
@@ -206,21 +227,23 @@ measured values. Contracts (Pydantic): `SqueezeAssessment` (analytics),
 `SqueezeDailyState` ORM row (core), `SqueezeMonitorOut / SqueezeFamilyOut / SqueezeEntryOut`
 (API). The scan task is the only writer; the API is read-only; the UI renders the contract
 verbatim. Per-ticker output includes: market, ticker, company, cap tier, family, state, first
-discovered date + price, as-of date, setup price, trigger price/condition, invalidation, risk
-per share, planning objective (risk geometry, never a target), expected holding window, data
-quality notes, liquidity capacity (2% ADV participation), supporting evidence,
-counter-evidence, catalyst proximity, dilution flags, missing evidence, explanation,
-methodology version.
+discovered date + price, first confirmation, next observable session open, gross follow-through
+from that observable reference, as-of date, setup price, trigger price/condition, invalidation,
+risk per share, planning objective (risk geometry, never a target), expected holding window, data
+quality notes, liquidity capacity (2% ADV participation), supporting evidence, counter-evidence,
+catalyst proximity, dilution flags, missing evidence, explanation, and methodology version.
+
+The next-observable return is a diagnostic path measurement, not a simulated fill or portfolio
+P&L. It excludes fees, slippage, capacity, cash, concurrency and risk constraints.
 
 ## I. Paper-trading integration
 
-No new paper books ship with this module (the mandate: books only after historical diagnostics
-pass — §G). Family → book mapping when diagnostics eventually pass: `compression_breakout` maps
-to the existing `us_breakout_v1` book (no duplicate book will be created); other families would
-get their own books with independent capital, cost model, benchmark (SPY/DSEX explicit series),
-promotion status and decision events, via the existing shadow-book machinery. Squeeze list
-membership never auto-creates a target: research discovery, trade eligibility, target formation
-and completed paper fill remain the existing separate states of the decision archive.
+No new paper books ship with this module. The DSE compression candidate collects its locked
+20-session next-observable outcomes separately from paper capital. A family may map to a book only
+after its historical and forward diagnostics pass, with independent capital, cost model,
+benchmark, promotion status and decision events. Squeeze list membership never auto-creates a
+target: research discovery, trade eligibility, target formation and completed paper fill remain
+the existing separate states of the decision archive.
 
 ### Setup chart (`SqueezeChart`, added 2026-07-24)
 

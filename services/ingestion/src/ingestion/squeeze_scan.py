@@ -1,9 +1,10 @@
 """EOD squeeze-taxonomy scan — the only writer of ``squeeze_daily_states``.
 
-Write semantics: one row per (market, code, family, session), upserted. It is idempotent —
-re-running a session with the same inputs reproduces the same row — but it is NOT append-only:
-re-running after a methodology change rewrites that session's classification in place, with no
-prior version retained. Treat a methodology bump as a rewrite of everything not yet re-scanned.
+Write semantics: one row per (market, code, family, session). A row collected live is immutable:
+re-running a session cannot reclassify it after the fact. A live scan may replace a reconstructed
+placeholder for the same key, because the point-in-time observation is stronger evidence. A
+methodology bump therefore starts collecting on the next unobserved session; historical rows keep
+the version that actually classified them.
 
 Runs after the market's analytics refresh. Deterministic: loads completed bars + the persisted
 analytics row per eligible symbol, injects the prior archived state per family, evaluates the
@@ -411,6 +412,7 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                             "missing": assessment.missing_evidence,
                             "expected_holding": assessment.expected_holding,
                         },
+                        "evidence_mode": "forward",
                         "methodology_version": METHODOLOGY_VERSION,
                     }
                 )
@@ -419,7 +421,7 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
         for start in range(0, len(payloads), 500):
             chunk = payloads[start : start + 500]
             statement = pg_insert(SqueezeDailyState).values(chunk)
-            await session.execute(
+            result = await session.execute(
                 statement.on_conflict_do_update(
                     index_elements=["market", "code", "family", "as_of_date"],
                     set_={
@@ -437,12 +439,16 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                             "cap_tier",
                             "average_dollar_volume_mn",
                             "evidence",
+                            "evidence_mode",
                             "methodology_version",
                         )
                     },
+                    # A live observation cannot be rewritten after its session. The only legal
+                    # promotion is a real scan replacing a hindsight reconstruction.
+                    where=SqueezeDailyState.evidence_mode == "reconstructed",
                 )
             )
-            archived += len(chunk)
+            archived += max(result.rowcount or 0, 0)
         await session.commit()
     log.info(
         "squeeze_scan market=%s session=%s evaluated=%s archived=%s",

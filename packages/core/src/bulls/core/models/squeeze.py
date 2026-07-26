@@ -1,14 +1,12 @@
-"""Daily archive of squeeze-taxonomy states (squeeze-monitor-v2).
+"""Daily archive of versioned squeeze-taxonomy states.
 
-One row per (market, code, family, session), upserted by the scan. Idempotent for identical
-inputs, but not append-only: a re-scan after a methodology change rewrites that session in
-place without retaining the prior version.
+One row exists per (market, code, family, session). The live scan is the authoritative writer;
+once it records a session, that forward row is immutable. A live scan may replace a reconstructed
+placeholder for the same key, but replay can never overwrite or extend a live timeline. This lets
+the archive answer when a setup was discovered and why it changed without hindsight relabelling.
 
-One row per (market, code, family, session). The scan task is the only writer; rows for closed
-sessions are never rewritten, so "when was this first discovered" and "why did the
-classification change" are answered by the archive itself, not by recomputation. Market data is
-market-scoped (not tenant-scoped) like DailyBar/TickerAnalytics; tenant isolation happens at
-the API layer, which only ever serves the requesting tenant's market.
+Market data is market-scoped (not tenant-scoped) like DailyBar/TickerAnalytics; tenant isolation
+happens at the API layer, which only ever serves the requesting tenant's market.
 """
 
 from __future__ import annotations

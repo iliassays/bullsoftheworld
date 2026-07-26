@@ -633,6 +633,12 @@ class SqueezeEntryOut(ApiModel):
     discovery_price: float | None
     as_of_price: float | None
     return_since_discovery_pct: float | None
+    # Confirmation and the following completed session are separate from discovery. The next-open
+    # reference is an observable historical price, not a simulated fill or portfolio P&L.
+    first_confirmed_on: dt.date | None = None
+    next_observable_on: dt.date | None = None
+    next_observable_price: float | None = None
+    return_since_next_observable_pct: float | None = None
     # Close-to-close. Adverse can read 0.00% for a setup that traded well against the reader,
     # so the traded extremes below are shown beside them, never instead of them.
     max_favorable_pct: float | None
@@ -673,6 +679,7 @@ class SqueezeMonitorOut(ApiModel):
     selected_date: dt.date | None
     latest_date: dt.date | None
     available_dates: list[dt.date]
+    methodology_version: str
     families: list[SqueezeFamilyOut]
     methodology: str
     limitations: list[str]
