@@ -9,6 +9,7 @@ from api.institutional_research.operator import (
     HistoricalReplayOperatorRequest,
     LifecycleOperatorRequest,
     _argument_parser,
+    _forward_seed_idempotency_key,
     configure_lifecycle,
     seed_historical_replay,
 )
@@ -45,6 +46,26 @@ def test_forward_operator_cli_wires_empty_book_replacement_flag() -> None:
 
     assert request.replace_empty is True
     assert request.apply is True
+
+
+def test_forward_seed_key_is_bounded_and_changes_with_methodology() -> None:
+    first = _forward_seed_idempotency_key(
+        strategy_key="x" * 48,
+        methodology_version="methodology-v1",
+        latest_date=dt.date(2026, 7, 26),
+        cap_tier="unclassified",
+        universe_limit=500,
+    )
+    second = _forward_seed_idempotency_key(
+        strategy_key="x" * 48,
+        methodology_version="methodology-v2",
+        latest_date=dt.date(2026, 7, 26),
+        cap_tier="unclassified",
+        universe_limit=500,
+    )
+
+    assert len(first) <= 96
+    assert first != second
 
 
 def test_scheduled_attempts_share_one_session_trigger() -> None:

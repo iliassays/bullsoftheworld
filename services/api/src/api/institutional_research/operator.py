@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass
@@ -40,6 +41,26 @@ from bulls.core.models import (
 from bulls.core.tenancy import TenantRegistry
 
 _TENANTS_DIR = Path(__file__).resolve().parents[5] / "tenants"
+
+
+def _forward_seed_idempotency_key(
+    *,
+    strategy_key: str,
+    methodology_version: str,
+    latest_date: dt.date,
+    cap_tier: str | None,
+    universe_limit: int,
+) -> str:
+    semantic_inputs = "|".join(
+        (
+            methodology_version,
+            latest_date.isoformat(),
+            cap_tier or "all",
+            str(universe_limit),
+        )
+    )
+    execution_tag = hashlib.sha256(semantic_inputs.encode()).hexdigest()[:24]
+    return f"forward:{strategy_key}:{execution_tag}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -501,10 +522,12 @@ async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str
             workspace=workspace,
             user_id=user.id,
             request=BacktestRequest(
-                idempotency_key=(
-                    f"forward-seed:{request.strategy_key}:{strategy.methodology_version}:"
-                    f"{latest_date.isoformat()}:"
-                    f"{request.cap_tier or 'all'}:{request.universe_limit}"
+                idempotency_key=_forward_seed_idempotency_key(
+                    strategy_key=request.strategy_key,
+                    methodology_version=strategy.methodology_version,
+                    latest_date=latest_date,
+                    cap_tier=request.cap_tier,
+                    universe_limit=request.universe_limit,
                 ),
                 strategy_key=request.strategy_key,
                 end_date=latest_date,
