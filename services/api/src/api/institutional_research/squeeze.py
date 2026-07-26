@@ -53,9 +53,9 @@ LIMITATIONS = [
     "Atlas has no borrow, locate, cost-to-borrow, failures-to-deliver, or options data; the "
     "families that require them are shown as data-blocked, never approximated.",
     "13F institutional ownership is delayed quarterly disclosure, never live flow.",
-    f"States are a diagnostic taxonomy ({METHODOLOGY_VERSION}); no family has passed the "
-    "registered validation and promotion gates, and nothing here is a prediction or a "
-    "recommendation.",
+    f"States are a diagnostic taxonomy ({METHODOLOGY_VERSION}). The DSE compression family has "
+    "a separately registered forward shadow experiment, but no family has passed promotion "
+    "gates and nothing here is a prediction or recommendation.",
     "A 2R planning objective is risk geometry from the trigger/invalidation pair, not a "
     "price forecast.",
     "Rows marked reconstructed were computed later from stored bars. Only currently-listed "
@@ -208,14 +208,11 @@ def _build_entry(
         counter_evidence=[str(item) for item in evidence.get("counter", [])],
         data_quality=[str(item) for item in evidence.get("data_quality", [])],
         missing_evidence=[str(item) for item in evidence.get("missing", [])],
-        # No squeeze family feeds any book. us_breakout_v1 trades its own signals on
-        # its own schedule; claiming this monitor "maps to" it implied an integration
-        # that does not exist.
         paper_book_status=(
             (
-                "Locked forward collection only: this v3 DSE confirmation is observed from the "
-                "next completed session open for 20 sessions. It remains outside paper capital "
-                "until the preregistered evidence gates pass."
+                "Registered forward shadow experiment: a new v3 DSE confirmation may form a "
+                "risk-sized next-session target in its separate 20-session diagnostic book. "
+                "Reconstructed rows cannot create targets, and the strategy is not promoted."
                 if row.evidence_mode == "forward"
                 and row.methodology_version == METHODOLOGY_VERSION
                 else (

@@ -62,6 +62,17 @@ class HistoricalReplayOperatorRequest:
     apply: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class ForwardShadowOperatorRequest:
+    tenant: str
+    handle: str
+    strategy_key: str
+    initial_capital: float
+    universe_limit: int = 500
+    cap_tier: str | None = None
+    apply: bool = False
+
+
 async def configure_lifecycle(request: LifecycleOperatorRequest) -> dict[str, object]:
     """Configure one user's policy and enqueue only that exact RLS identity."""
 
@@ -363,6 +374,139 @@ async def seed_historical_replay(
         }
 
 
+async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str, object]:
+    """Register a diagnostic backtest and start a cash-only forward shadow book."""
+
+    if not request.apply:
+        raise RuntimeError("Refusing to seed a forward shadow book without --apply")
+    registry = TenantRegistry.from_dir(_TENANTS_DIR, default="bullsofdhaka")
+    tenant = registry.get(request.tenant)
+    if tenant is None:
+        raise RuntimeError(f"Unknown tenant: {request.tenant}")
+    strategy = STRATEGIES[request.strategy_key]
+    if strategy.market != tenant.market:
+        raise RuntimeError(
+            f"Strategy {request.strategy_key} is registered for {strategy.market}, "
+            f"not {tenant.market}"
+        )
+
+    async with get_sessionmaker()() as session:
+        await bind_tenant_context(session, tenant.name)
+        user = await session.scalar(
+            select(User).where(User.tenant_id == tenant.name, User.handle == request.handle)
+        )
+        if user is None:
+            raise RuntimeError(f"Account {request.handle!r} not found in {tenant.name}")
+        await bind_research_tenant_context(
+            session,
+            tenant_id=tenant.name,
+            market=tenant.market,
+            user_id=user.id,
+        )
+        workspace_out = await bootstrap_personal_workspace(session, tenant=tenant, user=user)
+        workspace = await session.scalar(
+            select(ResearchWorkspace).where(
+                ResearchWorkspace.id == workspace_out.id,
+                ResearchWorkspace.tenant_id == tenant.name,
+                ResearchWorkspace.market == tenant.market,
+            )
+        )
+        if workspace is None:
+            raise RuntimeError("The RLS-bound workspace could not be reloaded")
+
+        existing = await session.scalar(
+            select(ResearchShadowPortfolio).where(
+                ResearchShadowPortfolio.workspace_id == workspace.id,
+                ResearchShadowPortfolio.organization_id == workspace.organization_id,
+                ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
+                ResearchShadowPortfolio.market == workspace.market,
+                ResearchShadowPortfolio.strategy_key == request.strategy_key,
+                ResearchShadowPortfolio.status.in_(("active", "paused")),
+            )
+        )
+        if existing is not None:
+            portfolios = await reconcile_shadow_portfolios(session, workspace=workspace)
+            await session.commit()
+            matched = next(item for item in portfolios if item.id == existing.id)
+            return {
+                "status": "existing",
+                "portfolio_id": str(existing.id),
+                "last_evaluated_on": (
+                    matched.last_evaluated_on.isoformat() if matched.last_evaluated_on else None
+                ),
+                "snapshots": len(matched.snapshots),
+            }
+
+        latest_date = await session.scalar(
+            select(func.max(DailyBar.date)).where(DailyBar.market == tenant.market)
+        )
+        if latest_date is None:
+            raise RuntimeError(f"No completed {tenant.market} bars are available")
+        backtest = await execute_backtest(
+            session,
+            workspace=workspace,
+            user_id=user.id,
+            request=BacktestRequest(
+                idempotency_key=(
+                    f"forward-seed:{request.strategy_key}:{latest_date.isoformat()}:"
+                    f"{request.cap_tier or 'all'}:{request.universe_limit}"
+                ),
+                strategy_key=request.strategy_key,
+                end_date=latest_date,
+                cap_tier=request.cap_tier,
+                universe_limit=request.universe_limit,
+                initial_capital=request.initial_capital,
+            ),
+        )
+        forward_start = latest_date + dt.timedelta(days=1)
+        created = await create_shadow_portfolio(
+            session,
+            workspace=workspace,
+            user_id=user.id,
+            request=CreateShadowPortfolioRequest(
+                source_run_id=backtest.id,
+                name=f"Atlas {strategy.name} forward diagnostic",
+            ),
+            forward_evidence_started_on=forward_start,
+            history_mode="locked_forward_only",
+        )
+        portfolio = await session.get(ResearchShadowPortfolio, created.id)
+        if portfolio is None:
+            raise RuntimeError("Created forward book could not be reloaded")
+        portfolio.configuration = {
+            **portfolio.configuration,
+            "managed_by": "registered_forward_experiment",
+        }
+        record_research_audit_event(
+            session,
+            workspace=workspace,
+            actor_user_id=user.id,
+            event_type="research_forward_shadow_seeded",
+            resource_type="research_shadow_portfolio",
+            resource_id=str(created.id),
+            attributes={
+                "strategy_key": request.strategy_key,
+                "source_run_id": str(backtest.id),
+                "source_validation_status": created.configuration.get("source_validation_status"),
+                "forward_evidence_started_on": forward_start.isoformat(),
+            },
+        )
+        await session.commit()
+        return {
+            "status": "created",
+            "tenant": tenant.name,
+            "market": tenant.market,
+            "handle": user.handle,
+            "workspace_id": str(workspace.id),
+            "source_run_id": str(backtest.id),
+            "portfolio_id": str(created.id),
+            "inception_date": created.inception_date.isoformat(),
+            "forward_evidence_started_on": forward_start.isoformat(),
+            "source_validation_status": created.configuration.get("source_validation_status"),
+            "initial_targets": created.snapshots[0].target_weights,
+        }
+
+
 def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Operate one exact Atlas account")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -391,6 +535,16 @@ def _argument_parser() -> argparse.ArgumentParser:
     replay.add_argument("--universe-limit", type=int, default=25)
     replay.add_argument("--cap-tier")
     replay.add_argument("--apply", action="store_true")
+    forward = subparsers.add_parser(
+        "forward", help="Register a backtest and start a cash-only forward shadow book"
+    )
+    forward.add_argument("--tenant", required=True)
+    forward.add_argument("--handle", required=True)
+    forward.add_argument("--strategy", required=True)
+    forward.add_argument("--initial-capital", type=float, required=True)
+    forward.add_argument("--universe-limit", type=int, default=500)
+    forward.add_argument("--cap-tier")
+    forward.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -412,7 +566,7 @@ async def _main() -> None:
                 apply=arguments.apply,
             )
         )
-    else:
+    elif arguments.command == "replay":
         result = await seed_historical_replay(
             HistoricalReplayOperatorRequest(
                 tenant=arguments.tenant,
@@ -420,6 +574,18 @@ async def _main() -> None:
                 strategy_key=arguments.strategy,
                 initial_capital=arguments.initial_capital,
                 history_days=arguments.history_days,
+                universe_limit=arguments.universe_limit,
+                cap_tier=arguments.cap_tier,
+                apply=arguments.apply,
+            )
+        )
+    else:
+        result = await seed_forward_shadow(
+            ForwardShadowOperatorRequest(
+                tenant=arguments.tenant,
+                handle=arguments.handle,
+                strategy_key=arguments.strategy,
+                initial_capital=arguments.initial_capital,
                 universe_limit=arguments.universe_limit,
                 cap_tier=arguments.cap_tier,
                 apply=arguments.apply,

@@ -13,6 +13,9 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.institutional_research.dossier import build_company_dossier
+from api.institutional_research.dse_squeeze_backtests import (
+    prepare_dse_compression_backtest,
+)
 from api.institutional_research.institutional_backtests import (
     InstitutionalBacktestPreparation,
     prepare_institutional_backtest,
@@ -32,6 +35,7 @@ from api.institutional_research.schemas import BacktestRequest, ResearchRunOut
 from api.institutional_research.universe import apply_research_product_scope
 from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
+from bulls.analytics.dse_compression_breakout import CompressionBreakoutPolicy
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
     AutonomousResearchInput,
@@ -839,7 +843,20 @@ async def execute_backtest(
         "us_forced_seller_v1",
         "us_factor_sleeve_v1",
     }
+    dse_squeeze_strategy = request.strategy_key == "dse_compression_breakout_20d_v1"
+    schedule_strategy = institutional_strategy or dse_squeeze_strategy
     execution_timing = "next_close" if institutional_strategy else "next_open"
+    signal_specification = (
+        {
+            "source_family": "compression_breakout",
+            "source_methodology": "squeeze-monitor-v3",
+            "portfolio_construction": CompressionBreakoutPolicy().model_dump(mode="json"),
+            "historical_evidence_role": "diagnostic_only",
+            "forward_shadow_evidence": "forward rows on or after book registration only",
+        }
+        if dse_squeeze_strategy
+        else None
+    )
     frozen_specification = {
         "request": parameters,
         "strategy": strategy.model_dump(mode="json"),
@@ -855,6 +872,7 @@ async def execute_backtest(
             "inactive_history_required_for_promotion": True,
             "point_in_time_inputs_required_for_promotion": True,
         },
+        **({"signal_specification": signal_specification} if signal_specification else {}),
     }
     run = _new_run(
         workspace=workspace,
@@ -887,6 +905,12 @@ async def execute_backtest(
             request=request,
         )
         securities = preparation.securities
+    elif dse_squeeze_strategy:
+        preparation = await prepare_dse_compression_backtest(
+            session,
+            request=request,
+        )
+        securities = preparation.securities
     else:
         securities = await _backtest_universe(session, market=workspace.market, request=request)
     evaluation_dates = [bar.date for security in securities for bar in security.bars]
@@ -908,7 +932,7 @@ async def execute_backtest(
         inactive_security_history_complete=preparation.inactive_security_history_complete,
         point_in_time_inputs_complete=preparation.point_in_time_inputs_complete,
         risk_policy=risk_policy,
-        weight_schedule=preparation.weight_schedule if institutional_strategy else None,
+        weight_schedule=preparation.weight_schedule if schedule_strategy else None,
         execution_timing=execution_timing,
         benchmark_series=benchmark_series,
     )
@@ -1085,6 +1109,7 @@ async def execute_backtest(
         kind="system_readiness",
         output={
             "institutional_system": institutional_strategy,
+            "schedule_driven_system": schedule_strategy,
             "execution_timing": execution_timing,
             "failed_gates": preparation.failed_gates,
             "diagnostics": preparation.diagnostics,

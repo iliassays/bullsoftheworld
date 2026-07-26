@@ -28,6 +28,7 @@ ENGINE_VERSION = "atlas-portfolio-engine-v3"
 
 type StrategyKey = Literal[
     "dse_reversal_v1",
+    "dse_compression_breakout_20d_v1",
     "us_breakout_v1",
     "us_activist_13d_v1",
     "us_insider_cluster_v1",
@@ -427,6 +428,21 @@ STRATEGIES = {
         description=(
             "Ranks liquid drawdown recoveries using completed price and participation data. "
             "It does not use historically unavailable fundamental snapshots."
+        ),
+    ),
+    "dse_compression_breakout_20d_v1": StrategyDefinition(
+        key="dse_compression_breakout_20d_v1",
+        market="DSE",
+        name="DSE compression breakout 20-session study",
+        horizon="swing",
+        expected_holding="Up to 20 completed sessions; structural failure can exit sooner",
+        methodology_version="dse-compression-breakout-20d-v1",
+        minimum_lookback=20,
+        rebalance_sessions=1,
+        maximum_positions=8,
+        description=(
+            "A locked forward experiment using first squeeze-monitor-v3 compression-breakout "
+            "confirmations. It is risk-sized and paper-observed, not a validated recommendation."
         ),
     ),
     "us_breakout_v1": StrategyDefinition(

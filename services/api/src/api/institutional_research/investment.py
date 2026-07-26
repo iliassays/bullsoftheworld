@@ -56,6 +56,12 @@ _ECONOMIC_HYPOTHESES = {
         "Liquid DSE securities that suffered a material drawdown but show controlled short-term "
         "recovery and renewed participation may mean-revert as forced selling exhausts."
     ),
+    "dse_compression_breakout_20d_v1": (
+        "DSE securities already near long-term highs may continue after a contracted 20-session "
+        "base resolves on at least 1.5 times base volume, because delayed participation meets "
+        "temporarily constrained supply; any effect must survive next-open execution, DSE costs, "
+        "capacity limits, a timing placebo, and genuine forward observation."
+    ),
     "us_breakout_v1": (
         "Liquid US securities with persistent positive trend, participation confirmation, and "
         "limited extension may continue as slower capital adjusts to improving price information."

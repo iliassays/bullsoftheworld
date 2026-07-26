@@ -55,6 +55,7 @@ attractive backtest.
 | Book | Horizon | State | Decision |
 |---|---|---|---|
 | `dse_reversal_v1` | EOD swing | Active diagnostic Atlas shadow book | Keep collecting immutable forward evidence. Explain its entries and failures; do not call it validated. |
+| `dse_compression_breakout_20d_v1` | EOD swing | Registered locked-forward diagnostic | Start cash-only. Only post-registration v3 confirmations may create next-open risk-sized targets; reconstructed history is never promotion evidence. |
 | `dse_trend_pullback_intraday_v1` | Intraday-to-multiday swing | Data-blocked hypothesis | Persist intraday history first, preregister the rule, then test. Do not paper trade a daily proxy. |
 | `dse_quality_value_v1` | Multi-month | Candidate | Rebuild with point-in-time financial publication dates and execution costs before deciding on a separate shadow book. |
 | `dse_pead_v1` | Event swing | Data-blocked hypothesis | Wait for deep, timestamped earnings-announcement history and surprise features. |

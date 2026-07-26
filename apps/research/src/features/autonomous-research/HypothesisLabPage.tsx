@@ -23,6 +23,7 @@ const US_STRATEGIES: readonly SelectOption<BacktestStrategyKey>[] = [
 ];
 
 const DSE_STRATEGIES: readonly SelectOption<BacktestStrategyKey>[] = [
+  { value: "dse_compression_breakout_20d_v1", label: "DSE compression breakout · locked 20-session study" },
   { value: "dse_reversal_v1", label: "DSE liquid reversal" },
 ];
 
@@ -82,7 +83,11 @@ export function HypothesisLabPage() {
       <div className="lab-layout">
         <aside className="atlas-panel lab-config">
           <header><FlaskConical aria-hidden="true" size={16} /><span><strong>Experiment specification</strong><small>Inputs are stored with the run</small></span></header>
-          <label>Registered strategy<SelectField label="Registered strategy" onChange={(key) => setStrategyKey(key as BacktestStrategyKey)} options={strategyOptions} value={strategyKey} /></label>
+          <label>Registered strategy<SelectField label="Registered strategy" onChange={(key) => {
+            const selected = key as BacktestStrategyKey;
+            setStrategyKey(selected);
+            if (selected === "dse_compression_breakout_20d_v1") setUniverseLimit(500);
+          }} options={strategyOptions} value={strategyKey} /></label>
           <label>Capitalization mandate<SelectField label="Capitalization mandate" onChange={setCapTier} options={CAP_OPTIONS} value={capTier} /></label>
           <span className="lab-config__split">
             <label>Start date<input onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} /></label>

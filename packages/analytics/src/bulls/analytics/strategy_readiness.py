@@ -133,6 +133,25 @@ STRATEGY_READINESS: dict[str, StrategyReadiness] = {
             missing_data=[_DSE_ADJUSTMENTS, _DSE_HISTORY],
         ),
         StrategyReadiness(
+            key="dse_compression_breakout_20d_v1",
+            name="DSE compression breakout 20-session study",
+            market="DSE",
+            direction="long",
+            horizon="swing",
+            implemented_strategy_key="dse_compression_breakout_20d_v1",
+            status="diagnostic_only",
+            economic_hypothesis=(
+                "A near-high contracted base that clears its pre-existing trigger on abnormal "
+                "volume may continue as delayed demand meets temporarily constrained supply."
+            ),
+            rationale=(
+                "The rule is registered, costed, risk-sized, timing-placebo tested, and eligible "
+                "for a separate forward diagnostic book. Reconstructed history remains "
+                "survivor-biased and DSE corporate-action coverage is not promotion-grade."
+            ),
+            missing_data=[_DSE_ADJUSTMENTS, _DSE_HISTORY],
+        ),
+        StrategyReadiness(
             key="dse_trend_pullback",
             name="DSE trend continuation / micro-pullback",
             market="DSE",

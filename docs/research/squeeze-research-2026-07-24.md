@@ -205,8 +205,11 @@ high-rel-volume breakout has no reason to exist.
 The module originally shipped without a backtest because the available store carried US
 survivorship and DSE adjustment/depth defects. The independent 2026-07-25 diagnostics later
 confirmed that restraint: US compression and failed-breakdown implementations were rejected;
-DSE replay results were skewed and unstable. `dse_compression_breakout_20d_candidate` remains a
-locked forward-collection hypothesis, not a paper book or validated edge. See
+DSE replay results were skewed and unstable. The hypothesis is now registered as
+`dse_compression_breakout_20d_v1` and may occupy one separate cash-funded **diagnostic shadow**
+book. That is not promotion: reconstructed rows can never form targets, only new immutable
+`squeeze-monitor-v3` forward confirmation transitions on or after book registration are eligible,
+and execution is no earlier than the following session open. See
 `atlas-edge-discovery-2026-07-25-codex-independent.md`.
 
 Every daily state continues to be archived point-in-time. No profitability claim is permitted
@@ -246,8 +249,10 @@ No new paper books ship with this module. The DSE compression candidate collects
 20-session next-observable outcomes separately from paper capital. A family may map to a book only
 after its historical and forward diagnostics pass, with independent capital, cost model,
 benchmark, promotion status and decision events. Squeeze list membership never auto-creates a
-target: research discovery, trade eligibility, target formation and completed paper fill remain
-the existing separate states of the decision archive.
+target: `dse_compression_breakout_20d_v1` independently requires a first v3 confirmation,
+liquidity and risk-geometry gates, an available portfolio slot, risk sizing and mandate
+constraints. Research discovery, trade eligibility, target formation and completed paper fill
+remain separate states of the decision archive.
 
 ### Setup chart (`SqueezeChart`, added 2026-07-24)
 
@@ -292,7 +297,7 @@ execution boundary; days since discovery; return / MFE / MAE since discovery (ba
 labeled); numbered multi-episode setup→trigger progression (state history);
 trigger/invalidation/planning levels
 (2R labeled "not a forecast"); supporting and counter-evidence; dilution warnings; data-quality
-notes; paper-book status ("none — pending diagnostics"). Wording rules from §C/§D are part of
+notes; paper-book status (registered DSE forward diagnostic or no book). Wording rules from §C/§D are part of
 the spec: "Potential short squeeze" only ever with authoritative short-position evidence (i.e.,
 never, until `us_short_squeeze` unblocks); "too extended" surfaces as the `exhausted` state.
 
@@ -306,6 +311,7 @@ never, until `us_short_squeeze` unblocks); "too extended" surfaces as the `exhau
 | API read model | `services/api/src/api/institutional_research/squeeze.py` + `GET /institutional-research/squeeze-monitor` | `services/api/tests/test_squeeze_monitor_api.py` — blocked-family contract + language rules |
 | Readiness registry | `strategy_readiness.py` (+5 squeeze entries) | `test_strategy_readiness.py` invariants |
 | UI | `apps/research/src/features/investment-command/SqueezeMonitorPanel.tsx` | Verified in preview both tenants: DSE renders 3 available families and the string "short squeeze" appears nowhere on the page; US renders the blocked short-squeeze card with its 3 missing datasets and zero entries |
+| DSE forward strategy | `packages/analytics/src/bulls/analytics/dse_compression_breakout.py` + `services/api/src/api/institutional_research/dse_squeeze_backtests.py` | First v3 confirmations only; reconstructed-target exclusion; 20-session expiry; structural exits; liquidity/geometry/risk/capacity gates; five-session timing placebo |
 
 Two engine defects were found by the tests during implementation and fixed: the base high/low
 must exclude the most recent 3 sessions (otherwise a breakout raises its own trigger and can

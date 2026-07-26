@@ -1,0 +1,217 @@
+"""DSE-only database adapter for the locked compression-breakout experiment."""
+
+from __future__ import annotations
+
+import datetime as dt
+from collections import Counter, defaultdict
+from typing import Literal
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.institutional_research.institutional_backtests import (
+    InstitutionalBacktestPreparation,
+)
+from api.institutional_research.schemas import BacktestRequest
+from bulls.analytics.adjustments import adjustment_factor
+from bulls.analytics.dse_compression_breakout import (
+    SOURCE_FAMILY,
+    SOURCE_METHODOLOGY_VERSION,
+    CompressionBreakoutObservation,
+    CompressionBreakoutPolicy,
+    build_compression_breakout_schedule,
+    delay_weight_schedule,
+)
+from bulls.analytics.research_strategy import StrategyBar, StrategySecurity
+from bulls.core.models import DailyBar, SqueezeDailyState, Symbol
+from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
+
+
+async def prepare_dse_compression_backtest(
+    session: AsyncSession,
+    *,
+    request: BacktestRequest,
+    evidence_mode: Literal["forward", "reconstructed"] | None = None,
+    signal_not_before: dt.date | None = None,
+) -> InstitutionalBacktestPreparation:
+    """Load a market-bound archive and build the frozen 20-session target schedule.
+
+    ``evidence_mode=None`` is the historical diagnostic. A live shadow reconciliation must pass
+    ``"forward"`` plus its registration-date floor.
+    """
+
+    end = request.end_date or await session.scalar(
+        select(func.max(DailyBar.date)).where(DailyBar.market == "DSE")
+    )
+    if end is None:
+        return InstitutionalBacktestPreparation(
+            securities=[],
+            weight_schedule={},
+            execution_timing="next_open",
+            failed_gates=["No completed DSE daily-bar history is available."],
+        )
+    start = request.start_date or end - dt.timedelta(days=365 * 3 + 30)
+    if start >= end:
+        raise ValueError("start_date must be earlier than end_date")
+
+    conditions = [
+        SqueezeDailyState.market == "DSE",
+        SqueezeDailyState.family == SOURCE_FAMILY,
+        SqueezeDailyState.methodology_version == SOURCE_METHODOLOGY_VERSION,
+        SqueezeDailyState.as_of_date >= start,
+        SqueezeDailyState.as_of_date <= end,
+    ]
+    if request.codes:
+        conditions.append(SqueezeDailyState.code.in_({code.upper() for code in request.codes}))
+    rows = list(
+        await session.scalars(
+            select(SqueezeDailyState)
+            .where(*conditions)
+            .order_by(SqueezeDailyState.as_of_date, SqueezeDailyState.code)
+        )
+    )
+    observations = [
+        CompressionBreakoutObservation(
+            code=row.code,
+            as_of_date=row.as_of_date,
+            state=row.state,
+            previous_state=row.previous_state,
+            evidence_mode=row.evidence_mode,
+            methodology_version=row.methodology_version,
+            setup_price=row.setup_price,
+            trigger_price=row.trigger_price,
+            invalidation_price=row.invalidation_price,
+            risk_per_share=row.risk_per_share,
+            average_daily_value_mn=row.average_dollar_volume_mn,
+        )
+        for row in rows
+    ]
+
+    symbol_conditions = [
+        Symbol.market == "DSE",
+        Symbol.is_active.is_(True),
+        Symbol.is_hidden.is_(False),
+        Symbol.research_status.in_(PRIVATE_RESEARCH_STATUSES),
+    ]
+    if request.codes:
+        symbol_conditions.append(Symbol.code.in_({code.upper() for code in request.codes}))
+    symbols = {
+        row.code: row
+        for row in await session.scalars(
+            select(Symbol).where(*symbol_conditions).order_by(Symbol.code)
+        )
+    }
+    # The registered rule is an all-eligible-DSE scan. A small interactive universe cap would
+    # silently omit future confirmations, so it is recorded as a diagnostic request limitation
+    # rather than allowed to redefine the strategy.
+    failed_gates: list[str] = [
+        "Inactive and delisted DSE security history is incomplete; reconstructed results have survivorship bias.",
+        "The DSE corporate-action adjustment audit is incomplete for the evaluation window.",
+        "Historical squeeze states reconstructed from current survivors are diagnostic and cannot authorize promotion.",
+    ]
+    if request.codes:
+        failed_gates.append(
+            "A user-selected ticker subset is diagnostic and cannot establish cross-sectional evidence."
+        )
+    elif request.universe_limit < len(symbols):
+        failed_gates.append(
+            "The requested universe cap is ignored because the preregistered strategy scans every eligible DSE security."
+        )
+
+    bar_start = start - dt.timedelta(days=90)
+    bars = list(
+        await session.scalars(
+            select(DailyBar)
+            .where(
+                DailyBar.market == "DSE",
+                DailyBar.code.in_(list(symbols)),
+                DailyBar.date >= bar_start,
+                DailyBar.date <= end,
+            )
+            .order_by(DailyBar.code, DailyBar.date)
+        )
+    )
+    grouped: dict[str, list[StrategyBar]] = defaultdict(list)
+    corrupt_codes: set[str] = set()
+    adjusted_rows = 0
+    for row in bars:
+        if min(row.open or 0, row.high or 0, row.low or 0, row.close or 0) <= 0:
+            corrupt_codes.add(row.code)
+            continue
+        factor = adjustment_factor(float(row.close), row.adjusted_close)
+        if factor is None:
+            corrupt_codes.add(row.code)
+            continue
+        if row.adjusted_close is not None:
+            adjusted_rows += 1
+        grouped[row.code].append(
+            StrategyBar(
+                date=row.date,
+                open=float(row.open) * factor,
+                high=float(row.high) * factor,
+                low=float(row.low) * factor,
+                close=float(row.close) * factor,
+                volume=int(row.volume or 0),
+            )
+        )
+    for code in corrupt_codes:
+        grouped.pop(code, None)
+    securities = [
+        StrategySecurity(
+            code=code,
+            sector=symbols[code].sector or "Unclassified",
+            cap_tier="unclassified",
+            bars=history,
+        )
+        for code, history in sorted(grouped.items())
+        if history
+    ]
+    sessions = sorted({bar.date for security in securities for bar in security.bars})
+    policy = CompressionBreakoutPolicy()
+    built = build_compression_breakout_schedule(
+        observations=observations,
+        sessions=sessions,
+        policy=policy,
+        evidence_mode=evidence_mode,
+        signal_not_before=signal_not_before,
+    )
+    if not built.target_weights:
+        failed_gates.append(
+            "No confirmation passed the registered liquidity, risk-geometry, and portfolio-capacity gates."
+        )
+    rejection_counts = Counter(item.reason for item in built.rejections)
+    evidence_counts = Counter(row.evidence_mode for row in observations)
+    placebo = delay_weight_schedule(
+        built.target_weights,
+        sessions=sessions,
+        delay_sessions=5,
+    )
+    if built.target_weights and not placebo:
+        failed_gates.append(
+            "The five-session timing placebo has no executable delayed target changes."
+        )
+    return InstitutionalBacktestPreparation(
+        securities=securities,
+        weight_schedule=built.target_weights,
+        execution_timing="next_open",
+        comparators={"confirmation_timing_plus_5_sessions": placebo},
+        diagnostics={
+            "source_family": SOURCE_FAMILY,
+            "source_methodology": SOURCE_METHODOLOGY_VERSION,
+            "evidence_filter": evidence_mode or "historical_diagnostic_all",
+            "signal_not_before": signal_not_before.isoformat() if signal_not_before else None,
+            "observations": len(observations),
+            "evidence_counts": dict(evidence_counts),
+            "confirmations": built.confirmations,
+            "accepted_entries": built.accepted_entries,
+            "exits": built.exits,
+            "rejections": dict(rejection_counts),
+            "policy": policy.model_dump(mode="json"),
+            "adjusted_bar_rows": adjusted_rows,
+            "total_bar_rows": len(bars),
+            "eligible_security_count": len(securities),
+        },
+        failed_gates=failed_gates,
+        inactive_security_history_complete=False,
+        point_in_time_inputs_complete=evidence_mode == "forward",
+    )

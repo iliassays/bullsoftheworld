@@ -8,9 +8,12 @@ from collections.abc import Sequence
 from decimal import Decimal
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.institutional_research.dse_squeeze_backtests import (
+    prepare_dse_compression_backtest,
+)
 from api.institutional_research.institutional_backtests import (
     prepare_institutional_backtest,
 )
@@ -79,6 +82,9 @@ _INSTITUTIONAL_STRATEGIES = {
     "us_factor_sleeve_v1",
 }
 _EVENT_STRATEGIES = {"us_activist_13d_v1", "us_insider_cluster_v1"}
+_DSE_SQUEEZE_STRATEGIES = {"dse_compression_breakout_20d_v1"}
+_DYNAMIC_RULE_STRATEGIES = _EVENT_STRATEGIES | _DSE_SQUEEZE_STRATEGIES
+_FORWARD_ONLY_STRATEGIES = _DSE_SQUEEZE_STRATEGIES
 
 
 def _execution_timing(configuration: dict) -> ExecutionTiming:
@@ -266,9 +272,9 @@ async def create_shadow_portfolio(
     }
     # A forward test must retain the universe observable at inception. Re-selecting today's most
     # liquid names on every reconciliation would introduce survivorship and universe drift.
-    if strategy["key"] in _EVENT_STRATEGIES:
-        # The rule is frozen, not the future event set. A filing published after inception must be
-        # eligible if it passes the preregistered rule.
+    if strategy["key"] in _DYNAMIC_RULE_STRATEGIES:
+        # The rule is frozen, not the future event/setup set. New evidence after inception must
+        # remain eligible when it passes the preregistered market-specific rule.
         backtest_request["codes"] = []
         backtest_request["universe_limit"] = 500
     else:
@@ -277,9 +283,31 @@ async def create_shadow_portfolio(
     mandate = await get_active_mandate(session, workspace=workspace)
     if mandate is None:
         raise ValueError("An active investment mandate is required before starting a shadow book")
+    if workspace.market == "DSE":
+        active_dse_books = int(
+            await session.scalar(
+                select(func.count(ResearchShadowPortfolio.id)).where(
+                    ResearchShadowPortfolio.workspace_id == workspace.id,
+                    ResearchShadowPortfolio.organization_id == workspace.organization_id,
+                    ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
+                    ResearchShadowPortfolio.market == "DSE",
+                    ResearchShadowPortfolio.status == "active",
+                )
+            )
+            or 0
+        )
+        if active_dse_books >= 3:
+            raise ValueError(
+                "The DSE mandate allows at most three concurrent shadow books; retire or pause "
+                "one before starting another experiment."
+            )
     pinned_mandate = mandate_snapshot(mandate)
     inception_date = dt.date.fromisoformat(end_date)
-    evidence_start = forward_evidence_started_on or inception_date
+    evidence_start = forward_evidence_started_on or (
+        inception_date + dt.timedelta(days=1)
+        if strategy["key"] in _FORWARD_ONLY_STRATEGIES
+        else inception_date
+    )
     if evidence_start < inception_date:
         raise ValueError("forward evidence cannot begin before the paper book inception")
     portfolio = ResearchShadowPortfolio(
@@ -309,11 +337,19 @@ async def create_shadow_portfolio(
             ),
             "universe_binding": (
                 "dynamic_preregistered_event_rule"
-                if strategy["key"] in _EVENT_STRATEGIES
+                if strategy["key"] in _DYNAMIC_RULE_STRATEGIES
                 else "pinned_at_inception"
             ),
             "history_mode": history_mode,
             "forward_evidence_started_on": evidence_start.isoformat(),
+            **(
+                {
+                    "signal_evidence_mode": "forward",
+                    "historical_reconstruction_can_target": False,
+                }
+                if strategy["key"] in _FORWARD_ONLY_STRATEGIES
+                else {}
+            ),
         },
     )
     session.add(portfolio)
@@ -334,7 +370,9 @@ async def create_shadow_portfolio(
         cumulative_fees=Decimal("0"),
         cumulative_turnover=Decimal("0"),
         positions={},
-        target_weights=result["latest_target_weights"],
+        target_weights=(
+            {} if strategy["key"] in _FORWARD_ONLY_STRATEGIES else result["latest_target_weights"]
+        ),
         trades=[],
         risk_interventions=[],
     )
@@ -481,6 +519,23 @@ async def _refresh_shadow_portfolio(
             session,
             strategy_key=portfolio.strategy_key,
             request=request,
+        )
+        securities = preparation.securities
+    elif portfolio.strategy_key in _DSE_SQUEEZE_STRATEGIES:
+        configured_start = portfolio.configuration.get("forward_evidence_started_on")
+        try:
+            signal_not_before = (
+                dt.date.fromisoformat(configured_start)
+                if isinstance(configured_start, str)
+                else portfolio.inception_date + dt.timedelta(days=1)
+            )
+        except ValueError:
+            signal_not_before = portfolio.inception_date + dt.timedelta(days=1)
+        preparation = await prepare_dse_compression_backtest(
+            session,
+            request=request,
+            evidence_mode="forward",
+            signal_not_before=signal_not_before,
         )
         securities = preparation.securities
     else:

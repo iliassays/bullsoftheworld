@@ -47,6 +47,7 @@ def test_evidence_hash_canonicalizes_date_keyed_schedules() -> None:
 @pytest.mark.parametrize(
     "strategy_key",
     [
+        "dse_compression_breakout_20d_v1",
         "us_activist_13d_v1",
         "us_insider_cluster_v1",
         "us_forced_seller_v1",
