@@ -41,7 +41,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics.adjustments import adjustment_factor
@@ -116,6 +116,17 @@ def _forward_protected(
     return cutoff is not None and as_of >= cutoff
 
 
+def _replacement_delete(market: str, start: dt.date, end: dt.date):
+    """Delete only replay evidence inside one requested replacement window."""
+
+    return delete(SqueezeDailyState).where(
+        SqueezeDailyState.market == market,
+        SqueezeDailyState.as_of_date >= start,
+        SqueezeDailyState.as_of_date <= end,
+        SqueezeDailyState.evidence_mode == "reconstructed",
+    )
+
+
 async def run_squeeze_backfill(
     market: str, *, sessions: int, replace: bool = False
 ) -> dict[str, int]:
@@ -136,7 +147,12 @@ async def run_squeeze_backfill(
             )
         )
         if not all_dates:
-            return {"sessions": 0, "archived": 0, "skipped_existing": 0}
+            return {
+                "sessions": 0,
+                "archived": 0,
+                "deleted_reconstructed": 0,
+                "skipped_existing": 0,
+            }
         ordered = sorted(all_dates)
         target_dates = ordered[-sessions:]
         window_start = ordered[0]
@@ -319,8 +335,22 @@ async def run_squeeze_backfill(
                 )
 
     archived = 0
-    if payloads:
+    deleted_reconstructed = 0
+    if payloads or replace:
         async with sessionmaker() as session:
+            if replace:
+                # Replacement means "this methodology is the complete reconstruction for the
+                # requested window", not "upsert whatever still emits". Delete the old replay
+                # rows in the same transaction so obsolete v1/v2 classifications disappear while
+                # a failed rebuild rolls the deletion back. Forward rows are never eligible.
+                result = await session.execute(
+                    _replacement_delete(
+                        market,
+                        target_dates[0],
+                        target_dates[-1],
+                    )
+                )
+                deleted_reconstructed = max(result.rowcount or 0, 0)
             for batch in parameter_safe_batches(payloads):
                 statement = pg_insert(SqueezeDailyState).values(batch)
                 await session.execute(
@@ -345,18 +375,25 @@ async def run_squeeze_backfill(
                                 "methodology_version",
                             )
                         },
+                        where=SqueezeDailyState.evidence_mode == "reconstructed",
                     )
                 )
                 archived += len(batch)
             await session.commit()
     log.info(
-        "squeeze_backfill market=%s sessions=%s archived=%s skipped=%s",
+        "squeeze_backfill market=%s sessions=%s archived=%s deleted_reconstructed=%s skipped=%s",
         market,
         len(target_dates),
         archived,
+        deleted_reconstructed,
         skipped,
     )
-    return {"sessions": len(target_dates), "archived": archived, "skipped_existing": skipped}
+    return {
+        "sessions": len(target_dates),
+        "archived": archived,
+        "deleted_reconstructed": deleted_reconstructed,
+        "skipped_existing": skipped,
+    }
 
 
 def main() -> None:
@@ -378,7 +415,9 @@ def main() -> None:
     )
     print(
         f"[squeeze-backfill] {arguments.market}: sessions={stats['sessions']} "
-        f"archived={stats['archived']} skipped_existing={stats['skipped_existing']}"
+        f"archived={stats['archived']} "
+        f"deleted_reconstructed={stats['deleted_reconstructed']} "
+        f"skipped_existing={stats['skipped_existing']}"
     )
 
 

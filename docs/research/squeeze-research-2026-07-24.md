@@ -218,6 +218,10 @@ the outcome; a live scan may only replace a reconstructed placeholder for the sa
 methodology revision begins on the next unobserved session, while archived rows retain the version
 that classified them.
 
+A replay replacement is atomic and window-complete: it removes prior reconstructed rows in the
+requested session window and writes the new methodology in one transaction. This prevents stale
+rows that no longer meet the revised rules from surviving beside the corrected archive.
+
 ## H. Agent and typed-contract design
 
 Deterministic evaluator: `bulls.analytics.squeeze_monitor` — pure functions, no I/O:
