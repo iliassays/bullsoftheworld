@@ -146,6 +146,7 @@ export interface CalibrationSnapshot {
 export type BacktestStrategyKey =
   | "dse_reversal_v1"
   | "dse_compression_breakout_20d_v1"
+  | "dse_selective_compression_v1"
   | "us_breakout_v1"
   | "us_activist_13d_v1"
   | "us_insider_cluster_v1"

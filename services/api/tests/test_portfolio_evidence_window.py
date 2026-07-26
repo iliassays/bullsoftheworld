@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from api.institutional_research.portfolio import promotion_evidence_window
+from api.institutional_research.portfolio import (
+    promotion_evidence_window,
+    shadow_creation_admission_error,
+)
 
 
 def snapshot(day: int, nav: float, trades: int = 0):
@@ -64,6 +67,36 @@ def test_future_forward_boundary_has_zero_forward_observations() -> None:
     assert drawdown == 0
 
 
+def test_selective_shadow_creation_fails_closed_without_admission() -> None:
+    missing = shadow_creation_admission_error("dse_selective_compression_v1", {})
+    failed = shadow_creation_admission_error(
+        "dse_selective_compression_v1",
+        {
+            "result_summary": {
+                "forward_observation_admission": {
+                    "passed": False,
+                    "failed_checks": ["positive_test_excess_return"],
+                }
+            }
+        },
+    )
+    passed = shadow_creation_admission_error(
+        "dse_selective_compression_v1",
+        {"result_summary": {"forward_observation_admission": {"passed": True}}},
+    )
+
+    assert "evidence is missing" in (missing or "")
+    assert "positive_test_excess_return" in (failed or "")
+    assert passed is None
+
+
+def test_broad_compression_shadow_creation_remains_paused() -> None:
+    reason = shadow_creation_admission_error("dse_compression_breakout_20d_v1", {})
+
+    assert reason is not None
+    assert "failed its historical diagnostic" in reason
+
+
 def test_benchmark_independence_requires_explicit_series_for_the_whole_window() -> None:
     from api.institutional_research.portfolio import (
         benchmark_independent_for_window,
@@ -84,8 +117,6 @@ def test_benchmark_independence_requires_explicit_series_for_the_whole_window() 
         {"benchmark_explicit_since": "2026-07-06"}, observations
     )
     # Empty windows can never claim independence.
-    assert not benchmark_independent_for_window(
-        {"benchmark_explicit_since": "2026-07-01"}, []
-    )
+    assert not benchmark_independent_for_window({"benchmark_explicit_since": "2026-07-01"}, [])
     # Corrupt values parse to None instead of raising during a refresh.
     assert explicit_benchmark_since({"benchmark_explicit_since": "not-a-date"}) is None

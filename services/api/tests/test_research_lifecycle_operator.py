@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 import pytest
 
@@ -8,9 +9,11 @@ from api.institutional_research.operator import (
     ForwardShadowOperatorRequest,
     HistoricalReplayOperatorRequest,
     LifecycleOperatorRequest,
+    PauseShadowBookOperatorRequest,
     _argument_parser,
     _forward_seed_idempotency_key,
     configure_lifecycle,
+    pause_shadow_book,
     seed_historical_replay,
 )
 from api.institutional_research.worker import (
@@ -49,6 +52,27 @@ def test_forward_operator_cli_wires_empty_book_replacement_flag() -> None:
 
     assert request.replace_empty is True
     assert request.apply is True
+
+
+def test_pause_book_cli_binds_exact_portfolio_and_reason() -> None:
+    portfolio_id = uuid.uuid4()
+    arguments = _argument_parser().parse_args(
+        [
+            "pause-book",
+            "--tenant",
+            "bullsofdhaka",
+            "--handle",
+            "ilias",
+            "--portfolio-id",
+            str(portfolio_id),
+            "--reason",
+            "Historical diagnostic failed its registered evidence gates.",
+            "--apply",
+        ]
+    )
+
+    assert arguments.portfolio_id == portfolio_id
+    assert arguments.apply is True
 
 
 def test_forward_seed_key_is_bounded_and_changes_with_methodology() -> None:
@@ -150,6 +174,19 @@ async def test_operator_requires_explicit_apply_acknowledgement() -> None:
                 handle="analyst",
                 strategy_key="dse_reversal_v1",
                 initial_capital=10_000_000,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_pause_operator_requires_explicit_apply_acknowledgement() -> None:
+    with pytest.raises(RuntimeError, match="without --apply"):
+        await pause_shadow_book(
+            PauseShadowBookOperatorRequest(
+                tenant="bullsofdhaka",
+                handle="analyst",
+                portfolio_id=uuid.uuid4(),
+                reason="Historical diagnostic failed its registered evidence gates.",
             )
         )
 

@@ -24,6 +24,7 @@ const US_STRATEGIES: readonly SelectOption<BacktestStrategyKey>[] = [
 
 const DSE_STRATEGIES: readonly SelectOption<BacktestStrategyKey>[] = [
   { value: "dse_compression_breakout_20d_v1", label: "DSE compression breakout · locked 20-session study" },
+  { value: "dse_selective_compression_v1", label: "DSE selective compression · three-position candidate" },
   { value: "dse_reversal_v1", label: "DSE liquid reversal" },
 ];
 
@@ -57,11 +58,17 @@ export function HypothesisLabPage() {
     researchDeployment.market === "DSE" ? "dse_reversal_v1" : "us_activist_13d_v1",
   );
   const institutionalExecution = strategyKey.startsWith("us_") && strategyKey !== "us_breakout_v1";
+  const broadCompressionRejected = result?.strategy.key === "dse_compression_breakout_20d_v1";
+  const selectiveCompression = result?.strategy.key === "dse_selective_compression_v1";
+  const strategyAdmissionAllowsShadow = !broadCompressionRejected && (
+    !selectiveCompression || result?.forwardObservationAdmission?.passed === true
+  );
   const shadowable = Boolean(
     activeRun &&
     result?.endDate &&
     result.equityCurve.length > 0 &&
-    result.systemReadiness.status !== "data_blocked",
+    result.systemReadiness.status !== "data_blocked" &&
+    strategyAdmissionAllowsShadow,
   );
 
   const submit = () => runBacktest.mutate({
@@ -86,7 +93,10 @@ export function HypothesisLabPage() {
           <label>Registered strategy<SelectField label="Registered strategy" onChange={(key) => {
             const selected = key as BacktestStrategyKey;
             setStrategyKey(selected);
-            if (selected === "dse_compression_breakout_20d_v1") setUniverseLimit(500);
+            if (
+              selected === "dse_compression_breakout_20d_v1" ||
+              selected === "dse_selective_compression_v1"
+            ) setUniverseLimit(500);
           }} options={strategyOptions} value={strategyKey} /></label>
           <label>Capitalization mandate<SelectField label="Capitalization mandate" onChange={setCapTier} options={CAP_OPTIONS} value={capTier} /></label>
           <span className="lab-config__split">
@@ -208,13 +218,36 @@ export function HypothesisLabPage() {
                     })}
                   </div>
                 </div>}
+                {result.forwardObservationAdmission && <div className="cost-stress">
+                  <strong>Selective forward-book admission</strong>
+                  <p className="guard-lede">This is the decision that controls whether Atlas may open a diagnostic paper book. Scanner membership alone never qualifies.</p>
+                  <div className="metric-table" role="table">
+                    <div role="row"><span>Window</span><span>Sessions</span><span>Net return</span><span>Benchmark</span><span>Excess</span></div>
+                    {result.forwardObservationAdmission.chronologicalSlices.map((slice) => <div key={slice.label} role="row">
+                      <strong>{slice.label}</strong>
+                      <span>{slice.sessions}</span>
+                      <span className={(slice.netReturnPct ?? 0) > 0 ? "value-up" : "value-down"}>{value(slice.netReturnPct, "%")}</span>
+                      <span>{value(slice.benchmarkReturnPct, "%")}</span>
+                      <span className={(slice.excessReturnPct ?? 0) > 0 ? "value-up" : "value-down"}>{value(slice.excessReturnPct, "%")}</span>
+                    </div>)}
+                  </div>
+                  <p className="guard-note">
+                    {result.forwardObservationAdmission.passed
+                      ? `Admitted for diagnostic forward observation: ${result.forwardObservationAdmission.acceptedEntries} qualified entries, ${result.forwardObservationAdmission.buyExecutions} executed entries. This is not promotion.`
+                      : `Not admitted. No paper book will be created. Failed: ${result.forwardObservationAdmission.failedChecks.map((check) => check.replace(/_/g, " ")).join("; ")}.`}
+                  </p>
+                </div>}
                 {result.failedGates.length > 0 && <div className="validation-gates"><strong>Why this is not validated</strong>{result.failedGates.map((gate) => <span key={gate}><AlertTriangle size={12} />{gate}</span>)}</div>}
               </section>
 
               <section className="atlas-panel shadow-launch">
                 <header><WalletCards aria-hidden="true" size={16} /><span><strong>Forward shadow evaluation</strong><small>No broker connection and no capital at risk</small></span></header>
                 <div><label>Book name<input onChange={(event) => setBookName(event.target.value)} value={bookName} /></label><Button isDisabled={!shadowable || bookName.trim().length < 3 || createShadow.isPending} onPress={() => activeRun && createShadow.mutate({ sourceRunId: activeRun.id, name: bookName.trim() })} variant="primary">Start shadow book</Button></div>
-                {!shadowable && <p className="portfolio-data-note">A shadow book requires at least one completed market session and a system that is not data-blocked.</p>}
+                {!shadowable && <p className="portfolio-data-note">{broadCompressionRejected
+                  ? "The broad compression strategy failed its historical diagnostic and is paused. It cannot start another book."
+                  : selectiveCompression && result.forwardObservationAdmission?.passed !== true
+                    ? "The selective strategy has not passed its fixed admission gate. Atlas will not create a paper book."
+                    : "A shadow book requires at least one completed market session and a system that is not data-blocked."}</p>}
                 {createShadow.isSuccess && <p className="atlas-success">Shadow book created. It will advance only over newly completed market sessions.</p>}
                 {createShadow.isError && <p className="atlas-error"><AlertTriangle size={13} />{createShadow.error.message}</p>}
               </section>

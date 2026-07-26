@@ -138,6 +138,22 @@ export interface SystemReadiness {
   missingDatasets: string[];
 }
 
+export interface ForwardObservationAdmission {
+  passed: boolean;
+  failedChecks: string[];
+  acceptedEntries: number;
+  buyExecutions: number;
+  stress30BpsReturnPct: number | null;
+  deflatedSharpeConfidence: number | null;
+  chronologicalSlices: Array<{
+    label: string;
+    sessions: number;
+    netReturnPct: number | null;
+    benchmarkReturnPct: number | null;
+    excessReturnPct: number | null;
+  }>;
+}
+
 export interface BacktestResult {
   engineVersion: string;
   strategy: {
@@ -175,6 +191,7 @@ export interface BacktestResult {
   deflatedSharpe: DeflatedSharpe | null;
   costStress: CostStress | null;
   nullModels: NullModelComparison[];
+  forwardObservationAdmission: ForwardObservationAdmission | null;
   systemReadiness: SystemReadiness;
   latestTargetWeights: Record<string, number>;
 }
@@ -456,6 +473,7 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
   const forcedSellerReadiness = record(readinessDiagnostics?.readiness);
   const summary = record(run?.parameters.result_summary);
   const nullPayload = record(summary?.null_models);
+  const admissionPayload = record(summary?.forward_observation_admission);
   const strategy = record(output?.strategy);
   const policy = record(output?.risk_policy);
   if (!output || !strategy || !policy) return null;
@@ -526,6 +544,31 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
         }];
       })
     : [];
+  const forwardObservationAdmission = admissionPayload
+    ? {
+        passed: admissionPayload.passed === true,
+        failedChecks: strings(admissionPayload.failed_checks),
+        acceptedEntries: numeric(admissionPayload.accepted_entries),
+        buyExecutions: numeric(admissionPayload.buy_executions),
+        stress30BpsReturnPct: nullableNumeric(admissionPayload.stress_30bps_return_pct),
+        deflatedSharpeConfidence: nullableNumeric(
+          admissionPayload.deflated_sharpe_confidence,
+        ),
+        chronologicalSlices: Array.isArray(admissionPayload.chronological_slices)
+          ? admissionPayload.chronological_slices.flatMap((raw) => {
+              const item = record(raw);
+              if (!item || typeof item.label !== "string") return [];
+              return [{
+                label: item.label,
+                sessions: numeric(item.sessions),
+                netReturnPct: nullableNumeric(item.net_return_pct),
+                benchmarkReturnPct: nullableNumeric(item.benchmark_return_pct),
+                excessReturnPct: nullableNumeric(item.excess_return_pct),
+              }];
+            })
+          : [],
+      }
+    : null;
   const readinessGates = strings(readinessOutput?.failed_gates);
   const forcedSellerStatus = text(forcedSellerReadiness?.status);
   const executionTiming = text(readinessOutput?.execution_timing);
@@ -576,6 +619,7 @@ export function backtestResult(run: ResearchRun | undefined): BacktestResult | n
     deflatedSharpe: deflatedSharpe(run),
     costStress: costStress(run),
     nullModels,
+    forwardObservationAdmission,
     systemReadiness,
     latestTargetWeights: Object.fromEntries(
       Object.entries(record(output.latest_target_weights) ?? {}).filter(

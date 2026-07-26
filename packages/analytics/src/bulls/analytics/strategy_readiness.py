@@ -152,6 +152,25 @@ STRATEGY_READINESS: dict[str, StrategyReadiness] = {
             missing_data=[_DSE_ADJUSTMENTS, _DSE_HISTORY],
         ),
         StrategyReadiness(
+            key="dse_selective_compression_v1",
+            name="DSE selective compression continuation",
+            market="DSE",
+            direction="long",
+            horizon="swing",
+            implemented_strategy_key="dse_selective_compression_v1",
+            status="diagnostic_only",
+            economic_hypothesis=(
+                "A small, strongly ranked subset of contracted-base breakouts may continue when "
+                "relative strength, accumulation, liquidity and market regime agree."
+            ),
+            rationale=(
+                "The candidate is selective, costed, concurrency-capped and compared with broad "
+                "and delayed baselines. Raw DSE corporate actions and short history still prevent "
+                "promotion-grade historical evidence."
+            ),
+            missing_data=[_DSE_ADJUSTMENTS, _DSE_HISTORY],
+        ),
+        StrategyReadiness(
             key="dse_trend_pullback",
             name="DSE trend continuation / micro-pullback",
             market="DSE",

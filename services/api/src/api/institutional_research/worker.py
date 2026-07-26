@@ -38,7 +38,10 @@ _TENANTS_DIR = Path(__file__).resolve().parents[5] / "tenants"
 # System-triggered collection; catalyst rows are tenant-shared, so the RLS user id does not gate.
 _SYSTEM_USER_ID = 0
 _DATA_READINESS_RETRY = dt.timedelta(minutes=15)
-_DSE_SQUEEZE_STRATEGY = "dse_compression_breakout_20d_v1"
+_DSE_SQUEEZE_STRATEGIES = {
+    "dse_compression_breakout_20d_v1",
+    "dse_selective_compression_v1",
+}
 
 
 def lifecycle_freshness_error(
@@ -222,7 +225,7 @@ async def run_research_lifecycle(
                             ResearchShadowPortfolio.organization_id == workspace.organization_id,
                             ResearchShadowPortfolio.tenant_id == tenant_id,
                             ResearchShadowPortfolio.market == "DSE",
-                            ResearchShadowPortfolio.strategy_key == _DSE_SQUEEZE_STRATEGY,
+                            ResearchShadowPortfolio.strategy_key.in_(_DSE_SQUEEZE_STRATEGIES),
                             ResearchShadowPortfolio.status == "active",
                         )
                         .limit(1)

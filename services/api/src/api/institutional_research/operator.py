@@ -102,6 +102,15 @@ class ForwardShadowOperatorRequest:
     apply: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class PauseShadowBookOperatorRequest:
+    tenant: str
+    handle: str
+    portfolio_id: uuid.UUID
+    reason: str
+    apply: bool = False
+
+
 async def configure_lifecycle(request: LifecycleOperatorRequest) -> dict[str, object]:
     """Configure one user's policy and enqueue only that exact RLS identity."""
 
@@ -536,6 +545,41 @@ async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str
                 initial_capital=request.initial_capital,
             ),
         )
+        if request.strategy_key == "dse_selective_compression_v1":
+            result_summary = backtest.parameters.get("result_summary", {})
+            admission = (
+                result_summary.get("forward_observation_admission")
+                if isinstance(result_summary, dict)
+                else None
+            )
+            if not isinstance(admission, dict) or admission.get("passed") is not True:
+                failed_checks = (
+                    admission.get("failed_checks", [])
+                    if isinstance(admission, dict)
+                    else ["admission_evidence_missing"]
+                )
+                record_research_audit_event(
+                    session,
+                    workspace=workspace,
+                    actor_user_id=user.id,
+                    event_type="research_forward_shadow_admission_rejected",
+                    resource_type="research_run",
+                    resource_id=str(backtest.id),
+                    attributes={
+                        "strategy_key": request.strategy_key,
+                        "failed_checks": failed_checks,
+                    },
+                )
+                await session.commit()
+                return {
+                    "status": "not_admitted",
+                    "tenant": tenant.name,
+                    "market": tenant.market,
+                    "handle": user.handle,
+                    "workspace_id": str(workspace.id),
+                    "source_run_id": str(backtest.id),
+                    "admission": admission,
+                }
         forward_start = latest_date + dt.timedelta(days=1)
         created = await create_shadow_portfolio(
             session,
@@ -588,6 +632,100 @@ async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str
         }
 
 
+async def pause_shadow_book(request: PauseShadowBookOperatorRequest) -> dict[str, object]:
+    """Pause one exact tenant-bound paper book and preserve the reason in the audit ledger."""
+
+    if not request.apply:
+        raise RuntimeError("Refusing to pause a shadow book without --apply")
+    reason = request.reason.strip()
+    if len(reason) < 20:
+        raise RuntimeError("A pause reason of at least 20 characters is required")
+    registry = TenantRegistry.from_dir(_TENANTS_DIR, default="bullsofdhaka")
+    tenant = registry.get(request.tenant)
+    if tenant is None:
+        raise RuntimeError(f"Unknown tenant: {request.tenant}")
+
+    async with get_sessionmaker()() as session:
+        await bind_tenant_context(session, tenant.name)
+        user = await session.scalar(
+            select(User).where(User.tenant_id == tenant.name, User.handle == request.handle)
+        )
+        if user is None:
+            raise RuntimeError(f"Account {request.handle!r} not found in {tenant.name}")
+        await bind_research_tenant_context(
+            session,
+            tenant_id=tenant.name,
+            market=tenant.market,
+            user_id=user.id,
+        )
+        workspace_out = await bootstrap_personal_workspace(session, tenant=tenant, user=user)
+        workspace = await session.scalar(
+            select(ResearchWorkspace).where(
+                ResearchWorkspace.id == workspace_out.id,
+                ResearchWorkspace.tenant_id == tenant.name,
+                ResearchWorkspace.market == tenant.market,
+            )
+        )
+        if workspace is None:
+            raise RuntimeError("The RLS-bound workspace could not be reloaded")
+        portfolio = await session.scalar(
+            select(ResearchShadowPortfolio).where(
+                ResearchShadowPortfolio.id == request.portfolio_id,
+                ResearchShadowPortfolio.workspace_id == workspace.id,
+                ResearchShadowPortfolio.organization_id == workspace.organization_id,
+                ResearchShadowPortfolio.tenant_id == workspace.tenant_id,
+                ResearchShadowPortfolio.market == workspace.market,
+            )
+        )
+        if portfolio is None:
+            raise RuntimeError("Shadow book not found inside the requested Atlas account")
+        previous_status = portfolio.status
+        if previous_status == "paused":
+            await session.commit()
+            return {
+                "status": "already_paused",
+                "portfolio_id": str(portfolio.id),
+                "strategy_key": portfolio.strategy_key,
+            }
+        if previous_status != "active":
+            raise RuntimeError(f"Only an active shadow book can be paused, not {previous_status!r}")
+
+        paused_at = dt.datetime.now(dt.UTC)
+        portfolio.status = "paused"
+        portfolio.configuration = {
+            **portfolio.configuration,
+            "operator_pause": {
+                "paused_at": paused_at.isoformat(),
+                "paused_by_user_id": user.id,
+                "reason": reason,
+            },
+        }
+        record_research_audit_event(
+            session,
+            workspace=workspace,
+            actor_user_id=user.id,
+            event_type="research_shadow_book_paused",
+            resource_type="research_shadow_portfolio",
+            resource_id=str(portfolio.id),
+            attributes={
+                "strategy_key": portfolio.strategy_key,
+                "previous_status": previous_status,
+                "new_status": "paused",
+                "reason": reason,
+            },
+        )
+        await session.commit()
+        return {
+            "status": "paused",
+            "tenant": tenant.name,
+            "market": tenant.market,
+            "handle": user.handle,
+            "portfolio_id": str(portfolio.id),
+            "strategy_key": portfolio.strategy_key,
+            "reason": reason,
+        }
+
+
 def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Operate one exact Atlas account")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -627,6 +765,12 @@ def _argument_parser() -> argparse.ArgumentParser:
     forward.add_argument("--cap-tier")
     forward.add_argument("--replace-empty", action="store_true")
     forward.add_argument("--apply", action="store_true")
+    pause = subparsers.add_parser("pause-book", help="Pause one exact shadow book")
+    pause.add_argument("--tenant", required=True)
+    pause.add_argument("--handle", required=True)
+    pause.add_argument("--portfolio-id", type=uuid.UUID, required=True)
+    pause.add_argument("--reason", required=True)
+    pause.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -661,7 +805,7 @@ async def _main() -> None:
                 apply=arguments.apply,
             )
         )
-    else:
+    elif arguments.command == "forward":
         result = await seed_forward_shadow(
             ForwardShadowOperatorRequest(
                 tenant=arguments.tenant,
@@ -671,6 +815,16 @@ async def _main() -> None:
                 universe_limit=arguments.universe_limit,
                 cap_tier=arguments.cap_tier,
                 replace_empty=arguments.replace_empty,
+                apply=arguments.apply,
+            )
+        )
+    else:
+        result = await pause_shadow_book(
+            PauseShadowBookOperatorRequest(
+                tenant=arguments.tenant,
+                handle=arguments.handle,
+                portfolio_id=arguments.portfolio_id,
+                reason=arguments.reason,
                 apply=arguments.apply,
             )
         )

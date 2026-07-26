@@ -24,11 +24,12 @@ from bulls.analytics.drawdown_ladder import (
     apply_drawdown_ladder,
 )
 
-ENGINE_VERSION = "atlas-portfolio-engine-v3"
+ENGINE_VERSION = "atlas-portfolio-engine-v3.1"
 
 type StrategyKey = Literal[
     "dse_reversal_v1",
     "dse_compression_breakout_20d_v1",
+    "dse_selective_compression_v1",
     "us_breakout_v1",
     "us_activist_13d_v1",
     "us_insider_cluster_v1",
@@ -98,6 +99,7 @@ class StrategyDefinition(BaseModel):
     rebalance_sessions: int
     maximum_positions: int
     description: str
+    target_rebalance_band_pct: float = Field(default=0.0, ge=0, lt=1)
     # Holding-horizon description belongs to the registered strategy, not to whichever
     # presentation layer happens to render it.
     horizon: Literal["swing", "position"] = "position"
@@ -445,6 +447,23 @@ STRATEGIES = {
             "confirmations. It is risk-sized and paper-observed, not a validated recommendation."
         ),
     ),
+    "dse_selective_compression_v1": StrategyDefinition(
+        key="dse_selective_compression_v1",
+        market="DSE",
+        name="DSE selective compression continuation",
+        horizon="swing",
+        expected_holding="Up to 20 completed sessions; structural failure can exit sooner",
+        methodology_version="dse-selective-compression-v1",
+        minimum_lookback=64,
+        rebalance_sessions=1,
+        maximum_positions=3,
+        target_rebalance_band_pct=0.20,
+        description=(
+            "Ranks first compression-breakout confirmations using point-in-time DSEX-relative "
+            "strength, base contraction, accumulation, extension, liquidity, and market regime. "
+            "It is a preregistered candidate, not a validated recommendation."
+        ),
+    ),
     "us_breakout_v1": StrategyDefinition(
         key="us_breakout_v1",
         market="US",
@@ -639,6 +658,21 @@ def constrain_target_weights(
             f"portfolio: scaled to the {policy.max_gross_exposure:.1%} gross-exposure limit"
         )
     return ({code: round(weight, 8) for code, weight in constrained.items()}, notes)
+
+
+def _desired_shares_with_rebalance_band(
+    *,
+    current_shares: int,
+    desired_shares: int,
+    target_weight: float,
+    band_pct: float,
+) -> int:
+    """Suppress small maintenance trades without blocking entries, exits, or material drift."""
+
+    if band_pct <= 0 or current_shares <= 0 or desired_shares <= 0 or target_weight <= 0:
+        return desired_shares
+    drift = abs(current_shares - desired_shares) / desired_shares
+    return current_shares if drift <= band_pct else desired_shares
 
 
 def _ladder_from_policy(policy: PortfolioRiskPolicy) -> DrawdownLadder:
@@ -931,8 +965,14 @@ def run_backtest(
                     continue
                 current_shares = positions.get(code, _Position(0, 0.0)).shares
                 reference_price = bar.open if execution_timing == "next_open" else bar.close
-                desired_value = execution_nav * pending_weights.get(code, 0.0)
-                desired_shares = int(desired_value / reference_price)
+                target_weight = pending_weights.get(code, 0.0)
+                desired_value = execution_nav * target_weight
+                desired_shares = _desired_shares_with_rebalance_band(
+                    current_shares=current_shares,
+                    desired_shares=int(desired_value / reference_price),
+                    target_weight=target_weight,
+                    band_pct=strategy.target_rebalance_band_pct,
+                )
                 quantity = desired_shares - current_shares
                 intended_quantity = abs(quantity)
                 constraint_notes: list[str] = []
@@ -1574,7 +1614,13 @@ def advance_shadow_portfolio(
             continue
         reference_price = reference(security)
         current_shares = positions.get(code, _Position(0, 0)).shares
-        desired_shares = int(execution_nav * target_weights.get(code, 0.0) / reference_price)
+        target_weight = target_weights.get(code, 0.0)
+        desired_shares = _desired_shares_with_rebalance_band(
+            current_shares=current_shares,
+            desired_shares=int(execution_nav * target_weight / reference_price),
+            target_weight=target_weight,
+            band_pct=strategy.target_rebalance_band_pct,
+        )
         quantity = desired_shares - current_shares
         intended_quantity = abs(quantity)
         average_volume = statistics.fmean(item.volume for item in security.bars[-21:-1])

@@ -24,8 +24,14 @@ from bulls.analytics.dse_compression_breakout import (
     build_compression_breakout_schedule,
     delay_weight_schedule,
 )
+from bulls.analytics.dse_selective_compression import (
+    SelectiveCompressionObservation,
+    SelectiveCompressionPolicy,
+    build_selective_compression_schedule,
+    build_selective_features,
+)
 from bulls.analytics.research_strategy import StrategyBar, StrategySecurity
-from bulls.core.models import DailyBar, SqueezeDailyState, Symbol
+from bulls.core.models import DailyBar, MarketSummary, SqueezeDailyState, Symbol
 from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
 
 
@@ -137,7 +143,9 @@ async def prepare_dse_compression_backtest(
             "The requested universe cap is ignored because the preregistered strategy scans every eligible DSE security."
         )
 
-    bar_start = start - dt.timedelta(days=90)
+    # Selective features require 64 completed sessions before the first evaluated signal.
+    # Calendar days are intentionally generous because DSE holidays make 90 days insufficient.
+    bar_start = start - dt.timedelta(days=140)
     bars = list(
         await session.scalars(
             select(DailyBar)
@@ -200,6 +208,47 @@ async def prepare_dse_compression_backtest(
             )
         )
     observations = enriched_observations
+    selective_strategy = request.strategy_key == "dse_selective_compression_v1"
+    benchmark_closes: list[tuple[dt.date, float]] = []
+    selective_observations: list[SelectiveCompressionObservation] = []
+    feature_observations = 0
+    if selective_strategy:
+        benchmark_closes = [
+            (row.date, float(row.dsex))
+            for row in (
+                await session.execute(
+                    select(MarketSummary.date, MarketSummary.dsex)
+                    .where(
+                        MarketSummary.market == "DSE",
+                        MarketSummary.date >= bar_start,
+                        MarketSummary.date <= end,
+                        MarketSummary.dsex.is_not(None),
+                    )
+                    .order_by(MarketSummary.date)
+                )
+            ).all()
+            if row.dsex is not None and row.dsex > 0
+        ]
+        for observation in observations:
+            features = (
+                build_selective_features(
+                    bars=grouped.get(observation.code, []),
+                    benchmark_closes=benchmark_closes,
+                    as_of=observation.as_of_date,
+                    trigger_price=observation.trigger_price,
+                    invalidation_price=observation.invalidation_price,
+                )
+                if observation.state == "confirmed" and observation.previous_state != "confirmed"
+                else None
+            )
+            if features is not None:
+                feature_observations += 1
+            selective_observations.append(
+                SelectiveCompressionObservation(
+                    **observation.model_dump(),
+                    features=features,
+                )
+            )
     securities = [
         StrategySecurity(
             code=code,
@@ -211,20 +260,48 @@ async def prepare_dse_compression_backtest(
         if history
     ]
     sessions = sorted({bar.date for security in securities for bar in security.bars})
-    policy = CompressionBreakoutPolicy()
-    built = build_compression_breakout_schedule(
-        observations=observations,
-        sessions=sessions,
-        policy=policy,
-        evidence_mode=evidence_mode,
-        signal_not_before=signal_not_before,
-    )
+    if selective_strategy:
+        policy = SelectiveCompressionPolicy()
+        built = build_selective_compression_schedule(
+            observations=selective_observations,
+            sessions=sessions,
+            policy=policy,
+            evidence_mode=evidence_mode,
+            signal_not_before=signal_not_before,
+        )
+        liquidity_baseline = build_compression_breakout_schedule(
+            observations=observations,
+            sessions=sessions,
+            policy=CompressionBreakoutPolicy(
+                holding_sessions=policy.holding_sessions,
+                maximum_positions=policy.maximum_positions,
+                maximum_gross_weight=policy.maximum_gross_weight,
+                maximum_position_weight=policy.maximum_position_weight,
+                risk_budget_per_position=policy.risk_budget_per_position,
+                minimum_position_weight=policy.minimum_position_weight,
+                minimum_average_daily_value_mn=policy.minimum_average_daily_value_mn,
+                maximum_stop_distance_pct=policy.maximum_stop_distance_pct,
+            ),
+            evidence_mode=evidence_mode,
+            signal_not_before=signal_not_before,
+        )
+    else:
+        policy = CompressionBreakoutPolicy()
+        built = build_compression_breakout_schedule(
+            observations=observations,
+            sessions=sessions,
+            policy=policy,
+            evidence_mode=evidence_mode,
+            signal_not_before=signal_not_before,
+        )
+        liquidity_baseline = None
     if not built.target_weights:
         failed_gates.append(
             "No confirmation passed the registered liquidity, risk-geometry, and portfolio-capacity gates."
         )
     rejection_counts = Counter(item.reason for item in built.rejections)
     evidence_counts = Counter(row.evidence_mode for row in observations)
+    observation_dates = sorted({row.as_of_date for row in observations})
     placebo = delay_weight_schedule(
         built.target_weights,
         sessions=sessions,
@@ -234,19 +311,32 @@ async def prepare_dse_compression_backtest(
         failed_gates.append(
             "The five-session timing placebo has no executable delayed target changes."
         )
+    comparators = {
+        "confirmation_timing_plus_5_sessions": placebo,
+    }
+    if liquidity_baseline is not None:
+        comparators["liquidity_only_three_slot_baseline"] = liquidity_baseline.target_weights
     return InstitutionalBacktestPreparation(
         securities=securities,
         weight_schedule=built.target_weights,
         execution_timing="next_open",
-        comparators={"confirmation_timing_plus_5_sessions": placebo},
+        comparators=comparators,
         diagnostics={
             "source_family": SOURCE_FAMILY,
             "source_methodology": SOURCE_METHODOLOGY_VERSION,
             "evidence_filter": evidence_mode or "historical_diagnostic_all",
             "signal_not_before": signal_not_before.isoformat() if signal_not_before else None,
             "observations": len(observations),
+            "first_observation_date": (
+                observation_dates[0].isoformat() if observation_dates else None
+            ),
+            "last_observation_date": (
+                observation_dates[-1].isoformat() if observation_dates else None
+            ),
+            "observation_sessions": len(observation_dates),
             "evidence_counts": dict(evidence_counts),
             "confirmations": built.confirmations,
+            "quality_qualified": getattr(built, "quality_qualified", None),
             "accepted_entries": built.accepted_entries,
             "exits": built.exits,
             "rejections": dict(rejection_counts),
@@ -256,6 +346,8 @@ async def prepare_dse_compression_backtest(
             "liquidity_measure": "trailing_20_completed_sessions_close_times_volume",
             "computed_liquidity_observations": computed_adv_observations,
             "unresolved_liquidity_observations": unresolved_adv_observations,
+            "selective_feature_observations": feature_observations,
+            "benchmark_feature_observations": len(benchmark_closes),
             "eligible_security_count": len(securities),
         },
         failed_gates=failed_gates,

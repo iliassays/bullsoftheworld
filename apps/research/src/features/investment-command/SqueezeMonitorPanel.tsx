@@ -251,8 +251,9 @@ export function SqueezeMonitorPanel() {
         <ShieldAlert aria-hidden="true" size={15} />
         <span>
           <strong>Research scan only. No order is created from this list.</strong>
-          “Confirmed” means the rule completed, not high probability. Only a separately registered,
-          validated and promoted strategy can create a paper target.
+          “Confirmed” means the setup rule completed, not high probability. Most rows will never
+          qualify. Only a separate, evidence-admitted and risk-sized strategy can create a paper
+          target shown in Agent decisions.
         </span>
       </div>
 

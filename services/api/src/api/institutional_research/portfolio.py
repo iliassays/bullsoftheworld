@@ -82,9 +82,38 @@ _INSTITUTIONAL_STRATEGIES = {
     "us_factor_sleeve_v1",
 }
 _EVENT_STRATEGIES = {"us_activist_13d_v1", "us_insider_cluster_v1"}
-_DSE_SQUEEZE_STRATEGIES = {"dse_compression_breakout_20d_v1"}
+_DSE_SQUEEZE_STRATEGIES = {
+    "dse_compression_breakout_20d_v1",
+    "dse_selective_compression_v1",
+}
 _DYNAMIC_RULE_STRATEGIES = _EVENT_STRATEGIES | _DSE_SQUEEZE_STRATEGIES
 _FORWARD_ONLY_STRATEGIES = _DSE_SQUEEZE_STRATEGIES
+
+
+def shadow_creation_admission_error(
+    strategy_key: str,
+    run_parameters: dict,
+) -> str | None:
+    """Return the fail-closed reason for strategies with strategy-specific admission rules."""
+
+    if strategy_key == "dse_compression_breakout_20d_v1":
+        return (
+            "The broad DSE compression strategy failed its historical diagnostic and is paused. "
+            "The squeeze monitor remains research inventory; use the separately registered "
+            "selective candidate for evidence-gated evaluation."
+        )
+    if strategy_key != "dse_selective_compression_v1":
+        return None
+    summary = run_parameters.get("result_summary")
+    admission = summary.get("forward_observation_admission") if isinstance(summary, dict) else None
+    if isinstance(admission, dict) and admission.get("passed") is True:
+        return None
+    failed = admission.get("failed_checks", []) if isinstance(admission, dict) else []
+    details = ", ".join(str(item) for item in failed) or "admission evidence is missing"
+    return (
+        "The selective DSE compression strategy did not pass its registered forward-observation "
+        f"admission gate: {details}. No shadow book was created."
+    )
 
 
 def _execution_timing(configuration: dict) -> ExecutionTiming:
@@ -260,6 +289,9 @@ async def create_shadow_portfolio(
     strategy = result["strategy"]
     if strategy["market"] != workspace.market:
         raise ValueError("The source strategy belongs to another market")
+    admission_error = shadow_creation_admission_error(strategy["key"], run.parameters)
+    if admission_error is not None:
+        raise ValueError(admission_error)
     initial_capital = Decimal(str(result["initial_capital"]))
     universe_step = next((step for step in run.steps if step.kind == "observable_universe"), None)
     observable_codes = (

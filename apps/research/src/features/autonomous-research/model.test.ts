@@ -163,6 +163,25 @@ describe("autonomous research JSON adapters", () => {
       ...baseRun,
       runKind: "hypothesis",
       code: null,
+      parameters: {
+        result_summary: {
+          forward_observation_admission: {
+            passed: false,
+            failed_checks: ["positive_test_excess_return"],
+            accepted_entries: 12,
+            buy_executions: 10,
+            stress_30bps_return_pct: -0.5,
+            deflated_sharpe_confidence: 0.62,
+            chronological_slices: [{
+              label: "test",
+              sessions: 40,
+              net_return_pct: -1,
+              benchmark_return_pct: 2,
+              excess_return_pct: -3,
+            }],
+          },
+        },
+      },
       steps: [{
         ordinal: 2,
         kind: "portfolio_backtest",
@@ -201,6 +220,12 @@ describe("autonomous research JSON adapters", () => {
       key: "recent_2024_onward",
       excessReturnPct: 3,
       maxDrawdownPct: 9,
+    });
+    expect(result?.forwardObservationAdmission).toMatchObject({
+      passed: false,
+      failedChecks: ["positive_test_excess_return"],
+      stress30BpsReturnPct: -0.5,
+      chronologicalSlices: [{ label: "test", excessReturnPct: -3 }],
     });
   });
 });

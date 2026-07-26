@@ -186,7 +186,8 @@ def test_entry_separates_discovery_from_next_observable_confirmation_return() ->
     assert entry.next_observable_on == observable_date
     assert entry.next_observable_price == 106.0
     assert entry.return_since_next_observable_pct == 3.774
-    assert "registered forward shadow experiment" in entry.paper_book_status.lower()
+    assert "research inventory only" in entry.paper_book_status.lower()
+    assert "agent decisions" in entry.paper_book_status.lower()
     assert "reconstructed rows cannot create targets" in entry.paper_book_status.lower()
 
     confirmation_entry = _build_entry(

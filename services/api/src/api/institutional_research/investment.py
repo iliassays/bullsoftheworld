@@ -62,6 +62,12 @@ _ECONOMIC_HYPOTHESES = {
         "temporarily constrained supply; any effect must survive next-open execution, DSE costs, "
         "capacity limits, a timing placebo, and genuine forward observation."
     ),
+    "dse_selective_compression_v1": (
+        "A small subset of DSE compression breakouts may continue when constrained supply is "
+        "confirmed by relative strength versus DSEX, contracting base volume, positive money "
+        "flow, controlled extension, sufficient liquidity, and a supportive market regime. "
+        "The rule must beat the broad liquidity-only baseline and timing placebo after costs."
+    ),
     "us_breakout_v1": (
         "Liquid US securities with persistent positive trend, participation confirmation, and "
         "limited extension may continue as slower capital adjusts to improving price information."

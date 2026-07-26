@@ -36,6 +36,10 @@ from api.institutional_research.universe import apply_research_product_scope
 from bulls.analytics.adjustments import adjustment_factor
 from bulls.analytics.deflated_sharpe import deflated_sharpe_ratio
 from bulls.analytics.dse_compression_breakout import CompressionBreakoutPolicy
+from bulls.analytics.dse_selective_compression import (
+    SelectiveCompressionPolicy,
+    evaluate_selective_compression_admission,
+)
 from bulls.analytics.research_loop import (
     METHODOLOGY_VERSION,
     AutonomousResearchInput,
@@ -843,14 +847,21 @@ async def execute_backtest(
         "us_forced_seller_v1",
         "us_factor_sleeve_v1",
     }
-    dse_squeeze_strategy = request.strategy_key == "dse_compression_breakout_20d_v1"
+    dse_squeeze_strategy = request.strategy_key in {
+        "dse_compression_breakout_20d_v1",
+        "dse_selective_compression_v1",
+    }
     schedule_strategy = institutional_strategy or dse_squeeze_strategy
     execution_timing = "next_close" if institutional_strategy else "next_open"
     signal_specification = (
         {
             "source_family": "compression_breakout",
             "source_methodology": "squeeze-monitor-v3",
-            "portfolio_construction": CompressionBreakoutPolicy().model_dump(mode="json"),
+            "portfolio_construction": (
+                SelectiveCompressionPolicy()
+                if request.strategy_key == "dse_selective_compression_v1"
+                else CompressionBreakoutPolicy()
+            ).model_dump(mode="json"),
             "liquidity_measure": "trailing 20 completed sessions mean(close x volume)",
             "historical_evidence_role": "diagnostic_only",
             "forward_shadow_evidence": "forward rows on or after book registration only",
@@ -978,17 +989,17 @@ async def execute_backtest(
         )
 
     comparator_summary: dict[str, dict[str, Any]] = {}
+    main_stress_30 = next(
+        (
+            outcome.net_return_pct
+            for outcome in cost_tiered.outcomes
+            if not outcome.tier.measured and outcome.tier.one_way_bps == 30.0
+        ),
+        None,
+    )
     if preparation.comparators:
         main_realistic_return = (
             result.final_nav / result.initial_capital - 1.0 if result.initial_capital > 0 else 0.0
-        )
-        main_stress_30 = next(
-            (
-                outcome.net_return_pct
-                for outcome in cost_tiered.outcomes
-                if not outcome.tier.measured and outcome.tier.one_way_bps == 30.0
-            ),
-            None,
         )
         stress_half_spread = max(30.0 - risk_policy.fee_rate * 10_000.0, 0.0)
         failed_nulls: list[str] = []
@@ -1054,6 +1065,62 @@ async def execute_backtest(
                 "failed_gates": [*result.failed_gates, overfitting_gate],
             }
         )
+    selective_admission = None
+    if request.strategy_key == "dse_selective_compression_v1":
+        first_observation = preparation.diagnostics.get("first_observation_date")
+        try:
+            observation_start = (
+                dt.date.fromisoformat(first_observation)
+                if isinstance(first_observation, str)
+                else None
+            )
+        except ValueError:
+            observation_start = None
+        evaluation_curve = [
+            point
+            for point in result.equity_curve
+            if observation_start is None or point.date >= observation_start
+        ]
+        evaluation_peak = evaluation_curve[0].nav if evaluation_curve else 0.0
+        evaluation_drawdown = 0.0
+        for point in evaluation_curve:
+            evaluation_peak = max(evaluation_peak, point.nav)
+            if evaluation_peak > 0:
+                evaluation_drawdown = max(
+                    evaluation_drawdown,
+                    (evaluation_peak - point.nav) / evaluation_peak * 100,
+                )
+        selective_deflated_sharpe, _selective_overfitting_gate = _deflated_sharpe_gate(
+            evaluation_curve,
+            num_trials=trial.trial_sequence,
+            threshold=0.80,
+        )
+        selective_admission = evaluate_selective_compression_admission(
+            equity_curve=evaluation_curve,
+            maximum_drawdown_pct=evaluation_drawdown,
+            accepted_entries=int(preparation.diagnostics.get("accepted_entries") or 0),
+            buy_executions=sum(trade.side == "buy" for trade in result.trades),
+            benchmark_valid=result.benchmark_valid,
+            stress_30bps_return_pct=main_stress_30,
+            comparator_summary=comparator_summary,
+            deflated_sharpe_summary=selective_deflated_sharpe,
+        )
+        if not selective_admission.passed:
+            result = result.model_copy(
+                update={
+                    "validation_status": "diagnostic",
+                    "failed_gates": list(
+                        dict.fromkeys(
+                            [
+                                *result.failed_gates,
+                                "Selective forward-observation admission failed: "
+                                + ", ".join(selective_admission.failed_checks)
+                                + ".",
+                            ]
+                        )
+                    ),
+                }
+            )
     run.evidence_snapshot_hash = _stable_hash(
         {
             security.code: _stable_hash(
@@ -1139,6 +1206,11 @@ async def execute_backtest(
             "failed_gates": result.failed_gates,
             "warnings": result.warnings,
             "deflated_sharpe": deflated_sharpe_summary,
+            "forward_observation_admission": (
+                selective_admission.model_dump(mode="json")
+                if selective_admission is not None
+                else None
+            ),
             "robustness_slices": [
                 item.model_dump(mode="json") for item in result.robustness_slices
             ],
@@ -1176,6 +1248,11 @@ async def execute_backtest(
             "failed_gates": result.failed_gates,
             "full_metrics": result.metrics[0].model_dump(mode="json"),
             "deflated_sharpe": deflated_sharpe_summary,
+            "forward_observation_admission": (
+                selective_admission.model_dump(mode="json")
+                if selective_admission is not None
+                else None
+            ),
             "robustness_slices": [
                 item.model_dump(mode="json") for item in result.robustness_slices
             ],

@@ -205,12 +205,22 @@ high-rel-volume breakout has no reason to exist.
 The module originally shipped without a backtest because the available store carried US
 survivorship and DSE adjustment/depth defects. The independent 2026-07-25 diagnostics later
 confirmed that restraint: US compression and failed-breakdown implementations were rejected;
-DSE replay results were skewed and unstable. The hypothesis is now registered as
-`dse_compression_breakout_20d_v1` and may occupy one separate cash-funded **diagnostic shadow**
-book. That is not promotion: reconstructed rows can never form targets, only new immutable
-`squeeze-monitor-v3` forward confirmation transitions on or after book registration are eligible,
-and execution is no earlier than the following session open. See
-`atlas-edge-discovery-2026-07-25-codex-independent.md`.
+DSE replay results were skewed and unstable.
+
+The subsequently registered broad `dse_compression_breakout_20d_v1` diagnostic also failed. Over
+493 sessions it produced 33 accepted entries and a measured-cost net return of -0.571%, versus
++8.01% for DSEX; its delayed-timing placebo performed better. Its forward book is paused and its
+audit trail is retained.
+
+`dse_selective_compression_v1` is a separate preregistered candidate, not a relabeling of the broad
+book. It caps the portfolio at three names, suppresses maintenance trades inside a 20% target band,
+and ranks causal first confirmations using DSEX-relative strength, breakout volume, base-volume
+contraction, CMF, OBV flow, close location, extension, liquidity and market regime. Before even a
+diagnostic forward book may start, the fixed rule must have at least 12 qualified entries and 10
+executed entries; positive measured-cost full, validation and untouched-test excess returns;
+positive return at 30 bps one-way cost; <=8% drawdown; >=0.80 deflated-Sharpe confidence; and beat
+both the five-session-delay and liquidity-only three-slot nulls at realistic and stressed costs.
+Failing any check records `not_admitted` and creates no book.
 
 Every daily state continues to be archived point-in-time. No profitability claim is permitted
 until next-observable execution, costs, benchmark, capacity and portfolio constraints pass the
@@ -245,14 +255,13 @@ P&L. It excludes fees, slippage, capacity, cash, concurrency and risk constraint
 
 ## I. Paper-trading integration
 
-No new paper books ship with this module. The DSE compression candidate collects its locked
-20-session next-observable outcomes separately from paper capital. A family may map to a book only
-after its historical and forward diagnostics pass, with independent capital, cost model,
-benchmark, promotion status and decision events. Squeeze list membership never auto-creates a
-target: `dse_compression_breakout_20d_v1` independently requires a first v3 confirmation,
-liquidity and risk-geometry gates, an available portfolio slot, risk sizing and mandate
-constraints. Research discovery, trade eligibility, target formation and completed paper fill
-remain separate states of the decision archive.
+The squeeze list never auto-creates a target. It remains broad research inventory even when a row
+is `confirmed`; most rows should be rejected by a selective strategy. The failed broad v1 book is
+paused. The selective v1 candidate can create a diagnostic forward book only after the historical
+admission gate in §G passes. New immutable `squeeze-monitor-v3` confirmation transitions on or
+after registration are then ranked under the frozen rule, with execution no earlier than the
+following session open. Research discovery, quality qualification, target formation and completed
+paper fill remain separate states in the decision archive.
 
 ### Setup chart (`SqueezeChart`, added 2026-07-24)
 
@@ -311,7 +320,8 @@ never, until `us_short_squeeze` unblocks); "too extended" surfaces as the `exhau
 | API read model | `services/api/src/api/institutional_research/squeeze.py` + `GET /institutional-research/squeeze-monitor` | `services/api/tests/test_squeeze_monitor_api.py` — blocked-family contract + language rules |
 | Readiness registry | `strategy_readiness.py` (+5 squeeze entries) | `test_strategy_readiness.py` invariants |
 | UI | `apps/research/src/features/investment-command/SqueezeMonitorPanel.tsx` | Verified in preview both tenants: DSE renders 3 available families and the string "short squeeze" appears nowhere on the page; US renders the blocked short-squeeze card with its 3 missing datasets and zero entries |
-| DSE forward strategy | `packages/analytics/src/bulls/analytics/dse_compression_breakout.py` + `services/api/src/api/institutional_research/dse_squeeze_backtests.py` | First v3 confirmations only; reconstructed-target exclusion; 20-session expiry; structural exits; liquidity/geometry/risk/capacity gates; five-session timing placebo |
+| DSE broad diagnostic | `packages/analytics/src/bulls/analytics/dse_compression_breakout.py` + `services/api/src/api/institutional_research/dse_squeeze_backtests.py` | Failed historical result retained; broad forward book paused |
+| DSE selective candidate | `packages/analytics/src/bulls/analytics/dse_selective_compression.py` | Causal quality features; three-position ranking; 20% rebalance band; chronological validation/test; cost, drawdown, deflated-Sharpe and two-null admission gate |
 
 Two engine defects were found by the tests during implementation and fixed: the base high/low
 must exclude the most recent 3 sessions (otherwise a breakout raises its own trigger and can
