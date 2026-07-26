@@ -35,6 +35,7 @@ from research.edge_discovery.keltner import (
     KeltnerBar,
     KeltnerSpec,
     KeltnerTrade,
+    keltner_bar_issue,
     scan_keltner_trades,
 )
 
@@ -167,7 +168,7 @@ async def _benchmark(market: str) -> dict[dt.date, float]:
 async def _bars_for_chunk(
     market: str,
     codes: list[str],
-) -> dict[str, list[KeltnerBar]]:
+) -> tuple[dict[str, list[KeltnerBar]], dict[str, Any]]:
     load_start = dt.date(2017, 9, 1) if market == "US" else dt.date(2024, 1, 1)
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as session:
@@ -193,27 +194,46 @@ async def _bars_for_chunk(
             )
         ).all()
     grouped: dict[str, list[KeltnerBar]] = defaultdict(list)
+    quarantined_dates: dict[dt.date, int] = defaultdict(int)
+    quarantined_codes: set[str] = set()
+    quarantine_reasons: dict[str, int] = defaultdict(int)
     for row in rows:
         if min(row.open or 0, row.high or 0, row.low or 0, row.close or 0) <= 0:
+            quarantined_dates[row.date] += 1
+            quarantined_codes.add(row.code)
+            quarantine_reasons["non_positive"] += 1
             continue
         if market == "US":
             if row.adjusted_close is None or row.adjusted_close <= 0:
+                quarantined_dates[row.date] += 1
+                quarantined_codes.add(row.code)
+                quarantine_reasons["missing_adjusted_close"] += 1
                 continue
             factor = float(row.adjusted_close) / float(row.close)
         else:
             factor = 1.0
-        grouped[row.code].append(
-            KeltnerBar(
-                date=row.date,
-                open=float(row.open) * factor,
-                high=float(row.high) * factor,
-                low=float(row.low) * factor,
-                close=float(row.close) * factor,
-                raw_close=float(row.close),
-                volume=float(row.volume or 0),
-            )
+        bar = KeltnerBar(
+            date=row.date,
+            open=float(row.open) * factor,
+            high=float(row.high) * factor,
+            low=float(row.low) * factor,
+            close=float(row.close) * factor,
+            raw_close=float(row.close),
+            volume=float(row.volume or 0),
         )
-    return dict(grouped)
+        issue = keltner_bar_issue(bar)
+        if issue is not None:
+            quarantined_dates[row.date] += 1
+            quarantined_codes.add(row.code)
+            quarantine_reasons[issue] += 1
+            continue
+        grouped[row.code].append(bar)
+    return dict(grouped), {
+        "quarantined_rows": sum(quarantine_reasons.values()),
+        "quarantined_codes": quarantined_codes,
+        "quarantined_dates": quarantined_dates,
+        "quarantine_reasons": quarantine_reasons,
+    }
 
 
 def _chunks(values: list[str]) -> list[list[str]]:
@@ -224,12 +244,24 @@ async def _trades(
     market: str,
     codes: list[str],
     specs: dict[str, KeltnerSpec],
-) -> dict[str, dict[Direction, list[KeltnerTrade]]]:
+) -> tuple[dict[str, dict[Direction, list[KeltnerTrade]]], dict[str, Any]]:
     result = {name: {direction: [] for direction in _directions(market)} for name in specs}
+    data_quality: dict[str, Any] = {
+        "quarantined_rows": 0,
+        "quarantined_codes": set(),
+        "quarantined_dates": defaultdict(int),
+        "quarantine_reasons": defaultdict(int),
+    }
     normal_cost, stress_cost = _costs(market)
     chunks = _chunks(codes)
     for number, chunk in enumerate(chunks, start=1):
-        grouped = await _bars_for_chunk(market, chunk)
+        grouped, chunk_quality = await _bars_for_chunk(market, chunk)
+        data_quality["quarantined_rows"] += chunk_quality["quarantined_rows"]
+        data_quality["quarantined_codes"].update(chunk_quality["quarantined_codes"])
+        for date, count in chunk_quality["quarantined_dates"].items():
+            data_quality["quarantined_dates"][date] += count
+        for reason, count in chunk_quality["quarantine_reasons"].items():
+            data_quality["quarantine_reasons"][reason] += count
         for code, bars in grouped.items():
             for name, spec in specs.items():
                 for direction in _directions(market):
@@ -246,7 +278,16 @@ async def _trades(
         if number % 5 == 0 or number == len(chunks):
             primary_count = sum(len(rows) for rows in result[PRIMARY_NAME].values())
             print(f"{market} chunks {number}/{len(chunks)}: {primary_count:,} primary trades")
-    return result
+    return result, {
+        "quarantined_rows": data_quality["quarantined_rows"],
+        "quarantined_codes": len(data_quality["quarantined_codes"]),
+        "quarantined_dates": {
+            str(date): count
+            for date, count in sorted(data_quality["quarantined_dates"].items())
+        },
+        "quarantine_reasons": dict(sorted(data_quality["quarantine_reasons"].items())),
+        "policy": "invalid rows excluded without mutation; omissions remain visible in this artifact",
+    }
 
 
 def _benchmark_return(
@@ -396,6 +437,7 @@ def _payload(
     specs: dict[str, KeltnerSpec],
     trades: dict[str, dict[Direction, list[KeltnerTrade]]],
     benchmark: dict[dt.date, float],
+    data_quality: dict[str, Any],
 ) -> dict[str, Any]:
     results: dict[str, dict[str, dict[str, Any]]] = {}
     for name, direction_rows in trades.items():
@@ -444,6 +486,7 @@ def _payload(
             "normal_one_way": _costs(market)[0],
             "stressed_one_way": _costs(market)[1],
         },
+        "data_quality": data_quality,
         "specifications": {name: spec.as_dict() for name, spec in specs.items()},
         "results": results,
         "gates": {
@@ -471,13 +514,14 @@ async def async_main(market: str, output: Path) -> None:
         benchmark = await _benchmark(market)
         specs = _specs(market)
         print(f"Scanning {len(codes):,} {market} securities")
-        trades = await _trades(market, codes, specs)
+        trades, data_quality = await _trades(market, codes, specs)
         payload = _payload(
             market=market,
             codes=codes,
             specs=specs,
             trades=trades,
             benchmark=benchmark,
+            data_quality=data_quality,
         )
         output.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(

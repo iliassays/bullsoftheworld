@@ -94,17 +94,29 @@ class KeltnerChannels:
     lower: tuple[float | None, ...]
 
 
+def keltner_bar_issue(bar: KeltnerBar) -> str | None:
+    """Return the first integrity failure for one input bar, if any."""
+    values = (bar.open, bar.high, bar.low, bar.close, bar.volume, bar.raw_close)
+    if not all(math.isfinite(value) for value in values):
+        return "non_finite"
+    if min(bar.open, bar.high, bar.low, bar.close, bar.raw_close) <= 0 or bar.volume < 0:
+        return "non_positive"
+    if bar.high < max(bar.open, bar.close) or bar.low > min(bar.open, bar.close):
+        return "invalid_ohlc_range"
+    return None
+
+
 def _validate_bars(bars: Iterable[KeltnerBar]) -> list[KeltnerBar]:
     ordered = sorted(bars, key=lambda item: item.date)
     if len({item.date for item in ordered}) != len(ordered):
         raise ValueError("Keltner bars must contain one row per session")
     for bar in ordered:
-        values = (bar.open, bar.high, bar.low, bar.close, bar.volume, bar.raw_close)
-        if not all(math.isfinite(value) for value in values):
+        issue = keltner_bar_issue(bar)
+        if issue == "non_finite":
             raise ValueError("Keltner bars require finite values")
-        if min(bar.open, bar.high, bar.low, bar.close, bar.raw_close) <= 0 or bar.volume < 0:
+        if issue == "non_positive":
             raise ValueError("Keltner bars require positive prices and non-negative volume")
-        if bar.high < max(bar.open, bar.close) or bar.low > min(bar.open, bar.close):
+        if issue == "invalid_ohlc_range":
             raise ValueError("Keltner bars contain an invalid OHLC range")
     return ordered
 

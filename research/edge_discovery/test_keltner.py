@@ -7,6 +7,7 @@ import pytest
 from research.edge_discovery.keltner import (
     KeltnerBar,
     KeltnerSpec,
+    keltner_bar_issue,
     keltner_channels,
     scan_keltner_trades,
 )
@@ -140,3 +141,18 @@ def test_incomplete_timeout_is_not_reported() -> None:
         )
         == []
     )
+
+
+def test_invalid_ohlc_bar_is_classified_without_repair() -> None:
+    bar = KeltnerBar(
+        date=dt.date(2026, 7, 24),
+        open=43.58,
+        high=43.15,
+        low=42.20,
+        close=42.33,
+        raw_close=42.33,
+        volume=100_000,
+    )
+    assert keltner_bar_issue(bar) == "invalid_ohlc_range"
+    with pytest.raises(ValueError, match="invalid OHLC"):
+        keltner_channels([bar], _spec())
