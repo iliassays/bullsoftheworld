@@ -11,7 +11,7 @@ from typing import ClassVar
 
 from arq import cron
 from arq.connections import RedisSettings
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from api.institutional_research.catalysts import collect_catalyst_events
 from api.institutional_research.lifecycle import (
@@ -25,7 +25,9 @@ from bulls.core.db import get_sessionmaker, verify_runtime_database_role
 from bulls.core.models import (
     DailyBar,
     ResearchAutomationPolicy,
+    ResearchShadowPortfolio,
     ResearchWorkspace,
+    SqueezeDailyState,
     TickerAnalytics,
 )
 from bulls.core.tenancy import Tenant, TenantRegistry
@@ -36,6 +38,40 @@ _TENANTS_DIR = Path(__file__).resolve().parents[5] / "tenants"
 # System-triggered collection; catalyst rows are tenant-shared, so the RLS user id does not gate.
 _SYSTEM_USER_ID = 0
 _DATA_READINESS_RETRY = dt.timedelta(minutes=15)
+_DSE_SQUEEZE_STRATEGY = "dse_compression_breakout_20d_v1"
+
+
+def lifecycle_freshness_error(
+    *,
+    expected_session: dt.date,
+    latest_bar: dt.date | None,
+    latest_analytics: dt.date | None,
+    squeeze_archive_required: bool = False,
+    latest_squeeze_archive: dt.date | None = None,
+) -> str | None:
+    """Return the exact point-in-time dependency that is not ready for this lifecycle."""
+
+    stale = [
+        label
+        for label, observed in (
+            ("bar", latest_bar),
+            ("analytics", latest_analytics),
+            *(
+                (("DSE squeeze archive", latest_squeeze_archive),)
+                if squeeze_archive_required
+                else ()
+            ),
+        )
+        if observed is None or observed < expected_session
+    ]
+    if not stale:
+        return None
+    return (
+        f"Research preflight refused stale inputs: expected {expected_session}, "
+        f"latest bar {latest_bar}, latest analytics {latest_analytics}, "
+        f"latest DSE squeeze archive {latest_squeeze_archive}; "
+        f"waiting for {', '.join(stale)}."
+    )
 
 
 def lifecycle_execution_trigger(
@@ -68,8 +104,7 @@ def research_collection_targets(
     return [
         (tenant.name, tenant.market)
         for tenant in tenants
-        if tenant.research_access == "authenticated"
-        and (market is None or tenant.market == market)
+        if tenant.research_access == "authenticated" and (market is None or tenant.market == market)
     ]
 
 
@@ -176,18 +211,48 @@ async def run_research_lifecycle(
                 .order_by(TickerAnalytics.as_of_date.desc())
                 .limit(1)
             )
-            if expected_session is not None and (
-                latest_bar is None
-                or latest_bar < expected_session
-                or latest_analytics is None
-                or latest_analytics < expected_session
-            ):
+            squeeze_archive_required = False
+            latest_squeeze_archive = None
+            if market == "DSE":
+                squeeze_archive_required = (
+                    await session.scalar(
+                        select(ResearchShadowPortfolio.id)
+                        .where(
+                            ResearchShadowPortfolio.workspace_id == workspace.id,
+                            ResearchShadowPortfolio.organization_id == workspace.organization_id,
+                            ResearchShadowPortfolio.tenant_id == tenant_id,
+                            ResearchShadowPortfolio.market == "DSE",
+                            ResearchShadowPortfolio.strategy_key == _DSE_SQUEEZE_STRATEGY,
+                            ResearchShadowPortfolio.status == "active",
+                        )
+                        .limit(1)
+                    )
+                    is not None
+                )
+                if squeeze_archive_required:
+                    latest_squeeze_archive = await session.scalar(
+                        select(func.max(SqueezeDailyState.as_of_date)).where(
+                            SqueezeDailyState.market == "DSE",
+                            SqueezeDailyState.family == "compression_breakout",
+                            SqueezeDailyState.methodology_version == "squeeze-monitor-v3",
+                            SqueezeDailyState.evidence_mode == "forward",
+                        )
+                    )
+            freshness_error = (
+                lifecycle_freshness_error(
+                    expected_session=expected_session,
+                    latest_bar=latest_bar,
+                    latest_analytics=latest_analytics,
+                    squeeze_archive_required=squeeze_archive_required,
+                    latest_squeeze_archive=latest_squeeze_archive,
+                )
+                if expected_session is not None
+                else None
+            )
+            if freshness_error is not None:
                 policy.last_run_status = "failed"
                 policy.last_completed_at = dt.datetime.now(dt.UTC)
-                policy.last_error = (
-                    f"Research preflight refused stale inputs: expected {expected_session}, "
-                    f"latest bar {latest_bar}, latest analytics {latest_analytics}."
-                )
+                policy.last_error = freshness_error
                 policy.next_run_at = (
                     dt.datetime.now(dt.UTC) + _DATA_READINESS_RETRY if policy.enabled else None
                 )

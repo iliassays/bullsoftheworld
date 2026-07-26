@@ -13,7 +13,10 @@ from api.institutional_research.operator import (
     configure_lifecycle,
     seed_historical_replay,
 )
-from api.institutional_research.worker import lifecycle_execution_trigger
+from api.institutional_research.worker import (
+    lifecycle_execution_trigger,
+    lifecycle_freshness_error,
+)
 
 
 def test_forward_operator_cli_wires_empty_book_replacement_flag() -> None:
@@ -85,6 +88,44 @@ def test_scheduled_attempts_share_one_session_trigger() -> None:
     )
 
     assert first == retry == "session:DSE:2026-07-15"
+
+
+def test_dse_squeeze_book_waits_for_same_session_forward_archive() -> None:
+    expected = dt.date(2026, 7, 27)
+
+    stale = lifecycle_freshness_error(
+        expected_session=expected,
+        latest_bar=expected,
+        latest_analytics=expected,
+        squeeze_archive_required=True,
+        latest_squeeze_archive=expected - dt.timedelta(days=1),
+    )
+    ready = lifecycle_freshness_error(
+        expected_session=expected,
+        latest_bar=expected,
+        latest_analytics=expected,
+        squeeze_archive_required=True,
+        latest_squeeze_archive=expected,
+    )
+
+    assert stale is not None
+    assert "waiting for DSE squeeze archive" in stale
+    assert ready is None
+
+
+def test_non_squeeze_workspace_does_not_wait_for_squeeze_archive() -> None:
+    expected = dt.date(2026, 7, 27)
+
+    assert (
+        lifecycle_freshness_error(
+            expected_session=expected,
+            latest_bar=expected,
+            latest_analytics=expected,
+            squeeze_archive_required=False,
+            latest_squeeze_archive=None,
+        )
+        is None
+    )
 
 
 def test_operator_attempt_retains_unique_trigger() -> None:
