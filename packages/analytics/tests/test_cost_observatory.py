@@ -95,3 +95,10 @@ def test_cost_tiers_omit_measured_when_unmeasurable() -> None:
     tiers = cost_tiers(measured_half_spread_bps=None, fee_bps=5.0)
     assert [t.label for t in tiers] == ["stress_10bps", "stress_30bps", "stress_50bps"]
     assert all(t.measured is False for t in tiers)
+
+
+def test_cost_tiers_omit_impossible_scenarios_below_fee_floor() -> None:
+    tiers = cost_tiers(measured_half_spread_bps=12.0, fee_bps=40.0)
+
+    assert [tier.label for tier in tiers] == ["measured", "stress_50bps"]
+    assert [tier.one_way_bps for tier in tiers] == [52.0, 50.0]

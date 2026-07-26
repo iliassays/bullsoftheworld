@@ -129,8 +129,10 @@ def cost_tiers(
     """Assemble the one-way cost scenarios a backtest must be run against (Phase 13.2).
 
     The measured tier is half-spread + fees (omitted when the spread could not be measured); the
-    stress tiers are fixed one-way floors the strategy's edge has to survive regardless of what
-    the measurement said.
+    stress tiers are fixed *total* one-way costs the strategy's edge has to survive regardless of
+    what the measurement said. A scenario below the market's mandatory fee is impossible and is
+    therefore omitted. Keeping it would make the engine charge the fee floor while publishing a
+    lower, false cost label.
     """
     tiers: list[CostTier] = []
     if measured_half_spread_bps is not None:
@@ -142,5 +144,7 @@ def cost_tiers(
             )
         )
     for level in stress_levels_bps:
+        if level < fee_bps:
+            continue
         tiers.append(CostTier(label=f"stress_{level:g}bps", one_way_bps=float(level)))
     return tiers

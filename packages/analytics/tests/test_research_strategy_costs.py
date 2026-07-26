@@ -251,7 +251,7 @@ def test_cost_tiered_backtest_runs_for_dse_market() -> None:
         securities=[_dse_recovery_security(f"D{i}") for i in range(4)],
     )
     labels = [outcome.tier.label for outcome in result.outcomes]
-    assert labels == ["measured", "stress_10bps", "stress_30bps", "stress_50bps"]
+    assert labels == ["measured", "stress_50bps"]
     assert result.fee_bps == RISK_POLICIES["DSE"].fee_rate * 10_000
     assert result.primary.risk_policy.market == "DSE"
 
