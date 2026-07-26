@@ -51,7 +51,7 @@ CHUNK_SIZE = 200
 
 async def _codes() -> list[str]:
     sessionmaker = get_sessionmaker()
-    async with sessionmaker()() as session:
+    async with sessionmaker() as session:
         return sorted(
             set(
                 await session.scalars(
@@ -66,7 +66,7 @@ async def _codes() -> list[str]:
 
 async def _bars_for_chunk(codes: list[str]) -> dict[str, list[RunnerBar]]:
     sessionmaker = get_sessionmaker()
-    async with sessionmaker()() as session:
+    async with sessionmaker() as session:
         await session.execute(text("SET LOCAL statement_timeout = '10min'"))
         rows = (
             await session.execute(
