@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from research.edge_discovery.demand_signature import (
+    FEATURE_COLUMNS,
     DemandSignatureSpec,
     attach_scores,
     attach_triple_barrier,
@@ -44,6 +45,20 @@ from research.edge_discovery.harness import DSE_WINDOWS
 
 from bulls.core.db import dispose_engine, get_sessionmaker
 from bulls.core.models import DailyBar, MarketSummary
+
+PRICE_FEATURES = (
+    "atr_compression",
+    "range_compression",
+    "ret_5",
+    "ret_20",
+    "ret_60",
+    "proximity_high_20",
+    "proximity_high_120",
+    "higher_low",
+    "relative_strength_20",
+    "market_regime",
+)
+FLOW_FEATURES = tuple(feature for feature in FEATURE_COLUMNS if feature not in PRICE_FEATURES)
 
 
 async def load_panel() -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -133,6 +148,69 @@ def _rounded(value: Any) -> Any:
     if isinstance(value, list):
         return [_rounded(item) for item in value]
     return value
+
+
+def _ablation(
+    panel: pl.DataFrame,
+    discovery: pl.DataFrame,
+    spec: DemandSignatureSpec,
+) -> dict[str, Any]:
+    """Measure whether flow trajectories add evidence beyond price structure."""
+    payload: dict[str, Any] = {}
+    panel_end = panel["date"].max()
+    for name, feature_names in (
+        ("price_only", PRICE_FEATURES),
+        ("flow_only", FLOW_FEATURES),
+        ("combined", FEATURE_COLUMNS),
+    ):
+        model = fit_ridge_logit(
+            discovery,
+            feature_names=feature_names,
+            l2_penalty=spec.l2_penalty,
+        )
+        score_column = f"ablation_{name}"
+        scored = attach_scores(panel, model, score_column=score_column)
+        scored_discovery = purged_window(
+            scored,
+            start=None,
+            end=DSE_WINDOWS.discovery_end,
+            label_end_column="exit_date_primary",
+        ).filter(pl.col("label_valid_primary"))
+        threshold = discovery_threshold(
+            scored_discovery,
+            quantile=spec.score_quantile,
+            score_column=score_column,
+        )
+        windows: dict[str, Any] = {}
+        for window_name, start, end in _window_bounds(panel_end):
+            window_frame = purged_window(
+                scored,
+                start=start,
+                end=end,
+                label_end_column="exit_date_primary",
+            )
+            candidates = select_candidates(
+                window_frame,
+                threshold=threshold,
+                top_n=spec.candidates_per_session,
+                score_column=score_column,
+            )
+            windows[window_name] = asdict(
+                evaluate_window(
+                    window_frame,
+                    candidates,
+                    window=window_name,
+                    horizon=spec.primary_horizon,
+                    one_way_cost_bps=spec.one_way_cost_bps,
+                    stressed_one_way_cost_bps=spec.stressed_one_way_cost_bps,
+                )
+            )
+        payload[name] = {
+            "feature_count": len(feature_names),
+            "threshold": threshold,
+            "windows": windows,
+        }
+    return payload
 
 
 def run_experiment(
@@ -317,6 +395,7 @@ def run_experiment(
             "converged": model.converged,
             "coefficients": model.coefficient_rows(),
         },
+        "ablation": _ablation(panel, discovery, spec),
         "windows": window_payload,
         "gates": {
             "quantitative": quantitative_gates,

@@ -126,6 +126,9 @@ class WindowResult:
     mean_stressed_return_pct: float | None
     matched_excess_net_pct: float | None
     hit_rate_pct: float | None
+    stop_rate_pct: float | None
+    timeout_rate_pct: float | None
+    mean_timeout_return_pct: float | None
     median_mfe_pct: float | None
     median_mae_pct: float | None
     net_ci_low_pct: float | None
@@ -637,6 +640,7 @@ def evaluate_window(
     gross = f"gross_return_{suffix}"
     mfe = f"mfe_{suffix}"
     mae = f"mae_{suffix}"
+    state = f"state_{suffix}"
     eligible = frame.filter(
         pl.col("eligible")
         & pl.col(label).is_not_null()
@@ -662,6 +666,9 @@ def evaluate_window(
             mean_stressed_return_pct=None,
             matched_excess_net_pct=None,
             hit_rate_pct=None,
+            stop_rate_pct=None,
+            timeout_rate_pct=None,
+            mean_timeout_return_pct=None,
             median_mfe_pct=None,
             median_mae_pct=None,
             net_ci_low_pct=None,
@@ -691,6 +698,7 @@ def evaluate_window(
                 gross,
                 mfe,
                 mae,
+                state,
                 "matched_label",
                 "matched_return",
             ]
@@ -722,6 +730,7 @@ def evaluate_window(
         if len(matched_lift)
         else None
     )
+    timeout_returns = selected.filter(pl.col(state) == "timeout")[gross]
 
     return WindowResult(
         window=window,
@@ -739,6 +748,11 @@ def evaluate_window(
         mean_stressed_return_pct=float(selected["stressed_return"].mean()) * 100,
         matched_excess_net_pct=float(selected["matched_excess_net"].drop_nulls().mean()) * 100,
         hit_rate_pct=float((selected["net_return"] > 0).mean()) * 100,
+        stop_rate_pct=float((selected[state] == "stop").mean()) * 100,
+        timeout_rate_pct=float((selected[state] == "timeout").mean()) * 100,
+        mean_timeout_return_pct=(
+            float(timeout_returns.mean()) * 100 if len(timeout_returns) else None
+        ),
         median_mfe_pct=float(selected[mfe].median()) * 100,
         median_mae_pct=float(selected[mae].median()) * 100,
         net_ci_low_pct=low * 100,
