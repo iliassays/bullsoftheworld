@@ -207,10 +207,20 @@ survivorship and DSE adjustment/depth defects. The independent 2026-07-25 diagno
 confirmed that restraint: US compression and failed-breakdown implementations were rejected;
 DSE replay results were skewed and unstable.
 
-The subsequently registered broad `dse_compression_breakout_20d_v1` diagnostic also failed. Over
-493 sessions it produced 33 accepted entries and a measured-cost net return of -0.571%, versus
-+8.01% for DSEX; its delayed-timing placebo performed better. Its forward book is paused and its
-audit trail is retained.
+The first registered broad `dse_compression_breakout_20d_v1` diagnostic failed. Its pre-correction
+run produced 33 accepted entries and a measured-cost net return of -0.571%, versus +8.01% for
+DSEX. That result remains in the audit trail but was superseded as the current diagnostic after
+the 2026-07-26 archive rebuild removed standalone terminal episodes and reconstructed the latest
+methodology causally across 260 sessions.
+
+The post-rebuild run evaluated 186 first confirmations and accepted 77 entries. Over the same
+493-session portfolio clock it returned +4.238% at an estimated 97.51 bps one-way measured cost,
+versus +8.01% for DSEX: -3.772 percentage points of excess return, 0.449 Sharpe and 5.422% maximum
+drawdown. Train/validation/test absolute returns were -3.420% / +5.187% / +2.607%, which is
+unstable rather than uniformly positive. A hypothetical feasible 50 bps one-way run returned
++9.592%, but the measured-cost result is authoritative. Stress scenarios below DSE's mandatory
+40 bps fee floor are impossible and are now omitted instead of being published under false
+10/30 bps labels. The forward book remains paused.
 
 `dse_selective_compression_v1` is a separate preregistered candidate, not a relabeling of the broad
 book. It caps the portfolio at three names, suppresses maintenance trades inside a 20% target band,

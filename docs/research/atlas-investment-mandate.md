@@ -55,7 +55,7 @@ attractive backtest.
 | Book | Horizon | State | Decision |
 |---|---|---|---|
 | `dse_reversal_v1` | EOD swing | Active diagnostic Atlas shadow book | Keep collecting immutable forward evidence. Explain its entries and failures; do not call it validated. |
-| `dse_compression_breakout_20d_v1` | EOD swing | Paused after failed historical diagnostic | Preserve the trial and book audit trail, but form no new targets. The broad rule lost money after measured costs, underperformed DSEX and did not beat its delayed-timing placebo. |
+| `dse_compression_breakout_20d_v1` | EOD swing | Paused after failed historical diagnostic | Preserve the trial and book audit trail, but form no new targets. After the 2026-07-26 archive correction it returned +4.24% at measured costs versus +8.01% for DSEX, an excess return of -3.77 percentage points. The improvement does not pass the benchmark gate or convert reconstructed evidence into forward evidence. |
 | `dse_selective_compression_v1` | EOD swing | Not admitted after first diagnostic | The fixed rule evaluated 186 confirmations but qualified none. Preserve the run; do not weaken gates using validation/test outcomes and do not create a forward book. Any v2 must justify its changes from training-only feature availability and register as a new attempt. |
 | `dse_trend_pullback_intraday_v1` | Intraday-to-multiday swing | Data-blocked hypothesis | Persist intraday history first, preregister the rule, then test. Do not paper trade a daily proxy. |
 | `dse_quality_value_v1` | Multi-month | Candidate | Rebuild with point-in-time financial publication dates and execution costs before deciding on a separate shadow book. |
