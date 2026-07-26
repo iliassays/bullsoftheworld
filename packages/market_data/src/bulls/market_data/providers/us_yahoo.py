@@ -143,7 +143,11 @@ def parse_yahoo_chart(data: dict[str, Any], *, market: str, code: str) -> list[B
         high_f = float(high)
         low_f = float(low)
         close_f = float(close)
-        if min(open_f, high_f, low_f, close_f) <= 0 or high_f < low_f:
+        if (
+            min(open_f, high_f, low_f, close_f) <= 0
+            or high_f < max(open_f, close_f)
+            or low_f > min(open_f, close_f)
+        ):
             continue
         out.append(
             Bar(

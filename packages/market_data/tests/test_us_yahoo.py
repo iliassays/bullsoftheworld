@@ -26,16 +26,16 @@ def test_parse_yahoo_chart_builds_daily_bars_and_skips_bad_rows() -> None:
         "chart": {
             "result": [
                 {
-                    "timestamp": [1704177000, 1704263400, 1704349800],
+                    "timestamp": [1704177000, 1704263400, 1704349800, 1704436200],
                     "indicators": {
-                        "adjclose": [{"adjclose": [93.5, None, 185.0]}],
+                        "adjclose": [{"adjclose": [93.5, None, 185.0, 190.0]}],
                         "quote": [
                             {
-                                "open": [185.0, None, 187.0],
-                                "high": [188.0, None, 186.0],
-                                "low": [184.0, None, 188.0],
-                                "close": [187.0, None, 185.0],
-                                "volume": [1000, None, 2000],
+                                "open": [185.0, None, 187.0, 192.0],
+                                "high": [188.0, None, 186.0, 191.0],
+                                "low": [184.0, None, 188.0, 189.0],
+                                "close": [187.0, None, 185.0, 190.0],
+                                "volume": [1000, None, 2000, 3000],
                             }
                         ]
                     },
