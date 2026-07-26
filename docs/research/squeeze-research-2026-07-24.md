@@ -222,6 +222,15 @@ positive return at 30 bps one-way cost; <=8% drawdown; >=0.80 deflated-Sharpe co
 both the five-session-delay and liquidity-only three-slot nulls at realistic and stressed costs.
 Failing any check records `not_admitted` and creates no book.
 
+The first production v1 diagnostic on 2026-07-26 returned `not_admitted`. Across 260 reconstructed
+sessions it evaluated 186 first confirmations but qualified zero. The first-failure attribution was
+90 stop distances above 10%, 42 below the BDT 5M liquidity floor, 24 without the required base
+contraction, 14 below DSEX relative strength, and 16 across volume/CMF/stop-width gates. This is a
+useful falsification of the frozen conjunction, not evidence that thresholds should be loosened
+until a backtest turns green. No selective shadow book exists. A v2, if investigated, must choose
+changes using training-only feature availability, register a new trial, and leave validation and
+test outcomes untouched until the specification is frozen.
+
 Every daily state continues to be archived point-in-time. No profitability claim is permitted
 until next-observable execution, costs, benchmark, capacity and portfolio constraints pass the
 mandate's forward gates.
