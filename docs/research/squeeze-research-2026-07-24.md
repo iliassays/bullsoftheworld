@@ -275,11 +275,11 @@ drift apart. Rules that must survive future edits:
   with a new `first_discovered_on`, not a continuation of the old one. `resolve_episode`
   (`bulls.analytics.squeeze_monitor`, unit-tested) is the single rule the scan uses, so the
   buggy carry-forward that kept a stale discovery date across a fail→reform is gone. The chart
-  labels every visible episode "Discovered #N" and "Confirmed #N" while muting prior episodes,
-  keeps the current episode's dotted discovery price line, and states "Nth discovery … at
-  {price}" above the chart. `prior_discovery_dates` surfaces how many earlier setups this
-  ticker/family had. Prior episodes remain separate archived rows, reachable by the archive-date
-  selector.
+  labels every visible episode with compact markers (`D1` discovery, `T1` trigger-ready, `C1`
+  confirmed, `F1` failed, `X1` exhausted) while muting prior episodes. It keeps the current
+  episode's dotted discovery price line and states "Nth discovery … at {price}" above the chart.
+  `prior_discovery_dates` surfaces how many earlier setups this ticker/family had. Prior episodes
+  remain separate archived rows, reachable by the archive-date selector.
 
 ## J. Atlas UI specification
 

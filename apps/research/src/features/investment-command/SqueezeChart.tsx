@@ -22,13 +22,11 @@ const COLORS = {
   priorEpisode: "#68717b",
 };
 
-const STATE_TEXT: Record<string, string> = {
-  watch: "Watch",
-  forming: "Forming",
-  trigger_ready: "Trigger ready",
-  confirmed: "Confirmed",
-  exhausted: "Too extended",
-  failed: "Failed",
+const STATE_MARKER: Record<string, string> = {
+  trigger_ready: "T",
+  confirmed: "C",
+  exhausted: "X",
+  failed: "F",
 };
 
 interface Reading {
@@ -41,9 +39,6 @@ interface Reading {
 
 export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
   const currentDiscoveryDate = path.entry.firstDiscoveredOn;
-  const hasMultipleEpisodes =
-    path.discoveryNumber > 1 ||
-    path.stateHistory.some((change) => change.episodeNumber > 1);
   const notableStates = new Set(["confirmed", "failed", "exhausted"]);
 
   const markers: SeriesMarker<Time>[] = path.stateHistory
@@ -58,7 +53,7 @@ export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
     .map((change) => {
       const isDiscovery = change.previousState === null || change.previousState === "none";
       const late = change.state === "failed" || change.state === "exhausted";
-      const episodeSuffix = hasMultipleEpisodes ? ` #${change.episodeNumber}` : "";
+      const markerCode = isDiscovery ? "D" : (STATE_MARKER[change.state] ?? "S");
       return {
         time: change.date as Time,
         position: late ? "aboveBar" : "belowBar",
@@ -72,9 +67,7 @@ export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
                 ? COLORS.down
                 : COLORS.ema20,
         shape: late ? "arrowDown" : "arrowUp",
-        text: isDiscovery
-          ? `Discovered${episodeSuffix}`
-          : `${STATE_TEXT[change.state] ?? change.state}${episodeSuffix}`,
+        text: `${markerCode}${change.episodeNumber}`,
       };
     });
 
@@ -86,7 +79,7 @@ export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
       position: "belowBar",
       color: COLORS.discovery,
       shape: "arrowUp",
-      text: `Discovered${hasMultipleEpisodes ? ` #${path.discoveryNumber}` : ""}`,
+      text: `D${path.discoveryNumber}`,
     });
   }
   return markers.sort((left, right) =>
@@ -298,6 +291,13 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
         <span><i style={{ background: COLORS.ema20 }} />EMA 20</span>
         <span><i style={{ background: COLORS.ema50 }} />EMA 50</span>
         <span><i style={{ background: COLORS.vwap }} />Anchored VWAP</span>
+      </div>
+      <div className="squeeze-chart__marker-key" aria-label="Chart event marker legend">
+        <span><b>D#</b> discovery</span>
+        <span><b>T#</b> trigger</span>
+        <span><b>C#</b> confirmed</span>
+        <span><b>F#</b> failed</span>
+        <span><b>X#</b> extended</span>
       </div>
       <p className="squeeze-chart__basis">
         {path.priceBasis} {path.overlayBasis}

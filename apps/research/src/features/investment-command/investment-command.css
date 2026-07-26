@@ -1939,6 +1939,19 @@
   width: 12px;
 }
 
+.squeeze-chart__marker-key {
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 9.5px;
+  gap: 5px 12px;
+}
+
+.squeeze-chart__marker-key b {
+  color: var(--text);
+  font-weight: 750;
+}
+
 .squeeze-chart__basis {
   color: var(--text-muted);
   font-size: 10px;

@@ -19,9 +19,10 @@ describe("buildSqueezeMarkers", () => {
     );
     const labels = markers.map((marker) => marker.text);
 
-    expect(labels).toContain("Discovered #1");
-    expect(labels).toContain("Confirmed #1");
-    expect(labels).toContain("Discovered #2");
-    expect(labels).toContain("Confirmed #2");
+    expect(labels).toContain("D1");
+    expect(labels).toContain("C1");
+    expect(labels).toContain("D2");
+    expect(labels).toContain("C2");
+    expect(labels).toContain("T2");
   });
 });
