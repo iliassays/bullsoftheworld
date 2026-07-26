@@ -5,12 +5,46 @@ import datetime as dt
 import pytest
 
 from api.institutional_research.operator import (
+    ForwardShadowOperatorRequest,
     HistoricalReplayOperatorRequest,
     LifecycleOperatorRequest,
+    _argument_parser,
     configure_lifecycle,
     seed_historical_replay,
 )
 from api.institutional_research.worker import lifecycle_execution_trigger
+
+
+def test_forward_operator_cli_wires_empty_book_replacement_flag() -> None:
+    arguments = _argument_parser().parse_args(
+        [
+            "forward",
+            "--tenant",
+            "bullsofdhaka",
+            "--handle",
+            "ilias",
+            "--strategy",
+            "dse_compression_breakout_20d_v1",
+            "--initial-capital",
+            "10000000",
+            "--replace-empty",
+            "--apply",
+        ]
+    )
+
+    request = ForwardShadowOperatorRequest(
+        tenant=arguments.tenant,
+        handle=arguments.handle,
+        strategy_key=arguments.strategy,
+        initial_capital=arguments.initial_capital,
+        universe_limit=arguments.universe_limit,
+        cap_tier=arguments.cap_tier,
+        replace_empty=arguments.replace_empty,
+        apply=arguments.apply,
+    )
+
+    assert request.replace_empty is True
+    assert request.apply is True
 
 
 def test_scheduled_attempts_share_one_session_trigger() -> None:

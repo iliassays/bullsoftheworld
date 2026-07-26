@@ -635,7 +635,6 @@ async def _main() -> None:
                 history_days=arguments.history_days,
                 universe_limit=arguments.universe_limit,
                 cap_tier=arguments.cap_tier,
-                replace_empty=arguments.replace_empty,
                 apply=arguments.apply,
             )
         )
@@ -648,6 +647,7 @@ async def _main() -> None:
                 initial_capital=arguments.initial_capital,
                 universe_limit=arguments.universe_limit,
                 cap_tier=arguments.cap_tier,
+                replace_empty=arguments.replace_empty,
                 apply=arguments.apply,
             )
         )
