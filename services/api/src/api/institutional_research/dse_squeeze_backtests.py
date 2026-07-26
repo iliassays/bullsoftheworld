@@ -83,6 +83,9 @@ async def prepare_dse_compression_backtest(
         SqueezeDailyState.market == "DSE",
         SqueezeDailyState.family == SOURCE_FAMILY,
         SqueezeDailyState.methodology_version == SOURCE_METHODOLOGY_VERSION,
+        # Forming/watch/none rows never change either portfolio schedule. Excluding them keeps
+        # multi-year diagnostics bounded without changing confirmation or terminal semantics.
+        SqueezeDailyState.state.in_(("confirmed", "failed", "exhausted")),
         SqueezeDailyState.as_of_date >= start,
         SqueezeDailyState.as_of_date <= end,
     ]
