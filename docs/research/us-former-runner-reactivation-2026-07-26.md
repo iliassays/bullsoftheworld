@@ -83,6 +83,11 @@ actually stores from observations in the external STAK investigation:
 | Licensed option snapshots | None | No historical options evidence |
 | Unofficial delayed option preview | No contracts returned on 26 July | No usable current chain from the preview provider |
 
+The audit found that the 8 June 6-K was present in `sec_filings` but absent from the retrieval
+index. All 18 retained STAK filing records were idempotently reindexed on 26 July and the June row
+is now retrievable. Those chunks still contain filing metadata, not the full 6-K exhibit text, so
+they cannot independently reconstruct the external AI-energy narrative.
+
 Atlas also has no point-in-time borrow availability, cost-to-borrow history, verified free float,
 premarket tape, exchange halt tape, order book, or independent social firehose. Therefore the
 external claims about `107.95%` borrow cost, `6x-11.7x` time-adjusted intraday volume, premarket
