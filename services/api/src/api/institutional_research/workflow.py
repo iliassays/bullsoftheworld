@@ -851,6 +851,7 @@ async def execute_backtest(
             "source_family": "compression_breakout",
             "source_methodology": "squeeze-monitor-v3",
             "portfolio_construction": CompressionBreakoutPolicy().model_dump(mode="json"),
+            "liquidity_measure": "trailing 20 completed sessions mean(close x volume)",
             "historical_evidence_role": "diagnostic_only",
             "forward_shadow_evidence": "forward rows on or after book registration only",
         }

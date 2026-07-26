@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import bisect
 import datetime as dt
+import statistics
 from collections import Counter, defaultdict
 from typing import Literal
 
@@ -25,6 +27,23 @@ from bulls.analytics.dse_compression_breakout import (
 from bulls.analytics.research_strategy import StrategyBar, StrategySecurity
 from bulls.core.models import DailyBar, SqueezeDailyState, Symbol
 from bulls.core.symbol_lifecycle import PRIVATE_RESEARCH_STATUSES
+
+
+def _trailing_average_daily_value_mn(
+    daily_values: list[tuple[dt.date, float]],
+    *,
+    as_of: dt.date,
+    sessions: int = 20,
+) -> float | None:
+    """Average completed-session traded value through ``as_of`` with no future observations."""
+
+    if sessions < 1:
+        raise ValueError("sessions must be positive")
+    index = bisect.bisect_right([date for date, _value in daily_values], as_of)
+    completed = daily_values[max(0, index - sessions) : index]
+    if len(completed) < sessions:
+        return None
+    return statistics.fmean(value for _date, value in completed) / 1_000_000
 
 
 async def prepare_dse_compression_backtest(
@@ -132,6 +151,7 @@ async def prepare_dse_compression_backtest(
         )
     )
     grouped: dict[str, list[StrategyBar]] = defaultdict(list)
+    observed_daily_values: dict[str, list[tuple[dt.date, float]]] = defaultdict(list)
     corrupt_codes: set[str] = set()
     adjusted_rows = 0
     for row in bars:
@@ -144,6 +164,7 @@ async def prepare_dse_compression_backtest(
             continue
         if row.adjusted_close is not None:
             adjusted_rows += 1
+        observed_daily_values[row.code].append((row.date, float(row.close) * int(row.volume or 0)))
         grouped[row.code].append(
             StrategyBar(
                 date=row.date,
@@ -156,6 +177,29 @@ async def prepare_dse_compression_backtest(
         )
     for code in corrupt_codes:
         grouped.pop(code, None)
+        observed_daily_values.pop(code, None)
+    enriched_observations: list[CompressionBreakoutObservation] = []
+    computed_adv_observations = 0
+    unresolved_adv_observations = 0
+    for observation in observations:
+        computed = _trailing_average_daily_value_mn(
+            observed_daily_values.get(observation.code, []),
+            as_of=observation.as_of_date,
+        )
+        if computed is not None:
+            computed_adv_observations += 1
+        elif observation.average_daily_value_mn is None:
+            unresolved_adv_observations += 1
+        enriched_observations.append(
+            observation.model_copy(
+                update={
+                    "average_daily_value_mn": (
+                        computed if computed is not None else observation.average_daily_value_mn
+                    )
+                }
+            )
+        )
+    observations = enriched_observations
     securities = [
         StrategySecurity(
             code=code,
@@ -209,6 +253,9 @@ async def prepare_dse_compression_backtest(
             "policy": policy.model_dump(mode="json"),
             "adjusted_bar_rows": adjusted_rows,
             "total_bar_rows": len(bars),
+            "liquidity_measure": "trailing_20_completed_sessions_close_times_volume",
+            "computed_liquidity_observations": computed_adv_observations,
+            "unresolved_liquidity_observations": unresolved_adv_observations,
             "eligible_security_count": len(securities),
         },
         failed_gates=failed_gates,

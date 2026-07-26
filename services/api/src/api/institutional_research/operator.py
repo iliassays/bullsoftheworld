@@ -29,7 +29,14 @@ from api.queue import enqueue_research_lifecycle
 from api.research_access import bind_research_tenant_context
 from bulls.analytics.research_strategy import STRATEGIES
 from bulls.core.db import bind_tenant_context, get_sessionmaker
-from bulls.core.models import DailyBar, ResearchShadowPortfolio, ResearchWorkspace, User
+from bulls.core.models import (
+    DailyBar,
+    ResearchShadowPortfolio,
+    ResearchShadowSnapshot,
+    ResearchStrategyTrial,
+    ResearchWorkspace,
+    User,
+)
 from bulls.core.tenancy import TenantRegistry
 
 _TENANTS_DIR = Path(__file__).resolve().parents[5] / "tenants"
@@ -70,6 +77,7 @@ class ForwardShadowOperatorRequest:
     initial_capital: float
     universe_limit: int = 500
     cap_tier: str | None = None
+    replace_empty: bool = False
     apply: bool = False
 
 
@@ -424,6 +432,52 @@ async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str
                 ResearchShadowPortfolio.status.in_(("active", "paused")),
             )
         )
+        if existing is not None and request.replace_empty:
+            snapshot = await session.scalar(
+                select(ResearchShadowSnapshot)
+                .where(ResearchShadowSnapshot.portfolio_id == existing.id)
+                .order_by(ResearchShadowSnapshot.session_number.desc())
+                .limit(1)
+            )
+            if (
+                snapshot is None
+                or snapshot.session_number != 0
+                or snapshot.target_weights
+                or snapshot.positions
+                or snapshot.trades
+            ):
+                raise RuntimeError(
+                    "Refusing to replace a shadow book after it produced targets, positions, "
+                    "trades, or forward sessions"
+                )
+            trial = await session.scalar(
+                select(ResearchStrategyTrial).where(
+                    ResearchStrategyTrial.source_run_id == existing.source_run_id,
+                    ResearchStrategyTrial.workspace_id == workspace.id,
+                    ResearchStrategyTrial.organization_id == workspace.organization_id,
+                    ResearchStrategyTrial.tenant_id == workspace.tenant_id,
+                    ResearchStrategyTrial.market == workspace.market,
+                )
+            )
+            existing.status = "archived"
+            if trial is not None:
+                trial.status = "retired"
+            record_research_audit_event(
+                session,
+                workspace=workspace,
+                actor_user_id=user.id,
+                event_type="research_empty_shadow_archived",
+                resource_type="research_shadow_portfolio",
+                resource_id=str(existing.id),
+                attributes={
+                    "strategy_key": request.strategy_key,
+                    "source_run_id": str(existing.source_run_id),
+                    "trial_id": str(trial.id) if trial is not None else None,
+                    "reason": "Pre-forward adapter correction; no target, fill, or evidence session existed.",
+                },
+            )
+            await session.flush()
+            existing = None
         if existing is not None:
             portfolios = await reconcile_shadow_portfolios(session, workspace=workspace)
             await session.commit()
@@ -448,7 +502,8 @@ async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str
             user_id=user.id,
             request=BacktestRequest(
                 idempotency_key=(
-                    f"forward-seed:{request.strategy_key}:{latest_date.isoformat()}:"
+                    f"forward-seed:{request.strategy_key}:{strategy.methodology_version}:"
+                    f"{latest_date.isoformat()}:"
                     f"{request.cap_tier or 'all'}:{request.universe_limit}"
                 ),
                 strategy_key=request.strategy_key,
@@ -465,7 +520,10 @@ async def seed_forward_shadow(request: ForwardShadowOperatorRequest) -> dict[str
             user_id=user.id,
             request=CreateShadowPortfolioRequest(
                 source_run_id=backtest.id,
-                name=f"Atlas {strategy.name} forward diagnostic",
+                name=(
+                    f"Atlas {request.strategy_key} {strategy.methodology_version} "
+                    "forward diagnostic"
+                ),
             ),
             forward_evidence_started_on=forward_start,
             history_mode="locked_forward_only",
@@ -544,6 +602,7 @@ def _argument_parser() -> argparse.ArgumentParser:
     forward.add_argument("--initial-capital", type=float, required=True)
     forward.add_argument("--universe-limit", type=int, default=500)
     forward.add_argument("--cap-tier")
+    forward.add_argument("--replace-empty", action="store_true")
     forward.add_argument("--apply", action="store_true")
     return parser
 
@@ -576,6 +635,7 @@ async def _main() -> None:
                 history_days=arguments.history_days,
                 universe_limit=arguments.universe_limit,
                 cap_tier=arguments.cap_tier,
+                replace_empty=arguments.replace_empty,
                 apply=arguments.apply,
             )
         )

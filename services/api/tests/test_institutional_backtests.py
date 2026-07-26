@@ -6,6 +6,9 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.dialects import postgresql
 
+from api.institutional_research.dse_squeeze_backtests import (
+    _trailing_average_daily_value_mn,
+)
 from api.institutional_research.institutional_backtests import (
     _adjusted_bar,
     _bars,
@@ -36,12 +39,36 @@ def test_event_placebo_refuses_non_positive_delay() -> None:
         _delay_schedule({}, sessions=[], delay_sessions=0)
 
 
+def test_dse_liquidity_uses_only_twenty_completed_sessions_through_signal() -> None:
+    start = dt.date(2026, 1, 1)
+    daily_values = [
+        (
+            start + dt.timedelta(days=index),
+            10 * (100_000 + index * 1_000),
+        )
+        for index in range(25)
+    ]
+
+    average = _trailing_average_daily_value_mn(
+        daily_values,
+        as_of=daily_values[21][0],
+    )
+
+    expected = sum(value for _date, value in daily_values[2:22]) / 20 / 1_000_000
+    assert average == pytest.approx(expected)
+    assert (
+        _trailing_average_daily_value_mn(
+            daily_values,
+            as_of=daily_values[18][0],
+        )
+        is None
+    )
+
+
 def test_evidence_hash_canonicalizes_date_keyed_schedules() -> None:
     as_of = dt.date(2026, 1, 2)
 
-    assert _stable_hash({as_of: {"AAA": 0.5}}) == _stable_hash(
-        {as_of.isoformat(): {"AAA": 0.5}}
-    )
+    assert _stable_hash({as_of: {"AAA": 0.5}}) == _stable_hash({as_of.isoformat(): {"AAA": 0.5}})
 
 
 @pytest.mark.parametrize(
@@ -111,13 +138,16 @@ def _bar_row(
 
 
 def test_adjusted_bar_rejects_non_positive_economic_prices() -> None:
-    assert _adjusted_bar(
-        _bar_row(
-            "BAD",
-            day=dt.date(2026, 1, 2),
-            adjusted_close=-10.0,
+    assert (
+        _adjusted_bar(
+            _bar_row(
+                "BAD",
+                day=dt.date(2026, 1, 2),
+                adjusted_close=-10.0,
+            )
         )
-    ) is None
+        is None
+    )
 
 
 class _RowsSession:
