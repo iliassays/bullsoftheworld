@@ -177,6 +177,7 @@ def _build_entry(
         previous_state=row.previous_state,
         state_reason=row.reason,
         is_new=row.first_discovered_on == selected_date,
+        is_new_confirmation=first_confirmed_on == selected_date,
         first_discovered_on=row.first_discovered_on,
         as_of_date=row.as_of_date,
         sessions_since_discovery=len(path),
@@ -351,8 +352,14 @@ async def load_squeeze_monitor(
         entries = entries_by_family.get(family, [])
         entries.sort(
             key=lambda entry: (
-                _STATE_ORDER.get(entry.state, 9),
+                not entry.is_new_confirmation,
                 not entry.is_new,
+                _STATE_ORDER.get(entry.state, 9),
+                -(
+                    entry.first_confirmed_on.toordinal()
+                    if entry.first_confirmed_on is not None
+                    else 0
+                ),
                 entry.code,
             )
         )
@@ -404,6 +411,29 @@ def _adjusted_ohlc(bar: DailyBar, field: str) -> float:
     adjusted = float(bar.adjusted_close) if bar.adjusted_close is not None else close
     ratio = adjusted / close if close > 0 else 1.0
     return float(getattr(bar, field)) * ratio
+
+
+def _state_markers(
+    history: list[SqueezeDailyState],
+    *,
+    episode_dates: list[dt.date],
+    current_episode: dt.date,
+) -> list[SqueezeStateMarkerOut]:
+    """Number notable archive transitions without merging separate setup episodes."""
+
+    episode_number = {date: index + 1 for index, date in enumerate(episode_dates)}
+    return [
+        SqueezeStateMarkerOut(
+            date=row.as_of_date,
+            state=row.state,
+            previous_state=row.previous_state,
+            reason=row.reason,
+            episode_number=episode_number.get(row.first_discovered_on, 1),
+            is_current_episode=row.first_discovered_on == current_episode,
+        )
+        for row in history
+        if row.state != row.previous_state
+    ]
 
 
 async def load_squeeze_path(
@@ -497,6 +527,19 @@ async def load_squeeze_path(
             .order_by(DailyBar.date)
         )
     )
+    chart_history = list(
+        await session.scalars(
+            select(SqueezeDailyState)
+            .where(
+                SqueezeDailyState.market == market,
+                SqueezeDailyState.code == normalized,
+                SqueezeDailyState.family == family,
+                SqueezeDailyState.as_of_date >= context_start,
+                SqueezeDailyState.as_of_date <= selected_date,
+            )
+            .order_by(SqueezeDailyState.as_of_date)
+        )
+    )
     bars = [_AdjustedBar(row) for row in rows]
     closes = [bar.close for bar in bars]
     ema_20 = exponential_moving_average(closes, 20)
@@ -547,17 +590,13 @@ async def load_squeeze_path(
             for index, bar in enumerate(bars)
         ],
         # Only transitions carry information; repeating an unchanged state every session would
-        # bury the progression the user is trying to read.
-        state_history=[
-            SqueezeStateMarkerOut(
-                date=row.as_of_date,
-                state=row.state,
-                previous_state=row.previous_state,
-                reason=row.reason,
-            )
-            for row in history
-            if row.state != row.previous_state
-        ],
+        # bury the progression the user is trying to read. The chart window may include multiple
+        # distinct episodes, so every marker carries its immutable episode number.
+        state_history=_state_markers(
+            chart_history,
+            episode_dates=episode_dates,
+            current_episode=entry.first_discovered_on,
+        ),
         discovery_number=discovery_number,
         prior_discovery_dates=prior_discovery_dates,
         atr_14=round(atr_now, 6) if atr_now is not None else None,

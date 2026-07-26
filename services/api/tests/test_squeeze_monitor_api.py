@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 
-from api.institutional_research.squeeze import LIMITATIONS, _blocked_families, _build_entry
+from api.institutional_research.squeeze import (
+    LIMITATIONS,
+    _blocked_families,
+    _build_entry,
+    _state_markers,
+)
 from bulls.core.models import DailyBar, SqueezeDailyState
 
 
@@ -177,7 +182,92 @@ def test_entry_separates_discovery_from_next_observable_confirmation_return() ->
 
     assert entry.return_since_discovery_pct == 10.0
     assert entry.first_confirmed_on == confirmation_date
+    assert not entry.is_new_confirmation
     assert entry.next_observable_on == observable_date
     assert entry.next_observable_price == 106.0
     assert entry.return_since_next_observable_pct == 3.774
     assert "locked forward collection" in entry.paper_book_status.lower()
+
+    confirmation_entry = _build_entry(
+        history[1],
+        market="DSE",
+        company="Test Company",
+        code_bars=bars[:2],
+        selected_date=confirmation_date,
+        episode_rows=history[:2],
+    )
+    assert confirmation_entry.is_new_confirmation
+    assert not confirmation_entry.is_new
+
+
+def test_state_markers_keep_repeated_discoveries_in_separate_numbered_episodes() -> None:
+    first_discovery = dt.date(2026, 6, 1)
+    second_discovery = dt.date(2026, 7, 20)
+    rows = [
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=first_discovery,
+            state="forming",
+            evidence_mode="forward",
+            previous_state="none",
+            reason="First base discovered.",
+            first_discovered_on=first_discovery,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=dt.date(2026, 6, 3),
+            state="confirmed",
+            evidence_mode="forward",
+            previous_state="forming",
+            reason="First breakout confirmed.",
+            first_discovered_on=first_discovery,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=second_discovery,
+            state="forming",
+            evidence_mode="forward",
+            previous_state="none",
+            reason="Second base discovered.",
+            first_discovered_on=second_discovery,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=dt.date(2026, 7, 22),
+            state="confirmed",
+            evidence_mode="forward",
+            previous_state="forming",
+            reason="Second breakout confirmed.",
+            first_discovered_on=second_discovery,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+    ]
+
+    markers = _state_markers(
+        rows,
+        episode_dates=[first_discovery, second_discovery],
+        current_episode=second_discovery,
+    )
+
+    assert [marker.episode_number for marker in markers] == [1, 1, 2, 2]
+    assert [marker.is_current_episode for marker in markers] == [
+        False,
+        False,
+        True,
+        True,
+    ]

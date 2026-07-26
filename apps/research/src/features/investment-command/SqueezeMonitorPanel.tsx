@@ -53,10 +53,11 @@ function stateLabel(state: string): string {
   return STATE_LABEL[state as SqueezeState] ?? state.replace(/_/g, " ");
 }
 
-type StateFilter = "all" | "actionable" | "confirmed" | "late";
+type StateFilter = "new" | "developing" | "confirmed" | "late" | "all";
 
 function matchesState(entry: SqueezeEntry, filter: StateFilter): boolean {
-  if (filter === "actionable") {
+  if (filter === "new") return entry.isNew || entry.isNewConfirmation;
+  if (filter === "developing") {
     return entry.state === "forming" || entry.state === "trigger_ready";
   }
   if (filter === "confirmed") return entry.state === "confirmed";
@@ -81,7 +82,7 @@ function price(value: number | null): string {
 export function SqueezeMonitorPanel() {
   const [asOf, setAsOf] = useState<string>();
   const [familyKey, setFamilyKey] = useState<string>();
-  const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+  const [stateFilter, setStateFilter] = useState<StateFilter>("new");
   const [capTier, setCapTier] = useState("all");
   const [selectedId, setSelectedId] = useState<string>();
   const monitor = useQuery({
@@ -94,9 +95,15 @@ export function SqueezeMonitorPanel() {
   });
 
   const families = monitor.data?.families ?? [];
+  const defaultFamily =
+    families.find(
+      (family) =>
+        family.status === "available" &&
+        family.entries.some((entry) => entry.isNew || entry.isNewConfirmation),
+    ) ?? families.find((family) => family.status === "available");
   const activeFamily: SqueezeFamily | undefined =
     families.find((family) => family.family === familyKey) ??
-    families.find((family) => family.status === "available");
+    defaultFamily;
   const familyEntries = activeFamily?.entries ?? [];
   const entries = useMemo(
     () =>
@@ -187,6 +194,8 @@ export function SqueezeMonitorPanel() {
   const dateIndex = dates.indexOf(selectedDate);
   const chooseDate = (value: string) => {
     setAsOf(value === data.latestDate ? undefined : value);
+    setFamilyKey(undefined);
+    setStateFilter("new");
     setSelectedId(undefined);
   };
   const capOptions = [
@@ -203,9 +212,8 @@ export function SqueezeMonitorPanel() {
         <span>
           <strong>Squeeze monitor</strong>
           <small>
-            Current engine: {data.methodologyVersion}. Discovery, confirmation and the next
-            observable session remain separate evidence states; archived rows retain their
-            original method.
+            Research taxonomy, not a trade queue. Current engine: {data.methodologyVersion};
+            archived rows retain their original method.
           </small>
         </span>
         <div className="squeeze-monitor__date">
@@ -239,24 +247,40 @@ export function SqueezeMonitorPanel() {
         </div>
       </header>
 
+      <div className="squeeze-monitor__execution-boundary">
+        <ShieldAlert aria-hidden="true" size={15} />
+        <span>
+          <strong>Research scan only. No order is created from this list.</strong>
+          “Confirmed” means the rule completed, not high probability. Only a separately registered,
+          validated and promoted strategy can create a paper target.
+        </span>
+      </div>
+
       <div className="squeeze-monitor__families" role="tablist">
-        {families.map((family) => (
-          <button
-            aria-selected={family.family === activeFamily?.family}
-            className={family.status !== "available" ? "is-blocked" : undefined}
-            key={family.family}
-            onClick={() => {
-              setFamilyKey(family.family);
-              setSelectedId(undefined);
-            }}
-            role="tab"
-            type="button"
-          >
-            {family.status !== "available" && <Ban aria-hidden="true" size={12} />}
-            {family.label}
-            {family.status === "available" && <em>{family.entries.length}</em>}
-          </button>
-        ))}
+        {families.map((family) => {
+          const newCount = family.entries.filter(
+            (entry) => entry.isNew || entry.isNewConfirmation,
+          ).length;
+          return (
+            <button
+              aria-selected={family.family === activeFamily?.family}
+              className={family.status !== "available" ? "is-blocked" : undefined}
+              key={family.family}
+              onClick={() => {
+                setFamilyKey(family.family);
+                setSelectedId(undefined);
+              }}
+              role="tab"
+              type="button"
+            >
+              {family.status !== "available" && <Ban aria-hidden="true" size={12} />}
+              {family.label}
+              {family.status === "available" && (
+                <em>{newCount > 0 ? `${newCount} new` : family.entries.length}</em>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {activeFamily && activeFamily.status !== "available" ? (
@@ -290,11 +314,15 @@ export function SqueezeMonitorPanel() {
               label="Setup states"
               onChange={setStateFilter}
               options={[
-                { value: "all", label: "All", count: familyEntries.length },
                 {
-                  value: "actionable",
-                  label: "Forming",
-                  count: familyEntries.filter((entry) => matchesState(entry, "actionable")).length,
+                  value: "new",
+                  label: "New today",
+                  count: familyEntries.filter((entry) => matchesState(entry, "new")).length,
+                },
+                {
+                  value: "developing",
+                  label: "Developing",
+                  count: familyEntries.filter((entry) => matchesState(entry, "developing")).length,
                 },
                 {
                   value: "confirmed",
@@ -306,6 +334,7 @@ export function SqueezeMonitorPanel() {
                   label: "Late/failed",
                   count: familyEntries.filter((entry) => matchesState(entry, "late")).length,
                 },
+                { value: "all", label: "All", count: familyEntries.length },
               ]}
               value={stateFilter}
             />
@@ -327,8 +356,9 @@ export function SqueezeMonitorPanel() {
               <span>
                 <strong>No archived setup in this view</strong>
                 <small>
-                  A ticker appears only when the deterministic taxonomy finds a measurable
-                  condition. Silence is a valid answer.
+                  {stateFilter === "new"
+                    ? "No setup was first discovered or first confirmed on this archived date."
+                    : "No setup matches this state and capitalization filter."}
                 </small>
               </span>
             </div>
@@ -336,8 +366,15 @@ export function SqueezeMonitorPanel() {
             <div className="squeeze-monitor__layout">
               <div className="squeeze-monitor__column">
                 <p className="squeeze-monitor__count">
-                  {entries.length} {entries.length === 1 ? "setup" : "setups"}
-                  {entries.length > 8 ? " · strongest state first, scroll for more" : ""}
+                  {entries.length}{" "}
+                  {stateFilter === "new"
+                    ? entries.length === 1
+                      ? "new transition"
+                      : "new transitions"
+                    : entries.length === 1
+                      ? "setup"
+                      : "setups"}
+                  {entries.length > 8 ? " · newest transitions first, scroll for more" : ""}
                 </p>
                 <div className="squeeze-monitor__list" role="list">
                 {entries.map((entry) => {
@@ -360,7 +397,11 @@ export function SqueezeMonitorPanel() {
                     >
                       <span className="squeeze-monitor__identity">
                         <strong>${entry.code}</strong>
-                        {entry.isNew && <em>New</em>}
+                        {entry.isNewConfirmation ? (
+                          <em className="squeeze-monitor__new-confirmation">Confirmed today</em>
+                        ) : (
+                          entry.isNew && <em>New setup</em>
+                        )}
                         {entry.evidenceMode === "reconstructed" && (
                           <em className="squeeze-monitor__replay" title="Reconstructed from stored bars, not collected on this session">
                             Replay

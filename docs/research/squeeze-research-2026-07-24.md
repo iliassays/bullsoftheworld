@@ -275,18 +275,22 @@ drift apart. Rules that must survive future edits:
   with a new `first_discovered_on`, not a continuation of the old one. `resolve_episode`
   (`bulls.analytics.squeeze_monitor`, unit-tested) is the single rule the scan uses, so the
   buggy carry-forward that kept a stale discovery date across a fail→reform is gone. The chart
-  labels the current episode's start "Discovered (#N)" with a dotted discovery price line, the
-  header states "Nth discovery … at {price}", and `prior_discovery_dates` surfaces how many
-  earlier setups this ticker/family had. Prior episodes remain separate archived rows, reachable
-  by the archive-date selector.
+  labels every visible episode "Discovered #N" and "Confirmed #N" while muting prior episodes,
+  keeps the current episode's dotted discovery price line, and states "Nth discovery … at
+  {price}" above the chart. `prior_discovery_dates` surfaces how many earlier setups this
+  ticker/family had. Prior episodes remain separate archived rows, reachable by the archive-date
+  selector.
 
 ## J. Atlas UI specification
 
 "Squeeze monitor" panel (investment command page): market-appropriate family tabs (blocked
 families rendered as explicit data-blocked cards with their missing datasets, not hidden);
 state filter; capitalization filter; archive date selector over `squeeze_daily_states` dates;
-"new today"; days since discovery; return / MFE / MAE since discovery (bar-derived, basis
-labeled); setup→trigger progression (state history); trigger/invalidation/planning levels
+default "New today" view containing first discoveries and first confirmations on the selected
+date; explicit "Confirmed means rule completed, not high probability" and "No order is created"
+execution boundary; days since discovery; return / MFE / MAE since discovery (bar-derived, basis
+labeled); numbered multi-episode setup→trigger progression (state history);
+trigger/invalidation/planning levels
 (2R labeled "not a forecast"); supporting and counter-evidence; dilution warnings; data-quality
 notes; paper-book status ("none — pending diagnostics"). Wording rules from §C/§D are part of
 the spec: "Potential short squeeze" only ever with authoritative short-position evidence (i.e.,

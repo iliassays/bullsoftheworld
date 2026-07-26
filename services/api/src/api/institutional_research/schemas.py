@@ -627,6 +627,7 @@ class SqueezeEntryOut(ApiModel):
     previous_state: str | None
     state_reason: str
     is_new: bool
+    is_new_confirmation: bool
     first_discovered_on: dt.date
     as_of_date: dt.date
     sessions_since_discovery: int
@@ -704,6 +705,8 @@ class SqueezeStateMarkerOut(ApiModel):
     state: str
     previous_state: str | None
     reason: str
+    episode_number: int = Field(ge=1)
+    is_current_episode: bool
 
 
 class SqueezePathOut(ApiModel):

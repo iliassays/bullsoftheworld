@@ -1375,6 +1375,29 @@
   line-height: 1.5;
 }
 
+.squeeze-monitor__execution-boundary {
+  align-items: flex-start;
+  background: color-mix(in srgb, #a76b00 7%, transparent);
+  border-left: 2px solid #a76b00;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 10.5px;
+  gap: 8px;
+  line-height: 1.45;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+}
+
+.squeeze-monitor__execution-boundary svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.squeeze-monitor__execution-boundary strong {
+  color: var(--text);
+  margin-right: 4px;
+}
+
 .squeeze-monitor__families {
   display: flex;
   flex-wrap: wrap;
@@ -1456,6 +1479,49 @@
   margin-left: auto;
 }
 
+@media (max-width: 720px) {
+  .squeeze-monitor__header {
+    flex-direction: column;
+  }
+
+  .squeeze-monitor__date {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .squeeze-monitor__date .ds-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .squeeze-monitor__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .squeeze-monitor__toolbar .ds-segmented {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .squeeze-monitor__toolbar .ds-segmented__item {
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 6px;
+  }
+
+  .squeeze-monitor__toolbar .ds-select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .squeeze-monitor__toolbar > span {
+    margin-left: 0;
+  }
+}
+
 .squeeze-monitor__empty {
   align-items: center;
   border: 1px dashed var(--border);
@@ -1499,7 +1565,7 @@
 
 /* A market-wide scan legitimately returns hundreds of setups. The list scrolls inside a
    bounded column so the panel keeps a predictable height and never buries the sections
-   below it; the strongest states are sorted to the top, so the useful rows are visible. */
+   below it; new transitions are sorted first, but never presented as a probability rank. */
 .squeeze-monitor__list {
   display: grid;
   gap: 6px;
@@ -1564,6 +1630,11 @@
   padding: 1px 5px;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.squeeze-monitor__identity .squeeze-monitor__new-confirmation {
+  background: color-mix(in srgb, #14835f 14%, transparent);
+  color: #14835f;
 }
 
 

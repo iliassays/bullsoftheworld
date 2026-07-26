@@ -19,6 +19,7 @@ const COLORS = {
   trigger: "#14835f",
   invalidation: "#bd3e43",
   discovery: "#1f6feb",
+  priorEpisode: "#68717b",
 };
 
 const STATE_TEXT: Record<string, string> = {
@@ -36,6 +37,61 @@ interface Reading {
   high: number;
   low: number;
   close: number;
+}
+
+export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
+  const currentDiscoveryDate = path.entry.firstDiscoveredOn;
+  const hasMultipleEpisodes =
+    path.discoveryNumber > 1 ||
+    path.stateHistory.some((change) => change.episodeNumber > 1);
+  const notableStates = new Set(["confirmed", "failed", "exhausted"]);
+
+  const markers: SeriesMarker<Time>[] = path.stateHistory
+    .filter((change) => {
+      const isDiscovery = change.previousState === null || change.previousState === "none";
+      return (
+        isDiscovery ||
+        notableStates.has(change.state) ||
+        (change.isCurrentEpisode && change.state === "trigger_ready")
+      );
+    })
+    .map((change) => {
+      const isDiscovery = change.previousState === null || change.previousState === "none";
+      const late = change.state === "failed" || change.state === "exhausted";
+      const episodeSuffix = hasMultipleEpisodes ? ` #${change.episodeNumber}` : "";
+      return {
+        time: change.date as Time,
+        position: late ? "aboveBar" : "belowBar",
+        color: !change.isCurrentEpisode
+          ? COLORS.priorEpisode
+          : isDiscovery
+            ? COLORS.discovery
+            : change.state === "confirmed"
+              ? COLORS.up
+              : late
+                ? COLORS.down
+                : COLORS.ema20,
+        shape: late ? "arrowDown" : "arrowUp",
+        text: isDiscovery
+          ? `Discovered${episodeSuffix}`
+          : `${STATE_TEXT[change.state] ?? change.state}${episodeSuffix}`,
+      };
+    });
+
+  // A malformed legacy episode may not have retained its first transition. The current
+  // discovery still receives an explicit anchor rather than silently disappearing.
+  if (!markers.some((marker) => marker.time === (currentDiscoveryDate as Time))) {
+    markers.push({
+      time: currentDiscoveryDate as Time,
+      position: "belowBar",
+      color: COLORS.discovery,
+      shape: "arrowUp",
+      text: `Discovered${hasMultipleEpisodes ? ` #${path.discoveryNumber}` : ""}`,
+    });
+  }
+  return markers.sort((left, right) =>
+    String(left.time).localeCompare(String(right.time)),
+  );
 }
 
 export function SqueezeChart({ path }: { path: SqueezePath }) {
@@ -83,55 +139,9 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
       })),
     );
 
-    // State transitions are the research story: when the setup was first seen and every time
-    // the taxonomy re-classified it. The first transition of the episode (previousState is the
-    // episode-start marker "none") is labelled "Discovered" so the user sees exactly when this
-    // episode began — distinct from later re-classifications.
-    const discoveryDate = path.entry.firstDiscoveredOn;
-    // Early states churn between watch and forming on adjacent sessions, and their labels
-    // collide into an unreadable stack at the right edge. Only the transitions that change what
-    // a reader would do are drawn; the full history stays in the state list beside the chart.
-    const NOTABLE = new Set(["trigger_ready", "confirmed", "failed", "exhausted"]);
-    const markers: SeriesMarker<Time>[] = path.stateHistory
-      .filter(
-        (change) =>
-          change.date === discoveryDate ||
-          change.previousState === "none" ||
-          NOTABLE.has(change.state),
-      )
-      .map((change) => {
-        const isDiscovery = change.date === discoveryDate || change.previousState === "none";
-        const late = change.state === "failed" || change.state === "exhausted";
-        return {
-          time: change.date as Time,
-          position: late ? "aboveBar" : "belowBar",
-          color: isDiscovery
-            ? COLORS.discovery
-            : change.state === "confirmed"
-              ? COLORS.up
-              : late
-                ? COLORS.down
-                : COLORS.ema20,
-          shape: late ? "arrowDown" : "arrowUp",
-          text: isDiscovery
-            ? `Discovered${path.discoveryNumber > 1 ? ` (#${path.discoveryNumber})` : ""}`
-            : (STATE_TEXT[change.state] ?? change.state),
-        };
-      });
-    // If the episode's first archived row was not itself a transition (rare), still anchor a
-    // discovery marker at the discovery date so "when discovered" is never missing.
-    if (!markers.some((marker) => marker.time === (discoveryDate as Time))) {
-      markers.push({
-        time: discoveryDate as Time,
-        position: "belowBar",
-        color: COLORS.discovery,
-        shape: "arrowUp",
-        text: `Discovered${path.discoveryNumber > 1 ? ` (#${path.discoveryNumber})` : ""}`,
-      });
-    }
-    candles.setMarkers(
-      markers.sort((left, right) => String(left.time).localeCompare(String(right.time))),
-    );
+    // Numbered markers keep separate discovery episodes visible without merging their outcomes.
+    // Early watch/forming churn remains in the archive but is omitted from the chart.
+    candles.setMarkers(buildSqueezeMarkers(path));
 
     const overlay = (
       key: "ema20" | "ema50" | "anchoredVwap",

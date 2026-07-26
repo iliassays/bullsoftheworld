@@ -86,6 +86,10 @@ describe("SqueezeMonitorPanel availability states", () => {
 
     const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
 
+    expect(html).toContain("New today");
+    expect(html).toContain("Research scan only. No order is created from this list.");
+    expect(html).toContain("not high probability");
+    expect(html).toMatch(/Confirmed today|New setup/);
     expect(html).toContain("First confirmed");
     expect(html).toContain("Next observable open");
     expect(html).toContain("Gross follow-through");

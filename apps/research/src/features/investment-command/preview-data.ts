@@ -265,16 +265,17 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
       ? "Close exceeded the 20-session base high within the last 3 sessions with relative volume ≥ 1.5x."
       : "Base is tight (5-session range within 1.5 ATR) and price sits within 3% of the base high.",
   isNew: state !== "confirmed",
+  isNewConfirmation: state === "confirmed",
   firstDiscoveredOn: "2026-07-21",
   asOfDate: "2026-07-23",
   sessionsSinceDiscovery: 3,
   discoveryPrice: market === "DSE" ? 54 : 12.4,
   asOfPrice: market === "DSE" ? 56.7 : 13.1,
   returnSinceDiscoveryPct: 5.0,
-  firstConfirmedOn: state === "confirmed" ? "2026-07-22" : null,
-  nextObservableOn: state === "confirmed" ? "2026-07-23" : null,
-  nextObservablePrice: state === "confirmed" ? (market === "DSE" ? 55.8 : 12.9) : null,
-  returnSinceNextObservablePct: state === "confirmed" ? 1.61 : null,
+  firstConfirmedOn: state === "confirmed" ? "2026-07-23" : null,
+  nextObservableOn: null,
+  nextObservablePrice: null,
+  returnSinceNextObservablePct: null,
   maxFavorablePct: 6.2,
   maxAdversePct: -1.1,
   // Traded extremes always bracket the close-based pair.
@@ -386,7 +387,8 @@ export const previewSqueezeMonitor: SqueezeMonitor = {
 /** Deterministic synthetic candles so the preview chart exercises every overlay and level. */
 export function previewSqueezePath(family: string, code: string): SqueezePath {
   const anchorPrice = market === "DSE" ? 54 : 12.4;
-  const start = new Date("2026-02-02T00:00:00Z");
+  // 120 calendar sessions ending on the preview archive date (2026-07-23).
+  const start = new Date("2026-03-26T00:00:00Z");
   const closes: number[] = [];
   for (let index = 0; index < 120; index += 1) {
     // A drifting base that tightens, then breaks out over the final sessions.
@@ -435,9 +437,46 @@ export function previewSqueezePath(family: string, code: string): SqueezePath {
     entry: squeezeEntry(code, market === "DSE" ? "Beximco Pharmaceuticals" : "Preview Industries", "confirmed"),
     points,
     stateHistory: [
-      { date: points[points.length - 3]!.date, state: "watch", previousState: null, reason: "Within 15% of the 52-week high." },
-      { date: points[points.length - 2]!.date, state: "trigger_ready", previousState: "watch", reason: "Base is tight and price sits within 3% of the base high." },
-      { date: points[points.length - 1]!.date, state: "confirmed", previousState: "trigger_ready", reason: "Close exceeded the 20-session base high with relative volume ≥ 1.5x." },
+      {
+        date: points[Math.max(0, points.length - 40)]!.date,
+        state: "forming",
+        previousState: "none",
+        reason: "An earlier compressed base was discovered.",
+        episodeNumber: 1,
+        isCurrentEpisode: false,
+      },
+      {
+        date: points[Math.max(0, points.length - 36)]!.date,
+        state: "confirmed",
+        previousState: "forming",
+        reason: "The earlier breakout confirmed.",
+        episodeNumber: 1,
+        isCurrentEpisode: false,
+      },
+      {
+        date: points[points.length - 3]!.date,
+        state: "watch",
+        previousState: "none",
+        reason: "Within 15% of the 52-week high.",
+        episodeNumber: 2,
+        isCurrentEpisode: true,
+      },
+      {
+        date: points[points.length - 2]!.date,
+        state: "trigger_ready",
+        previousState: "watch",
+        reason: "Base is tight and price sits within 3% of the base high.",
+        episodeNumber: 2,
+        isCurrentEpisode: true,
+      },
+      {
+        date: points[points.length - 1]!.date,
+        state: "confirmed",
+        previousState: "trigger_ready",
+        reason: "Close exceeded the 20-session base high with relative volume ≥ 1.5x.",
+        episodeNumber: 2,
+        isCurrentEpisode: true,
+      },
     ],
     discoveryNumber: 2,
     priorDiscoveryDates: [points[Math.max(0, points.length - 40)]!.date],

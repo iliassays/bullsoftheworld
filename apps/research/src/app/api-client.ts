@@ -332,6 +332,7 @@ export interface SqueezeEntry {
   previousState: string | null;
   stateReason: string;
   isNew: boolean;
+  isNewConfirmation: boolean;
   firstDiscoveredOn: string;
   asOfDate: string;
   sessionsSinceDiscovery: number;
@@ -403,6 +404,8 @@ export interface SqueezeStateMarker {
   state: string;
   previousState: string | null;
   reason: string;
+  episodeNumber: number;
+  isCurrentEpisode: boolean;
 }
 
 export interface SqueezePath {
