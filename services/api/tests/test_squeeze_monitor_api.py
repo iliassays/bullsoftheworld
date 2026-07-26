@@ -182,6 +182,8 @@ def test_entry_separates_discovery_from_next_observable_confirmation_return() ->
 
     assert entry.return_since_discovery_pct == 10.0
     assert entry.first_confirmed_on == confirmation_date
+    assert entry.confirmation_price == 105.0
+    assert entry.move_to_confirmation_pct == 5.0
     assert not entry.is_new_confirmation
     assert entry.next_observable_on == observable_date
     assert entry.next_observable_price == 106.0
@@ -273,3 +275,44 @@ def test_state_markers_keep_repeated_discoveries_in_separate_numbered_episodes()
         True,
         True,
     ]
+
+
+def test_state_markers_ignore_legacy_standalone_terminal_rows() -> None:
+    terminal_date = dt.date(2026, 6, 1)
+    active_date = dt.date(2026, 7, 20)
+    rows = [
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=terminal_date,
+            state="exhausted",
+            evidence_mode="reconstructed",
+            previous_state="none",
+            reason="Extended without an active setup.",
+            first_discovered_on=terminal_date,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+        SqueezeDailyState(
+            market="DSE",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=active_date,
+            state="forming",
+            evidence_mode="reconstructed",
+            previous_state="none",
+            reason="A real setup begins.",
+            first_discovered_on=active_date,
+            evidence={},
+            methodology_version="squeeze-monitor-v3",
+        ),
+    ]
+
+    markers = _state_markers(
+        rows,
+        episode_dates=[active_date],
+        current_episode=active_date,
+    )
+
+    assert [(marker.date, marker.episode_number) for marker in markers] == [(active_date, 1)]

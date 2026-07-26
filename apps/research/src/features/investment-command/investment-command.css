@@ -1952,6 +1952,13 @@
   font-weight: 750;
 }
 
+.squeeze-chart__marker-key em {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: normal;
+  margin-left: auto;
+}
+
 .squeeze-chart__basis {
   color: var(--text-muted);
   font-size: 10px;

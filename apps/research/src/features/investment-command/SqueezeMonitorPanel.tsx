@@ -455,7 +455,11 @@ export function SqueezeMonitorPanel() {
                     <span>
                       <small>First confirmed</small>
                       <strong>{selected.firstConfirmedOn ?? "Not reached"}</strong>
-                      <em>condition, not an order</em>
+                      <em>
+                        {selected.confirmationPrice !== null
+                          ? `${price(selected.confirmationPrice)} · ${signed(selected.moveToConfirmationPct)} before confirmation`
+                          : "condition, not an order"}
+                      </em>
                     </span>
                     <span>
                       <small>Next observable open</small>

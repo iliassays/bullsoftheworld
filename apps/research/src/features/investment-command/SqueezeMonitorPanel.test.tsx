@@ -91,6 +91,7 @@ describe("SqueezeMonitorPanel availability states", () => {
     expect(html).toContain("not high probability");
     expect(html).toMatch(/Confirmed today|New setup/);
     expect(html).toContain("First confirmed");
+    expect(html).toContain("before confirmation");
     expect(html).toContain("Next observable open");
     expect(html).toContain("Gross follow-through");
     expect(html).toContain("after confirmation · not P&amp;L");

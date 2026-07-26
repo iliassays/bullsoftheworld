@@ -40,14 +40,28 @@ interface Reading {
 export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
   const currentDiscoveryDate = path.entry.firstDiscoveredOn;
   const notableStates = new Set(["confirmed", "failed", "exhausted"]);
+  const confirmedPriorEpisodes = Array.from(
+    new Set(
+      path.stateHistory
+        .filter(
+          (change) =>
+            !change.isCurrentEpisode &&
+            change.state === "confirmed" &&
+            change.episodeNumber < path.discoveryNumber,
+        )
+        .map((change) => change.episodeNumber),
+    ),
+  ).slice(-2);
+  const visibleEpisodes = new Set([path.discoveryNumber, ...confirmedPriorEpisodes]);
 
   const markers: SeriesMarker<Time>[] = path.stateHistory
     .filter((change) => {
       const isDiscovery = change.previousState === null || change.previousState === "none";
       return (
-        isDiscovery ||
-        notableStates.has(change.state) ||
-        (change.isCurrentEpisode && change.state === "trigger_ready")
+        visibleEpisodes.has(change.episodeNumber) &&
+        (isDiscovery ||
+          notableStates.has(change.state) ||
+          (change.isCurrentEpisode && change.state === "trigger_ready"))
       );
     })
     .map((change) => {
@@ -73,7 +87,7 @@ export function buildSqueezeMarkers(path: SqueezePath): SeriesMarker<Time>[] {
 
   // A malformed legacy episode may not have retained its first transition. The current
   // discovery still receives an explicit anchor rather than silently disappearing.
-  if (!markers.some((marker) => marker.time === (currentDiscoveryDate as Time))) {
+  if (!markers.some((marker) => marker.text === `D${path.discoveryNumber}`)) {
     markers.push({
       time: currentDiscoveryDate as Time,
       position: "belowBar",
@@ -132,8 +146,9 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
       })),
     );
 
-    // Numbered markers keep separate discovery episodes visible without merging their outcomes.
-    // Early watch/forming churn remains in the archive but is omitted from the chart.
+    // Keep the active episode and at most two prior episodes that actually confirmed. The full
+    // transition archive remains available from the date selector; rendering every historical
+    // observation turned the price chart into an unreadable wall of labels.
     candles.setMarkers(buildSqueezeMarkers(path));
 
     const overlay = (
@@ -298,6 +313,7 @@ export function SqueezeChart({ path }: { path: SqueezePath }) {
         <span><b>C#</b> confirmed</span>
         <span><b>F#</b> failed</span>
         <span><b>X#</b> extended</span>
+        <em>Current + 2 recent confirmed episodes</em>
       </div>
       <p className="squeeze-chart__basis">
         {path.priceBasis} {path.overlayBasis}

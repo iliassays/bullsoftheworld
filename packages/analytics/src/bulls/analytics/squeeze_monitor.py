@@ -48,6 +48,20 @@ FAMILY_LABELS: dict[SqueezeFamily, str] = {
 # discovery, not a continuation of the old one. Kept here (not in the scan) so the rule is
 # unit-tested and shared.
 TERMINAL_STATES: frozenset[str] = frozenset({"none", "failed", "exhausted"})
+ACTIVE_EPISODE_STATES: frozenset[str] = frozenset(
+    {"watch", "forming", "trigger_ready", "confirmed"}
+)
+
+
+def should_archive_transition(*, state: str, prior_state: str) -> bool:
+    """Return whether a daily assessment belongs in the setup archive.
+
+    Active states always belong. A terminal state belongs only when it closes an active
+    episode. Archiving a standalone ``exhausted`` assessment as a fresh episode made every
+    extended session look like a new discovery and produced dozens of fictitious D markers.
+    """
+
+    return state in ACTIVE_EPISODE_STATES or prior_state in ACTIVE_EPISODE_STATES
 
 
 def resolve_episode(

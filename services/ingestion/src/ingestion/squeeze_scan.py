@@ -37,13 +37,13 @@ from bulls.analytics.short_interest import (
 )
 from bulls.analytics.squeeze_monitor import (
     METHODOLOGY_VERSION,
-    TERMINAL_STATES,
     SqueezeBar,
     SqueezeInputs,
     evaluate_compression_breakout,
     evaluate_failed_breakdown,
     evaluate_supply_constrained,
     resolve_episode,
+    should_archive_transition,
 )
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import (
@@ -374,7 +374,10 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                 )
                 assessment = _EVALUATORS[family](inputs)
                 prior_state = prior.state if prior is not None else "none"
-                if assessment.state == "none" and prior_state in TERMINAL_STATES:
+                if not should_archive_transition(
+                    state=assessment.state,
+                    prior_state=prior_state,
+                ):
                     continue  # nothing to archive: no setup, and no live state to close out
                 first_discovered, previous_state = resolve_episode(
                     has_prior=prior is not None,

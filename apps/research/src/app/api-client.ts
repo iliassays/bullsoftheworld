@@ -342,6 +342,8 @@ export interface SqueezeEntry {
   asOfPrice: number | null;
   returnSinceDiscoveryPct: number | null;
   firstConfirmedOn: string | null;
+  confirmationPrice: number | null;
+  moveToConfirmationPct: number | null;
   nextObservableOn: string | null;
   nextObservablePrice: number | null;
   returnSinceNextObservablePct: number | null;

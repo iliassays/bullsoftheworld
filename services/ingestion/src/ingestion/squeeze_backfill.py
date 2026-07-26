@@ -49,12 +49,12 @@ from bulls.analytics.engine import compute
 from bulls.analytics.research_strategy import RISK_POLICIES
 from bulls.analytics.squeeze_monitor import (
     METHODOLOGY_VERSION,
-    TERMINAL_STATES,
     SqueezeBar,
     SqueezeInputs,
     evaluate_compression_breakout,
     evaluate_failed_breakdown,
     resolve_episode,
+    should_archive_transition,
 )
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, SqueezeDailyState
@@ -267,7 +267,10 @@ async def run_squeeze_backfill(
                     prior_trigger_price=prior[2] if prior is not None else None,
                 )
                 assessment = evaluate(inputs)
-                if assessment.state == "none" and prior_state in TERMINAL_STATES:
+                if not should_archive_transition(
+                    state=assessment.state,
+                    prior_state=prior_state,
+                ):
                     prior_by_pair.pop((code, family), None)
                     continue
                 first_discovered, previous_state = resolve_episode(

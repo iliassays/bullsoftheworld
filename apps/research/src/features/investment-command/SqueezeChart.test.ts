@@ -4,7 +4,7 @@ import { buildSqueezeMarkers } from "./SqueezeChart";
 import { previewSqueezeMonitor, previewSqueezePath } from "./preview-data";
 
 describe("buildSqueezeMarkers", () => {
-  it("keeps repeated setup episodes separately numbered on the chart", () => {
+  it("shows the current episode and recent prior episodes that confirmed", () => {
     const entry = previewSqueezeMonitor.families
       .flatMap((family) => family.entries)
       .find((candidate) => candidate.state === "confirmed");
@@ -24,5 +24,57 @@ describe("buildSqueezeMarkers", () => {
     expect(labels).toContain("D2");
     expect(labels).toContain("C2");
     expect(labels).toContain("T2");
+  });
+
+  it("does not render every unconfirmed historical episode", () => {
+    const selected = previewSqueezeMonitor.families.flatMap((family) => family.entries).at(0)!;
+    const path = previewSqueezePath(selected.family, selected.code);
+    path.discoveryNumber = 5;
+    path.stateHistory = [
+      {
+        date: "2026-01-01",
+        state: "watch",
+        previousState: "none",
+        reason: "old watch",
+        episodeNumber: 1,
+        isCurrentEpisode: false,
+      },
+      {
+        date: "2026-02-01",
+        state: "forming",
+        previousState: "none",
+        reason: "old forming",
+        episodeNumber: 2,
+        isCurrentEpisode: false,
+      },
+      {
+        date: "2026-03-01",
+        state: "confirmed",
+        previousState: "forming",
+        reason: "confirmed",
+        episodeNumber: 3,
+        isCurrentEpisode: false,
+      },
+      {
+        date: "2026-04-01",
+        state: "confirmed",
+        previousState: "forming",
+        reason: "confirmed",
+        episodeNumber: 4,
+        isCurrentEpisode: false,
+      },
+      {
+        date: "2026-05-01",
+        state: "forming",
+        previousState: "none",
+        reason: "current",
+        episodeNumber: 5,
+        isCurrentEpisode: true,
+      },
+    ];
+
+    const labels = buildSqueezeMarkers(path).map((marker) => marker.text);
+
+    expect(labels).toEqual(["C3", "C4", "D5"]);
   });
 });

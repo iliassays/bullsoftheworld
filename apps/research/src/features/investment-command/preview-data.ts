@@ -273,6 +273,8 @@ const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "c
   asOfPrice: market === "DSE" ? 56.7 : 13.1,
   returnSinceDiscoveryPct: 5.0,
   firstConfirmedOn: state === "confirmed" ? "2026-07-23" : null,
+  confirmationPrice: state === "confirmed" ? 56.7 : null,
+  moveToConfirmationPct: state === "confirmed" ? 5.0 : null,
   nextObservableOn: null,
   nextObservablePrice: null,
   returnSinceNextObservablePct: null,

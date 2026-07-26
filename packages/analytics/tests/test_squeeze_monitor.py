@@ -10,6 +10,7 @@ from bulls.analytics.squeeze_monitor import (
     evaluate_failed_breakdown,
     evaluate_families,
     evaluate_supply_constrained,
+    should_archive_transition,
 )
 
 
@@ -267,6 +268,13 @@ def test_no_family_ever_says_short_squeeze() -> None:
             ]
         ).lower()
         assert "short squeeze" not in blob
+
+
+def test_standalone_terminal_assessment_does_not_start_an_episode() -> None:
+    assert not should_archive_transition(state="exhausted", prior_state="none")
+    assert not should_archive_transition(state="failed", prior_state="exhausted")
+    assert should_archive_transition(state="forming", prior_state="none")
+    assert should_archive_transition(state="exhausted", prior_state="confirmed")
 
 
 def test_dilution_and_insider_selling_surface_as_counter_evidence() -> None:

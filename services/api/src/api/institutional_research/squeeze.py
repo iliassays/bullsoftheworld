@@ -34,7 +34,11 @@ from bulls.analytics.chart_overlays import (
     atr_contraction,
     exponential_moving_average,
 )
-from bulls.analytics.squeeze_monitor import FAMILY_LABELS, METHODOLOGY_VERSION
+from bulls.analytics.squeeze_monitor import (
+    ACTIVE_EPISODE_STATES,
+    FAMILY_LABELS,
+    METHODOLOGY_VERSION,
+)
 from bulls.analytics.strategy_readiness import STRATEGY_READINESS
 from bulls.core.models import DailyBar, SqueezeDailyState, Symbol
 
@@ -124,6 +128,24 @@ def _build_entry(
     ]
     confirmed_dates = [item.as_of_date for item in episode if item.state == "confirmed"]
     first_confirmed_on = min(confirmed_dates) if confirmed_dates else None
+    confirmation_bar = next(
+        (
+            bar
+            for bar in code_bars
+            if first_confirmed_on is not None and bar.date == first_confirmed_on
+        ),
+        None,
+    )
+    confirmation_price = (
+        adjusted_close(confirmation_bar) if confirmation_bar is not None else None
+    )
+    move_to_confirmation_pct = (
+        round((confirmation_price / discovery_price - 1) * 100, 3)
+        if confirmation_price is not None
+        and discovery_price is not None
+        and discovery_price > 0
+        else None
+    )
     next_observable_bar = next(
         (
             bar
@@ -185,6 +207,8 @@ def _build_entry(
         as_of_price=as_of_price,
         return_since_discovery_pct=return_pct,
         first_confirmed_on=first_confirmed_on,
+        confirmation_price=confirmation_price,
+        move_to_confirmation_pct=move_to_confirmation_pct,
         next_observable_on=(
             next_observable_bar.date if next_observable_bar is not None else None
         ),
@@ -430,7 +454,7 @@ def _state_markers(
             is_current_episode=row.first_discovered_on == current_episode,
         )
         for row in history
-        if row.state != row.previous_state
+        if row.state != row.previous_state and row.first_discovered_on in episode_number
     ]
 
 
@@ -559,6 +583,7 @@ async def load_squeeze_path(
                 SqueezeDailyState.code == normalized,
                 SqueezeDailyState.family == family,
                 SqueezeDailyState.as_of_date <= selected_date,
+                SqueezeDailyState.state.in_(ACTIVE_EPISODE_STATES),
             )
             .distinct()
             .order_by(SqueezeDailyState.first_discovered_on)

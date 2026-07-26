@@ -639,6 +639,8 @@ class SqueezeEntryOut(ApiModel):
     # Confirmation and the following completed session are separate from discovery. The next-open
     # reference is an observable historical price, not a simulated fill or portfolio P&L.
     first_confirmed_on: dt.date | None = None
+    confirmation_price: float | None = None
+    move_to_confirmation_pct: float | None = None
     next_observable_on: dt.date | None = None
     next_observable_price: float | None = None
     return_since_next_observable_pct: float | None = None
