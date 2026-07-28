@@ -391,48 +391,65 @@ async def _publish_filing_alerts(code: str, filings: list) -> int:
     return delivered
 
 
+def _ready_cik_statement(codes: list[str] | None = None):
+    """Build the canonical SEC-target universe query used by ingestion and health checks."""
+
+    stmt = (
+        select(Symbol.code, SecurityMaster.cik, SecurityMaster.instrument_type)
+        .join(
+            SecurityMaster,
+            (SecurityMaster.market == Symbol.market) & (SecurityMaster.symbol == Symbol.code),
+        )
+        .where(
+            Symbol.market == MARKET,
+            Symbol.is_active.is_(True),
+            SecurityMaster.cik.isnot(None),
+        )
+    )
+    if codes is not None:
+        return stmt.where(
+            Symbol.code.in_(codes),
+            Symbol.data_status.in_(("onboarding", "ready", "research_only", "degraded")),
+            or_(
+                Symbol.is_hidden.is_(False),
+                (
+                    Symbol.is_hidden.is_(True)
+                    & SecurityMaster.is_active.is_(True)
+                    & SecurityMaster.is_product_eligible.is_(False)
+                    & SecurityMaster.exclude_reason.like("financial_status_%")
+                ),
+            ),
+        )
+    return stmt.where(
+        Symbol.data_status.in_(("ready", "research_only")),
+        Symbol.is_hidden.is_(False),
+        or_(
+            SecurityMaster.is_product_eligible.is_(True),
+            Symbol.data_status == "research_only",
+        ),
+    )
+
+
+async def sec_target_symbol_count() -> int:
+    """Count the exact symbol scope a full SEC refresh will request."""
+
+    sm = get_sessionmaker()
+    async with sm() as session:
+        target_scope = _ready_cik_statement().order_by(None).subquery()
+        return int(
+            await session.scalar(select(func.count()).select_from(target_scope))
+            or 0
+        )
+
+
 async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, int, str, bool]]:
     if codes is not None and not codes:
         return []
     sm = get_sessionmaker()
     async with sm() as session:
-        stmt = (
-            select(Symbol.code, SecurityMaster.cik, SecurityMaster.instrument_type)
-            .join(
-                SecurityMaster,
-                (SecurityMaster.market == Symbol.market) & (SecurityMaster.symbol == Symbol.code),
-            )
-            .where(
-                Symbol.market == MARKET,
-                Symbol.is_active.is_(True),
-                SecurityMaster.cik.isnot(None),
-            )
-            .order_by(Symbol.code)
-        )
-        if codes is not None:
-            stmt = stmt.where(
-                Symbol.code.in_(codes),
-                Symbol.data_status.in_(("onboarding", "ready", "research_only", "degraded")),
-                or_(
-                    Symbol.is_hidden.is_(False),
-                    (
-                        Symbol.is_hidden.is_(True)
-                        & SecurityMaster.is_active.is_(True)
-                        & SecurityMaster.is_product_eligible.is_(False)
-                        & SecurityMaster.exclude_reason.like("financial_status_%")
-                    ),
-                ),
-            )
-        else:
-            stmt = stmt.where(
-                Symbol.data_status.in_(("ready", "research_only")),
-                Symbol.is_hidden.is_(False),
-                or_(
-                    SecurityMaster.is_product_eligible.is_(True),
-                    Symbol.data_status == "research_only",
-                ),
-            )
-        rows = (await session.execute(stmt)).all()
+        rows = (
+            await session.execute(_ready_cik_statement(codes).order_by(Symbol.code))
+        ).all()
         cik_counts = dict(
             (
                 await session.execute(

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
+import json
 import logging
 import math
 import subprocess
@@ -18,6 +20,7 @@ from bulls.core.config import get_settings
 from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, RegulatoryDataState, Symbol, TickerAnalytics
 from bulls.market_data.calendar import is_trading_day, to_market_tz
+from ingestion.sec import sec_target_symbol_count
 from ingestion.us_worker import most_recent_due_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s sec-watchdog %(levelname)s %(message)s")
@@ -28,6 +31,11 @@ WORKER_UNIT = "bullsofwallst-sec-worker"
 EOD_WORKER_UNIT = "bullsofwallst-worker"
 COOLDOWN_SECONDS = 6 * 60 * 60
 COOLDOWN_KEY = "watchdog:bullsofwallst:sec:alerted"
+STATUS_KEY = "watchdog:bullsofwallst:sec:last_status"
+STATUS_FINGERPRINT_KEY = "watchdog:bullsofwallst:sec:last_fingerprint"
+STATUS_HISTORY_KEY = "watchdog:bullsofwallst:sec:history"
+STATUS_RETENTION_SECONDS = 30 * 24 * 60 * 60
+STATUS_HISTORY_LIMIT = 200
 SEC_MAX_AGE = dt.timedelta(hours=36)
 THIRTEEN_F_MAX_AGE = dt.timedelta(days=8)
 FINRA_MAX_AGE = dt.timedelta(days=4)
@@ -81,6 +89,8 @@ def _state_problems(
     now: dt.datetime,
     ready_symbols: int,
     states: Mapping[str, RegulatoryDataState],
+    *,
+    sec_target_symbols: int | None = None,
 ) -> list[str]:
     problems = []
     if ready_symbols <= 0:
@@ -90,11 +100,15 @@ def _state_problems(
     if sec is None:
         problems.append("SEC EDGAR state is missing")
     else:
+        sec_targets = ready_symbols if sec_target_symbols is None else sec_target_symbols
         age = now - sec.last_success_at
         if age > SEC_MAX_AGE:
             problems.append(f"SEC EDGAR refresh is {age.total_seconds() / 3600:.1f} hours old")
-        if sec.symbols_covered / ready_symbols < 0.9:
-            problems.append(f"SEC EDGAR covers {sec.symbols_covered}/{ready_symbols} ready symbols")
+        if sec_targets > 0 and sec.symbols_covered / sec_targets < 0.9:
+            problems.append(
+                "SEC EDGAR covers "
+                f"{sec.symbols_covered}/{sec_targets} SEC-targetable symbols"
+            )
         details = sec.details or {}
         requested = int(details.get("symbols_requested") or 0)
         failed = int(details.get("symbols_failed") or 0)
@@ -199,6 +213,7 @@ async def _api_ready(base_url: str) -> bool:
 
 
 async def _database_problems(now: dt.datetime) -> list[str]:
+    sec_target_symbols = await sec_target_symbol_count()
     sm = get_sessionmaker()
     async with sm() as session:
         ready_symbols = int(
@@ -243,8 +258,21 @@ async def _database_problems(now: dt.datetime) -> list[str]:
         analytics_date = await session.scalar(
             select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == MARKET)
         )
+    states = {row.source: row for row in rows}
+    sec_covered = states.get("sec_edgar")
+    log.info(
+        "coverage scope ready=%s sec_targetable=%s sec_covered=%s",
+        ready_symbols,
+        sec_target_symbols,
+        sec_covered.symbols_covered if sec_covered is not None else None,
+    )
     return [
-        *_state_problems(now, ready_symbols, {row.source: row for row in rows}),
+        *_state_problems(
+            now,
+            ready_symbols,
+            states,
+            sec_target_symbols=sec_target_symbols,
+        ),
         *_eod_state_problems(
             now,
             due_session,
@@ -255,6 +283,66 @@ async def _database_problems(now: dt.datetime) -> list[str]:
             get_settings().us_eod_min_coverage,
         ),
     ]
+
+
+def _status_event(
+    now: dt.datetime,
+    problems: list[str],
+    actions: list[str],
+    *,
+    email_scheduled: bool,
+) -> tuple[str, str]:
+    """Return a stable incident fingerprint and a structured operational event."""
+
+    status = "degraded" if problems else "healthy"
+    fingerprint_payload = {"status": status, "problems": sorted(problems)}
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_payload, sort_keys=True).encode()
+    ).hexdigest()
+    payload = json.dumps(
+        {
+            "checked_at": now.isoformat(),
+            "status": status,
+            "problems": problems,
+            "actions": actions,
+            "email_scheduled": email_scheduled,
+        },
+        sort_keys=True,
+    )
+    return fingerprint, payload
+
+
+async def _record_status_transition(
+    redis,
+    now: dt.datetime,
+    problems: list[str],
+    actions: list[str],
+    *,
+    email_scheduled: bool,
+) -> None:
+    """Persist the latest status and a capped history of incident/recovery transitions."""
+
+    fingerprint, payload = _status_event(
+        now,
+        problems,
+        actions,
+        email_scheduled=email_scheduled,
+    )
+    previous = await redis.get(STATUS_FINGERPRINT_KEY)
+    if isinstance(previous, bytes):
+        previous = previous.decode()
+    pipeline = redis.pipeline(transaction=True)
+    pipeline.set(STATUS_KEY, payload, ex=STATUS_RETENTION_SECONDS)
+    pipeline.set(
+        STATUS_FINGERPRINT_KEY,
+        fingerprint,
+        ex=STATUS_RETENTION_SECONDS,
+    )
+    if previous != fingerprint:
+        pipeline.lpush(STATUS_HISTORY_KEY, payload)
+        pipeline.ltrim(STATUS_HISTORY_KEY, 0, STATUS_HISTORY_LIMIT - 1)
+        pipeline.expire(STATUS_HISTORY_KEY, STATUS_RETENTION_SECONDS)
+    await pipeline.execute()
 
 
 async def _send_alert(problems: list[str], actions: list[str]) -> None:
@@ -311,24 +399,38 @@ async def main() -> int:
         problems.append("regulatory-state query failed")
 
     redis = aioredis.from_url(settings.redis_url)
+    should_email = False
     try:
         if not problems:
             await redis.delete(COOLDOWN_KEY)
-            log.info("ok - EOD, SEC, API, history, freshness, and coverage are healthy")
-            return 0
-        should_email = bool(
-            await redis.set(
-                COOLDOWN_KEY,
-                now.isoformat(),
-                nx=True,
-                ex=COOLDOWN_SECONDS,
+        else:
+            should_email = bool(
+                await redis.set(
+                    COOLDOWN_KEY,
+                    now.isoformat(),
+                    nx=True,
+                    ex=COOLDOWN_SECONDS,
+                )
             )
+        await _record_status_transition(
+            redis,
+            now,
+            problems,
+            actions,
+            email_scheduled=should_email,
         )
     except Exception:
-        log.warning("Redis cooldown unavailable; emailing", exc_info=True)
-        should_email = True
+        if problems:
+            log.warning("Redis watchdog state unavailable; emailing", exc_info=True)
+            should_email = True
+        else:
+            log.warning("Redis watchdog state unavailable", exc_info=True)
     finally:
         await redis.aclose()
+
+    if not problems:
+        log.info("ok - EOD, SEC, API, history, freshness, and coverage are healthy")
+        return 0
 
     log.error("PROBLEMS: %s | actions: %s | emailed=%s", problems, actions, should_email)
     if should_email:

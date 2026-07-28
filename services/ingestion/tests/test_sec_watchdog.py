@@ -3,7 +3,12 @@ from __future__ import annotations
 import datetime as dt
 from types import SimpleNamespace
 
-from ingestion.sec_watchdog import _eod_cron_has_run, _eod_state_problems, _state_problems
+from ingestion.sec_watchdog import (
+    _eod_cron_has_run,
+    _eod_state_problems,
+    _state_problems,
+    _status_event,
+)
 
 
 def _state(
@@ -49,6 +54,95 @@ def test_regulatory_state_is_healthy_at_expected_depth_and_coverage() -> None:
     }
 
     assert _state_problems(now, 60, states) == []  # type: ignore[arg-type]
+
+
+def test_sec_coverage_uses_the_sec_target_scope_not_all_ready_instruments() -> None:
+    now = dt.datetime(2026, 7, 28, tzinfo=dt.UTC)
+    states = {
+        "sec_edgar": _state(
+            "sec_edgar",
+            now,
+            covered=60,
+            details={"symbols_requested": 60, "symbols_failed": 0},
+        ),
+        "sec_13f": _state(
+            "sec_13f",
+            now,
+            covered=100,
+            details={"history_quarters_loaded": 8},
+        ),
+        "finra_short_volume": _state(
+            "finra_short_volume",
+            now,
+            covered=100,
+            as_of_date=dt.date(2026, 7, 27),
+        ),
+    }
+
+    assert (
+        _state_problems(  # type: ignore[arg-type]
+            now,
+            100,
+            states,
+            sec_target_symbols=60,
+        )
+        == []
+    )
+
+
+def test_sec_coverage_failure_names_the_targetable_denominator() -> None:
+    now = dt.datetime(2026, 7, 28, tzinfo=dt.UTC)
+    states = {
+        "sec_edgar": _state("sec_edgar", now, covered=50),
+        "sec_13f": _state(
+            "sec_13f",
+            now,
+            covered=100,
+            details={"history_quarters_loaded": 8},
+        ),
+        "finra_short_volume": _state(
+            "finra_short_volume",
+            now,
+            covered=100,
+            as_of_date=dt.date(2026, 7, 27),
+        ),
+    }
+
+    problems = _state_problems(  # type: ignore[arg-type]
+        now,
+        100,
+        states,
+        sec_target_symbols=60,
+    )
+
+    assert problems == ["SEC EDGAR covers 50/60 SEC-targetable symbols"]
+
+
+def test_status_event_fingerprint_changes_only_when_health_state_changes() -> None:
+    now = dt.datetime(2026, 7, 28, 10, 5, tzinfo=dt.UTC)
+    first_fingerprint, payload = _status_event(
+        now,
+        ["SEC EDGAR covers 50/60 SEC-targetable symbols"],
+        [],
+        email_scheduled=True,
+    )
+    repeat_fingerprint, _ = _status_event(
+        now + dt.timedelta(minutes=30),
+        ["SEC EDGAR covers 50/60 SEC-targetable symbols"],
+        [],
+        email_scheduled=False,
+    )
+    healthy_fingerprint, healthy_payload = _status_event(
+        now + dt.timedelta(hours=1),
+        [],
+        [],
+        email_scheduled=False,
+    )
+
+    assert first_fingerprint == repeat_fingerprint
+    assert healthy_fingerprint != first_fingerprint
+    assert '"email_scheduled": true' in payload
+    assert '"status": "healthy"' in healthy_payload
 
 
 def test_regulatory_state_reports_staleness_depth_coverage_and_failures() -> None:
