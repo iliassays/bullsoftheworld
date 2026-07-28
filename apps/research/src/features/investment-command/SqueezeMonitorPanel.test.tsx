@@ -97,5 +97,81 @@ describe("SqueezeMonitorPanel availability states", () => {
     expect(html).toContain("after confirmation · not P&amp;L");
     expect(html).toContain("pre-confirmation move included");
     expect(html).toContain("Archive method squeeze-monitor-v3");
+    expect(html).toContain("Pre-confirmation");
+    expect(html).toContain("Setup lifecycle");
+    expect(html).toContain("Point-in-time transitions");
+    expect(html).toContain("Discovery baseline");
+    expect(html).toContain("from discovery");
+    expect(html).toContain("archived snapshot for");
+  });
+
+  it("groups watch, forming and trigger-ready as pre-confirmation states", () => {
+    const entry = previewSqueezeMonitor.families[0]!.entries[0]!;
+    const monitorWithWatch = {
+      ...previewSqueezeMonitor,
+      families: [
+        {
+          ...previewSqueezeMonitor.families[0]!,
+          entries: [{ ...entry, state: "watch" as const, isNew: false }],
+        },
+      ],
+    };
+    queryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
+      queryKey[1] === "squeeze-monitor"
+        ? {
+            data: monitorWithWatch,
+            error: null,
+            isError: false,
+            isLoading: false,
+            refetch: vi.fn(),
+          }
+        : pathQuery(),
+    );
+
+    const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
+
+    expect(html).toMatch(/Pre-confirmation[\s\S]*?1/);
+  });
+
+  it("renders a same-session discovery as pending rather than positive zero", () => {
+    const pendingMonitor = {
+      ...previewSqueezeMonitor,
+      families: previewSqueezeMonitor.families.map((family, familyIndex) => ({
+        ...family,
+        entries:
+          familyIndex === 0
+            ? family.entries.map((entry, entryIndex) =>
+                entryIndex === 0
+                  ? {
+                      ...entry,
+                      sessionsSinceDiscovery: 0,
+                      returnSinceDiscoveryPct: null,
+                      maxFavorablePct: null,
+                      maxAdversePct: null,
+                      peakTradedPct: null,
+                      troughTradedPct: null,
+                    }
+                  : entry,
+              )
+            : family.entries,
+      })),
+    };
+    queryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
+      queryKey[1] === "squeeze-monitor"
+        ? {
+            data: pendingMonitor,
+            error: null,
+            isError: false,
+            isLoading: false,
+            refetch: vi.fn(),
+          }
+        : pathQuery(),
+    );
+
+    const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
+
+    expect(html).toContain("Pending");
+    expect(html).toContain("awaiting next close");
+    expect(html).toContain("0 sessions");
   });
 });

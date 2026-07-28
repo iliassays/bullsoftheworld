@@ -6,6 +6,7 @@ from api.institutional_research.squeeze import (
     LIMITATIONS,
     _blocked_families,
     _build_entry,
+    _is_listable_archive_row,
     _state_markers,
 )
 from bulls.core.models import DailyBar, SqueezeDailyState
@@ -75,6 +76,51 @@ def test_archived_entry_preserves_its_evidence_mode() -> None:
     )
 
     assert entry.evidence_mode == "reconstructed"
+
+
+def test_discovery_session_is_not_reported_as_post_discovery_performance() -> None:
+    discovery_date = dt.date(2026, 7, 20)
+    row = SqueezeDailyState(
+        market="DSE",
+        code="TEST",
+        family="compression_breakout",
+        as_of_date=discovery_date,
+        state="watch",
+        evidence_mode="reconstructed",
+        previous_state="none",
+        reason="The setup entered watch.",
+        first_discovered_on=discovery_date,
+        evidence={},
+        methodology_version="squeeze-monitor-v3",
+    )
+    # This candle moved materially before the close. None of that path was observable after the
+    # close-based discovery, so it must not become follow-through or MFE/MAE.
+    bar = DailyBar(
+        market="DSE",
+        code="TEST",
+        date=discovery_date,
+        open=90,
+        high=120,
+        low=80,
+        close=100,
+        volume=1_000,
+        source="test",
+    )
+
+    entry = _build_entry(
+        row,
+        market="DSE",
+        company="Test Company",
+        code_bars=[bar],
+        selected_date=discovery_date,
+    )
+
+    assert entry.sessions_since_discovery == 0
+    assert entry.return_since_discovery_pct is None
+    assert entry.max_favorable_pct is None
+    assert entry.max_adverse_pct is None
+    assert entry.peak_traded_pct is None
+    assert entry.trough_traded_pct is None
 
 
 def test_entry_separates_discovery_from_next_observable_confirmation_return() -> None:
@@ -181,6 +227,11 @@ def test_entry_separates_discovery_from_next_observable_confirmation_return() ->
     )
 
     assert entry.return_since_discovery_pct == 10.0
+    assert entry.sessions_since_discovery == 3
+    # The discovery candle's 101/98 range is excluded. These are excursions observable only after
+    # the setup was known at the discovery close.
+    assert entry.peak_traded_pct == 11.0
+    assert entry.trough_traded_pct == -1.0
     assert entry.first_confirmed_on == confirmation_date
     assert entry.confirmation_price == 105.0
     assert entry.move_to_confirmation_pct == 5.0
@@ -316,3 +367,30 @@ def test_state_markers_ignore_legacy_standalone_terminal_rows() -> None:
     )
 
     assert [(marker.date, marker.episode_number) for marker in markers] == [(active_date, 1)]
+
+
+def test_monitor_hides_legacy_terminal_rows_that_never_had_an_active_episode() -> None:
+    archive_date = dt.date(2026, 7, 23)
+
+    def row(state: str, previous_state: str, discovered_on: dt.date) -> SqueezeDailyState:
+        return SqueezeDailyState(
+            market="US",
+            code="TEST",
+            family="compression_breakout",
+            as_of_date=archive_date,
+            state=state,
+            evidence_mode="forward",
+            previous_state=previous_state,
+            reason="Archived state.",
+            first_discovered_on=discovered_on,
+            evidence={},
+            methodology_version="squeeze-monitor-v1",
+        )
+
+    assert not _is_listable_archive_row(row("none", "watch", archive_date))
+    assert not _is_listable_archive_row(row("exhausted", "none", archive_date))
+    assert not _is_listable_archive_row(row("failed", "none", archive_date))
+    assert _is_listable_archive_row(row("watch", "none", archive_date))
+    assert _is_listable_archive_row(
+        row("exhausted", "confirmed", archive_date - dt.timedelta(days=4))
+    )

@@ -16,7 +16,6 @@ import {
   researchApi,
   type SqueezeEntry,
   type SqueezeFamily,
-  type SqueezeState,
 } from "../../app/api-client";
 import { isResearchPreview, researchDeployment } from "../../app/deployment";
 import {
@@ -25,40 +24,27 @@ import {
   SegmentedControl,
   SelectField,
   StatusBadge,
-  type StatusTone,
 } from "../../design-system";
 import { SqueezeChart } from "./SqueezeChart";
+import { SqueezeLifecycle } from "./SqueezeLifecycle";
 import { previewSqueezeMonitor, previewSqueezePath } from "./preview-data";
-
-const STATE_LABEL: Record<SqueezeState, string> = {
-  watch: "Watch",
-  forming: "Forming",
-  trigger_ready: "Trigger ready",
-  confirmed: "Confirmed",
-  exhausted: "Too extended",
-  failed: "Failed",
-};
-
-const STATE_TONE: Record<SqueezeState, StatusTone> = {
-  watch: "neutral",
-  forming: "warning",
-  trigger_ready: "warning",
-  confirmed: "positive",
-  exhausted: "negative",
-  failed: "negative",
-};
-
-/** Humanize a persisted state key: the archive stores snake_case, users read prose. */
-function stateLabel(state: string): string {
-  return STATE_LABEL[state as SqueezeState] ?? state.replace(/_/g, " ");
-}
+import {
+  SQUEEZE_STATE_LABEL,
+  SQUEEZE_STATE_TONE,
+  squeezeReferenceCopy,
+  squeezeStateLabel,
+} from "./squeeze-state";
 
 type StateFilter = "new" | "developing" | "confirmed" | "late" | "all";
 
 function matchesState(entry: SqueezeEntry, filter: StateFilter): boolean {
   if (filter === "new") return entry.isNew || entry.isNewConfirmation;
   if (filter === "developing") {
-    return entry.state === "forming" || entry.state === "trigger_ready";
+    return (
+      entry.state === "watch" ||
+      entry.state === "forming" ||
+      entry.state === "trigger_ready"
+    );
   }
   if (filter === "confirmed") return entry.state === "confirmed";
   if (filter === "late") return entry.state === "exhausted" || entry.state === "failed";
@@ -198,6 +184,13 @@ export function SqueezeMonitorPanel() {
     setStateFilter("new");
     setSelectedId(undefined);
   };
+  const openLifecycleSnapshot = (date: string, entry: SqueezeEntry) => {
+    setAsOf(date === data.latestDate ? undefined : date);
+    setFamilyKey(entry.family);
+    setStateFilter("all");
+    setCapTier("all");
+    setSelectedId(`${entry.family}:${entry.code}`);
+  };
   const capOptions = [
     { value: "all", label: "All capitalization tiers" },
     ...researchDeployment.capTiers.map((tier) => ({
@@ -322,7 +315,7 @@ export function SqueezeMonitorPanel() {
                 },
                 {
                   value: "developing",
-                  label: "Developing",
+                  label: "Pre-confirmation",
                   count: familyEntries.filter((entry) => matchesState(entry, "developing")).length,
                 },
                 {
@@ -409,8 +402,8 @@ export function SqueezeMonitorPanel() {
                           </em>
                         )}
                       </span>
-                      <StatusBadge tone={STATE_TONE[entry.state]}>
-                        {STATE_LABEL[entry.state]}
+                      <StatusBadge tone={SQUEEZE_STATE_TONE[entry.state]}>
+                        {SQUEEZE_STATE_LABEL[entry.state]}
                       </StatusBadge>
                       <small className="squeeze-monitor__meta">
                         {entry.capTier} cap · {entry.sessionsSinceDiscovery}{" "}
@@ -419,13 +412,21 @@ export function SqueezeMonitorPanel() {
                       <span className="squeeze-monitor__return">
                         <b
                           className={
-                            (displayedReturn ?? 0) >= 0 ? "value-up" : "value-down"
+                            displayedReturn === null
+                              ? undefined
+                              : displayedReturn >= 0
+                                ? "value-up"
+                                : "value-down"
                           }
                         >
-                          {signed(displayedReturn)}
+                          {displayedReturn === null ? "Pending" : signed(displayedReturn)}
                         </b>
                         <small>
-                          {hasObservableEntry ? "after confirmation" : "from discovery"}
+                          {displayedReturn === null
+                            ? "awaiting next close"
+                            : hasObservableEntry
+                              ? "after confirmation"
+                              : "from discovery"}
                         </small>
                       </span>
                     </button>
@@ -442,8 +443,8 @@ export function SqueezeMonitorPanel() {
                       <h3>${selected.code}</h3>
                       <p>{selected.company}</p>
                     </span>
-                    <StatusBadge dot tone={STATE_TONE[selected.state]}>
-                      {STATE_LABEL[selected.state]}
+                    <StatusBadge dot tone={SQUEEZE_STATE_TONE[selected.state]}>
+                      {SQUEEZE_STATE_LABEL[selected.state]}
                     </StatusBadge>
                   </header>
                   <div className="squeeze-monitor__timeline" aria-label="Setup evidence timeline">
@@ -470,9 +471,11 @@ export function SqueezeMonitorPanel() {
                       <small>Gross follow-through</small>
                       <strong
                         className={
-                          (selected.returnSinceNextObservablePct ?? 0) >= 0
-                            ? "value-up"
-                            : "value-down"
+                          selected.returnSinceNextObservablePct === null
+                            ? undefined
+                            : selected.returnSinceNextObservablePct >= 0
+                              ? "value-up"
+                              : "value-down"
                         }
                       >
                         {signed(selected.returnSinceNextObservablePct)}
@@ -481,18 +484,58 @@ export function SqueezeMonitorPanel() {
                     </span>
                   </div>
                   <div className="squeeze-monitor__metrics">
-                    <span><small>Discovery follow-through</small><strong>{signed(selected.returnSinceDiscoveryPct)}</strong><em>pre-confirmation move included</em></span>
-                    <span><small>As-of price</small><strong>{price(selected.asOfPrice)}</strong><em>{selected.asOfDate}</em></span>
-                    <span><small>Best / worst close</small><strong>{signed(selected.maxFavorablePct)} / {signed(selected.maxAdversePct)}</strong><em>MFE / MAE · close-to-close</em></span>
+                    <span>
+                      <small>Discovery follow-through</small>
+                      <strong>
+                        {selected.returnSinceDiscoveryPct === null
+                          ? "Pending"
+                          : signed(selected.returnSinceDiscoveryPct)}
+                      </strong>
+                      <em>
+                        {selected.returnSinceDiscoveryPct === null
+                          ? "awaiting a later completed close"
+                          : "pre-confirmation move included"}
+                      </em>
+                    </span>
+                    <span>
+                      <small>As-of price</small>
+                      <strong>{price(selected.asOfPrice)}</strong>
+                      <em>{selected.asOfDate}</em>
+                    </span>
+                    <span>
+                      <small>Best / worst close</small>
+                      <strong>
+                        {selected.maxFavorablePct === null
+                          ? "Pending"
+                          : `${signed(selected.maxFavorablePct)} / ${signed(selected.maxAdversePct)}`}
+                      </strong>
+                      <em>
+                        {selected.maxFavorablePct === null
+                          ? "awaiting a later completed close"
+                          : "MFE / MAE · close-to-close"}
+                      </em>
+                    </span>
                     {/* The close-based pair reports 0.00% adverse for setups that traded through
                         their own invalidation intraday (680 of 930 such rows on 2026-07-15), so
                         the traded extremes sit beside it. Excursions, not achievable returns. */}
                     <span title="Highest high and lowest low actually traded since discovery. An excursion, not a return you could have captured.">
                       <small>Peak / trough traded</small>
-                      <strong>{signed(selected.peakTradedPct)} / {signed(selected.troughTradedPct)}</strong>
-                      <em>intraday high / low</em>
+                      <strong>
+                        {selected.peakTradedPct === null
+                          ? "Pending"
+                          : `${signed(selected.peakTradedPct)} / ${signed(selected.troughTradedPct)}`}
+                      </strong>
+                      <em>
+                        {selected.peakTradedPct === null
+                          ? "awaiting a later completed session"
+                          : "post-discovery intraday high / low"}
+                      </em>
                     </span>
-                    <span><small>Trigger</small><strong>{price(selected.triggerPrice)}</strong><em>base high</em></span>
+                    <span>
+                      <small>{squeezeReferenceCopy(selected).label}</small>
+                      <strong>{price(selected.triggerPrice)}</strong>
+                      <em>{squeezeReferenceCopy(selected).detail}</em>
+                    </span>
                     <span><small>Invalidation</small><strong>{price(selected.invalidationPrice)}</strong><em>{selected.riskPerShare !== null ? `${selected.riskPerShare.toFixed(2)} risk/share` : "—"}</em></span>
                     <span><small>Planning objective</small><strong>{price(selected.planningObjectivePrice)}</strong><em>{selected.planningRewardRisk !== null ? `${selected.planningRewardRisk.toFixed(1)}R · not a forecast` : "not applicable"}</em></span>
                   </div>
@@ -501,7 +544,7 @@ export function SqueezeMonitorPanel() {
                       {selected.previousState &&
                       selected.previousState !== "none" &&
                       selected.previousState !== selected.state
-                        ? `${stateLabel(selected.previousState)} → ${stateLabel(selected.state)}. `
+                        ? `${squeezeStateLabel(selected.previousState)} → ${squeezeStateLabel(selected.state)}. `
                         : ""}
                     </strong>
                     {selected.stateReason}
@@ -532,7 +575,15 @@ export function SqueezeMonitorPanel() {
                   {path.isLoading ? (
                     <div className="squeeze-monitor__chart-loading" aria-label="Loading price history" />
                   ) : path.data && path.data.points.length > 1 ? (
-                    <SqueezeChart path={path.data} />
+                    <>
+                      <SqueezeLifecycle
+                        currency={researchDeployment.currency}
+                        onSelectDate={(date) => openLifecycleSnapshot(date, selected)}
+                        path={path.data}
+                        selectedDate={selectedDate}
+                      />
+                      <SqueezeChart path={path.data} />
+                    </>
                   ) : (
                     <p className="squeeze-monitor__note">
                       No completed price history is available to chart this setup.

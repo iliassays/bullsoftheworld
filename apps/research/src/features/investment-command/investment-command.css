@@ -1844,6 +1844,114 @@
   gap: 6px;
 }
 
+.squeeze-lifecycle {
+  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+}
+
+.squeeze-lifecycle > header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.squeeze-lifecycle > header > span {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.squeeze-lifecycle > header strong {
+  font-size: 11px;
+}
+
+.squeeze-lifecycle > header small {
+  color: var(--text-muted);
+  font-size: 9.5px;
+}
+
+.squeeze-lifecycle__events {
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.squeeze-lifecycle__events > button {
+  background: transparent;
+  border: 0;
+  border-left: 2px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  display: grid;
+  flex: 1 0 205px;
+  gap: 5px;
+  max-width: 300px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.squeeze-lifecycle__events > button:hover {
+  background: var(--surface-subtle);
+}
+
+.squeeze-lifecycle__events > button[aria-current="date"] {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border-left-color: var(--accent);
+}
+
+.squeeze-lifecycle__event-heading {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.squeeze-lifecycle__event-heading time {
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.squeeze-lifecycle__event-heading svg {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.squeeze-lifecycle__events > button > strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.squeeze-lifecycle__changes {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+}
+
+.squeeze-lifecycle__changes b,
+.squeeze-lifecycle__changes em {
+  font-size: 9.5px;
+  font-style: normal;
+}
+
+.squeeze-lifecycle__changes em,
+.squeeze-lifecycle__events > button > small {
+  color: var(--text-muted);
+}
+
+.squeeze-lifecycle__events > button > small {
+  display: -webkit-box;
+  font-size: 9px;
+  line-height: 1.35;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .squeeze-chart__discovery {
   align-items: center;
   display: flex;

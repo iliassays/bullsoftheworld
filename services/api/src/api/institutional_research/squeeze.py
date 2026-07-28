@@ -75,6 +75,26 @@ _BLOCKED_FAMILY_KEYS = {
     "DSE": (),
 }
 
+_TERMINAL_STATES = frozenset({"failed", "exhausted"})
+
+
+def _is_listable_archive_row(row: SqueezeDailyState) -> bool:
+    """Exclude bookkeeping and legacy terminal rows that never belonged to a live episode.
+
+    Before squeeze-monitor-v3, a stock that was already extended could be archived as a fresh
+    ``exhausted`` discovery. Those immutable rows remain useful audit evidence, but presenting one
+    as a "new setup" is false: there was no watch/forming/trigger-ready episode to exhaust.
+    """
+
+    if row.state == "none":
+        return False
+    standalone_terminal = (
+        row.state in _TERMINAL_STATES
+        and row.previous_state in (None, "none")
+        and row.first_discovered_on == row.as_of_date
+    )
+    return not standalone_terminal
+
 
 def _blocked_families(market: str) -> list[SqueezeFamilyOut]:
     blocked: list[SqueezeFamilyOut] = []
@@ -113,18 +133,28 @@ def _build_entry(
     """
 
     window = [bar for bar in code_bars if row.first_discovered_on <= bar.date <= selected_date]
+    post_discovery_bars = [bar for bar in window if bar.date > row.first_discovered_on]
     path = [adjusted_close(bar) for bar in window]
     discovery_bar = next(
         (bar for bar in reversed(code_bars) if bar.date <= row.first_discovered_on), None
     )
     discovery_price = adjusted_close(discovery_bar) if discovery_bar is not None else None
     as_of_bar = code_bars[-1] if code_bars else None
-    return_pct, favorable, adverse = discovery_performance(path, reference_price=discovery_price)
+    # The setup is first observable after its discovery session closes. On that same session there
+    # is no follow-through yet, and its earlier high/low cannot be counted as a post-discovery
+    # outcome. Returning null until a later completed session prevents a baseline from reading as
+    # a positive 0.00% result and avoids backward-looking MFE/MAE.
+    if post_discovery_bars:
+        return_pct, favorable, adverse = discovery_performance(
+            path,
+            reference_price=discovery_price,
+        )
+    else:
+        return_pct, favorable, adverse = None, None, None
     episode = [
         item
         for item in (episode_rows or [row])
-        if item.first_discovered_on == row.first_discovered_on
-        and item.as_of_date <= selected_date
+        if item.first_discovered_on == row.first_discovered_on and item.as_of_date <= selected_date
     ]
     confirmed_dates = [item.as_of_date for item in episode if item.state == "confirmed"]
     first_confirmed_on = min(confirmed_dates) if confirmed_dates else None
@@ -136,14 +166,10 @@ def _build_entry(
         ),
         None,
     )
-    confirmation_price = (
-        adjusted_close(confirmation_bar) if confirmation_bar is not None else None
-    )
+    confirmation_price = adjusted_close(confirmation_bar) if confirmation_bar is not None else None
     move_to_confirmation_pct = (
         round((confirmation_price / discovery_price - 1) * 100, 3)
-        if confirmation_price is not None
-        and discovery_price is not None
-        and discovery_price > 0
+        if confirmation_price is not None and discovery_price is not None and discovery_price > 0
         else None
     )
     next_observable_bar = next(
@@ -155,9 +181,7 @@ def _build_entry(
         None,
     )
     next_observable_price = (
-        _adjusted_ohlc(next_observable_bar, "open")
-        if next_observable_bar is not None
-        else None
+        _adjusted_ohlc(next_observable_bar, "open") if next_observable_bar is not None else None
     )
     as_of_price = adjusted_close(as_of_bar) if as_of_bar is not None else None
     return_since_next_observable_pct = (
@@ -167,12 +191,12 @@ def _build_entry(
         and next_observable_price > 0
         else None
     )
-    # What the tape actually did, not just where it closed. See intraday_excursion's docstring:
-    # the close-based pair reports 0.00% adverse for setups that traded through their own
-    # invalidation level intraday.
+    # What the tape did after the discovery close, not what happened earlier on the candle that
+    # caused discovery. See intraday_excursion's docstring: the close-based pair can report 0.00%
+    # adverse even when a later session traded through the invalidation intraday.
     peak_pct, trough_pct = intraday_excursion(
-        [bar.high for bar in window if bar.high is not None],
-        [bar.low for bar in window if bar.low is not None],
+        [bar.high for bar in post_discovery_bars if bar.high is not None],
+        [bar.low for bar in post_discovery_bars if bar.low is not None],
         reference_price=discovery_price,
     )
     # Classification comes from the archived row, not from current analytics: reading the
@@ -202,16 +226,14 @@ def _build_entry(
         is_new_confirmation=first_confirmed_on == selected_date,
         first_discovered_on=row.first_discovered_on,
         as_of_date=row.as_of_date,
-        sessions_since_discovery=len(path),
+        sessions_since_discovery=len(post_discovery_bars),
         discovery_price=discovery_price,
         as_of_price=as_of_price,
         return_since_discovery_pct=return_pct,
         first_confirmed_on=first_confirmed_on,
         confirmation_price=confirmation_price,
         move_to_confirmation_pct=move_to_confirmation_pct,
-        next_observable_on=(
-            next_observable_bar.date if next_observable_bar is not None else None
-        ),
+        next_observable_on=(next_observable_bar.date if next_observable_bar is not None else None),
         next_observable_price=next_observable_price,
         return_since_next_observable_pct=return_since_next_observable_pct,
         max_favorable_pct=favorable,
@@ -238,8 +260,7 @@ def _build_entry(
                 "selective strategy can rank a new forward confirmation, and only an "
                 "evidence-admitted strategy target appears in Agent decisions. Reconstructed "
                 "rows cannot create targets."
-                if row.evidence_mode == "forward"
-                and row.methodology_version == METHODOLOGY_VERSION
+                if row.evidence_mode == "forward" and row.methodology_version == METHODOLOGY_VERSION
                 else (
                     "Replay diagnostic only: this row does not count toward the locked v3 DSE "
                     "forward trial or paper capital."
@@ -279,9 +300,9 @@ async def load_squeeze_monitor(
         f"The current engine is {METHODOLOGY_VERSION}. States are written once per "
         "completed session after the analytics refresh. Discovery performance uses completed "
         "closes (split/distribution-adjusted where audited factors exist — US yes, DSE raw "
-        "closes) from first discovery through the selected archive date. Historical rows retain "
-        "their own methodology version. Blocked families are registered with their exact missing "
-        "datasets."
+        "closes) after the discovery close through the selected archive date; same-session "
+        "outcomes are unavailable, not zero. Historical rows retain their own methodology "
+        "version. Blocked families are registered with their exact missing datasets."
     )
 
     if selected_date is None:
@@ -298,17 +319,15 @@ async def load_squeeze_monitor(
             limitations=LIMITATIONS,
         )
 
-    rows = list(
+    archived_rows = list(
         await session.scalars(
             select(SqueezeDailyState).where(
                 SqueezeDailyState.market == market,
                 SqueezeDailyState.as_of_date == selected_date,
-                # "none" rows exist only to close out a previously live episode in the archive;
-                # they are bookkeeping, not a listable setup.
-                SqueezeDailyState.state != "none",
             )
         )
     )
+    rows = [row for row in archived_rows if _is_listable_archive_row(row)]
     codes = sorted({row.code for row in rows})
     symbols = {
         symbol.code: symbol
@@ -495,7 +514,7 @@ async def load_squeeze_path(
             SqueezeDailyState.state != "none",
         )
     )
-    if row is None:
+    if row is None or not _is_listable_archive_row(row):
         raise LookupError("squeeze setup not found in this archived session")
     symbol = await session.scalar(
         select(Symbol).where(Symbol.market == market, Symbol.code == normalized)

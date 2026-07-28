@@ -113,7 +113,8 @@ Shared eligibility preconditions per ticker: analytics row fresh for the session
 - *contraction*: ATR(14) now ≤ 0.8 × ATR(14) twenty sessions earlier, computed from the bar
   window (not the single stored value).
 - *dry-up (supporting)*: `rel_volume_5d < 0.9`.
-- *trigger price*: max high of the last 20 completed sessions (the base high).
+- *trigger price*: max high of the 20-session base immediately before the latest three candidate
+  sessions. The candidate window is excluded so a breakout cannot raise its own reference level.
 - *states*: `watch` = base only; `forming` = base + contraction; `trigger_ready` = forming +
   last-5-session range ≤ 1.5 × ATR(14) + close within 3% below trigger; `confirmed` = a session
   within the last 3 closed above the trigger **and that same session traded ≥ 1.5× the base's
@@ -156,6 +157,12 @@ always listed under data quality.
 
 State transitions are archived with a reason string; "why the classification changed" is the
 diff between consecutive `squeeze_daily_states` rows.
+
+Outcome measurement starts after the discovery session closes. The discovery candle is the
+evidence that created the state, not an investable post-discovery path: it counts as zero elapsed
+sessions, its earlier high/low is excluded from MFE/MAE, and return fields remain null until a
+later completed session exists. The UI renders that absence as `Pending`, never as a green
+`+0.00%`.
 
 ### Reconciliation, 2026-07-26 (`squeeze-monitor-v2` → `v3`)
 
@@ -250,6 +257,11 @@ the outcome; a live scan may only replace a reconstructed placeholder for the sa
 methodology revision begins on the next unobserved session, while archived rows retain the version
 that classified them.
 
+The immutable v1/v2 audit trail contains some standalone `failed`/`exhausted` rows whose previous
+state was `none`. The v3 writer no longer creates these because a terminal state can only close a
+live episode. The read model excludes those legacy rows from setup lists and direct setup paths:
+they remain in storage for audit, but cannot be presented as newly discovered setups.
+
 A replay replacement is atomic and window-complete: it removes prior reconstructed rows in the
 requested session window and writes the new methodology in one transaction. This prevents stale
 rows that no longer meet the revised rules from surviving beside the corrected archive.
@@ -313,6 +325,20 @@ drift apart. Rules that must survive future edits:
   episode's dotted discovery price line and states "Nth discovery … at {price}" above the chart.
   `prior_discovery_dates` surfaces how many earlier setups this ticker/family had. Prior episodes
   remain separate archived rows, reachable by the archive-date selector.
+
+### Setup lifecycle (`SqueezeLifecycle`, added 2026-07-28)
+
+The detail pane places a compact, horizontal point-in-time lifecycle immediately above the chart.
+It shows only genuine transitions for the selected episode (`watch`, `forming`, `trigger_ready`,
+`confirmed`, `failed`, or `exhausted`), never the repeated daily bookkeeping rows. Each event
+reports its archived close, change from discovery, change since the preceding transition, and the
+stored transition reason. Discovery uses the episode's immutable discovery price as its baseline;
+later prices come from the chart path for the same archived session and price basis.
+
+Selecting an event loads that exact archived snapshot while retaining the ticker and setup family.
+The state and capitalization filters reset to `all` so they cannot hide the selected historical
+row. Prior episodes remain represented by the compact numbered chart markers and are intentionally
+not merged into the current episode's lifecycle.
 
 ## J. Atlas UI specification
 

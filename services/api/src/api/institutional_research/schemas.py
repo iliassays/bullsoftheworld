@@ -543,6 +543,7 @@ class DecisionCandidateOut(ApiModel):
     return_since_discovery_pct: float | None
     max_favorable_pct: float | None
     max_adverse_pct: float | None
+    # Completed sessions after the discovery close. Zero means an outcome is not observable yet.
     sessions_since_discovery: int
     target_weight_pct: float
     position_weight_pct: float
@@ -648,8 +649,9 @@ class SqueezeEntryOut(ApiModel):
     # so the traded extremes below are shown beside them, never instead of them.
     max_favorable_pct: float | None
     max_adverse_pct: float | None
-    # Highest high / lowest low actually traded since discovery. Excursions, not achievable
-    # returns — nobody exits at the exact high.
+    # Highest high / lowest low traded after the discovery close. The discovery candle is excluded
+    # because its intraday path occurred before the setup became observable. Excursions, not
+    # achievable returns — nobody exits at the exact high.
     peak_traded_pct: float | None = None
     trough_traded_pct: float | None = None
     setup_price: float | None
