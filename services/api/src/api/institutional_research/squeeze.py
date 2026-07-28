@@ -469,6 +469,8 @@ def _state_markers(
             state=row.state,
             previous_state=row.previous_state,
             reason=row.reason,
+            evidence_mode=row.evidence_mode,
+            methodology_version=row.methodology_version,
             episode_number=episode_number.get(row.first_discovered_on, 1),
             is_current_episode=row.first_discovered_on == current_episode,
         )

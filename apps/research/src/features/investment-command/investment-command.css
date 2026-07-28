@@ -1688,6 +1688,34 @@
   margin: 0;
 }
 
+.squeeze-monitor__method-warning {
+  align-items: flex-start;
+  background: var(--warning-soft);
+  border-left: 2px solid var(--warning);
+  color: var(--text-muted);
+  display: flex;
+  font-size: 10px;
+  gap: 7px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.squeeze-monitor__method-warning svg {
+  color: var(--warning);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.squeeze-monitor__method-warning span {
+  display: block;
+}
+
+.squeeze-monitor__method-warning strong {
+  color: var(--warning);
+  margin-right: 5px;
+}
+
 .squeeze-monitor__timeline {
   background: var(--surface-subtle);
   border: 1px solid var(--border);
@@ -1848,8 +1876,8 @@
   border-bottom: 1px solid var(--border);
   border-top: 1px solid var(--border);
   display: grid;
-  gap: 6px;
-  padding: 10px 0;
+  gap: 9px;
+  padding: 12px 0;
 }
 
 .squeeze-lifecycle > header {
@@ -1873,8 +1901,72 @@
   font-size: 9.5px;
 }
 
+.squeeze-lifecycle__story {
+  display: grid;
+  gap: 3px;
+}
+
+.squeeze-lifecycle__story-heading {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.squeeze-lifecycle__story-heading strong {
+  font-size: 12px;
+}
+
+.squeeze-lifecycle__story-heading em {
+  background: var(--surface-subtle);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  padding: 2px 5px;
+  text-transform: uppercase;
+}
+
+.squeeze-lifecycle__story p,
+.squeeze-lifecycle__prior > p {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 920px;
+}
+
+.squeeze-lifecycle__method-warning {
+  align-items: flex-start;
+  background: var(--warning-soft);
+  border-left: 2px solid var(--warning);
+  color: var(--warning);
+  display: flex;
+  font-size: 10px;
+  gap: 7px;
+  line-height: 1.45;
+  padding: 8px 10px;
+}
+
+.squeeze-lifecycle__method-warning svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.squeeze-lifecycle__method-warning span {
+  display: grid;
+  gap: 1px;
+}
+
+.squeeze-lifecycle__method-warning small {
+  color: var(--text-muted);
+  font-size: 9.5px;
+}
+
 .squeeze-lifecycle__events {
   display: flex;
+  gap: 1px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
@@ -1950,6 +2042,93 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.squeeze-lifecycle__prior {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.squeeze-lifecycle__prior > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+}
+
+.squeeze-lifecycle__prior > summary::-webkit-details-marker {
+  display: none;
+}
+
+.squeeze-lifecycle__prior > summary > span {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.squeeze-lifecycle__prior > summary strong {
+  font-size: 10.5px;
+}
+
+.squeeze-lifecycle__prior > summary small {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.squeeze-lifecycle__prior > p {
+  margin-top: 6px;
+}
+
+.squeeze-lifecycle__prior-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.squeeze-lifecycle__prior-episode {
+  border-left: 2px solid var(--border);
+  display: grid;
+  gap: 5px;
+  padding-left: 9px;
+}
+
+.squeeze-lifecycle__prior-episode > header {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.squeeze-lifecycle__prior-episode > header > span {
+  display: grid;
+  gap: 1px;
+}
+
+.squeeze-lifecycle__prior-episode > header strong {
+  font-size: 10px;
+}
+
+.squeeze-lifecycle__prior-episode > header small,
+.squeeze-lifecycle__prior-episode > header em {
+  color: var(--text-muted);
+  font-size: 8.5px;
+  font-style: normal;
+}
+
+.squeeze-lifecycle__events--prior > button {
+  flex-basis: 185px;
+  max-width: 250px;
+  padding-block: 6px;
+}
+
+@media (max-width: 640px) {
+  .squeeze-lifecycle__prior > summary,
+  .squeeze-lifecycle__prior-episode > header {
+    align-items: flex-start;
+    display: grid;
+    gap: 3px;
+  }
 }
 
 .squeeze-chart__discovery {

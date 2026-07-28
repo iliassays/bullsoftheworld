@@ -98,10 +98,12 @@ describe("SqueezeMonitorPanel availability states", () => {
     expect(html).toContain("pre-confirmation move included");
     expect(html).toContain("Archive method squeeze-monitor-v3");
     expect(html).toContain("Pre-confirmation");
-    expect(html).toContain("Setup lifecycle");
-    expect(html).toContain("Point-in-time transitions");
-    expect(html).toContain("Discovery baseline");
-    expect(html).toContain("from discovery");
+    expect(html).toContain("Setup journey");
+    expect(html).toContain("Current episode");
+    expect(html).toContain("Episode baseline");
+    expect(html).toContain("from episode start");
+    expect(html).toContain("Earlier episodes");
+    expect(html).toContain("Historical replay");
     expect(html).toContain("archived snapshot for");
   });
 
@@ -131,6 +133,64 @@ describe("SqueezeMonitorPanel availability states", () => {
     const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
 
     expect(html).toMatch(/Pre-confirmation[\s\S]*?1/);
+  });
+
+  it("explains a direct legacy confirmation without inventing prior phases", () => {
+    const sourceEntry = previewSqueezeMonitor.families[0]!.entries[0]!;
+    const directEntry = {
+      ...sourceEntry,
+      firstDiscoveredOn: sourceEntry.asOfDate,
+      firstConfirmedOn: sourceEntry.asOfDate,
+      discoveryPrice: sourceEntry.asOfPrice,
+      confirmationPrice: sourceEntry.asOfPrice,
+      moveToConfirmationPct: 0,
+      methodologyVersion: "squeeze-monitor-v1",
+    };
+    const directMonitor = {
+      ...previewSqueezeMonitor,
+      families: previewSqueezeMonitor.families.map((family, familyIndex) => ({
+        ...family,
+        entries: familyIndex === 0 ? [directEntry] : family.entries,
+      })),
+    };
+    const directPath = previewSqueezePath(directEntry.family, directEntry.code);
+    directPath.entry = directEntry;
+    directPath.stateHistory = [
+      ...directPath.stateHistory.filter((marker) => !marker.isCurrentEpisode),
+      {
+        date: directEntry.asOfDate,
+        state: "confirmed",
+        previousState: "none",
+        reason: "The first retained observation met the legacy confirmation rule.",
+        evidenceMode: "forward",
+        methodologyVersion: "squeeze-monitor-v1",
+        episodeNumber: directPath.discoveryNumber,
+        isCurrentEpisode: true,
+      },
+    ];
+    queryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
+      queryKey[1] === "squeeze-monitor"
+        ? {
+            data: directMonitor,
+            error: null,
+            isError: false,
+            isLoading: false,
+            refetch: vi.fn(),
+          }
+        : {
+            ...pathQuery(),
+            data: directPath,
+          },
+    );
+
+    const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
+
+    expect(html).toContain("Legacy archived classification");
+    expect(html).toContain("Confirmed at first observation");
+    expect(html).toContain("missing phases are not inferred");
+    expect(html).toContain("Legacy methodology boundary");
+    expect(html).toContain("same-session classification; no earlier phase recorded");
+    expect(html).not.toContain("+0.00% before confirmation");
   });
 
   it("renders a same-session discovery as pending rather than positive zero", () => {

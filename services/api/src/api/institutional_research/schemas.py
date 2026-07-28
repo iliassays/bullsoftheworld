@@ -711,6 +711,8 @@ class SqueezeStateMarkerOut(ApiModel):
     state: str
     previous_state: str | None
     reason: str
+    evidence_mode: Literal["forward", "reconstructed"]
+    methodology_version: str
     episode_number: int = Field(ge=1)
     is_current_episode: bool
 

@@ -326,6 +326,8 @@ def test_state_markers_keep_repeated_discoveries_in_separate_numbered_episodes()
         True,
         True,
     ]
+    assert [marker.evidence_mode for marker in markers] == ["forward"] * 4
+    assert [marker.methodology_version for marker in markers] == ["squeeze-monitor-v3"] * 4
 
 
 def test_state_markers_ignore_legacy_standalone_terminal_rows() -> None:

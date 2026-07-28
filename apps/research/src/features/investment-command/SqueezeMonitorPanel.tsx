@@ -447,9 +447,24 @@ export function SqueezeMonitorPanel() {
                       {SQUEEZE_STATE_LABEL[selected.state]}
                     </StatusBadge>
                   </header>
+                  {selected.methodologyVersion !== data.methodologyVersion && (
+                    <p className="squeeze-monitor__method-warning">
+                      <ShieldAlert aria-hidden="true" size={13} />
+                      <span>
+                        <strong>Legacy archived classification</strong>
+                        This row used {selected.methodologyVersion}; the current engine is{" "}
+                        {data.methodologyVersion}. It is preserved as point-in-time evidence and
+                        has not been relabelled using today&apos;s rules.
+                      </span>
+                    </p>
+                  )}
                   <div className="squeeze-monitor__timeline" aria-label="Setup evidence timeline">
                     <span>
-                      <small>Discovered</small>
+                      <small>
+                        {selected.firstConfirmedOn === selected.firstDiscoveredOn
+                          ? "First observed"
+                          : "Discovered"}
+                      </small>
                       <strong>{selected.firstDiscoveredOn}</strong>
                       <em>{price(selected.discoveryPrice)}</em>
                     </span>
@@ -458,7 +473,9 @@ export function SqueezeMonitorPanel() {
                       <strong>{selected.firstConfirmedOn ?? "Not reached"}</strong>
                       <em>
                         {selected.confirmationPrice !== null
-                          ? `${price(selected.confirmationPrice)} · ${signed(selected.moveToConfirmationPct)} before confirmation`
+                          ? selected.firstConfirmedOn === selected.firstDiscoveredOn
+                            ? `${price(selected.confirmationPrice)} · same-session classification; no earlier phase recorded`
+                            : `${price(selected.confirmationPrice)} · ${signed(selected.moveToConfirmationPct)} before confirmation`
                           : "condition, not an order"}
                       </em>
                     </span>
@@ -581,6 +598,7 @@ export function SqueezeMonitorPanel() {
                         onSelectDate={(date) => openLifecycleSnapshot(date, selected)}
                         path={path.data}
                         selectedDate={selectedDate}
+                        currentMethodologyVersion={data.methodologyVersion}
                       />
                       <SqueezeChart path={path.data} />
                     </>

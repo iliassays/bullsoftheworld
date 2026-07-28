@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSqueezeLifecycle } from "./squeeze-lifecycle";
+import {
+  buildSqueezeLifecycle,
+  buildSqueezeLifecycleEpisodes,
+} from "./squeeze-lifecycle";
 import { previewSqueezeMonitor, previewSqueezePath } from "./preview-data";
 
 describe("buildSqueezeLifecycle", () => {
@@ -32,10 +35,56 @@ describe("buildSqueezeLifecycle", () => {
       state: "none",
       previousState: "confirmed",
       reason: "Episode closed.",
+      evidenceMode: "forward",
+      methodologyVersion: "squeeze-monitor-v3",
       episodeNumber: path.discoveryNumber,
       isCurrentEpisode: true,
     });
 
     expect(buildSqueezeLifecycle(path)).toHaveLength(3);
+  });
+
+  it("keeps earlier episodes separate and resets each price baseline", () => {
+    const entry = previewSqueezeMonitor.families.flatMap((family) => family.entries).at(0)!;
+    const path = previewSqueezePath(entry.family, entry.code);
+
+    const episodes = buildSqueezeLifecycleEpisodes(path);
+
+    expect(episodes).toHaveLength(2);
+    expect(episodes[0]!.isCurrentEpisode).toBe(false);
+    expect(episodes[0]!.events[0]!.changeFromDiscoveryPct).toBeNull();
+    expect(episodes[1]!.isCurrentEpisode).toBe(true);
+    expect(episodes[1]!.events[0]!.changeFromDiscoveryPct).toBeNull();
+    expect(episodes[1]!.events[0]!.episodeNumber).toBe(path.discoveryNumber);
+  });
+
+  it("preserves a direct confirmation without inventing earlier phases", () => {
+    const entry = previewSqueezeMonitor.families.flatMap((family) => family.entries).at(0)!;
+    const path = previewSqueezePath(entry.family, entry.code);
+    const observationDate = path.points.at(-1)!.date;
+    path.entry.firstDiscoveredOn = observationDate;
+    path.entry.firstConfirmedOn = observationDate;
+    path.entry.discoveryPrice = path.points.at(-1)!.close;
+    path.stateHistory = [
+      ...path.stateHistory.filter((marker) => !marker.isCurrentEpisode),
+      {
+        date: observationDate,
+        state: "confirmed",
+        previousState: "none",
+        reason: "The first retained observation met the confirmation rule.",
+        evidenceMode: "forward",
+        methodologyVersion: "squeeze-monitor-v1",
+        episodeNumber: path.discoveryNumber,
+        isCurrentEpisode: true,
+      },
+    ];
+
+    const events = buildSqueezeLifecycle(path);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.state).toBe("confirmed");
+    expect(events[0]!.previousState).toBe("none");
+    expect(events[0]!.isEpisodeStart).toBe(true);
+    expect(events[0]!.changeFromDiscoveryPct).toBeNull();
   });
 });

@@ -408,6 +408,8 @@ export interface SqueezeStateMarker {
   state: string;
   previousState: string | null;
   reason: string;
+  evidenceMode: "forward" | "reconstructed";
+  methodologyVersion: string;
   episodeNumber: number;
   isCurrentEpisode: boolean;
 }
