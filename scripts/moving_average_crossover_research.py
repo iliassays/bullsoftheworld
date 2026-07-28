@@ -250,7 +250,9 @@ def _benchmark_return(
 
 
 def _bootstrap(values: np.ndarray, block: int = 63) -> tuple[float | None, float | None]:
-    if values.size < 5:
+    # With fewer than two full dependence blocks, a circular bootstrap merely rotates almost the
+    # same sample and can report a falsely precise, even zero-width interval.
+    if values.size < max(5, 2 * block):
         return None, None
     block = max(1, min(block, values.size))
     blocks = math.ceil(values.size / block)

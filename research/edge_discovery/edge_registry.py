@@ -29,7 +29,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-RUN_DATE = "2026-07-25"
+RUN_DATE = "2026-07-28"
 METHODOLOGY = "atlas-edge-discovery-v1"
 
 
@@ -48,6 +48,25 @@ class Edge:
 
 REGISTRY: tuple[Edge, ...] = (
     # ---------------------------------------------------------------- rejected (US, conclusive)
+    Edge(
+        key="us_bullish_ma20_50_v1",
+        market="US",
+        family="trend_transition",
+        status="rejected",
+        horizon_sessions=63,
+        verdict="A fresh 20/50 bullish crossover is a lagging trend fact, not an entry edge.",
+        evidence="Validation mean/median net -0.37%/-2.76%, cohort excess -1.44% with 95% CI "
+        "[-1.98%, -0.86%], profit factor 0.90. Holdout mean/median net -0.31%/-3.19%, "
+        "win rate 21.96%, profit factor 0.93, and -0.84% after removing the two largest "
+        "winners. Rejected before any UI or paper strategy was created.",
+        metrics={
+            "validation_excess_pct": -1.4445,
+            "holdout_excess_pct": -0.9164,
+            "holdout_median_net_pct": -3.1869,
+            "holdout_profit_factor": 0.9251,
+            "holdout_trades": 1334,
+        },
+    ),
     Edge(
         key="us_reversal_5d",
         market="US",
@@ -246,6 +265,24 @@ REGISTRY: tuple[Edge, ...] = (
         },
     ),
     # ------------------------------------------------------------------------ rejected (DSE)
+    Edge(
+        key="dse_bullish_ma20_50_v1",
+        market="DSE",
+        family="trend_transition",
+        status="rejected",
+        horizon_sessions=63,
+        verdict="The DSE 20/50 bullish crossover is sparse, late and benchmark-negative.",
+        evidence="Only 15 validation and 24 holdout trades. Holdout median net -3.24%, "
+        "signal-date cohort excess -3.30%, stressed cohort -1.57%, and mean net -1.50% "
+        "after removing the two largest winners. The positive untrimmed mean is a small "
+        "winner-tail effect, not an admissible edge.",
+        metrics={
+            "holdout_excess_pct": -3.3034,
+            "holdout_median_net_pct": -3.238,
+            "holdout_stressed_cohort_pct": -1.5716,
+            "holdout_trades": 24,
+        },
+    ),
     Edge(
         key="dse_compression_breakout",
         market="DSE",
