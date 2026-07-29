@@ -418,6 +418,11 @@ export interface ShortlistFact {
   kind: string;
   value?: number | null;
 }
+export interface ShortlistHorizonOutcome {
+  sessions: number;
+  close_return_pct?: number | null;
+  as_of?: string | null;
+}
 export interface DailyShortlistRow {
   code: string;
   name_en?: string | null;
@@ -435,8 +440,13 @@ export interface DailyShortlistRow {
   unknowns: string[];
   return_since_pct?: number | null;
   max_went_pct?: number | null;
+  min_went_pct?: number | null;
+  latest_close?: number | null;
   sessions_since: number;
   outcome_as_of?: string | null;
+  horizon_returns: ShortlistHorizonOutcome[];
+  appearance_number?: number | null;
+  first_recorded_appearance_date?: string | null;
 }
 export interface DailyShortlist {
   market: string;

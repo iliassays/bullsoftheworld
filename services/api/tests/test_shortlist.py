@@ -16,6 +16,7 @@ from api.routers.shortlist import (
     ShortlistResponse,
     ShortlistRow,
     _fact_outputs,
+    _measure_outcome,
     _outcome,
     _range_position_pct,
     _select_archive_date,
@@ -161,14 +162,14 @@ def test_cautions_are_structured_too():
     assert row.cautions[0].value == 820.0
 
 
-def _bar(day: int, *, close: float, high: float) -> DailyBar:
+def _bar(day: int, *, close: float, high: float, low: float | None = None) -> DailyBar:
     return DailyBar(
         market="DSE",
         code="GP",
         date=dt.date(2026, 7, day),
         open=close,
         high=high,
-        low=close,
+        low=close if low is None else low,
         close=close,
         volume=10_000,
         adjusted_close=None,
@@ -194,6 +195,48 @@ def test_outcome_uses_later_bars_and_reports_the_latest_observation():
 
 def test_outcome_does_not_manufacture_data_when_no_later_session_exists():
     assert _outcome(100.0, []) == (None, None, 0, None)
+
+
+def test_outcome_story_uses_fixed_later_session_horizons_and_keeps_losses():
+    measured = _measure_outcome(
+        100.0,
+        [
+            _bar(19, close=103.0, high=105.0, low=98.0),
+            _bar(20, close=97.0, high=104.0, low=95.0),
+            _bar(21, close=101.0, high=103.0, low=96.0),
+            _bar(22, close=99.0, high=102.0, low=94.0),
+            _bar(23, close=108.0, high=110.0, low=98.0),
+            _bar(24, close=106.0, high=109.0, low=104.0),
+            _bar(25, close=105.0, high=107.0, low=103.0),
+            _bar(26, close=107.0, high=108.0, low=104.0),
+            _bar(27, close=109.0, high=110.0, low=106.0),
+            _bar(28, close=112.0, high=114.0, low=108.0),
+        ],
+    )
+
+    assert measured.latest_close == 112.0
+    assert measured.return_since_pct == pytest.approx(12.0)
+    assert measured.max_went_pct == pytest.approx(14.0)
+    assert measured.min_went_pct == pytest.approx(-6.0)
+    assert measured.sessions_since == 10
+    assert [
+        (item.sessions, item.close_return_pct, item.as_of) for item in measured.horizon_returns
+    ] == [
+        (1, pytest.approx(3.0), dt.date(2026, 7, 19)),
+        (3, pytest.approx(1.0), dt.date(2026, 7, 21)),
+        (5, pytest.approx(8.0), dt.date(2026, 7, 23)),
+        (10, pytest.approx(12.0), dt.date(2026, 7, 28)),
+    ]
+
+
+def test_outcome_story_marks_unobserved_horizons_pending_instead_of_zero():
+    measured = _measure_outcome(100.0, [_bar(28, close=102.0, high=103.0)])
+
+    assert [item.sessions for item in measured.horizon_returns] == [1, 3, 5, 10]
+    assert measured.horizon_returns[0].close_return_pct == pytest.approx(2.0)
+    assert measured.horizon_returns[0].as_of == dt.date(2026, 7, 28)
+    assert all(item.close_return_pct is None for item in measured.horizon_returns[1:])
+    assert all(item.as_of is None for item in measured.horizon_returns[1:])
 
 
 def test_archive_date_never_moves_forward_past_the_request():

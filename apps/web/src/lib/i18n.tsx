@@ -77,10 +77,10 @@ const STRINGS: Record<string, Entry> = {
     en: "Research lists are unavailable. Try again shortly.",
     bn: "গবেষণার তালিকা এখন পাওয়া যাচ্ছে না। কিছুক্ষণ পর আবার চেষ্টা করুন।",
   },
-  "shortlist.title": { en: "Five names to research", bn: "গবেষণার জন্য পাঁচটি শেয়ার" },
+  "shortlist.title": { en: "Research shortlist", bn: "গবেষণা তালিকা" },
   "shortlist.subtitle": {
-    en: "A completed-session attention list — not predictions, and not a buy list.",
-    bn: "সম্পূর্ণ সেশনের মনোযোগ তালিকা — ভবিষ্যদ্বাণী বা কেনার তালিকা নয়।",
+    en: "Five attention-ranked names from a completed market session — not predictions or buy calls.",
+    bn: "সম্পূর্ণ বাজার সেশন থেকে মনোযোগ অনুযায়ী পাঁচটি শেয়ার — ভবিষ্যদ্বাণী বা কেনার সংকেত নয়।",
   },
   "shortlist.source": {
     en: "Source: deterministic Bulls of Dhaka EOD market scan. Separate from Atlas; no AI selection.",
@@ -89,6 +89,16 @@ const STRINGS: Record<string, Entry> = {
   "shortlist.previous": { en: "Previous archived session", bn: "আগের আর্কাইভ সেশন" },
   "shortlist.next": { en: "Next archived session", bn: "পরের আর্কাইভ সেশন" },
   "shortlist.latest": { en: "latest", bn: "সর্বশেষ" },
+  "shortlist.latestSession": { en: "Latest completed session", bn: "সর্বশেষ সম্পূর্ণ সেশন" },
+  "shortlist.archiveSession": { en: "Archived session", bn: "আর্কাইভ সেশন" },
+  "shortlist.sessionContext": {
+    en: "List created after this completed market session",
+    bn: "এই সম্পূর্ণ বাজার সেশন শেষ হওয়ার পর তালিকাটি তৈরি হয়েছে",
+  },
+  "shortlist.archiveContext": {
+    en: "Showing exactly what appeared after this close",
+    bn: "এই ক্লোজের পর তালিকায় যা ছিল ঠিক সেটিই দেখানো হচ্ছে",
+  },
   "shortlist.reconstructed": {
     en: "Reconstructed from stored bars; it was not recorded live on that date.",
     bn: "সংরক্ষিত বার থেকে পরে পুনর্গঠন করা; ওই দিনে সরাসরি রেকর্ড করা হয়নি।",
@@ -101,11 +111,45 @@ const STRINGS: Record<string, Entry> = {
     en: "Peak price move",
     bn: "সর্বোচ্চ দামের পরিবর্তন",
   },
+  "shortlist.listedClose": { en: "Listed close", bn: "তালিকাভুক্ত ক্লোজ" },
+  "shortlist.sessionMove": { en: "That session", bn: "ওই সেশন" },
+  "shortlist.whyAppeared": { en: "Why it appeared", bn: "কেন তালিকায় এসেছে" },
+  "shortlist.afterAppearance": {
+    en: "What happened after this appearance",
+    bn: "এইবার তালিকায় আসার পর কী হয়েছে",
+  },
+  "shortlist.afterOneSession": { en: "After 1 session", bn: "১ সেশন পরে" },
+  "shortlist.afterSessions": { en: "After {n} sessions", bn: "{n} সেশন পরে" },
+  "shortlist.pending": { en: "Pending", bn: "অপেক্ষমাণ" },
+  "shortlist.latestCompletedClose": {
+    en: "Latest completed close",
+    bn: "সর্বশেষ সম্পূর্ণ ক্লোজ",
+  },
+  "shortlist.bestWorstTraded": {
+    en: "Best / worst traded",
+    bn: "সর্বোচ্চ / সর্বনিম্ন লেনদেন",
+  },
+  "shortlist.outcomeThrough": { en: "through {date}", bn: "{date} পর্যন্ত" },
+  "shortlist.appearanceNumber": {
+    en: "Appearance {n} in the recorded archive",
+    bn: "সংরক্ষিত আর্কাইভে {n} নম্বর উপস্থিতি",
+  },
+  "shortlist.firstRecorded": {
+    en: "First recorded {date}",
+    bn: "প্রথম রেকর্ড {date}",
+  },
+  "shortlist.outcomeHelp": {
+    en: "Returns start from this list's close. S means a later completed session with an observed close for this company.",
+    bn: "রিটার্ন এই তালিকার ক্লোজ থেকে শুরু। ‘স’ মানে কোম্পানিটির ক্লোজ পাওয়া গেছে এমন পরবর্তী সম্পূর্ণ সেশন।",
+  },
   "shortlist.sessions": { en: "sessions", bn: "সেশন" },
-  "shortlist.noOutcome": { en: "No later close yet", bn: "পরের ক্লোজ এখনও নেই" },
+  "shortlist.noOutcome": {
+    en: "Waiting for the next completed close",
+    bn: "পরবর্তী সম্পূর্ণ ক্লোজের অপেক্ষায়",
+  },
   "shortlist.outcomeCaveat": {
-    en: "Outcome uses raw DSE prices after the listed session; corporate actions can distort it. Highest traded is an excursion, not a captured return.",
-    bn: "ফলাফল তালিকাভুক্ত সেশনের পরের কাঁচা ডিএসই দাম থেকে; কর্পোরেট অ্যাকশনে এটি বিকৃত হতে পারে। সর্বোচ্চ দাম অর্জিত রিটার্ন নয়।",
+    en: "Outcomes use raw DSE prices after each listed close; corporate actions can distort them. Best/worst traded prices are excursions, not captured returns.",
+    bn: "প্রতিটি তালিকাভুক্ত ক্লোজের পরের কাঁচা ডিএসই দাম থেকে ফলাফল হিসাব করা হয়; কর্পোরেট অ্যাকশনে তা বিকৃত হতে পারে। সর্বোচ্চ/সর্বনিম্ন লেনদেন অর্জিত রিটার্ন নয়।",
   },
   "shortlist.whyThese": { en: "Why these five", bn: "কেন এই পাঁচটি" },
   "shortlist.eligible": {

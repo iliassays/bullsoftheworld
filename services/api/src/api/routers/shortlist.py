@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
+from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -49,6 +50,7 @@ from bulls.core.models import (
 router = APIRouter(tags=["shortlist"])
 
 MAX_SIZE = 10
+OUTCOME_HORIZONS = (1, 3, 5, 10)
 
 
 class ShortlistFactOut(BaseModel):
@@ -56,6 +58,14 @@ class ShortlistFactOut(BaseModel):
 
     kind: str
     value: float | None = None
+
+
+class ShortlistHorizonOutcome(BaseModel):
+    """Close-to-close result after a fixed number of later observed sessions."""
+
+    sessions: int
+    close_return_pct: float | None = None
+    as_of: dt.date | None = None
 
 
 class ShortlistRow(BaseModel):
@@ -80,8 +90,15 @@ class ShortlistRow(BaseModel):
     return_since_pct: float | None = None
     # Highest the price traded AFTER the ranking session. An excursion, not a captured return.
     max_went_pct: float | None = None
+    # Lowest the price traded AFTER the ranking session. Also an excursion, not realised P&L.
+    min_went_pct: float | None = None
+    latest_close: float | None = None
     sessions_since: int = 0
     outcome_as_of: dt.date | None = None
+    horizon_returns: list[ShortlistHorizonOutcome] = Field(default_factory=list)
+    # A shortlist row is an appearance, not a unique discovery. These fields make repeats explicit.
+    appearance_number: int | None = None
+    first_recorded_appearance_date: dt.date | None = None
 
 
 class ShortlistResponse(BaseModel):
@@ -129,18 +146,74 @@ def _fact_outputs(values: list | None) -> tuple[list[ShortlistFactOut], list[str
     return outputs, rendered
 
 
-def _outcome(
-    reference_close: float, bars: list[DailyBar]
-) -> tuple[float | None, float | None, int, dt.date | None]:
-    """Measure only bars after discovery; the discovery-session move can never become performance."""
+@dataclass(frozen=True)
+class _MeasuredOutcome:
+    return_since_pct: float | None
+    max_went_pct: float | None
+    min_went_pct: float | None
+    latest_close: float | None
+    sessions_since: int
+    outcome_as_of: dt.date | None
+    horizon_returns: list[ShortlistHorizonOutcome]
+
+
+def _measure_outcome(reference_close: float, bars: list[DailyBar]) -> _MeasuredOutcome:
+    """Measure later observed closes only; never count the attention session as performance."""
+    pending_horizons = [
+        ShortlistHorizonOutcome(sessions=horizon) for horizon in OUTCOME_HORIZONS
+    ]
     if reference_close <= 0 or not bars:
-        return None, None, 0, None
+        return _MeasuredOutcome(
+            return_since_pct=None,
+            max_went_pct=None,
+            min_went_pct=None,
+            latest_close=None,
+            sessions_since=0,
+            outcome_as_of=None,
+            horizon_returns=pending_horizons,
+        )
+
     ordered = sorted(bars, key=lambda bar: bar.date)
     latest = ordered[-1]
     return_since = (latest.close / reference_close - 1.0) * 100.0
     highest = max(bar.high for bar in ordered)
+    lowest = min(bar.low for bar in ordered)
     max_went = (highest / reference_close - 1.0) * 100.0
-    return return_since, max_went, len(ordered), latest.date
+    min_went = (lowest / reference_close - 1.0) * 100.0
+    horizons = [
+        ShortlistHorizonOutcome(
+            sessions=horizon,
+            close_return_pct=(
+                (ordered[horizon - 1].close / reference_close - 1.0) * 100.0
+                if len(ordered) >= horizon
+                else None
+            ),
+            as_of=ordered[horizon - 1].date if len(ordered) >= horizon else None,
+        )
+        for horizon in OUTCOME_HORIZONS
+    ]
+    return _MeasuredOutcome(
+        return_since_pct=return_since,
+        max_went_pct=max_went,
+        min_went_pct=min_went,
+        latest_close=latest.close,
+        sessions_since=len(ordered),
+        outcome_as_of=latest.date,
+        horizon_returns=horizons,
+    )
+
+
+def _outcome(
+    reference_close: float, bars: list[DailyBar]
+) -> tuple[float | None, float | None, int, dt.date | None]:
+    """Backward-compatible compact outcome used by existing API consumers and tests."""
+    measured = _measure_outcome(reference_close, bars)
+    return (
+        measured.return_since_pct,
+        measured.max_went_pct,
+        measured.sessions_since,
+        measured.outcome_as_of,
+    )
 
 
 def _select_archive_date(
@@ -220,14 +293,32 @@ async def _archived_response(
     for bar in outcome_bars:
         bars_by_code[bar.code].append(bar)
 
+    appearance_stats = {
+        code: (first_date, int(appearance_count))
+        for code, first_date, appearance_count in (
+            await session.execute(
+                select(
+                    DailyShortlistState.code,
+                    func.min(DailyShortlistState.as_of_date),
+                    func.count(),
+                )
+                .where(
+                    DailyShortlistState.market == market,
+                    DailyShortlistState.code.in_(codes),
+                    DailyShortlistState.as_of_date <= selected_date,
+                )
+                .group_by(DailyShortlistState.code)
+            )
+        )
+    }
+
     response_rows: list[ShortlistRow] = []
     for row in archived:
         facts, reasons = _fact_outputs(row.facts)
         cautions, unknowns = _fact_outputs(row.cautions)
-        return_since, max_went, sessions_since, outcome_as_of = _outcome(
-            row.close, bars_by_code.get(row.code, [])
-        )
+        outcome = _measure_outcome(row.close, bars_by_code.get(row.code, []))
         name_en, name_bn = names.get(row.code, (None, None))
+        first_appearance, appearance_number = appearance_stats.get(row.code, (None, None))
         response_rows.append(
             ShortlistRow(
                 code=row.code,
@@ -243,10 +334,15 @@ async def _archived_response(
                 cautions=cautions,
                 reasons=reasons,
                 unknowns=unknowns,
-                return_since_pct=return_since,
-                max_went_pct=max_went,
-                sessions_since=sessions_since,
-                outcome_as_of=outcome_as_of,
+                return_since_pct=outcome.return_since_pct,
+                max_went_pct=outcome.max_went_pct,
+                min_went_pct=outcome.min_went_pct,
+                latest_close=outcome.latest_close,
+                sessions_since=outcome.sessions_since,
+                outcome_as_of=outcome.outcome_as_of,
+                horizon_returns=outcome.horizon_returns,
+                appearance_number=appearance_number,
+                first_recorded_appearance_date=first_appearance,
             )
         )
 
@@ -420,6 +516,7 @@ async def daily_shortlist(
                 cautions=[ShortlistFactOut(kind=c.kind, value=c.value) for c in entry.cautions],
                 reasons=entry.reasons,
                 unknowns=entry.unknowns,
+                horizon_returns=_measure_outcome(entry.close, []).horizon_returns,
             )
             for entry in slate.entries
         ],

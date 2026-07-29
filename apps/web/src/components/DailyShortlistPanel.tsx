@@ -12,19 +12,25 @@ import { formatMoney } from "../lib/market";
 // so a new fact kind degrades to English instead of vanishing from the row.
 function renderFact(fact: ShortlistFact, lang: Lang, fallback: string | undefined): string {
   const v = fact.value;
-  const n = (digits: number) => (v == null ? "" : Math.abs(v).toFixed(digits));
+  const n = (digits: number) =>
+    v == null
+      ? ""
+      : new Intl.NumberFormat("bn-BD", {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        }).format(Math.abs(v));
   if (lang !== "bn") return fallback ?? fact.kind;
   switch (fact.kind) {
     case "move":
       return v == null ? fallback ?? fact.kind : `আজ ${n(2)}% ${v >= 0 ? "বেড়েছে" : "কমেছে"}`;
     case "rel_volume":
-      return `20 দিনের গড় ভলিউমের ${n(1)} গুণ লেনদেন`;
+      return `২০ দিনের গড় ভলিউমের ${n(1)} গুণ লেনদেন`;
     case "near_52w_high":
-      return "52-সপ্তাহের সর্বোচ্চের 3%-এর মধ্যে";
+      return "৫২-সপ্তাহের সর্বোচ্চের ৩%-এর মধ্যে";
     case "range_bottom":
-      return "52-সপ্তাহের রেঞ্জের নিচের 15%-এ";
+      return "৫২-সপ্তাহের রেঞ্জের নিচের ১৫%-এ";
     case "at_sma_200":
-      return "200 দিনের গড়ের উপর দাঁড়িয়ে";
+      return "২০০ দিনের গড়ের উপর দাঁড়িয়ে";
     case "pe":
       return `পি/ই ${n(1)} — সর্বশেষ বার্ষিক ইপিএস অনুযায়ী`;
     case "no_fundamentals":
@@ -50,6 +56,17 @@ function formatSessionDate(value: string, lang: Lang): string {
     month: "short",
     year: "numeric",
   }).format(new Date(`${value}T12:00:00Z`));
+}
+
+function formatCompactDate(value: string, lang: Lang): string {
+  return new Intl.DateTimeFormat(lang === "bn" ? "bn-BD" : "en-GB", {
+    day: "numeric",
+    month: "short",
+  }).format(new Date(`${value}T12:00:00Z`));
+}
+
+function formatCount(value: number, lang: Lang): string {
+  return new Intl.NumberFormat(lang === "bn" ? "bn-BD" : "en-GB").format(value);
 }
 
 function OutcomePct({ value }: { value: number }) {
@@ -110,28 +127,17 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
   const canGoOlder = dateIndex >= 0 && dateIndex < dates.length - 1;
   const canGoNewer = dateIndex > 0;
   const historical = Boolean(data.latest_date && data.as_of !== data.latest_date);
+  const sessionKind = historical ? t("shortlist.archiveSession") : t("shortlist.latestSession");
+  const sessionContext = historical ? t("shortlist.archiveContext") : t("shortlist.sessionContext");
 
   return (
     <section
-      className={`bg-surface border border-border rounded-2xl p-4 flex flex-col gap-3 ${loading ? "opacity-70" : ""}`}
+      className={`flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 ${loading ? "opacity-70" : ""}`}
       aria-busy={loading}
     >
       <header className="flex flex-col gap-1">
-        <h2 className="font-semibold text-sm">🔎 {t("shortlist.title")}</h2>
+        <h2 className="text-sm font-semibold">🔎 {t("shortlist.title")}</h2>
         <p className="text-xs text-muted">{t("shortlist.subtitle")}</p>
-        {historical ? (
-          <div className="text-[10px] text-muted">
-            {lang === "bn" ? "আর্কাইভ সেশন" : "Archived session"} ·{" "}
-            {formatSessionDate(data.as_of, lang)}
-          </div>
-        ) : (
-          <FreshnessTag
-            asOf={data.as_of}
-            quoteAsOf={data.quote_as_of}
-            refreshOffsetMinutes={9}
-            className="mt-0.5"
-          />
-        )}
       </header>
 
       {dates.length > 0 && (
@@ -176,6 +182,20 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
         </div>
       )}
 
+      <div className="px-0.5">
+        <p className="text-[11px] text-muted">
+          <strong className="font-semibold text-text">{sessionKind}</strong> · {sessionContext}
+        </p>
+        {!historical && (
+          <FreshnessTag
+            asOf={data.as_of}
+            quoteAsOf={data.quote_as_of}
+            refreshOffsetMinutes={9}
+            className="mt-1"
+          />
+        )}
+      </div>
+
       {data.evidence_mode === "reconstructed" && (
         <p className="rounded-lg border border-accent/30 bg-accent/8 px-3 py-2 text-[11px] leading-relaxed text-muted">
           {t("shortlist.reconstructed")}
@@ -192,12 +212,38 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
           // Some DSE rows carry name_en equal to the code; showing both reads as a stutter.
           const raw = (lang === "bn" ? row.name_bn : row.name_en) || row.name_en || "";
           const name = raw.toUpperCase() === row.code.toUpperCase() ? "" : raw;
+          const supportingFacts = row.facts.filter((fact) => fact.kind !== "move");
+          const horizonBySession = new Map(
+            (row.horizon_returns ?? []).map((outcome) => [outcome.sessions, outcome]),
+          );
+          const horizons = [1, 3, 5, 10].map(
+            (sessions) =>
+              horizonBySession.get(sessions) ?? {
+                sessions,
+                close_return_pct: null,
+                as_of: null,
+              },
+          );
+          const appearanceText =
+            row.appearance_number != null
+              ? t("shortlist.appearanceNumber").replace(
+                  "{n}",
+                  formatCount(row.appearance_number, lang),
+                )
+              : null;
+          const firstRecordedText = row.first_recorded_appearance_date
+            ? t("shortlist.firstRecorded").replace(
+                "{date}",
+                formatCompactDate(row.first_recorded_appearance_date, lang),
+              )
+            : null;
+
           return (
-            <li key={row.code} className="border border-border rounded-xl p-3">
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+            <li key={row.code} className="overflow-hidden rounded-lg border border-border bg-card">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 p-3">
                 <div className="flex items-center gap-2">
                   <span className="w-4 shrink-0 text-xs text-muted">{row.rank}</span>
-                  <CompanyLogo code={row.code} size={28} />
+                  <CompanyLogo code={row.code} size={30} />
                 </div>
                 <div className="min-w-0">
                   <Link to={`/s/${row.code}`} className="block truncate text-sm font-semibold">
@@ -206,58 +252,162 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
                   {name && <div className="truncate text-[11px] text-muted">{name}</div>}
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-sm tabular-nums">{formatMoney(row.close)}</div>
-                  {row.change_pct != null && <Pct value={row.change_pct} />}
+                  <div className="text-[10px] text-muted">
+                    {formatCompactDate(data.as_of, lang)} · {t("shortlist.listedClose")}
+                  </div>
+                  <div className="text-sm font-semibold tabular-nums">{formatMoney(row.close)}</div>
+                  {row.change_pct != null && (
+                    <div className="mt-0.5 text-[10px] text-muted">
+                      {t("shortlist.sessionMove")}{" "}
+                      <span className="text-xs font-semibold">
+                        <Pct value={row.change_pct} />
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {row.facts.length > 0 && (
-                <ul className="mt-2 flex flex-col gap-0.5">
-                  {row.facts.map((fact, i) => (
-                    <li key={fact.kind} className="text-xs text-muted">
-                      · {renderFact(fact, lang, row.reasons[i])}
-                    </li>
-                  ))}
-                </ul>
+              {(supportingFacts.length > 0 || row.cautions.length > 0) && (
+                <div className="border-t border-border px-3 py-2.5">
+                  <div className="text-[11px] font-semibold">
+                    {t("shortlist.whyAppeared")} · {formatCompactDate(data.as_of, lang)}
+                  </div>
+                  {supportingFacts.length > 0 && (
+                    <ul className="mt-1.5 flex flex-col gap-0.5">
+                      {supportingFacts.map((fact) => {
+                        const originalIndex = row.facts.indexOf(fact);
+                        return (
+                          <li key={fact.kind} className="text-xs text-muted">
+                            · {renderFact(fact, lang, row.reasons[originalIndex])}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {/* Omit-over-mislead: the gaps are shown on the row, never quietly dropped. */}
+                  {row.cautions.length > 0 && (
+                    <ul className="mt-1.5 flex flex-col gap-0.5">
+                      {row.cautions.map((caution, i) => (
+                        <li key={caution.kind} className="text-xs text-down">
+                          ⚠ {renderFact(caution, lang, row.unknowns[i])}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
 
-              {/* Omit-over-mislead: the gaps are shown on the row, never quietly dropped. */}
-              {row.cautions.length > 0 && (
-                <ul className="mt-1.5 flex flex-col gap-0.5">
-                  {row.cautions.map((caution, i) => (
-                    <li key={caution.kind} className="text-xs text-down">
-                      ⚠ {renderFact(caution, lang, row.unknowns[i])}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border pt-2">
-                <div className="min-w-0">
-                  <div className="text-[10px] text-muted">{t("shortlist.latestReturn")}</div>
+              <div className="border-t border-border px-3 py-2.5">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] font-semibold">
+                      {t("shortlist.afterAppearance")}
+                    </div>
+                    {row.outcome_as_of && (
+                      <div className="mt-0.5 text-[10px] text-muted">
+                        {t("shortlist.outcomeThrough").replace(
+                          "{date}",
+                          formatCompactDate(row.outcome_as_of, lang),
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {row.return_since_pct == null ? (
-                    <div className="mt-0.5 text-[11px] text-muted">{t("shortlist.noOutcome")}</div>
+                    <div className="text-[11px] text-muted">{t("shortlist.noOutcome")}</div>
                   ) : (
                     <OutcomePct value={row.return_since_pct} />
                   )}
                 </div>
-                <div className="min-w-0">
-                  <div className="text-[10px] text-muted">{t("shortlist.peakMove")}</div>
-                  {row.max_went_pct == null ? (
-                    <div className="mt-0.5 text-[11px] text-muted">{t("shortlist.noOutcome")}</div>
-                  ) : (
-                    <OutcomePct value={row.max_went_pct} />
-                  )}
+
+                <div className="mt-2 grid grid-cols-4 gap-1.5">
+                  {horizons.map((outcome) => {
+                    const label =
+                      outcome.sessions === 1
+                        ? t("shortlist.afterOneSession")
+                        : t("shortlist.afterSessions").replace(
+                            "{n}",
+                            formatCount(outcome.sessions, lang),
+                          );
+                    return (
+                      <div
+                        key={outcome.sessions}
+                        className="min-w-0 rounded-md border border-border bg-surface px-2 py-1.5"
+                        title={
+                          outcome.as_of
+                            ? `${label} · ${formatSessionDate(outcome.as_of, lang)}`
+                            : label
+                        }
+                      >
+                        <div className="text-[10px] font-semibold text-muted">
+                          {formatCount(outcome.sessions, lang)}
+                          {lang === "bn" ? "স" : "S"}
+                        </div>
+                        <div className="mt-0.5 text-xs font-semibold">
+                          {outcome.close_return_pct == null ? (
+                            <span className="text-muted">{t("shortlist.pending")}</span>
+                          ) : (
+                            <OutcomePct value={outcome.close_return_pct} />
+                          )}
+                        </div>
+                        {outcome.as_of && (
+                          <div className="mt-0.5 text-[10px] text-muted">
+                            {formatCompactDate(outcome.as_of, lang)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+
+                <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border pt-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-muted">
+                      {t("shortlist.latestCompletedClose")}
+                    </div>
+                    <div className="mt-0.5 text-xs font-semibold tabular-nums">
+                      {row.latest_close == null ? "—" : formatMoney(row.latest_close)}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-muted">
+                      {t("shortlist.bestWorstTraded")}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs">
+                      {row.max_went_pct == null || row.min_went_pct == null ? (
+                        <span className="text-muted">{t("shortlist.pending")}</span>
+                      ) : (
+                        <>
+                          <OutcomePct value={row.max_went_pct} />
+                          <span className="text-muted">/</span>
+                          <OutcomePct value={row.min_went_pct} />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {(appearanceText || firstRecordedText) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-2 text-[10px] text-muted">
+                    {appearanceText && <span>{appearanceText}</span>}
+                    {firstRecordedText &&
+                      row.first_recorded_appearance_date &&
+                      dates.includes(row.first_recorded_appearance_date) && (
+                        <button
+                          type="button"
+                          className="cursor-pointer text-accent underline decoration-accent/40 underline-offset-2"
+                          onClick={() => chooseDate(row.first_recorded_appearance_date!)}
+                        >
+                          {firstRecordedText}
+                        </button>
+                      )}
+                    {firstRecordedText &&
+                      (!row.first_recorded_appearance_date ||
+                        !dates.includes(row.first_recorded_appearance_date)) && (
+                        <span>{firstRecordedText}</span>
+                    )}
+                  </div>
+                )}
               </div>
-              {row.sessions_since > 0 && (
-                <div className="mt-1 text-[10px] text-muted">
-                  {row.sessions_since} {t("shortlist.sessions")}
-                  {row.outcome_as_of
-                    ? ` · ${lang === "bn" ? "ফলাফল" : "outcome through"} ${formatSessionDate(row.outcome_as_of, lang)}`
-                    : ""}
-                </div>
-              )}
             </li>
           );
         })}
@@ -268,7 +418,10 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
         {t("shortlist.evidence")}
       </p>
       {dates.length > 0 && (
-        <p className="text-[10px] leading-relaxed text-muted">{t("shortlist.outcomeCaveat")}</p>
+        <>
+          <p className="text-[10px] leading-relaxed text-muted">{t("shortlist.outcomeHelp")}</p>
+          <p className="text-[10px] leading-relaxed text-muted">{t("shortlist.outcomeCaveat")}</p>
+        </>
       )}
     </section>
   );
