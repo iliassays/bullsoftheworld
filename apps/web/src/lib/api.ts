@@ -469,6 +469,68 @@ export interface DailyShortlist {
   notes: string[];
   source: "bulls_daily_shortlist_eod";
 }
+export interface ShortlistHorizonPerformance {
+  sessions: number;
+  matured_appearances: number;
+  observations: number;
+  benchmark_observations: number;
+  pending_appearances: number;
+  missing_bar_appearances: number;
+  suspicious_price_paths: number;
+  coverage_pct?: number | null;
+  mean_return_pct?: number | null;
+  median_return_pct?: number | null;
+  positive_rate_pct?: number | null;
+  mean_benchmark_return_pct?: number | null;
+  mean_excess_return_pct?: number | null;
+  median_excess_return_pct?: number | null;
+  excess_ci_low_pct?: number | null;
+  excess_ci_high_pct?: number | null;
+  next_open_observations: number;
+  limit_locked_entries: number;
+  next_open_mean_return_pct?: number | null;
+  next_open_median_return_pct?: number | null;
+  next_open_positive_rate_pct?: number | null;
+}
+export interface ShortlistPerformanceCohort {
+  key: "independent_episodes" | "all_appearances" | "forward_only";
+  appearances: number;
+  selection_sessions: number;
+  first_selection_date?: string | null;
+  last_selection_date?: string | null;
+  horizons: ShortlistHorizonPerformance[];
+}
+export interface ShortlistArchiveIntegrity {
+  rows: number;
+  sessions: number;
+  matched_selection_closes: number;
+  missing_selection_bars: number;
+  close_mismatches: number;
+  matched_selection_moves: number;
+  missing_move_inputs: number;
+  move_mismatches: number;
+  incomplete_sessions: number;
+  invalid_rank_sessions: number;
+  methodology_versions: string[];
+}
+export interface DailyShortlistPerformance {
+  market: string;
+  as_of?: string | null;
+  all_appearances: number;
+  forward_appearances: number;
+  reconstructed_appearances: number;
+  independent_episodes: number;
+  cohorts: ShortlistPerformanceCohort[];
+  integrity: ShortlistArchiveIntegrity;
+  edge_status:
+    | "insufficient_history"
+    | "no_observed_excess"
+    | "positive_but_unproven"
+    | "positive_diagnostic_requires_forward_validation";
+  primary_horizon_sessions: number;
+  caveats: string[];
+  source: "daily_shortlist_archive_and_dse_eod";
+}
 export interface ScreensResponse {
   as_of: string | null; // EOD analytics date — screen rankings are as-of this close
   quote_as_of?: string | null; // latest 15-min quote snapshot — price/"today's move" freshness
@@ -1144,6 +1206,8 @@ export const api = {
     if (asOf) params.set("as_of", asOf);
     return request<DailyShortlist>(`/shortlist/daily?${params.toString()}`);
   },
+  dailyShortlistPerformance: () =>
+    request<DailyShortlistPerformance>("/shortlist/daily/performance"),
   scannerRadar: (tab: string, watched: boolean, limit?: number, size?: string) => {
     const params = new URLSearchParams({ tab });
     if (watched) params.set("watched", "true");

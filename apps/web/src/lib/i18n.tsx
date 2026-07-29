@@ -139,8 +139,8 @@ const STRINGS: Record<string, Entry> = {
     bn: "প্রথম রেকর্ড {date}",
   },
   "shortlist.outcomeHelp": {
-    en: "Returns start from this list's close. S means a later completed session with an observed close for this company.",
-    bn: "রিটার্ন এই তালিকার ক্লোজ থেকে শুরু। ‘স’ মানে কোম্পানিটির ক্লোজ পাওয়া গেছে এমন পরবর্তী সম্পূর্ণ সেশন।",
+    en: "Returns start from this list's close. S means an exact later DSE session; a missing company close remains unavailable and is not shifted to another day.",
+    bn: "রিটার্ন এই তালিকার ক্লোজ থেকে শুরু। ‘স’ মানে ডিএসইর ঠিক পরবর্তী সেশন; কোম্পানির ক্লোজ না থাকলে তা অন্য দিনের নামে দেখানো হয় না।",
   },
   "shortlist.sessions": { en: "sessions", bn: "সেশন" },
   "shortlist.noOutcome": {
@@ -160,6 +160,79 @@ const STRINGS: Record<string, Entry> = {
   "shortlist.evidence": {
     en: "Over 232 tested sessions, no selection rule beat picking at random from the same pool. This ranks attention, not expected return.",
     bn: "২৩২টি পরীক্ষিত সেশনে কোনো বাছাই-নিয়মই একই পুল থেকে এলোমেলো বাছাইকে হারাতে পারেনি। এটি মনোযোগের ক্রম, প্রত্যাশিত রিটার্ন নয়।",
+  },
+  "shortlist.performanceTitle": {
+    en: "Measured historical follow-through",
+    bn: "পরিমাপ করা ঐতিহাসিক পরবর্তী ফল",
+  },
+  "shortlist.performanceSubtitle": {
+    en: "Independent appearances, exact DSE sessions and DSEX comparison",
+    bn: "স্বতন্ত্র উপস্থিতি, নির্দিষ্ট ডিএসই সেশন ও ডিএসইএক্স তুলনা",
+  },
+  "shortlist.performanceInsufficient": {
+    en: "Too little history",
+    bn: "ইতিহাস এখনও কম",
+  },
+  "shortlist.performanceNoExcess": {
+    en: "No measured edge",
+    bn: "পরিমাপযোগ্য বাড়তি সুবিধা নেই",
+  },
+  "shortlist.performanceUnproven": {
+    en: "Positive, not proven",
+    bn: "ইতিবাচক, প্রমাণিত নয়",
+  },
+  "shortlist.performanceDiagnostic": {
+    en: "Promising diagnostic",
+    bn: "আশাব্যঞ্জক প্রাথমিক ফল",
+  },
+  "shortlist.performanceEpisodes": {
+    en: "{n} independent episodes",
+    bn: "{n}টি স্বতন্ত্র পর্ব",
+  },
+  "shortlist.performanceRange": {
+    en: "{from} to {to}",
+    bn: "{from} থেকে {to}",
+  },
+  "shortlist.performanceHorizon": { en: "Later", bn: "পরে" },
+  "shortlist.performanceMedian": { en: "Median", bn: "মধ্যমা" },
+  "shortlist.performancePositive": { en: "Positive", bn: "ইতিবাচক" },
+  "shortlist.performanceVsIndex": { en: "Avg vs DSEX", bn: "ডিএসইএক্সের চেয়ে গড়" },
+  "shortlist.performanceNextOpen": {
+    en: "Gross next-open proxy at {n}S: median {value} from {count} observable entries",
+    bn: "{n} সেশনে পরের ওপেনের স্থূল হিসাব: {count}টি পর্যবেক্ষণযোগ্য এন্ট্রিতে মধ্যমা {value}",
+  },
+  "shortlist.performanceCoverage": {
+    en: "{observed} of {matured} matured episodes measured",
+    bn: "পরিণত {matured}টি পর্বের মধ্যে {observed}টি পরিমাপ করা হয়েছে",
+  },
+  "shortlist.performanceBenchmarkCoverage": {
+    en: "DSEX comparison available for {benchmark} of {observed} measured episodes",
+    bn: "পরিমাপ করা {observed}টি পর্বের মধ্যে {benchmark}টির ডিএসইএক্স তুলনা পাওয়া গেছে",
+  },
+  "shortlist.performanceAudit": { en: "Archive audit", bn: "আর্কাইভ যাচাই" },
+  "shortlist.performanceAuditClean": {
+    en: "{closes} closes and {moves} session moves reconciled; no mismatch found",
+    bn: "{closes}টি ক্লোজ ও {moves}টি সেশন পরিবর্তন মিলেছে; কোনো অমিল পাওয়া যায়নি",
+  },
+  "shortlist.performanceAuditIssue": {
+    en: "{n} archive mismatch or incomplete session requires review",
+    bn: "{n}টি আর্কাইভ অমিল বা অসম্পূর্ণ সেশন পর্যালোচনা দরকার",
+  },
+  "shortlist.performanceEvidenceMix": {
+    en: "{forward} forward appearances · {reconstructed} reconstructed appearances",
+    bn: "{forward}টি সরাসরি রেকর্ড · {reconstructed}টি পুনর্গঠিত রেকর্ড",
+  },
+  "shortlist.performanceMethod": {
+    en: "How this is measured",
+    bn: "কীভাবে পরিমাপ করা হয়েছে",
+  },
+  "shortlist.performanceMethodCopy": {
+    en: "The headline cohort counts repeat appearances within 10 DSE sessions as one episode. Selection-close results are follow-through, not executable P&L. The next-open proxy excludes obvious limit-locked opens and includes no fees or slippage. Reconstructed rows have survivorship bias.",
+    bn: "মূল হিসাবে ১০ ডিএসই সেশনের মধ্যে একই শেয়ারের পুনরাবৃত্ত উপস্থিতিকে একটি পর্ব ধরা হয়েছে। তালিকার ক্লোজ থেকে ফল পরবর্তী গতিবিধি, বাস্তব লেনদেনের লাভ-ক্ষতি নয়। পরের ওপেনের হিসাবে স্পষ্ট লিমিট-লকড ওপেন বাদ দেওয়া হয়েছে এবং ফি বা স্লিপেজ ধরা হয়নি। পুনর্গঠিত রেকর্ডে সারভাইভারশিপ বায়াস আছে।",
+  },
+  "shortlist.performanceUnavailable": {
+    en: "Historical evidence is temporarily unavailable.",
+    bn: "ঐতিহাসিক ফলাফল সাময়িকভাবে পাওয়া যাচ্ছে না।",
   },
   "shortlist.unavailable": {
     en: "Today's shortlist is unavailable. Try again shortly.",

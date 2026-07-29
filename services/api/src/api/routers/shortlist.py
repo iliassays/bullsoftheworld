@@ -24,10 +24,13 @@ from __future__ import annotations
 
 import datetime as dt
 from collections import defaultdict
-from dataclasses import dataclass
+from contextlib import suppress
+from dataclasses import asdict, dataclass
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from redis.exceptions import RedisError
 from sqlalchemy import and_, func, select
 
 from api.deps import CurrentTenant, DbSession, enforce_market_feature
@@ -39,10 +42,19 @@ from bulls.analytics.daily_shortlist import (
     build_daily_shortlist,
     render_fact_en,
 )
+from bulls.analytics.daily_shortlist_performance import (
+    ArchiveIntegrity,
+    BenchmarkClose,
+    ShortlistAppearance,
+    ShortlistPriceBar,
+    evaluate_shortlist_performance,
+)
+from bulls.core.config import get_settings
 from bulls.core.models import (
     CompanyProfile,
     DailyBar,
     DailyShortlistState,
+    MarketSummary,
     Symbol,
     TickerAnalytics,
 )
@@ -123,6 +135,68 @@ class ShortlistResponse(BaseModel):
     base_rates: dict = Field(default_factory=lambda: dict(BASE_RATES))
     notes: list[str]
     source: str = "bulls_daily_shortlist_eod"
+
+
+class ShortlistArchiveIntegrityOut(BaseModel):
+    rows: int
+    sessions: int
+    matched_selection_closes: int
+    missing_selection_bars: int
+    close_mismatches: int
+    matched_selection_moves: int
+    missing_move_inputs: int
+    move_mismatches: int
+    incomplete_sessions: int
+    invalid_rank_sessions: int
+    methodology_versions: list[str]
+
+
+class ShortlistHorizonPerformanceOut(BaseModel):
+    sessions: int
+    matured_appearances: int
+    observations: int
+    benchmark_observations: int
+    pending_appearances: int
+    missing_bar_appearances: int
+    suspicious_price_paths: int
+    coverage_pct: float | None = None
+    mean_return_pct: float | None = None
+    median_return_pct: float | None = None
+    positive_rate_pct: float | None = None
+    mean_benchmark_return_pct: float | None = None
+    mean_excess_return_pct: float | None = None
+    median_excess_return_pct: float | None = None
+    excess_ci_low_pct: float | None = None
+    excess_ci_high_pct: float | None = None
+    next_open_observations: int
+    limit_locked_entries: int
+    next_open_mean_return_pct: float | None = None
+    next_open_median_return_pct: float | None = None
+    next_open_positive_rate_pct: float | None = None
+
+
+class ShortlistPerformanceCohortOut(BaseModel):
+    key: str
+    appearances: int
+    selection_sessions: int
+    first_selection_date: dt.date | None = None
+    last_selection_date: dt.date | None = None
+    horizons: list[ShortlistHorizonPerformanceOut]
+
+
+class ShortlistPerformanceResponse(BaseModel):
+    market: str
+    as_of: dt.date | None = None
+    all_appearances: int
+    forward_appearances: int
+    reconstructed_appearances: int
+    independent_episodes: int
+    cohorts: list[ShortlistPerformanceCohortOut]
+    integrity: ShortlistArchiveIntegrityOut
+    edge_status: str
+    primary_horizon_sessions: int = 5
+    caveats: list[str]
+    source: str = "daily_shortlist_archive_and_dse_eod"
 
 
 def _range_position_pct(row: TickerAnalytics) -> float | None:
@@ -216,6 +290,71 @@ def _outcome(
     )
 
 
+def _measure_market_session_outcome(
+    reference_close: float,
+    bars: list[DailyBar],
+    market_dates: list[dt.date],
+) -> _MeasuredOutcome:
+    """Measure exact DSE-session horizons without carrying missing ticker bars forward."""
+    pending_horizons = [
+        ShortlistHorizonOutcome(sessions=horizon) for horizon in OUTCOME_HORIZONS
+    ]
+    if reference_close <= 0 or not market_dates:
+        return _MeasuredOutcome(
+            return_since_pct=None,
+            max_went_pct=None,
+            min_went_pct=None,
+            latest_close=None,
+            sessions_since=len(market_dates),
+            outcome_as_of=None,
+            horizon_returns=pending_horizons,
+        )
+
+    bars_by_date = {bar.date: bar for bar in bars if bar.close > 0}
+    observed = [bars_by_date[date] for date in market_dates if date in bars_by_date]
+    latest = bars_by_date.get(market_dates[-1])
+    horizon_returns: list[ShortlistHorizonOutcome] = []
+    for horizon in OUTCOME_HORIZONS:
+        if len(market_dates) < horizon:
+            horizon_returns.append(ShortlistHorizonOutcome(sessions=horizon))
+            continue
+        target_date = market_dates[horizon - 1]
+        target_bar = bars_by_date.get(target_date)
+        horizon_returns.append(
+            ShortlistHorizonOutcome(
+                sessions=horizon,
+                close_return_pct=(
+                    (target_bar.close / reference_close - 1.0) * 100.0
+                    if target_bar is not None
+                    else None
+                ),
+                as_of=target_date if target_bar is not None else None,
+            )
+        )
+
+    return _MeasuredOutcome(
+        return_since_pct=(
+            (latest.close / reference_close - 1.0) * 100.0
+            if latest is not None
+            else None
+        ),
+        max_went_pct=(
+            (max(bar.high for bar in observed) / reference_close - 1.0) * 100.0
+            if observed
+            else None
+        ),
+        min_went_pct=(
+            (min(bar.low for bar in observed) / reference_close - 1.0) * 100.0
+            if observed
+            else None
+        ),
+        latest_close=latest.close if latest is not None else None,
+        sessions_since=len(market_dates),
+        outcome_as_of=latest.date if latest is not None else None,
+        horizon_returns=horizon_returns,
+    )
+
+
 def _select_archive_date(
     available_dates: list[dt.date], requested_date: dt.date | None
 ) -> dt.date | None:
@@ -292,6 +431,17 @@ async def _archived_response(
     bars_by_code: dict[str, list[DailyBar]] = defaultdict(list)
     for bar in outcome_bars:
         bars_by_code[bar.code].append(bar)
+    future_market_dates = list(
+        await session.scalars(
+            select(DailyBar.date)
+            .where(
+                DailyBar.market == market,
+                DailyBar.date > selected_date,
+            )
+            .distinct()
+            .order_by(DailyBar.date)
+        )
+    )
 
     appearance_stats = {
         code: (first_date, int(appearance_count))
@@ -316,7 +466,11 @@ async def _archived_response(
     for row in archived:
         facts, reasons = _fact_outputs(row.facts)
         cautions, unknowns = _fact_outputs(row.cautions)
-        outcome = _measure_outcome(row.close, bars_by_code.get(row.code, []))
+        outcome = _measure_market_session_outcome(
+            row.close,
+            bars_by_code.get(row.code, []),
+            future_market_dates,
+        )
         name_en, name_bn = names.get(row.code, (None, None))
         first_appearance, appearance_number = appearance_stats.get(row.code, (None, None))
         response_rows.append(
@@ -364,6 +518,255 @@ async def _archived_response(
         base_rates=dict(first.base_rates or BASE_RATES),
         notes=list(first.notes or []),
     )
+
+
+def _archive_integrity(
+    snapshots: list[DailyShortlistState],
+    bars: list[DailyBar],
+    market_dates: list[dt.date],
+) -> ArchiveIntegrity:
+    """Reconcile archived shortlist inputs against immutable daily bars."""
+    bars_by_key = {(bar.code, bar.date): bar for bar in bars}
+    date_index = {date: index for index, date in enumerate(market_dates)}
+    snapshots_by_date: dict[dt.date, list[DailyShortlistState]] = defaultdict(list)
+    matched_closes = missing_closes = close_mismatches = 0
+    matched_moves = missing_moves = move_mismatches = 0
+
+    for row in snapshots:
+        snapshots_by_date[row.as_of_date].append(row)
+        bar = bars_by_key.get((row.code, row.as_of_date))
+        if bar is None or bar.close <= 0:
+            missing_closes += 1
+        elif abs(bar.close - row.close) <= max(0.01, abs(row.close) * 0.0001):
+            matched_closes += 1
+        else:
+            close_mismatches += 1
+
+        index = date_index.get(row.as_of_date)
+        previous_date = market_dates[index - 1] if index is not None and index > 0 else None
+        previous = bars_by_key.get((row.code, previous_date)) if previous_date else None
+        if (
+            row.change_pct is None
+            or bar is None
+            or bar.close <= 0
+            or previous is None
+            or previous.close <= 0
+        ):
+            missing_moves += 1
+            continue
+        calculated = (bar.close / previous.close - 1.0) * 100.0
+        if abs(calculated - row.change_pct) <= 0.02:
+            matched_moves += 1
+        else:
+            move_mismatches += 1
+
+    incomplete_sessions = 0
+    invalid_rank_sessions = 0
+    for rows in snapshots_by_date.values():
+        expected_size = max(row.slate_size for row in rows)
+        if len(rows) != expected_size:
+            incomplete_sessions += 1
+        ranks = sorted(row.rank for row in rows)
+        if ranks != list(range(1, len(rows) + 1)):
+            invalid_rank_sessions += 1
+
+    return ArchiveIntegrity(
+        rows=len(snapshots),
+        sessions=len(snapshots_by_date),
+        matched_selection_closes=matched_closes,
+        missing_selection_bars=missing_closes,
+        close_mismatches=close_mismatches,
+        matched_selection_moves=matched_moves,
+        missing_move_inputs=missing_moves,
+        move_mismatches=move_mismatches,
+        incomplete_sessions=incomplete_sessions,
+        invalid_rank_sessions=invalid_rank_sessions,
+        methodology_versions=tuple(sorted({row.methodology_version for row in snapshots})),
+    )
+
+
+def _performance_edge_status(cohorts: list[ShortlistPerformanceCohortOut]) -> str:
+    primary = next((cohort for cohort in cohorts if cohort.key == "independent_episodes"), None)
+    metric = (
+        next((item for item in primary.horizons if item.sessions == 5), None)
+        if primary is not None
+        else None
+    )
+    if metric is None or metric.observations < 30 or metric.benchmark_observations < 30:
+        return "insufficient_history"
+    if metric.mean_excess_return_pct is None or metric.mean_excess_return_pct <= 0:
+        return "no_observed_excess"
+    if (
+        metric.excess_ci_low_pct is not None
+        and metric.excess_ci_low_pct > 0
+        and metric.next_open_mean_return_pct is not None
+        and metric.next_open_mean_return_pct > 0
+    ):
+        return "positive_diagnostic_requires_forward_validation"
+    return "positive_but_unproven"
+
+
+async def _cached_performance(key: str) -> ShortlistPerformanceResponse | None:
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        cached = await redis.get(key)
+        return ShortlistPerformanceResponse.model_validate_json(cached) if cached else None
+    except RedisError:
+        return None
+    finally:
+        with suppress(RedisError):
+            await redis.aclose()
+
+
+async def _cache_performance(key: str, response: ShortlistPerformanceResponse) -> None:
+    redis = aioredis.from_url(get_settings().redis_url)
+    try:
+        await redis.set(key, response.model_dump_json(), ex=6 * 60 * 60)
+    except RedisError:
+        pass
+    finally:
+        with suppress(RedisError):
+            await redis.aclose()
+
+
+@router.get("/shortlist/daily/performance")
+async def daily_shortlist_performance(
+    tenant: CurrentTenant,
+    session: DbSession,
+) -> ShortlistPerformanceResponse:
+    """Publish auditable DSE shortlist follow-through, not a simulated trading claim."""
+    enforce_market_feature(tenant, "interpreted_analytics")
+    market = tenant.market
+    if market != "DSE":
+        raise HTTPException(
+            status_code=404,
+            detail="Daily Shortlist performance is not validated for this market",
+        )
+
+    archive_date, archive_rows = (
+        await session.execute(
+            select(
+                func.max(DailyShortlistState.as_of_date),
+                func.count(),
+            ).where(DailyShortlistState.market == market)
+        )
+    ).one()
+    if archive_date is None or not archive_rows:
+        raise HTTPException(status_code=404, detail="No archived shortlist is available")
+
+    cache_key = (
+        f"shortlist:performance:v2:{tenant.name}:{market}:{archive_date}:{archive_rows}"
+    )
+    if cached := await _cached_performance(cache_key):
+        return cached
+
+    snapshots = list(
+        await session.scalars(
+            select(DailyShortlistState)
+            .where(DailyShortlistState.market == market)
+            .order_by(
+                DailyShortlistState.as_of_date,
+                DailyShortlistState.rank,
+                DailyShortlistState.code,
+            )
+        )
+    )
+    codes = sorted({row.code for row in snapshots})
+    history_start = min(row.as_of_date for row in snapshots) - dt.timedelta(days=30)
+    market_summaries = list(
+        await session.scalars(
+            select(MarketSummary)
+            .where(
+                MarketSummary.market == market,
+                MarketSummary.date >= history_start,
+                MarketSummary.dsex.is_not(None),
+                MarketSummary.dsex > 0,
+            )
+            .order_by(MarketSummary.date)
+        )
+    )
+    market_dates = list(
+        await session.scalars(
+            select(DailyBar.date)
+            .where(
+                DailyBar.market == market,
+                DailyBar.date >= history_start,
+            )
+            .distinct()
+            .order_by(DailyBar.date)
+        )
+    )
+    bars = list(
+        await session.scalars(
+            select(DailyBar)
+            .where(
+                DailyBar.market == market,
+                DailyBar.code.in_(codes),
+                DailyBar.date >= history_start,
+            )
+            .order_by(DailyBar.code, DailyBar.date)
+        )
+    )
+    benchmark = [
+        BenchmarkClose(date=row.date, close=float(row.dsex))
+        for row in market_summaries
+        if row.dsex is not None
+    ]
+    report = evaluate_shortlist_performance(
+        appearances=[
+            ShortlistAppearance(
+                code=row.code,
+                as_of=row.as_of_date,
+                close=row.close,
+                rank=row.rank,
+                evidence_mode=row.evidence_mode,
+            )
+            for row in snapshots
+        ],
+        bars=[
+            ShortlistPriceBar(
+                code=bar.code,
+                date=bar.date,
+                open=bar.open,
+                high=bar.high,
+                low=bar.low,
+                close=bar.close,
+            )
+            for bar in bars
+        ],
+        benchmark=benchmark,
+        market_dates=market_dates,
+    )
+    cohorts = [
+        ShortlistPerformanceCohortOut.model_validate(asdict(cohort))
+        for cohort in report.cohorts
+    ]
+    integrity = _archive_integrity(
+        snapshots,
+        bars,
+        market_dates,
+    )
+    response = ShortlistPerformanceResponse(
+        market=market,
+        as_of=report.as_of,
+        all_appearances=report.all_appearances,
+        forward_appearances=report.forward_appearances,
+        reconstructed_appearances=report.reconstructed_appearances,
+        independent_episodes=report.independent_episodes,
+        cohorts=cohorts,
+        integrity=ShortlistArchiveIntegrityOut.model_validate(asdict(integrity)),
+        edge_status=_performance_edge_status(cohorts),
+        caveats=[
+            "Selection-close returns measure follow-through, not an executable trade.",
+            "Next-open returns are a gross proxy: no fees or slippage, and OHLC cannot prove a fill.",
+            "Repeated appearances within 10 DSE sessions count as one independent episode.",
+            "Reconstructed history excludes subsequently delisted names and is survivorship-biased.",
+            "Price paths with a close-to-close jump above 35% are excluded as possible adjustments.",
+            "Confidence intervals cluster same-day names; overlapping horizons remain descriptive.",
+        ],
+    )
+    await _cache_performance(cache_key, response)
+    return response
 
 
 @router.get("/shortlist/daily")

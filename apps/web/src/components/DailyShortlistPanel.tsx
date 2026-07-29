@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CompanyLogo } from "./CompanyLogo";
 import { FreshnessTag } from "./FreshnessTag";
+import { ShortlistPerformanceEvidence } from "./ShortlistPerformanceEvidence";
 import { Link } from "../lib/nav";
 import { Empty, Pct, Spinner } from "./ui";
 import { api, type DailyShortlist, type ShortlistFact } from "../lib/api";
@@ -412,6 +413,8 @@ export function DailyShortlistPanel({ size = 5 }: { size?: number }) {
           );
         })}
       </ol>
+
+      <ShortlistPerformanceEvidence />
 
       {/* Not dismissible and not behind a tooltip: the measured base rate is the honest frame. */}
       <p className="text-[11px] text-muted border-t border-border pt-2">

@@ -15,14 +15,16 @@ from api.routers.shortlist import (
     ShortlistFactOut,
     ShortlistResponse,
     ShortlistRow,
+    _archive_integrity,
     _fact_outputs,
+    _measure_market_session_outcome,
     _measure_outcome,
     _outcome,
     _range_position_pct,
     _select_archive_date,
 )
 from bulls.analytics.daily_shortlist import BASE_RATES, METHODOLOGY_VERSION
-from bulls.core.models import DailyBar
+from bulls.core.models import DailyBar, DailyShortlistState
 
 
 class _Analytics:
@@ -237,6 +239,96 @@ def test_outcome_story_marks_unobserved_horizons_pending_instead_of_zero():
     assert measured.horizon_returns[0].as_of == dt.date(2026, 7, 28)
     assert all(item.close_return_pct is None for item in measured.horizon_returns[1:])
     assert all(item.as_of is None for item in measured.horizon_returns[1:])
+
+
+def test_market_session_outcome_does_not_relabel_a_later_bar_as_one_session():
+    market_dates = [dt.date(2026, 7, day) for day in (24, 25, 26, 27, 28)]
+    measured = _measure_market_session_outcome(
+        100.0,
+        [
+            # The ticker has no bar on the first market session after selection.
+            _bar(25, close=103.0, high=104.0),
+            _bar(26, close=104.0, high=105.0),
+            _bar(27, close=105.0, high=106.0),
+            _bar(28, close=106.0, high=107.0),
+        ],
+        market_dates,
+    )
+
+    assert measured.sessions_since == 5
+    assert measured.horizon_returns[0].close_return_pct is None
+    assert measured.horizon_returns[0].as_of is None
+    assert measured.horizon_returns[1].close_return_pct == pytest.approx(4.0)
+    assert measured.horizon_returns[1].as_of == dt.date(2026, 7, 26)
+
+
+def _snapshot(
+    code: str,
+    *,
+    date: dt.date,
+    rank: int,
+    close: float,
+    change_pct: float,
+) -> DailyShortlistState:
+    return DailyShortlistState(
+        market="DSE",
+        as_of_date=date,
+        code=code,
+        rank=rank,
+        attention_score=0.9,
+        close=close,
+        change_pct=change_pct,
+        sector=None,
+        pe=None,
+        facts=[],
+        cautions=[],
+        eligible_names=100,
+        excluded_illiquid=10,
+        excluded_short_history=5,
+        slate_size=2,
+        notes=[],
+        base_rates={},
+        evidence_mode="forward",
+        methodology_version="daily-shortlist-v1",
+    )
+
+
+def test_archive_integrity_reconciles_close_move_size_and_ranks():
+    first = dt.date(2026, 7, 23)
+    second = dt.date(2026, 7, 24)
+    snapshots = [
+        _snapshot("GP", date=second, rank=1, close=110.0, change_pct=10.0),
+        _snapshot("SQURPHARMA", date=second, rank=2, close=220.0, change_pct=10.0),
+    ]
+    bars = [
+        DailyBar(
+            market="DSE",
+            code=code,
+            date=date,
+            open=close,
+            high=close,
+            low=close,
+            close=close,
+            volume=10_000,
+            adjusted_close=None,
+            source="test",
+        )
+        for code, date, close in (
+            ("GP", first, 100.0),
+            ("GP", second, 110.0),
+            ("SQURPHARMA", first, 200.0),
+            ("SQURPHARMA", second, 220.0),
+        )
+    ]
+
+    integrity = _archive_integrity(snapshots, bars, [first, second])
+
+    assert integrity.matched_selection_closes == 2
+    assert integrity.close_mismatches == 0
+    assert integrity.matched_selection_moves == 2
+    assert integrity.move_mismatches == 0
+    assert integrity.incomplete_sessions == 0
+    assert integrity.invalid_rank_sessions == 0
 
 
 def test_archive_date_never_moves_forward_past_the_request():
