@@ -2,12 +2,23 @@ import type { SqueezeEntry, SqueezeState } from "../../app/api-client";
 import type { StatusTone } from "../../design-system";
 
 export const SQUEEZE_STATE_LABEL: Record<SqueezeState, string> = {
-  watch: "Watch",
-  forming: "Forming",
-  trigger_ready: "Trigger ready",
-  confirmed: "Confirmed",
+  watch: "Early watch",
+  forming: "Base forming",
+  trigger_ready: "Near trigger",
+  confirmed: "Rule confirmed",
   exhausted: "Too extended",
-  failed: "Failed",
+  failed: "Invalidated",
+};
+
+export const SQUEEZE_STATE_EXPLANATION: Record<SqueezeState, string> = {
+  watch: "Early evidence exists, but the setup structure is not developed yet.",
+  forming: "The base is developing; the trigger conditions are not ready.",
+  trigger_ready:
+    "Price is near the rule level; confirmation still needs a completed close and the required participation.",
+  confirmed:
+    "The completed-session setup rule was met. This is research evidence, not an order or a probability claim.",
+  exhausted: "Price is too extended from its reference trend for a fresh setup.",
+  failed: "The archived setup invalidated and is no longer active.",
 };
 
 export const SQUEEZE_STATE_TONE: Record<SqueezeState, StatusTone> = {

@@ -86,10 +86,13 @@ describe("SqueezeMonitorPanel availability states", () => {
 
     const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
 
-    expect(html).toContain("New today");
+    expect(html).toContain("Changed this scan");
+    expect(html).toContain("Setup stage");
+    expect(html).toContain("Outcome clock");
+    expect(html).toContain("Rule confirmed");
     expect(html).toContain("Research scan only. No order is created from this list.");
     expect(html).toContain("not high probability");
-    expect(html).toMatch(/Confirmed today|New setup/);
+    expect(html).toMatch(/Confirmed this scan|First seen this scan/);
     expect(html).toContain("First confirmed");
     expect(html).toContain("before confirmation");
     expect(html).toContain("Next observable open");
@@ -97,7 +100,7 @@ describe("SqueezeMonitorPanel availability states", () => {
     expect(html).toContain("after confirmation · not P&amp;L");
     expect(html).toContain("pre-confirmation move included");
     expect(html).toContain("Archive method squeeze-monitor-v3");
-    expect(html).toContain("Pre-confirmation");
+    expect(html).toContain("Developing");
     expect(html).toContain("Setup journey");
     expect(html).toContain("Current episode");
     expect(html).toContain("Episode baseline");
@@ -132,7 +135,7 @@ describe("SqueezeMonitorPanel availability states", () => {
 
     const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
 
-    expect(html).toMatch(/Pre-confirmation[\s\S]*?1/);
+    expect(html).toMatch(/Developing[\s\S]*?1/);
   });
 
   it("explains a direct legacy confirmation without inventing prior phases", () => {
@@ -186,7 +189,7 @@ describe("SqueezeMonitorPanel availability states", () => {
     const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
 
     expect(html).toContain("Legacy archived classification");
-    expect(html).toContain("Confirmed at first observation");
+    expect(html).toContain("Rule confirmed at first observation");
     expect(html).toContain("missing phases are not inferred");
     expect(html).toContain("Legacy methodology boundary");
     expect(html).toContain("same-session classification; no earlier phase recorded");
@@ -230,8 +233,9 @@ describe("SqueezeMonitorPanel availability states", () => {
 
     const html = renderToStaticMarkup(<SqueezeMonitorPanel />);
 
-    expect(html).toContain("Pending");
-    expect(html).toContain("awaiting next close");
-    expect(html).toContain("0 sessions");
+    expect(html).toContain("Not measured");
+    expect(html).toContain("No later close in this snapshot");
+    expect(html).toContain("0 completed sessions since first seen");
+    expect(html).not.toContain(">Pending<");
   });
 });
