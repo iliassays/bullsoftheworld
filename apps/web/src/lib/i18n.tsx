@@ -804,6 +804,7 @@ const STRINGS: Record<string, Entry> = {
   "mh.volatility": { en: "Volatility", bn: "অস্থিরতা" },
   "mh.strength": { en: "Strength", bn: "শক্তি" },
   "mh.change": { en: "Change", bn: "পরিবর্তন" },
+  "mh.reportedShares": { en: "Reported holdings", bn: "রিপোর্ট করা শেয়ার" },
   // Metric chip words
   "mc.strongInflow": { en: "Strong positive CMF", bn: "জোরালো ধনাত্মক CMF" },
   "mc.inflow": { en: "Positive CMF", bn: "ধনাত্মক CMF" },

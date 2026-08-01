@@ -114,7 +114,7 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
               : t("home.earningsWeekNote")}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="overflow-hidden rounded-xl border border-border bg-card/25">
           {weekDates.map((iso) => {
             const { day, weekday } = fmt(iso, bn);
             const items = events.filter((e) => e.meeting_date === iso);
@@ -123,41 +123,45 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
             return (
               <div
                 key={iso}
-                className={`min-h-[116px] rounded-lg border border-border bg-card/40 p-2.5 ${past ? "opacity-55" : ""}`}
+                className={`grid grid-cols-[3.75rem_minmax(0,1fr)] gap-3 border-t border-border px-3 py-3 first:border-t-0 ${past ? "opacity-55" : ""}`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-accent">
-                    {weekday}
-                    <div className="mt-0.5 text-[10px] font-semibold normal-case tracking-normal text-muted">
-                      {day}
-                    </div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-accent">
+                  {weekday}
+                  <div className="mt-0.5 text-[10px] font-semibold normal-case tracking-normal text-muted">
+                    {day}
                   </div>
-                  <span className="text-[10px] font-semibold text-muted tnum">
-                    {total || "—"}
-                  </span>
                 </div>
-                <div className="mt-2 flex flex-col gap-1.5">
-                  {items.slice(0, 3).map((e) => (
-                    <Link
-                      key={e.code}
-                      to={`/s/${e.code}`}
-                      className="flex min-w-0 items-center justify-between gap-2 text-[10px] hover:text-accent"
-                    >
-                      <span className="shrink-0 whitespace-nowrap font-bold">
-                        {e.status === "estimated" ? "~" : ""}${e.code}
+                <div className="min-w-0">
+                  <div className="flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1.5">
+                    {items.slice(0, 3).map((e) => (
+                      <Link
+                        key={e.code}
+                        to={`/s/${e.code}`}
+                        title={e.name_en}
+                        className="inline-flex min-w-0 items-center gap-1.5 text-[11px] font-bold hover:text-accent"
+                      >
+                        <CompanyLogo code={e.code} size={18} />
+                        <span className="whitespace-nowrap">
+                          {e.status === "estimated" ? "~" : ""}${e.code}
+                        </span>
+                      </Link>
+                    ))}
+                    {total === 0 && (
+                      <span className="text-[10px] text-muted">
+                        {bn ? "কোনো সময়সূচি নেই" : "No reporting window"}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-right text-muted">
-                        {e.name_en}
-                      </span>
-                    </Link>
-                  ))}
-                  {total > items.slice(0, 3).length && (
-                    <span className="text-[10px] text-muted">
-                      +{total - items.slice(0, 3).length} {bn ? "আরও" : "more"}
-                    </span>
-                  )}
-                  {total === 0 && (
-                    <span className="text-[10px] text-muted">{bn ? "কোনো সময়সূচি নেই" : "No window"}</span>
+                    )}
+                  </div>
+                  {total > 0 && (
+                    <div className="mt-1 text-[9px] leading-snug text-muted">
+                      {estimated
+                        ? bn
+                          ? `${total}টি আনুমানিক উইন্ডোর মধ্যে ${items.slice(0, 3).length}টি দেখানো হয়েছে`
+                          : `Showing ${items.slice(0, 3).length} of ${total} estimated windows`
+                        : bn
+                          ? `${total}টি ঘোষিত সভা`
+                          : `${total} announced ${total === 1 ? "meeting" : "meetings"}`}
+                    </div>
                   )}
                 </div>
               </div>
