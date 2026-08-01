@@ -143,10 +143,12 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
                       to={`/s/${e.code}`}
                       className="flex min-w-0 items-center justify-between gap-2 text-[10px] hover:text-accent"
                     >
-                      <span className="truncate font-bold">
+                      <span className="shrink-0 whitespace-nowrap font-bold">
                         {e.status === "estimated" ? "~" : ""}${e.code}
                       </span>
-                      <span className="truncate text-right text-muted">{e.name_en}</span>
+                      <span className="min-w-0 flex-1 truncate text-right text-muted">
+                        {e.name_en}
+                      </span>
                     </Link>
                   ))}
                   {total > items.slice(0, 3).length && (
