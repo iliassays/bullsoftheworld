@@ -65,7 +65,7 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
     let alive = true;
     const back = scope === "week" ? Math.max(0, -toWeekStart) : 0;
     api
-      .earningsCalendar(scope === "today" ? 1 : 7, back)
+      .earningsCalendar(scope === "today" ? 1 : 7, back, scope === "today" ? 9 : 4)
       .then((e) => {
         if (!alive) return;
         setEvents(
@@ -95,46 +95,73 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
     );
 
   if (scope === "week") {
-    // Earnings-Whispers calendar: five fixed Sun–Thu columns. Empty columns stay empty —
-    // an almost-blank week honestly LOOKS almost blank.
+    const estimated = config.features.sec_filings;
     return (
       <div className="bg-surface border border-border rounded-2xl p-3">
-        <div className="grid grid-cols-5 divide-x divide-border/50">
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-text">
+            {estimated
+              ? bn
+                ? "আনুমানিক রিপোর্টিং সময়"
+                : "Estimated reporting windows"
+              : t("home.earningsWeek")}
+          </div>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-muted">
+            {estimated
+              ? bn
+                ? "আগের SEC ফাইলিংয়ের সময়সূচি থেকে অনুমান; কোম্পানি নিশ্চিত করেনি।"
+                : "Estimated from prior SEC filing cadence; these are not company-confirmed earnings dates."
+              : t("home.earningsWeekNote")}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           {weekDates.map((iso) => {
             const { day, weekday } = fmt(iso, bn);
             const items = events.filter((e) => e.meeting_date === iso);
+            const total = items[0]?.day_total ?? items.length;
             const past = iso < marketToday;
             return (
-              <div key={iso} className={`px-1 ${past ? "opacity-50" : ""}`}>
-                <div className="text-center text-[9px] font-bold uppercase tracking-[0.1em] text-accent leading-tight">
-                  {weekday}
-                  <div className="text-[9px] font-semibold text-muted normal-case tracking-normal">{day}</div>
+              <div
+                key={iso}
+                className={`min-h-[116px] rounded-lg border border-border bg-card/40 p-2.5 ${past ? "opacity-55" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-accent">
+                    {weekday}
+                    <div className="mt-0.5 text-[10px] font-semibold normal-case tracking-normal text-muted">
+                      {day}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-semibold text-muted tnum">
+                    {total || "—"}
+                  </span>
                 </div>
-                <div className="mt-2 flex flex-col items-center gap-2.5 min-h-[56px]">
-                  {items.map((e) => (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {items.slice(0, 3).map((e) => (
                     <Link
                       key={e.code}
                       to={`/s/${e.code}`}
-                      className="flex w-full flex-col items-center gap-0.5"
+                      className="flex min-w-0 items-center justify-between gap-2 text-[10px] hover:text-accent"
                     >
-                      <CompanyLogo code={e.code} size={30} />
-                      <span className="w-full truncate text-center text-[8px] font-bold leading-tight">
-                        {e.status === "estimated" ? "~" : ""}{e.code}
+                      <span className="truncate font-bold">
+                        {e.status === "estimated" ? "~" : ""}${e.code}
                       </span>
+                      <span className="truncate text-right text-muted">{e.name_en}</span>
                     </Link>
                   ))}
+                  {total > items.slice(0, 3).length && (
+                    <span className="text-[10px] text-muted">
+                      +{total - items.slice(0, 3).length} {bn ? "আরও" : "more"}
+                    </span>
+                  )}
+                  {total === 0 && (
+                    <span className="text-[10px] text-muted">{bn ? "কোনো সময়সূচি নেই" : "No window"}</span>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
-        <p className="text-[10px] text-muted mt-2 text-center">
-          {config.features.sec_filings
-            ? bn
-              ? "~ চিহ্নিত তারিখগুলো আগের SEC ফাইলিংয়ের সময়সূচি থেকে অনুমান; কোম্পানি নিশ্চিত করেনি।"
-              : "~ dates are estimated from prior SEC filing cadence, not company-confirmed."
-            : t("home.earningsWeekNote")}
-        </p>
       </div>
     );
   }
@@ -159,7 +186,7 @@ export function EarningsWeek({ scope = "week" }: { scope?: "today" | "week" }) {
           {t(scope === "today" ? "home.earningsToday" : "home.earningsWeek")}
         </span>
         <span className="ml-auto shrink-0 text-[11px] font-semibold text-accent tnum">
-          {events.length}
+          {events[0]?.day_total ?? events.length}
         </span>
       </div>
       {byDay.map((g) => {

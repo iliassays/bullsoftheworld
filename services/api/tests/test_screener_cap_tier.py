@@ -91,8 +91,8 @@ async def test_enrich_sets_cap_tier_from_analytics_row() -> None:
             assert screen.items[0].cap_tier == "large"
             assert screen.items[0].market_cap_mn == 12_000.0
     finally:
-        # A leftover fake row becomes the freshest as_of_date and empties every screen for the
-        # whole database (screenable codes require the max date) — always clean up.
+        # Keep database-gated tests isolated even though non-ready rows can no longer advance the
+        # public screen cutoff.
         async with sm() as session:
             await session.execute(
                 delete(TickerAnalytics).where(

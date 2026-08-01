@@ -104,32 +104,75 @@ _MATERIAL_ANNOUNCEMENT_CATEGORIES = (
 )
 
 
-def _screenable_codes(market: str, cap_tier: str | None = None):
-    """Visible codes eligible for default Market screens.
+def _screenable_conditions(market: str, analytics, cap_tier: str | None = None) -> list:
+    """Conditions shared by the public analytics cutoff and eligible symbol set.
 
-    DSE Z-category names are left out of investable discovery boards. Other markets do not inherit
-    that filter unless their settings explicitly ask for it.
+    Onboarding and restricted-research jobs also write ``ticker_analytics``. They must never
+    advance the public cutoff, because those symbols are intentionally absent from public screens.
     """
-    conds = [
+
+    conditions = [
         Symbol.market == market,
         Symbol.is_active.is_(True),
         Symbol.is_hidden.is_(False),
         Symbol.data_status == "ready",
     ]
     if _screen_settings(market).dse_category_filter:
-        conds.append(or_(Symbol.category.is_(None), Symbol.category != "Z"))
-    fresh = aliased(TickerAnalytics)
+        conditions.append(or_(Symbol.category.is_(None), Symbol.category != "Z"))
     if cap_tier is not None:
-        conds.append(fresh.cap_tier == cap_tier)
-    latest_date = (
-        select(func.max(TickerAnalytics.as_of_date))
-        .where(TickerAnalytics.market == market)
-        .scalar_subquery()
+        conditions.append(analytics.cap_tier == cap_tier)
+    return conditions
+
+
+def _screenable_analytics_date_query(market: str, cap_tier: str | None = None):
+    """Latest analytics date belonging to the public-ready universe."""
+
+    analytics = aliased(TickerAnalytics)
+    return (
+        select(func.max(analytics.as_of_date))
+        .select_from(Symbol)
+        .join(
+            analytics,
+            and_(analytics.market == Symbol.market, analytics.code == Symbol.code),
+        )
+        .where(*_screenable_conditions(market, analytics, cap_tier))
     )
+
+
+def _screenable_analytics_timestamp_query(market: str):
+    """Newest computation timestamp inside the active public analytics snapshot."""
+
+    analytics = aliased(TickerAnalytics)
+    cutoff = _screenable_analytics_date_query(market).scalar_subquery()
+    return (
+        select(func.max(analytics.computed_at))
+        .select_from(Symbol)
+        .join(
+            analytics,
+            and_(analytics.market == Symbol.market, analytics.code == Symbol.code),
+        )
+        .where(
+            *_screenable_conditions(market, analytics),
+            analytics.as_of_date == cutoff,
+        )
+    )
+
+
+def _screenable_codes(market: str, cap_tier: str | None = None):
+    """Visible codes eligible for default Market screens.
+
+    DSE Z-category names are left out of investable discovery boards. Other markets do not inherit
+    that filter unless their settings explicitly ask for it.
+    """
+    fresh = aliased(TickerAnalytics)
+    latest_date = _screenable_analytics_date_query(market, cap_tier).scalar_subquery()
     return (
         select(Symbol.code)
         .join(fresh, and_(fresh.market == Symbol.market, fresh.code == Symbol.code))
-        .where(*conds, fresh.as_of_date == latest_date)
+        .where(
+            *_screenable_conditions(market, fresh, cap_tier),
+            fresh.as_of_date == latest_date,
+        )
     )
 
 
@@ -1818,9 +1861,9 @@ def screens_cache_keys(
 ) -> tuple[str, str]:
     """Return the freshness-keyed cache key and the stable last-known-good key."""
     # Version bumps invalidate code/label changes; timestamps invalidate source-data changes.
-    # v18 distinguishes refresh-to-refresh entries from source-derived disclosure entries.
-    fresh = f"screens:v18:{tenant_name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
-    stale = f"screens:stale:v18:{tenant_name}:{market}:{size or 'all'}"
+    # v19 excludes private/onboarding analytics from the public freshness boundary.
+    fresh = f"screens:v19:{tenant_name}:{market}:{size or 'all'}:{quote_ts}:{ana_ts}"
+    stale = f"screens:stale:v19:{tenant_name}:{market}:{size or 'all'}"
     return fresh, stale
 
 
@@ -1830,7 +1873,7 @@ async def screens_data_timestamps(
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
-    ana_ts = await session.scalar(select(func.max(T.computed_at)).where(T.market == market))
+    ana_ts = await session.scalar(_screenable_analytics_timestamp_query(market))
     return quote_ts, ana_ts
 
 
@@ -2031,9 +2074,8 @@ async def _build_screens(
     await _enrich(session, tenant.market, out)
     if cap_tier is not None:
         _filter_screens_by_cap_tier(out, cap_tier=cap_tier, limit=PER_SCREEN)
-    # Page-level freshness must describe the newest analytics batch. A bare LIMIT 1 is unordered
-    # and can label the whole page with any older ticker's date.
-    as_of = await session.scalar(select(func.max(T.as_of_date)).where(T.market == tenant.market))
+    # Page freshness describes the public-ready snapshot, not a private onboarding cohort.
+    as_of = await session.scalar(_screenable_analytics_date_query(tenant.market, cap_tier))
     settings = _screen_settings(tenant.market)
     methodology = MarketMethodology(
         market=tenant.market,

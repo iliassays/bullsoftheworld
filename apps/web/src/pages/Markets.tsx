@@ -1689,9 +1689,9 @@ function Chapter({
 }
 
 export function Markets() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { config } = useTenantConfig();
-  const { tier } = useUniverse();
+  const { tier, setTier } = useUniverse();
   useSeo({
     title: {
       bn: `মার্কেট স্ক্রিন — ${config.exchange_code} গেইনার, লুজার, ভলিউম, ভ্যালু | ${config.brand_name}`,
@@ -1738,6 +1738,28 @@ export function Markets() {
     }
     setEngagement({});
   };
+  const filteredEmpty = tier !== ALL_UNIVERSE && live.length === 0;
+  const filteredEmptyState = filteredEmpty ? (
+    <div className="rounded-xl border border-border bg-surface px-4 py-6 text-center">
+      <div className="text-sm font-semibold text-text">
+        {lang === "bn"
+          ? "এই আকারে কোনো শেয়ার সর্বশেষ স্ক্রিনের নিয়ম পাস করেনি"
+          : "No companies in this size passed the latest screen rules"}
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-muted">
+        {lang === "bn"
+          ? "এটি একটি বৈধ no-signal ফলাফল; বাজারের ডেটা অনুপস্থিত নয়।"
+          : "This is a valid no-signal result, not missing market data."}
+      </p>
+      <button
+        type="button"
+        onClick={() => setTier(ALL_UNIVERSE)}
+        className="mt-3 rounded-full border border-accent px-4 py-1.5 text-xs font-semibold text-accent hover:bg-accent/10"
+      >
+        {lang === "bn" ? "সব আকার স্ক্যান করুন" : "Scan all sizes"}
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -1820,9 +1842,7 @@ export function Markets() {
             </div>
           )}
           <SizeChips scopeNote={t("tier.scopeShort")} />
-          {focusScreens.map((s) => (
-            <ScreenCard key={s.key} s={s} />
-          ))}
+          {filteredEmptyState ?? focusScreens.map((s) => <ScreenCard key={s.key} s={s} />)}
         </Chapter>
       ) : activeLens ? (
         activeLens.keys

@@ -564,14 +564,16 @@ function Boards({
   size,
   onPick,
   onMeta,
+  onClearSize,
 }: {
   tab: string;
   watched: boolean;
   size?: string;
   onPick: (picked: Picked) => void;
   onMeta: (data: ScannerResponse) => void;
+  onClearSize?: () => void;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [data, setData] = useState<ScannerResponse | null | undefined>(undefined);
   useEffect(() => {
     setData(undefined);
@@ -594,6 +596,27 @@ function Boards({
   if (data.boards.length === 0) {
     return <Empty>{watched ? t("scanner.emptyWatched") : t("scanner.empty")}</Empty>;
   }
+  if (data.boards.every((board) => board.items.length === 0) && size) {
+    return (
+      <div className="rounded-xl border border-border bg-surface px-4 py-6 text-center">
+        <div className="text-sm font-semibold text-text">
+          {lang === "bn" ? "এই আকারে কোনো শেয়ার নিয়মগুলো পাস করেনি" : "No companies in this size passed the rules"}
+        </div>
+        <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted">
+          {lang === "bn"
+            ? "এটি সর্বশেষ ক্লোজের একটি বৈধ no-signal ফলাফল; ডেটা অনুপস্থিত নয়।"
+            : "This is a valid no-signal result at the latest close, not missing data."}
+        </p>
+        <button
+          type="button"
+          onClick={onClearSize}
+          className="mt-3 rounded-full border border-accent px-4 py-1.5 text-xs font-semibold text-accent hover:bg-accent/10"
+        >
+          {lang === "bn" ? "সব আকার স্ক্যান করুন" : "Scan all sizes"}
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3">
       {/* Same freshness anchor Markets already shows — these boards are EOD-analytics-anchored
@@ -610,7 +633,7 @@ function Boards({
 export function Scanner() {
   const { t, lang } = useLang();
   const { user } = useAuth();
-  const { tier } = useUniverse();
+  const { tier, setTier } = useUniverse();
   const { config } = useTenantConfig();
   const [tab, setTab] = useState("today");
   const [researchTabs, setResearchTabs] = useState<ResearchTab[]>([
@@ -746,6 +769,7 @@ export function Scanner() {
             size={tier === ALL_UNIVERSE ? undefined : tier}
             onPick={onPick}
             onMeta={onMeta}
+            onClearSize={() => setTier(ALL_UNIVERSE)}
           />
         </>
       )}

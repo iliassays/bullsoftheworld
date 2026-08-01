@@ -22,6 +22,7 @@ def test_scanner_universe_is_pinned_to_latest_analytics_date() -> None:
     sql = str(_clean_codes("DSE")).lower()
     assert "max(" in sql
     assert "as_of_date" in sql
+    assert "symbols.data_status" in sql
 
 
 def test_every_tab_board_carries_an_evidence_label() -> None:

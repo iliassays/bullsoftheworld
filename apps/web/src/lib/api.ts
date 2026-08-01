@@ -788,6 +788,7 @@ export interface EarningsEvent {
   status?: "confirmed" | "estimated";
   source?: string | null;
   url?: string | null;
+  day_total?: number | null;
 }
 export interface TrendingStock {
   code: string;
@@ -1219,8 +1220,10 @@ export const api = {
   trendingStocks: (limit = 15) =>
     request<TrendingStock[]>(`/trending-stocks?limit=${limit}`),
   todaysWatch: () => request<TodaysWatch>("/todays-watch"),
-  earningsCalendar: (days = 7, back = 0) =>
-    request<EarningsEvent[]>(`/market/earnings-calendar?days=${days}&back=${back}`),
+  earningsCalendar: (days = 7, back = 0, perDay = 4) =>
+    request<EarningsEvent[]>(
+      `/market/earnings-calendar?days=${days}&back=${back}&per_day=${perDay}`,
+    ),
 
   // posts
   feed: (
