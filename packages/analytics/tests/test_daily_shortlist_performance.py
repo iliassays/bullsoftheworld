@@ -8,6 +8,8 @@ from bulls.analytics.daily_shortlist_performance import (
     BenchmarkClose,
     ShortlistAppearance,
     ShortlistPriceBar,
+    eligible_universe_by_date,
+    evaluate_matched_eligible_control,
     evaluate_shortlist_performance,
     independent_episodes,
 )
@@ -25,6 +27,7 @@ def _bar(
     close: float,
     high: float | None = None,
     low: float | None = None,
+    volume: float = 10_000,
 ) -> ShortlistPriceBar:
     return ShortlistPriceBar(
         code=code,
@@ -33,6 +36,7 @@ def _bar(
         high=max(open_, close) if high is None else high,
         low=min(open_, close) if low is None else low,
         close=close,
+        volume=volume,
     )
 
 
@@ -189,3 +193,74 @@ def test_continuous_repeat_chain_remains_one_episode():
     episodes = independent_episodes(appearances, [_date(day) for day in range(1, 22)])
 
     assert [(item.code, item.as_of) for item in episodes] == [("AAA", _date(2))]
+
+
+def test_eligible_universe_is_reconstructed_with_only_information_available_that_day():
+    bars = [
+        *[
+            _bar("AAA", day, open_=100, close=100, volume=10_000)
+            for day in range(1, 5)
+        ],
+        *[
+            _bar("BBB", day, open_=100, close=100, volume=100)
+            for day in range(1, 4)
+        ],
+        *[
+            _bar("CCC", day, open_=100, close=100, volume=10_000)
+            for day in range(2, 4)
+        ],
+    ]
+
+    eligible = eligible_universe_by_date(
+        bars,
+        selection_dates=[_date(3)],
+        eligible_codes={"AAA", "BBB", "CCC"},
+        min_bars=3,
+        min_average_volume=5_000,
+    )
+
+    assert eligible == {_date(3): ("AAA",)}
+
+
+def test_matched_control_compares_equal_weight_daily_baskets():
+    appearances = [
+        ShortlistAppearance("AAA", _date(2), 100.0, 1, "reconstructed"),
+    ]
+    bars = [
+        _bar("AAA", 2, open_=100, close=100),
+        _bar("AAA", 3, open_=105, close=110, high=111, low=104),
+        _bar("AAA", 4, open_=110, close=111),
+        _bar("AAA", 5, open_=111, close=112),
+        _bar("AAA", 6, open_=112, close=113),
+        _bar("BBB", 2, open_=100, close=100),
+        _bar("BBB", 3, open_=101, close=102),
+        _bar("BBB", 4, open_=102, close=103),
+        _bar("BBB", 5, open_=103, close=104),
+        _bar("BBB", 6, open_=104, close=105),
+        _bar("CCC", 2, open_=100, close=100),
+        _bar("CCC", 3, open_=102, close=104),
+        _bar("CCC", 4, open_=104, close=105),
+        _bar("CCC", 5, open_=105, close=106),
+        _bar("CCC", 6, open_=106, close=107),
+    ]
+
+    report = evaluate_matched_eligible_control(
+        appearances=appearances,
+        bars=bars,
+        market_dates=[_date(day) for day in range(2, 7)],
+        eligible_by_date={_date(2): ("AAA", "BBB", "CCC")},
+    )
+    one_session = report.horizons[0]
+
+    assert report.selection_sessions == 1
+    assert one_session.selection_sessions == 1
+    assert one_session.shortlist_mean_return_pct == pytest.approx(10.0)
+    assert one_session.control_mean_return_pct == pytest.approx(3.0)
+    assert one_session.shortlist_minus_control_pct == pytest.approx(7.0)
+    assert one_session.shortlist_outperformed_rate_pct == pytest.approx(100.0)
+    assert one_session.next_open_shortlist_mean_pct == pytest.approx(4.762)
+    # BBB open 101 -> close 102 = +0.990099%; CCC open 102 -> close 104 = +1.960784%;
+    # equal-weight basket mean = 1.475441% -> rounds to 1.475 at 3dp.
+    assert one_session.next_open_control_mean_pct == pytest.approx(1.475)
+    assert one_session.next_open_difference_pct == pytest.approx(3.286)
+    assert one_session.difference_ci_low_pct is None
