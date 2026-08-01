@@ -296,10 +296,37 @@ class EarningsEventOut(BaseModel):
     status: str = "confirmed"
     source: str | None = None
     url: str | None = None
+    day_total: int | None = None
+
+
+def _bounded_calendar_events(
+    events: list[EarningsEventOut],
+    *,
+    per_day: int,
+    priority_by_code: dict[str, float] | None = None,
+) -> list[EarningsEventOut]:
+    """Return a representative per-day sample while preserving the true daily count."""
+
+    priority_by_code = priority_by_code or {}
+    by_day: dict[str, list[EarningsEventOut]] = {}
+    for event in events:
+        by_day.setdefault(event.meeting_date, []).append(event)
+
+    bounded: list[EarningsEventOut] = []
+    for meeting_date in sorted(by_day):
+        day_events = sorted(
+            by_day[meeting_date],
+            key=lambda event: (-priority_by_code.get(event.code, 0.0), event.code),
+        )
+        bounded.extend(
+            event.model_copy(update={"day_total": len(day_events)})
+            for event in day_events[:per_day]
+        )
+    return bounded
 
 
 async def _estimated_sec_reporting_windows(
-    session, market: str, since: dt.date, until: dt.date
+    session, market: str, since: dt.date, until: dt.date, *, per_day: int
 ) -> list[EarningsEventOut]:
     filings = list(
         await session.scalars(
@@ -342,22 +369,33 @@ async def _estimated_sec_reporting_windows(
             select(Symbol).where(Symbol.market == market, Symbol.code.in_(estimates))
         )
     }
-    return sorted(
-        [
-            EarningsEventOut(
-                code=code,
-                name_en=symbols[code].name_en if code in symbols else code,
-                name_bn=symbols[code].name_bn if code in symbols else None,
-                category=symbols[code].category if code in symbols else None,
-                meeting_date=str(expected),
-                period=last.category,
-                status="estimated",
-                source="Estimated SEC filing window from the issuer's prior filing cadence",
-                url=last.filing_url,
+    market_caps = {
+        row.code: float(row.market_cap_mn or 0)
+        for row in await session.scalars(
+            select(TickerAnalytics).where(
+                TickerAnalytics.market == market,
+                TickerAnalytics.code.in_(estimates),
             )
-            for code, (expected, last) in estimates.items()
-        ],
-        key=lambda event: event.meeting_date,
+        )
+    }
+    events = [
+        EarningsEventOut(
+            code=code,
+            name_en=symbols[code].name_en if code in symbols else code,
+            name_bn=symbols[code].name_bn if code in symbols else None,
+            category=symbols[code].category if code in symbols else None,
+            meeting_date=str(expected),
+            period=last.category,
+            status="estimated",
+            source="Estimated SEC filing window from the issuer's prior filing cadence",
+            url=last.filing_url,
+        )
+        for code, (expected, last) in estimates.items()
+    ]
+    return _bounded_calendar_events(
+        events,
+        per_day=per_day,
+        priority_by_code=market_caps,
     )
 
 
@@ -367,6 +405,7 @@ async def earnings_calendar(
     session: DbSession,
     days: int = Query(7, ge=1, le=30),
     back: int = Query(0, ge=0, le=7, description="Also include this many past days (week views)"),
+    per_day: int = Query(4, ge=1, le=12, description="Representative companies per date"),
 ) -> list[EarningsEventOut]:
     """Upcoming earnings — board meetings called to consider financials within the next `days`.
 
@@ -378,7 +417,9 @@ async def earnings_calendar(
     since = today - dt.timedelta(days=back)
     until = today + dt.timedelta(days=days)
     if get_market_profile(tenant.market).features.sec_filings:
-        return await _estimated_sec_reporting_windows(session, tenant.market, since, until)
+        return await _estimated_sec_reporting_windows(
+            session, tenant.market, since, until, per_day=per_day
+        )
     meeting_date = Announcement.details["meeting_date"].astext
     rows = list(
         await session.scalars(
@@ -419,8 +460,7 @@ async def earnings_calendar(
         )
         for code, a in by_code.items()
     ]
-    events.sort(key=lambda e: e.meeting_date)
-    return events
+    return _bounded_calendar_events(events, per_day=per_day)
 
 
 @router.get("/symbols/{code}/logo")

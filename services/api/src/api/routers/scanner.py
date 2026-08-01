@@ -14,8 +14,7 @@ from dataclasses import dataclass
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, func, or_, select, true
-from sqlalchemy.orm import aliased
+from sqlalchemy import func, or_, select, true
 
 from api.deps import CurrentTenant, DbSession, OptionalUser, enforce_market_feature
 from api.routers.company import FinancialHealth, _financial_health
@@ -26,6 +25,9 @@ from api.routers.screener import (
     _enrich,
     _filter_screens_by_cap_tier,
     _institutional_13f,
+    _screenable_analytics_date_query,
+    _screenable_analytics_timestamp_query,
+    _screenable_codes,
     _unusual_volume,
     _validated_cap_tier,
 )
@@ -124,24 +126,7 @@ async def _market_regime(session, market: str) -> str | None:
 
 def _clean_codes(market: str):
     """Visible, active, non-Z symbols for clean scanner boards."""
-    fresh = aliased(TickerAnalytics)
-    latest_date = (
-        select(func.max(TickerAnalytics.as_of_date))
-        .where(TickerAnalytics.market == market)
-        .scalar_subquery()
-    )
-    return (
-        select(Symbol.code)
-        .join(fresh, and_(fresh.market == Symbol.market, fresh.code == Symbol.code))
-        .where(
-            Symbol.market == market,
-            Symbol.is_active.is_(True),
-            Symbol.is_hidden.is_(False),
-            Symbol.data_status == "ready",
-            or_(Symbol.category.is_(None), Symbol.category != "Z"),
-            fresh.as_of_date == latest_date,
-        )
-    )
+    return _screenable_codes(market)
 
 
 def _adtv_mn(T) -> object:
@@ -1620,8 +1605,8 @@ def radar_cache_keys(
     """Freshness-keyed and last-known-good cache keys for the shared (non-watchlist) radar view."""
     scope = f"{tenant_name}:{market}:{tab}:{size or 'all'}:{limit}"
     return (
-        f"scanner:radar:v1:{scope}:{quote_ts}:{ana_ts}",
-        f"scanner:radar:stale:v1:{scope}",
+        f"scanner:radar:v2:{scope}:{quote_ts}:{ana_ts}",
+        f"scanner:radar:stale:v2:{scope}",
     )
 
 
@@ -1656,9 +1641,7 @@ _RADAR_STALE_TTL = 72 * 60 * 60
 async def radar_data_timestamps(
     session, market: str
 ) -> tuple[dt.datetime | None, dt.datetime | None]:
-    ana_ts = await session.scalar(
-        select(func.max(TickerAnalytics.computed_at)).where(TickerAnalytics.market == market)
-    )
+    ana_ts = await session.scalar(_screenable_analytics_timestamp_query(market))
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )
@@ -1710,9 +1693,7 @@ async def _build_radar_response(
         limit,
         cap_tier=size,
     )
-    as_of = await session.scalar(
-        select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == market)
-    )
+    as_of = await session.scalar(_screenable_analytics_date_query(market, size))
     # Live regime gate (spec §2): only fetched when a regime-sensitive board is on this tab.
     regime = None
     if any(b.key in _REGIME_SENSITIVE for b in boards):
@@ -1804,9 +1785,7 @@ async def radar(
     if watched:
         boards = [b for b in boards if b.items]
 
-    as_of = await session.scalar(
-        select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == market)
-    )
+    as_of = await session.scalar(_screenable_analytics_date_query(market, size))
     quote_ts = await session.scalar(
         select(func.max(QuoteSnapshot.as_of)).where(QuoteSnapshot.market == market)
     )

@@ -7,11 +7,22 @@ const source = readFileSync(new URL("./format.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ES2020, target: ts.ScriptTarget.ES2020 },
 }).outputText;
-const { formatOrdinal } = await import(`data:text/javascript,${encodeURIComponent(compiled)}`);
+const { formatOrdinal, formatReportedShareChange } = await import(
+  `data:text/javascript,${encodeURIComponent(compiled)}`
+);
 
 test("formatOrdinal handles English suffixes and teen exceptions", () => {
   assert.deepEqual(
     [0, 1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 100].map(formatOrdinal),
     ["0th", "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "100th"],
   );
+});
+
+test("formatReportedShareChange keeps normal changes exact and compacts extreme bases", () => {
+  assert.equal(formatReportedShareChange(16), "+16.0%");
+  assert.equal(formatReportedShareChange(-12.34), "-12.3%");
+  assert.equal(formatReportedShareChange(1_200), "13.0×");
+  assert.equal(formatReportedShareChange(33_000), "331×");
+  assert.equal(formatReportedShareChange(331_294.9), "3.3k×");
+  assert.equal(formatReportedShareChange(Number.NaN), "—");
 });

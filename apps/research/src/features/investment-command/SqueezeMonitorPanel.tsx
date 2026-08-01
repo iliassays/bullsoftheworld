@@ -30,6 +30,7 @@ import { SqueezeLifecycle } from "./SqueezeLifecycle";
 import { previewSqueezeMonitor, previewSqueezePath } from "./preview-data";
 import {
   SQUEEZE_STATE_LABEL,
+  SQUEEZE_STATE_EXPLANATION,
   SQUEEZE_STATE_TONE,
   squeezeReferenceCopy,
   squeezeStateLabel,
@@ -244,9 +245,22 @@ export function SqueezeMonitorPanel() {
         <ShieldAlert aria-hidden="true" size={15} />
         <span>
           <strong>Research scan only. No order is created from this list.</strong>
-          “Confirmed” means the setup rule completed, not high probability. Most rows will never
-          qualify. Only a separate, evidence-admitted and risk-sized strategy can create a paper
-          target shown in Agent decisions.
+          “Rule confirmed” means the setup conditions completed, not high probability. Most rows
+          will never qualify. Only a separate, evidence-admitted and risk-sized strategy can
+          create a paper target shown in Agent decisions.
+        </span>
+      </div>
+
+      <div className="squeeze-monitor__reading-key" aria-label="How to read setup states">
+        <span>
+          <small>Setup stage</small>
+          <strong>Early watch → Base forming → Near trigger → Rule confirmed</strong>
+          <em>Failed and Too extended close the active setup.</em>
+        </span>
+        <span>
+          <small>Outcome clock</small>
+          <strong>Measured only after a later completed session exists</strong>
+          <em>A rule can be confirmed while its later outcome is still not measurable.</em>
         </span>
       </div>
 
@@ -310,17 +324,17 @@ export function SqueezeMonitorPanel() {
               options={[
                 {
                   value: "new",
-                  label: "New today",
+                  label: "Changed this scan",
                   count: familyEntries.filter((entry) => matchesState(entry, "new")).length,
                 },
                 {
                   value: "developing",
-                  label: "Pre-confirmation",
+                  label: "Developing",
                   count: familyEntries.filter((entry) => matchesState(entry, "developing")).length,
                 },
                 {
                   value: "confirmed",
-                  label: "Confirmed",
+                  label: "Rule confirmed",
                   count: familyEntries.filter((entry) => entry.state === "confirmed").length,
                 },
                 {
@@ -392,9 +406,9 @@ export function SqueezeMonitorPanel() {
                       <span className="squeeze-monitor__identity">
                         <strong>${entry.code}</strong>
                         {entry.isNewConfirmation ? (
-                          <em className="squeeze-monitor__new-confirmation">Confirmed today</em>
+                          <em className="squeeze-monitor__new-confirmation">Confirmed this scan</em>
                         ) : (
-                          entry.isNew && <em>New setup</em>
+                          entry.isNew && <em>First seen this scan</em>
                         )}
                         {entry.evidenceMode === "reconstructed" && (
                           <em className="squeeze-monitor__replay" title="Reconstructed from stored bars, not collected on this session">
@@ -407,7 +421,7 @@ export function SqueezeMonitorPanel() {
                       </StatusBadge>
                       <small className="squeeze-monitor__meta">
                         {entry.capTier} cap · {entry.sessionsSinceDiscovery}{" "}
-                        {entry.sessionsSinceDiscovery === 1 ? "session" : "sessions"}
+                        completed {entry.sessionsSinceDiscovery === 1 ? "session" : "sessions"} since first seen
                       </small>
                       <span className="squeeze-monitor__return">
                         <b
@@ -419,11 +433,11 @@ export function SqueezeMonitorPanel() {
                                 : "value-down"
                           }
                         >
-                          {displayedReturn === null ? "Pending" : signed(displayedReturn)}
+                          {displayedReturn === null ? "Not measured" : signed(displayedReturn)}
                         </b>
                         <small>
                           {displayedReturn === null
-                            ? "awaiting next close"
+                            ? "No later close in this snapshot"
                             : hasObservableEntry
                               ? "after confirmation"
                               : "from discovery"}
@@ -447,6 +461,10 @@ export function SqueezeMonitorPanel() {
                       {SQUEEZE_STATE_LABEL[selected.state]}
                     </StatusBadge>
                   </header>
+                  <p className="squeeze-monitor__state-explanation">
+                    <strong>Current setup stage:</strong>{" "}
+                    {SQUEEZE_STATE_EXPLANATION[selected.state]}
+                  </p>
                   {selected.methodologyVersion !== data.methodologyVersion && (
                     <p className="squeeze-monitor__method-warning">
                       <ShieldAlert aria-hidden="true" size={13} />
@@ -481,8 +499,14 @@ export function SqueezeMonitorPanel() {
                     </span>
                     <span>
                       <small>Next observable open</small>
-                      <strong>{selected.nextObservableOn ?? "Not available"}</strong>
-                      <em>{price(selected.nextObservablePrice)}</em>
+                      <strong>
+                        {selected.nextObservableOn ?? "Not available in this snapshot"}
+                      </strong>
+                      <em>
+                        {selected.nextObservablePrice === null
+                          ? "Open a later archived session to observe it"
+                          : price(selected.nextObservablePrice)}
+                      </em>
                     </span>
                     <span>
                       <small>Gross follow-through</small>
@@ -495,7 +519,9 @@ export function SqueezeMonitorPanel() {
                               : "value-down"
                         }
                       >
-                        {signed(selected.returnSinceNextObservablePct)}
+                        {selected.returnSinceNextObservablePct === null
+                          ? "Not measured yet"
+                          : signed(selected.returnSinceNextObservablePct)}
                       </strong>
                       <em>after confirmation · not P&amp;L</em>
                     </span>
@@ -505,12 +531,12 @@ export function SqueezeMonitorPanel() {
                       <small>Discovery follow-through</small>
                       <strong>
                         {selected.returnSinceDiscoveryPct === null
-                          ? "Pending"
+                          ? "Not measured yet"
                           : signed(selected.returnSinceDiscoveryPct)}
                       </strong>
                       <em>
                         {selected.returnSinceDiscoveryPct === null
-                          ? "awaiting a later completed close"
+                          ? "this snapshot contains no later completed close"
                           : "pre-confirmation move included"}
                       </em>
                     </span>
@@ -523,12 +549,12 @@ export function SqueezeMonitorPanel() {
                       <small>Best / worst close</small>
                       <strong>
                         {selected.maxFavorablePct === null
-                          ? "Pending"
+                          ? "Not measured yet"
                           : `${signed(selected.maxFavorablePct)} / ${signed(selected.maxAdversePct)}`}
                       </strong>
                       <em>
                         {selected.maxFavorablePct === null
-                          ? "awaiting a later completed close"
+                          ? "this snapshot contains no later completed close"
                           : "MFE / MAE · close-to-close"}
                       </em>
                     </span>
@@ -539,12 +565,12 @@ export function SqueezeMonitorPanel() {
                       <small>Peak / trough traded</small>
                       <strong>
                         {selected.peakTradedPct === null
-                          ? "Pending"
+                          ? "Not measured yet"
                           : `${signed(selected.peakTradedPct)} / ${signed(selected.troughTradedPct)}`}
                       </strong>
                       <em>
                         {selected.peakTradedPct === null
-                          ? "awaiting a later completed session"
+                          ? "this snapshot contains no later completed session"
                           : "post-discovery intraday high / low"}
                       </em>
                     </span>

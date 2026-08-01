@@ -23,6 +23,7 @@ import { type Lang, useLang } from "../lib/i18n";
 import { SCREEN_BN, SCREEN_LESSON } from "../lib/lessons";
 import { PATTERN_ORDER, PATTERN_STATUS_LABEL } from "../lib/patterns";
 import { formatCurrencyMillions } from "../lib/market";
+import { formatReportedShareChange } from "../lib/format";
 import { useTenantConfig } from "../lib/tenant";
 import { useUniverse } from "../lib/universe";
 import { ALL_UNIVERSE } from "../lib/universe-policy";
@@ -208,6 +209,10 @@ export function fmtValue(label: string, v: number): string {
   return v.toFixed(2);
 }
 
+function fmtListValue(label: string, value: number): string {
+  return label === "% reported shares" ? formatReportedShareChange(value) : fmtValue(label, value);
+}
+
 function takaMn(mn: number | null | undefined): string {
   return formatCurrencyMillions(mn);
 }
@@ -305,6 +310,7 @@ export function metricHeader(label: string, t: Tr): string {
   if (label === "posts") return t("mh.posts");
   if (label === "turnover") return t("mh.turnover");
   if (label === "pp") return t("mh.bigMoney");
+  if (label === "% reported shares") return t("mh.reportedShares");
   if (label === "momentum") return t("mh.trend");
   if (label === "vs market") return t("mh.vsBenchmark");
   if (label === "ROE") return t("mh.roe") === "mh.roe" ? "ROE" : t("mh.roe");
@@ -1055,14 +1061,14 @@ export function ScreenRow({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`w-full text-left flex items-center gap-3 py-2 pl-2 border-t border-border/60 first:border-t-0 border-l-[3px] motion-safe:transition-transform motion-safe:active:scale-[0.99] ${ruleCls}`}
+        className={`grid w-full min-w-0 grid-cols-[minmax(0,1fr)_4.5rem_6.25rem] items-center gap-2 border-t border-l-[3px] border-border/60 py-2.5 pl-2 text-left first:border-t-0 motion-safe:transition-transform motion-safe:active:scale-[0.99] ${ruleCls}`}
       >
-        <span className="flex items-center gap-2 min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
           {rank != null && (
             <span className="text-[11px] text-muted tnum w-5 shrink-0">{rank}</span>
           )}
           <CompanyLogo code={item.code} size={26} />
-          <span className="flex flex-col min-w-0 gap-0.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex flex-wrap items-center gap-1.5 min-w-0">
               <span className="font-bold text-[13px]">${item.code}</span>
               {item.new_since && (
@@ -1094,55 +1100,49 @@ export function ScreenRow({
               </span>
             )}
           </span>
-        </span>
-        {/* Always a price line. For ownership it spans the move window (the title explains the period). */}
-        <span title={priceTitle} className="shrink-0 inline-flex">
-          <Sparkline
-            data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
-          />
-        </span>
-        <span className="flex items-stretch gap-3 shrink-0 text-right">
-          <span className="flex flex-col items-end justify-center">
-            <span className="text-xs text-muted tnum">{taka(item.last_close)}</span>
-            {item.change_1d != null && (
-              <span
-                className={`text-[11px] tnum ${item.change_1d >= 0 ? "text-up" : "text-down"}`}
-              >
-                {item.change_1d >= 0 ? "+" : ""}
-                {item.change_1d.toFixed(1)}%
-              </span>
-            )}
+          <span title={priceTitle} className="ml-auto hidden shrink-0 min-[410px]:inline-flex">
+            <Sparkline
+              data={isOwnership && item.period_spark?.length ? item.period_spark : item.spark}
+              width={48}
+              height={18}
+            />
           </span>
-          {/* The one number a reader decides from (yield, pp change, ×) is the hero here —
-              promoted to bold and full size — while the descriptive word ("High yield",
-              "Started selling") that used to carry that weight is now its demoted caption. */}
-          <span
-            className={`flex flex-col items-end justify-center ${isOwnership ? "min-w-[96px]" : "w-20"}`}
-          >
+        </span>
+        <span className="flex min-w-0 flex-col items-end justify-center overflow-hidden text-right">
+          <span className="max-w-full truncate text-xs text-muted tnum">{taka(item.last_close)}</span>
+          {item.change_1d != null && (
+            <span className={`text-[11px] tnum ${item.change_1d >= 0 ? "text-up" : "text-down"}`}>
+              {item.change_1d >= 0 ? "+" : ""}
+              {item.change_1d.toFixed(1)}%
+            </span>
+          )}
+        </span>
+        {/* The primary board metric owns a fixed column. Extreme 13F percentages are rendered as
+            equivalent multiples in this compact row; the sheet preserves the exact percentage. */}
+        <span className="flex min-w-0 flex-col items-end justify-center overflow-hidden text-right">
             {isMover ? (
               <span
                 className={`text-base font-extrabold tnum ${item.value >= 0 ? "text-up" : "text-down"}`}
               >
-                {fmtValue(screen.value_label, item.value)}
+                {fmtListValue(screen.value_label, item.value)}
               </span>
             ) : chip ? (
               <>
                 <span className={`text-base font-extrabold tnum ${toneCls(chip.tone)}`}>
-                  {fmtValue(screen.value_label, item.value)}
+                  {fmtListValue(screen.value_label, item.value)}
                 </span>
-                <span className="flex items-baseline gap-1.5 whitespace-nowrap text-[10px] text-muted">
-                  <span>{chip.word}</span>
-                  {period && <span>· {period}</span>}
+                <span className="max-w-full truncate whitespace-nowrap text-[10px] text-muted">
+                  {isOwnership ? (lang === "bn" ? "রিপোর্ট করা শেয়ার" : "reported shares") : chip.word}
                 </span>
+                {period && <span className="max-w-full truncate text-[9px] text-muted">{period}</span>}
                 {isOwnership && <OwnershipDots flow={item.flow ?? []} dates={fdates} lang={lang} />}
                 {item.horizons && <MomentumDots h={item.horizons} />}
               </>
             ) : (
               <span className="text-base font-extrabold text-accent tnum">
-                {fmtValue(screen.value_label, item.value)}
+                {fmtListValue(screen.value_label, item.value)}
               </span>
             )}
-          </span>
         </span>
       </button>
       {open && (
@@ -1418,6 +1418,7 @@ function BoardRead({ s }: { s: Screen }) {
   if (!facts) return null;
   const bn = lang === "bn";
   const { newPrints, streak } = facts;
+  const is13f = s.key.startsWith("institutional_13f_");
   const pp = streak ? `${streak.total >= 0 ? "+" : ""}${streak.total.toFixed(1)} pp` : "";
   return (
     <div className="mt-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2">
@@ -1428,6 +1429,12 @@ function BoardRead({ s }: { s: Screen }) {
               <>
                 <span className="font-bold text-accent">{bnDigits(String(newPrints))}টি</span>{" "}
                 কোম্পানি এই দফায় নতুন প্রকাশ দিয়েছে।
+              </>
+            ) : is13f ? (
+              <>
+                <span className="font-bold text-accent">{newPrints}</span>{" "}
+                {newPrints === 1 ? "symbol has" : "symbols have"} a newly reported 13F comparison
+                this round.
               </>
             ) : (
               <>
@@ -1471,6 +1478,7 @@ function ScreenCard({ s }: { s: Screen }) {
   const isDisclosureBoard = s.items.some(
     (item) => (item.flow?.length ?? 0) > 0 || Boolean(item.data_as_of),
   );
+  const is13f = s.key.startsWith("institutional_13f_");
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-start justify-between gap-2">
@@ -1498,15 +1506,19 @@ function ScreenCard({ s }: { s: Screen }) {
       </div>
       <div className="text-[11px] text-muted mt-1">{screenDesc(s, lang)}</div>
       {isDisclosureBoard && (
-        <div className="mt-1 text-[10px] text-accent/90">{t("screen.disclosurePeriodHelp")}</div>
+        <div className="mt-1 text-[10px] text-accent/90">
+          {is13f
+            ? lang === "bn"
+              ? "প্রতি সারি নিজস্ব আগের → সর্বশেষ 13F সময়কাল তুলনা করে; ম্যানেজার রিপোর্টিং কভারেজ ত্রৈমাসিকে বদলাতে পারে।"
+              : "Each row compares its own prior → latest 13F period; manager filing coverage can change between quarters."
+            : t("screen.disclosurePeriodHelp")}
+        </div>
       )}
       <BoardRead s={s} />
-      <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wide text-muted/70 pb-1">
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_4.5rem_6.25rem] items-end gap-2 pb-1 text-[10px] uppercase tracking-wide text-muted/70">
         <span>{t("col.symbol")}</span>
-        <span className="flex gap-3">
-          <span>{t("col.price")}</span>
-          <span className="w-20 text-right">{metricHeader(s.value_label, t)}</span>
-        </span>
+        <span className="text-right">{t("col.price")}</span>
+        <span className="text-right leading-tight">{metricHeader(s.value_label, t)}</span>
       </div>
       {/* Any tap in the row list = engagement with this board (feeds next visit's Focus order). */}
       <div className="flex flex-col" onClickCapture={() => bumpBoardEngagement(s.key)}>
@@ -1689,9 +1701,9 @@ function Chapter({
 }
 
 export function Markets() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { config } = useTenantConfig();
-  const { tier } = useUniverse();
+  const { tier, setTier } = useUniverse();
   useSeo({
     title: {
       bn: `মার্কেট স্ক্রিন — ${config.exchange_code} গেইনার, লুজার, ভলিউম, ভ্যালু | ${config.brand_name}`,
@@ -1738,6 +1750,28 @@ export function Markets() {
     }
     setEngagement({});
   };
+  const filteredEmpty = tier !== ALL_UNIVERSE && live.length === 0;
+  const filteredEmptyState = filteredEmpty ? (
+    <div className="rounded-xl border border-border bg-surface px-4 py-6 text-center">
+      <div className="text-sm font-semibold text-text">
+        {lang === "bn"
+          ? "এই আকারে কোনো শেয়ার সর্বশেষ স্ক্রিনের নিয়ম পাস করেনি"
+          : "No companies in this size passed the latest screen rules"}
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-muted">
+        {lang === "bn"
+          ? "এটি একটি বৈধ no-signal ফলাফল; বাজারের ডেটা অনুপস্থিত নয়।"
+          : "This is a valid no-signal result, not missing market data."}
+      </p>
+      <button
+        type="button"
+        onClick={() => setTier(ALL_UNIVERSE)}
+        className="mt-3 rounded-full border border-accent px-4 py-1.5 text-xs font-semibold text-accent hover:bg-accent/10"
+      >
+        {lang === "bn" ? "সব আকার স্ক্যান করুন" : "Scan all sizes"}
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -1820,9 +1854,7 @@ export function Markets() {
             </div>
           )}
           <SizeChips scopeNote={t("tier.scopeShort")} />
-          {focusScreens.map((s) => (
-            <ScreenCard key={s.key} s={s} />
-          ))}
+          {filteredEmptyState ?? focusScreens.map((s) => <ScreenCard key={s.key} s={s} />)}
         </Chapter>
       ) : activeLens ? (
         activeLens.keys

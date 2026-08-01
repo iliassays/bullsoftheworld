@@ -134,7 +134,7 @@ export function SqueezeLifecycle({
   );
   const observedStates = [...new Set(currentStates)];
   const storyTitle = directConfirmation
-    ? "Confirmed at first observation"
+    ? "Rule confirmed at first observation"
     : currentStates.length <= 5
       ? `Observed progression: ${currentStates.join(" → ")}`
       : `${currentStates.length} state changes across ${observedStates.join(", ")}`;
@@ -161,7 +161,7 @@ export function SqueezeLifecycle({
         </span>
         <p>
           {directConfirmation
-            ? "Atlas did not record Watch, Forming, or Trigger ready for this episode. It entered the archive directly as Confirmed; missing phases are not inferred."
+            ? "Atlas did not record Early watch, Base forming, or Near trigger for this episode. It entered the archive directly as Rule confirmed; missing phases are not inferred."
             : `Atlas recorded ${currentEpisode.events.length} point-in-time state ${
                 currentEpisode.events.length === 1 ? "observation" : "changes"
               } from ${currentEpisode.startedOn} through ${currentEpisode.endedOn}.`}
