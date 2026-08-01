@@ -31,6 +31,11 @@ being visible in Atlas does not mean it is validated, deployable, or connected t
   candidates *before* screening — equal-weighting the screened set would be a near-copy of the
   book, a null that cannot lose. The book must therefore show that its screen and its sizing
   earn their complexity, not merely that events carry a return.
+- The DSE books carry the same market null (`equal_weight_eligible_universe`): 1/N across every
+  security whose trailing 20-session traded value clears the strategy's own liquidity floor,
+  recomputed from completed sessions at each of the strategy's rebalance dates. They previously
+  had a timing placebo and a liquidity-only baseline but never had to beat simply holding the
+  market, so a DSE book could have passed while its name selection contributed nothing.
 - Code-resident constants that define an event family (activist roster fragments, book policy,
   cluster parameters, placebo delay) are embedded in the frozen specification hash — editing one
   produces a new specification, never a silent rewrite of a frozen trial's history.

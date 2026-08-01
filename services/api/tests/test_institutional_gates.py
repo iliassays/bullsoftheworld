@@ -15,6 +15,9 @@ import datetime as dt
 
 import pytest
 
+from api.institutional_research.dse_squeeze_backtests import (
+    _eligible_universe_equal_weight_null,
+)
 from api.institutional_research.institutional_backtests import (
     _CLUSTER_MINIMUM_INSIDERS,
     _EVENT_BOOK_POLICY_KWARGS,
@@ -28,6 +31,7 @@ from api.institutional_research.workflow import (
     event_market_null_gate,
 )
 from bulls.analytics.filing_book import CandidateEvent
+from bulls.analytics.research_strategy import StrategyBar, StrategySecurity
 
 # --- concern #1a: the 30 bps kill rule is a gate, not a metric ------------------------------
 
@@ -247,6 +251,85 @@ def test_null_is_empty_without_sessions() -> None:
     assert (
         _unscreened_equal_weight_null(
             candidates_by_session={}, session_dates=[], time_stop_days=365
+        )
+        == {}
+    )
+
+
+# --- DSE symmetry: the DSE books get an equal-weight market null too ------------------------
+
+
+def _dse_security(code: str, *, sessions: list[dt.date], value: float) -> StrategySecurity:
+    """A security whose every session trades ``value`` in taka."""
+    return StrategySecurity(
+        code=code,
+        sector="Unclassified",
+        cap_tier="unclassified",
+        bars=[
+            StrategyBar(date=day, open=10.0, high=10.0, low=10.0, close=10.0, volume=value / 10.0)
+            for day in sessions
+        ],
+    )
+
+
+def test_dse_null_equal_weights_the_liquid_universe() -> None:
+    sessions = _sessions(30)
+    securities = [
+        _dse_security("LIQA", sessions=sessions, value=10_000_000.0),
+        _dse_security("LIQB", sessions=sessions, value=10_000_000.0),
+    ]
+    schedule = _eligible_universe_equal_weight_null(
+        securities,
+        rebalance_dates=[sessions[25]],
+        minimum_average_daily_value_mn=2.0,
+    )
+    assert schedule[sessions[25]] == {"LIQA": 0.5, "LIQB": 0.5}
+
+
+def test_dse_null_excludes_securities_below_the_liquidity_floor() -> None:
+    """The null must be reachable — it cannot hold names the strategy could never trade."""
+    sessions = _sessions(30)
+    securities = [
+        _dse_security("LIQ", sessions=sessions, value=10_000_000.0),
+        _dse_security("THIN", sessions=sessions, value=100_000.0),
+    ]
+    schedule = _eligible_universe_equal_weight_null(
+        securities,
+        rebalance_dates=[sessions[25]],
+        minimum_average_daily_value_mn=2.0,
+    )
+    assert schedule[sessions[25]] == {"LIQ": 1.0}
+
+
+def test_dse_null_needs_a_full_trailing_window_before_admitting_a_name() -> None:
+    """With fewer than 20 completed sessions the average is unknown, so the name abstains."""
+    sessions = _sessions(30)
+    securities = [_dse_security("LIQ", sessions=sessions, value=10_000_000.0)]
+    early = _eligible_universe_equal_weight_null(
+        securities,
+        rebalance_dates=[sessions[5]],
+        minimum_average_daily_value_mn=2.0,
+    )
+    assert early == {}
+
+
+def test_dse_null_emits_only_when_the_eligible_set_changes() -> None:
+    sessions = _sessions(30)
+    securities = [_dse_security("LIQ", sessions=sessions, value=10_000_000.0)]
+    schedule = _eligible_universe_equal_weight_null(
+        securities,
+        rebalance_dates=[sessions[22], sessions[25], sessions[28]],
+        minimum_average_daily_value_mn=2.0,
+    )
+    assert list(schedule) == [sessions[22]]
+
+
+def test_dse_null_is_empty_without_rebalances() -> None:
+    sessions = _sessions(30)
+    securities = [_dse_security("LIQ", sessions=sessions, value=10_000_000.0)]
+    assert (
+        _eligible_universe_equal_weight_null(
+            securities, rebalance_dates=[], minimum_average_daily_value_mn=2.0
         )
         == {}
     )

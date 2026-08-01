@@ -52,6 +52,50 @@ def _trailing_average_daily_value_mn(
     return statistics.fmean(value for _date, value in completed) / 1_000_000
 
 
+def _eligible_universe_equal_weight_null(
+    securities: list[StrategySecurity],
+    *,
+    rebalance_dates: list[dt.date],
+    minimum_average_daily_value_mn: float,
+) -> dict[dt.date, dict[str, float]]:
+    """1/N over every liquid DSE security — the null a stock-picking rule must beat.
+
+    The DSE books previously carried a timing placebo and a liquidity-only baseline, but never
+    had to show they beat simply holding the market. That is the comparison that decides
+    whether *selecting* names earned anything, so without it a book could pass while its
+    selection contributed nothing.
+
+    Eligibility is recomputed at each rebalance from completed sessions only: a security joins
+    when its trailing 20-session traded value clears the same liquidity floor the strategy
+    itself must clear, using ``_trailing_average_daily_value_mn``, which never reads a bar
+    after ``as_of``. Weights are emitted on the strategy's own rebalance dates so the two
+    schedules face identical decision points and identical execution timing.
+    """
+    if not rebalance_dates or not securities:
+        return {}
+
+    traded_value: dict[str, list[tuple[dt.date, float]]] = {
+        security.code: [(bar.date, bar.close * bar.volume) for bar in security.bars]
+        for security in securities
+    }
+
+    schedule: dict[dt.date, dict[str, float]] = {}
+    previous: frozenset[str] = frozenset()
+    for as_of in rebalance_dates:
+        eligible = []
+        for code, values in traded_value.items():
+            average = _trailing_average_daily_value_mn(values, as_of=as_of)
+            if average is not None and average >= minimum_average_daily_value_mn:
+                eligible.append(code)
+        active = frozenset(eligible)
+        if not active or active == previous:
+            continue
+        weight = round(1.0 / len(eligible), 6)
+        schedule[as_of] = {code: weight for code in sorted(eligible)}
+        previous = active
+    return schedule
+
+
 async def prepare_dse_compression_backtest(
     session: AsyncSession,
     *,
@@ -319,6 +363,13 @@ async def prepare_dse_compression_backtest(
     }
     if liquidity_baseline is not None:
         comparators["liquidity_only_three_slot_baseline"] = liquidity_baseline.target_weights
+    equal_weight_universe = _eligible_universe_equal_weight_null(
+        securities,
+        rebalance_dates=sorted(built.target_weights),
+        minimum_average_daily_value_mn=policy.minimum_average_daily_value_mn,
+    )
+    if equal_weight_universe:
+        comparators["equal_weight_eligible_universe"] = equal_weight_universe
     return InstitutionalBacktestPreparation(
         securities=securities,
         weight_schedule=built.target_weights,
@@ -352,6 +403,7 @@ async def prepare_dse_compression_backtest(
             "selective_feature_observations": feature_observations,
             "benchmark_feature_observations": len(benchmark_closes),
             "eligible_security_count": len(securities),
+            "equal_weight_eligible_universe_rebalances": len(equal_weight_universe),
         },
         failed_gates=failed_gates,
         inactive_security_history_complete=False,
