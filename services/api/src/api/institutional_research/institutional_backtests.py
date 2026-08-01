@@ -101,6 +101,49 @@ _CONCEPT_PRIORITY = {
     for priority, concept in enumerate(spec.concepts)
 }
 
+# Load-bearing event-book constants. These are part of the preregistered specification:
+# strategy_code_constants() feeds them into the frozen specification hash, so editing any
+# of them (including the activist roster above) produces a NEW spec hash and therefore a
+# new trial — history can no longer be rewritten silently under an unchanged hash.
+_EVENT_BOOK_POLICY_KWARGS: dict[str, object] = {
+    "max_position_pct": 0.05,
+    "max_concurrent_positions": 20,
+    "max_half_spread_bps": 100.0,
+    "minimum_market_cap_mn": 100.0,
+    "time_stop_days": 365,
+    # Re-armed: FINRA consolidated short interest supplies the point-in-time input this
+    # gate always required. Names with no disseminated record are rejected as
+    # "short_interest_unknown" rather than silently waved through.
+    "screen_crowding": True,
+    "require_market_cap": False,
+}
+_CLUSTER_WINDOW_DAYS = 30
+_CLUSTER_MINIMUM_INSIDERS = 2
+_PLACEBO_DELAY_SESSIONS = 21
+
+
+def strategy_code_constants(strategy_key: str) -> dict[str, object] | None:
+    """Code-resident constants that materially define a strategy's event family.
+
+    Returned dicts are embedded in the frozen specification (and so in its hash) at
+    trial registration. Phase 16 concern #2: without this, editing a constant rewrote
+    historical events under an unchanged specification_hash.
+    """
+    if strategy_key == "us_activist_13d_v1":
+        return {
+            "activist_roster_fragments": sorted(_ACTIVIST_FRAGMENTS),
+            "book_policy": dict(_EVENT_BOOK_POLICY_KWARGS),
+            "placebo_delay_sessions": _PLACEBO_DELAY_SESSIONS,
+        }
+    if strategy_key == "us_insider_cluster_v1":
+        return {
+            "cluster_window_days": _CLUSTER_WINDOW_DAYS,
+            "cluster_minimum_insiders": _CLUSTER_MINIMUM_INSIDERS,
+            "book_policy": dict(_EVENT_BOOK_POLICY_KWARGS),
+            "placebo_delay_sessions": _PLACEBO_DELAY_SESSIONS,
+        }
+    return None
+
 
 def _delay_schedule(
     schedule: dict[dt.date, dict[str, float]],
@@ -642,10 +685,13 @@ async def _event_candidates(
         )
         classification = classify_insider([date for _, date in history[:cut]])
         purchases.extend(qualifying_purchases([trade], {trade.owner_cik: classification}))
+    # Phase 8/12: the peer-reviewed insider evidence is specifically about MULTIPLE
+    # insiders buying in a window (cluster > singleton). Singleton purchases were a
+    # quiet widening of the studied sleeve and are excluded from the event family.
     clusters = detect_clusters(
         [trade for trade in purchases if trade.issuer_symbol],
-        window_days=30,
-        minimum_insiders=1,
+        window_days=_CLUSTER_WINDOW_DAYS,
+        minimum_insiders=_CLUSTER_MINIMUM_INSIDERS,
     )
     candidates = [
         CandidateEvent(
@@ -745,18 +791,7 @@ async def _event_preparation(
             by_session[session_at].append(candidate)
     state_by_session: dict[dt.datetime, dict[str, CandidateMarketState]] = {}
     all_screened = []
-    policy = BookPolicy(
-        max_position_pct=0.05,
-        max_concurrent_positions=20,
-        max_half_spread_bps=100.0,
-        minimum_market_cap_mn=100.0,
-        time_stop_days=365,
-        # Re-armed: FINRA consolidated short interest now supplies the point-in-time input this
-        # gate always required. Names with no disseminated record are rejected as
-        # "short_interest_unknown" rather than silently waved through.
-        screen_crowding=True,
-        require_market_cap=False,
-    )
+    policy = BookPolicy(**_EVENT_BOOK_POLICY_KWARGS)
     short_interest = await _short_interest_observations(
         session, codes=sorted({candidate.symbol for candidate in candidates})
     )
@@ -797,7 +832,9 @@ async def _event_preparation(
     schedule = {timestamp.date(): weights for timestamp, weights in schedule_dt.items()}
     failed_gates = [
         "Inactive and acquired target history has not yet passed a complete listing-history audit.",
-        "Short-interest-as-percent-of-float is unavailable, so the preregistered crowding gate is disabled.",
+        "Crowding screen runs on short interest as a percent of shares outstanding; the "
+        "preregistered percent-of-float input is still unavailable, so the threshold is an "
+        "approximation until float data exists.",
         "Historical capitalization-tier membership is incomplete; event results cannot be split by contemporaneous size tier.",
     ]
     if request.codes:
@@ -809,7 +846,7 @@ async def _event_preparation(
     delayed_placebo = _delay_schedule(
         schedule,
         sessions=session_dates,
-        delay_sessions=21,
+        delay_sessions=_PLACEBO_DELAY_SESSIONS,
     )
     if schedule and not delayed_placebo:
         failed_gates.append(
@@ -824,9 +861,9 @@ async def _event_preparation(
             "schedule_changes": len(schedule),
             "book_sessions": len(advances),
             "rejections": rejection_summary(all_screened),
-            "crowding_screen": "disabled_missing_short_interest_pct_of_shares_outstanding",
+            "crowding_screen": "enabled_short_interest_pct_of_shares_outstanding_proxy",
             "fundamental_observations": len(observations),
-            "event_timing_placebo_delay_sessions": 21,
+            "event_timing_placebo_delay_sessions": _PLACEBO_DELAY_SESSIONS,
             "invalid_transaction_clocks_rejected": invalid_transaction_clocks,
         },
         failed_gates=failed_gates,

@@ -267,6 +267,22 @@ async def _portfolio_out(
     )
 
 
+def data_blocked_refusal(result: dict) -> str | None:
+    """Refuse to seed a shadow book from a run Atlas declined to simulate.
+
+    System B returns an empty schedule plus data-blocked failed gates rather than
+    simulating on proxies. That refusal used to be enforced only incidentally — the empty
+    result happened to have no ``end_date``, which raised further down. Naming the
+    condition makes the refusal survive refactoring of the code that followed it.
+    """
+    if result.get("equity_curve") or result.get("trades"):
+        return None
+    return (
+        "The source run is data-blocked: Atlas refused to simulate it because "
+        "critical datasets are missing, so there is no basis for a shadow book."
+    )
+
+
 async def create_shadow_portfolio(
     session: AsyncSession,
     *,
@@ -283,6 +299,9 @@ async def create_shadow_portfolio(
     if backtest_step is None:
         raise ValueError("The source run does not contain a portfolio backtest")
     result = backtest_step.output
+    data_blocked = data_blocked_refusal(result)
+    if data_blocked is not None:
+        raise ValueError(data_blocked)
     end_date = result.get("end_date")
     if not end_date:
         raise ValueError("The source backtest has no completed market session")

@@ -279,6 +279,28 @@ def _trial_out(record: ResearchStrategyTrial) -> StrategyTrialOut:
     )
 
 
+async def family_trial_count(
+    session: AsyncSession,
+    *,
+    workspace: ResearchWorkspace,
+    strategy_key: str,
+) -> int:
+    """Trials ever registered for this strategy family across ALL workspaces.
+
+    The deflated-Sharpe denominator (phase 13 §13.3.3) must count the family's full
+    trial history within the tenant/market; scoping it to one workspace would let a
+    fresh workspace restart the multiple-testing penalty at one.
+    """
+    count = await session.scalar(
+        select(func.count(ResearchStrategyTrial.id)).where(
+            ResearchStrategyTrial.tenant_id == workspace.tenant_id,
+            ResearchStrategyTrial.market == workspace.market,
+            ResearchStrategyTrial.strategy_key == strategy_key,
+        )
+    )
+    return int(count or 0)
+
+
 async def register_strategy_trial(
     session: AsyncSession,
     *,
@@ -308,6 +330,9 @@ async def register_strategy_trial(
             ResearchStrategyTrial.strategy_key == strategy.key,
         )
     )
+    # NOTE: trial_sequence remains the per-workspace ledger ordinal (unique constraint);
+    # the deflated-Sharpe denominator uses family_trial_count() below, which ignores the
+    # workspace boundary so a fresh workspace cannot reset the multiple-testing penalty.
     trial = ResearchStrategyTrial(
         id=uuid.uuid4(),
         organization_id=workspace.organization_id,

@@ -18,8 +18,26 @@ being visible in Atlas does not mean it is validated, deployable, or connected t
 - Two-rung drawdown ladder. The flatten rung is sticky in historical and shadow books; no
   counterfactual review is invented to re-arm a historical run.
 - Chronological train/validation/test reporting, deflated Sharpe against the registered family
-  trial count, named-regime reporting, persisted evidence fingerprints, and objective shadow
-  promotion gates.
+  trial count (counted across ALL workspaces in the tenant/market, so a fresh workspace cannot
+  reset the multiple-testing penalty), named-regime reporting, persisted evidence fingerprints,
+  and objective shadow promotion gates.
+- The 30 bps kill rule is a first-class gate: an edge that dies at or below 30 bps one-way fails
+  the run to diagnostic (phase 13 §13.2), independent of the null-model comparisons.
+- Event books are additionally gated against the uncosted market benchmark at realistic and
+  30 bps costs (phase 12 market null); the 21-session placebo answers timing, not exposure.
+- Code-resident constants that define an event family (activist roster fragments, book policy,
+  cluster parameters, placebo delay) are embedded in the frozen specification hash — editing one
+  produces a new specification, never a silent rewrite of a frozen trial's history.
+  - **One-time consequence, by design:** trials registered before this change, and every A2 trial
+    registered while the cluster minimum was one insider, cannot reproduce their own
+    `specification_hash` under the current code. They are not corrupt and they are not deleted —
+    they are historical records of a *different* specification, and the new hash correctly refuses
+    to claim continuity with them. Any comparison across that boundary must be stated as a
+    comparison of two specifications, never as one strategy's track record.
+- Known deviation, disclosed: the shared engine applies the risk policy's 10% per-position stop
+  to event books. Phase 12's System A exit spec (thesis-break / time-stop / staged) does not
+  include it. The stop is part of the hashed risk policy, so a no-stop variant can be registered
+  as its own trial and decided by evidence.
 - Forward shadow books persist intended versus constrained orders, fills, risk interventions,
   targets, fees, turnover, decision prices, implementation shortfall, and explicit
   freeze-clearance events.
@@ -37,14 +55,24 @@ candidate reasons, and a 21-session delayed-entry placebo.
 **Still blocks validation:**
 
 - Complete inactive/acquired target history has not passed an audit.
-- Short interest as a percentage of float is absent; daily short volume is not substituted.
+- The crowding screen runs on FINRA short interest as a percent of shares outstanding
+  (conservative for a long book); the preregistered percent-of-float input is still absent.
 - Required named regimes must exist in the requested historical window.
 
 ## System A2 — opportunistic insider cluster book
 
 **Implemented:** Form 4 code-P purchases, 10b5-1 exclusion, insider classification using only
-filings accepted by that timestamp, cluster construction, separate strategy identity, the same
-event-book execution/risk controls as A1, and the delayed-entry placebo.
+filings accepted by that timestamp, cluster construction (minimum two distinct insiders per the
+studied evidence — singleton purchases are excluded from the event family), separate strategy
+identity, the same event-book execution/risk controls as A1, and the delayed-entry placebo.
+
+**Cost of requiring a real cluster** (production query, 2026-08-01, non-10b5-1 code-P purchases
+2016-2026, monthly issuer buckets as a proxy for the 30-day window): 30,781 issuer-windows have
+at least one buying insider; 12,502 have two or more. Requiring a genuine cluster therefore
+discards about 59% of events and retains 12,502 — a large reduction, but the remaining sample is
+still ample for event-family evidence, so the sleeve is narrowed rather than starved. The
+monthly bucket is an approximation of the rolling window and the true retained count will differ
+somewhat.
 
 **Still blocks validation:** the same listing-history, crowding-data, and regime-coverage gates as
 A1. A user-selected ticker subset is diagnostic and cannot establish event-family evidence.
@@ -57,7 +85,9 @@ Atlas refuses to simulate this system until all seven replayable datasets exist:
 corporate-action history, announcement/effective timestamps, parent-holder history,
 post-bankruptcy distributions, point-in-time fundamentals, inactive listings, and
 corporate-action-safe prices. News text and current listings are not accepted as proxies. The UI
-shows the missing datasets and prevents a shadow book from being created.
+shows the missing datasets and prevents a shadow book from being created. The refusal is an
+explicit admission rule in shadow creation (a data-blocked run with no simulated sessions is
+rejected by name), not an incidental property of the empty result.
 
 ## System C — factor sleeve
 

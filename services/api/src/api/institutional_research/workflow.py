@@ -19,9 +19,11 @@ from api.institutional_research.dse_squeeze_backtests import (
 from api.institutional_research.institutional_backtests import (
     InstitutionalBacktestPreparation,
     prepare_institutional_backtest,
+    strategy_code_constants,
 )
 from api.institutional_research.investment import (
     complete_strategy_trial,
+    family_trial_count,
     get_active_mandate,
     mandate_snapshot,
     register_strategy_trial,
@@ -782,6 +784,72 @@ async def _backtest_benchmark(
     )
 
 
+# Phase 13 §13.2: an edge that cannot survive 30 bps of one-way cost was never an edge.
+COST_SURVIVAL_FLOOR_BPS = 30.0
+# Books whose evidence is event-shaped. Their only comparator used to be the 21-session
+# placebo, which establishes that a return attaches to event timing but says nothing about
+# whether the exposure beat the market.
+EVENT_BOOK_STRATEGY_KEYS = frozenset({"us_activist_13d_v1", "us_insider_cluster_v1"})
+
+
+def cost_survival_gate(edge_dies_at_bps: float | None) -> str | None:
+    """Return a failed-gate reason when the edge dies at or below the cost floor.
+
+    ``edge_dies_at_bps`` is ``None`` when no stress tier killed the edge, which is the only
+    passing case. Kept as a pure function so the gate is testable without a database — this
+    is a promotion-blocking rule and a silent regression here would be invisible.
+    """
+    if edge_dies_at_bps is None or edge_dies_at_bps > COST_SURVIVAL_FLOOR_BPS:
+        return None
+    return (
+        f"Edge dies at {edge_dies_at_bps:.0f} bps one-way cost — "
+        f"below the {COST_SURVIVAL_FLOOR_BPS:.0f} bps survival requirement (phase 13 §13.2)."
+    )
+
+
+def event_market_null_gate(
+    *,
+    strategy_key: str,
+    benchmark_valid: bool,
+    initial_capital: float,
+    benchmark_final: float,
+    final_nav: float,
+    stress_30_net_return_pct: float | None,
+) -> tuple[dict | None, str | None]:
+    """Phase 12 market null for event books: beat the market, not just the placebo.
+
+    The book's *cost-loaded* net return is compared against the *uncosted* benchmark, which
+    is deliberately the conservative direction — the strategy pays its costs and the
+    benchmark does not. Both the realistic and the 30 bps stressed return must clear it.
+
+    A missing 30 bps stress figure fails the gate rather than skipping it: an unmeasurable
+    comparison is not a passed comparison.
+    """
+    if strategy_key not in EVENT_BOOK_STRATEGY_KEYS or not benchmark_valid:
+        return None, None
+    if initial_capital <= 0:
+        return None, None
+
+    benchmark_return = benchmark_final / initial_capital - 1.0
+    realistic_net = final_nav / initial_capital - 1.0
+    beats_realistic = realistic_net > benchmark_return
+    beats_stressed = (
+        stress_30_net_return_pct is not None
+        and stress_30_net_return_pct / 100.0 > benchmark_return
+    )
+    summary = {
+        "benchmark_return_pct": round(benchmark_return * 100.0, 3),
+        "strategy_beats_realistic": beats_realistic,
+        "strategy_beats_stress_30bps": beats_stressed,
+    }
+    if beats_realistic and beats_stressed:
+        return summary, None
+    return summary, (
+        "Event book did not beat the uncosted market benchmark at realistic and 30 bps "
+        "costs (phase 12 market null)."
+    )
+
+
 def _deflated_sharpe_gate(
     equity_curve: list[EquityPoint],
     *,
@@ -885,6 +953,14 @@ async def execute_backtest(
             "point_in_time_inputs_required_for_promotion": True,
         },
         **({"signal_specification": signal_specification} if signal_specification else {}),
+        # Code-resident constants that define the event family (activist roster, book
+        # policy, cluster parameters). Hashing them means editing a constant creates a
+        # NEW specification instead of silently rewriting a frozen trial's history.
+        **(
+            {"code_constants": code_constants}
+            if (code_constants := strategy_code_constants(request.strategy_key)) is not None
+            else {}
+        ),
     }
     run = _new_run(
         workspace=workspace,
@@ -997,6 +1073,31 @@ async def execute_backtest(
         ),
         None,
     )
+    cost_survival_failure = cost_survival_gate(cost_tiered.edge_dies_at_bps)
+    if cost_survival_failure is not None:
+        result = result.model_copy(
+            update={
+                "validation_status": "diagnostic",
+                "failed_gates": [*result.failed_gates, cost_survival_failure],
+            }
+        )
+    market_null_summary, market_null_failure = event_market_null_gate(
+        strategy_key=request.strategy_key,
+        benchmark_valid=result.benchmark_valid,
+        initial_capital=result.initial_capital,
+        benchmark_final=result.benchmark_final,
+        final_nav=result.final_nav,
+        stress_30_net_return_pct=main_stress_30,
+    )
+    if market_null_summary is not None:
+        comparator_summary["uncosted_market_benchmark"] = market_null_summary
+    if market_null_failure is not None:
+        result = result.model_copy(
+            update={
+                "validation_status": "diagnostic",
+                "failed_gates": [*result.failed_gates, market_null_failure],
+            }
+        )
     if preparation.comparators:
         main_realistic_return = (
             result.final_nav / result.initial_capital - 1.0 if result.initial_capital > 0 else 0.0
@@ -1055,8 +1156,11 @@ async def execute_backtest(
                     "failed_gates": list(dict.fromkeys([*result.failed_gates, *failed_nulls])),
                 }
             )
+    family_trials = await family_trial_count(
+        session, workspace=workspace, strategy_key=request.strategy_key
+    )
     deflated_sharpe_summary, overfitting_gate = _deflated_sharpe_gate(
-        result.equity_curve, num_trials=trial.trial_sequence
+        result.equity_curve, num_trials=max(family_trials, trial.trial_sequence)
     )
     if overfitting_gate is not None:
         result = result.model_copy(
