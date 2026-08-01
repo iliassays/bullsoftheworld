@@ -1478,6 +1478,7 @@ function ScreenCard({ s }: { s: Screen }) {
   const isDisclosureBoard = s.items.some(
     (item) => (item.flow?.length ?? 0) > 0 || Boolean(item.data_as_of),
   );
+  const is13f = s.key.startsWith("institutional_13f_");
   return (
     <div className="bg-surface border border-border rounded-2xl p-4">
       <div className="flex items-start justify-between gap-2">
@@ -1505,7 +1506,13 @@ function ScreenCard({ s }: { s: Screen }) {
       </div>
       <div className="text-[11px] text-muted mt-1">{screenDesc(s, lang)}</div>
       {isDisclosureBoard && (
-        <div className="mt-1 text-[10px] text-accent/90">{t("screen.disclosurePeriodHelp")}</div>
+        <div className="mt-1 text-[10px] text-accent/90">
+          {is13f
+            ? lang === "bn"
+              ? "প্রতি সারি নিজস্ব আগের → সর্বশেষ 13F সময়কাল তুলনা করে; ম্যানেজার রিপোর্টিং কভারেজ ত্রৈমাসিকে বদলাতে পারে।"
+              : "Each row compares its own prior → latest 13F period; manager filing coverage can change between quarters."
+            : t("screen.disclosurePeriodHelp")}
+        </div>
       )}
       <BoardRead s={s} />
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)_4.5rem_6.25rem] items-end gap-2 pb-1 text-[10px] uppercase tracking-wide text-muted/70">
