@@ -21,6 +21,7 @@ from bulls.analytics.cost_observatory import estimate_spread
 from bulls.analytics.factor_sleeve import (
     FundamentalObservation,
     SleevePolicy,
+    equal_weight_null,
     point_in_time_factor_fundamentals,
 )
 from bulls.analytics.filing_book import (
@@ -162,6 +163,51 @@ def _delay_schedule(
         if index < len(sessions) and sessions[index] == as_of and delayed_index < len(sessions):
             delayed[sessions[delayed_index]] = weights.copy()
     return delayed
+
+
+def _unscreened_equal_weight_null(
+    *,
+    candidates_by_session: dict[dt.datetime, list[CandidateEvent]],
+    session_dates: list[dt.date],
+    time_stop_days: int,
+) -> dict[dt.date, dict[str, float]]:
+    """The 1/N null for an event book: hold every event, unscreened and unranked.
+
+    Phase 12 requires an event book to beat a naive alternative, not only the 21-session
+    placebo — the placebo establishes that a return attaches to event *timing*, and says
+    nothing about whether *selecting* among the events added anything.
+
+    The universe is deliberately the candidates **before** screening and ranking. Equal
+    weighting the screened set would be a near-copy of the book itself (it already holds
+    almost everything that survives the screen), which would be a null that cannot lose.
+    Holding every event asks the question that matters: does the screen and the sizing earn
+    their complexity?
+
+    Entry timing matches the book — a candidate joins on the session its signal maps to, so
+    the null can never see an event earlier than the strategy did — and positions age out on
+    the same ``time_stop_days`` the book uses. Weights are emitted only when the active set
+    changes, mirroring the book's ``emit_unchanged=False`` schedule.
+    """
+    if not session_dates:
+        return {}
+
+    entries: dict[dt.date, list[str]] = defaultdict(list)
+    for session_at, session_candidates in candidates_by_session.items():
+        for candidate in session_candidates:
+            entries[session_at.date()].append(candidate.symbol)
+
+    # symbol -> the date its most recent entry ages out
+    expiry: dict[str, dt.date] = {}
+    schedule: dict[dt.date, dict[str, float]] = {}
+    previous: frozenset[str] = frozenset()
+    for as_of in session_dates:
+        for symbol in entries.get(as_of, ()):
+            expiry[symbol] = as_of + dt.timedelta(days=time_stop_days)
+        active = frozenset(symbol for symbol, ends in expiry.items() if as_of < ends)
+        if active != previous:
+            schedule[as_of] = equal_weight_null(sorted(active))
+            previous = active
+    return schedule
 
 
 @dataclass(frozen=True)
@@ -463,9 +509,7 @@ async def _short_interest_observations(
                 settlement_date=row.settlement_date,
                 known_at=row.known_at,
                 shares_short=float(row.shares_short),
-                days_to_cover=(
-                    float(row.days_to_cover) if row.days_to_cover is not None else None
-                ),
+                days_to_cover=(float(row.days_to_cover) if row.days_to_cover is not None else None),
                 average_daily_volume=(
                     float(row.average_daily_volume)
                     if row.average_daily_volume is not None
@@ -852,10 +896,18 @@ async def _event_preparation(
         failed_gates.append(
             "The 21-session event-timing placebo has no executable delayed observations."
         )
+    unscreened_null = _unscreened_equal_weight_null(
+        candidates_by_session=by_session,
+        session_dates=session_dates,
+        time_stop_days=int(_EVENT_BOOK_POLICY_KWARGS["time_stop_days"]),
+    )
+    comparators = {"event_timing_plus_21_sessions": delayed_placebo}
+    if unscreened_null:
+        comparators["equal_weight_all_events"] = unscreened_null
     return InstitutionalBacktestPreparation(
         securities=await _securities(session, bars, start=start, end=end),
         weight_schedule=schedule,
-        comparators={"event_timing_plus_21_sessions": delayed_placebo},
+        comparators=comparators,
         diagnostics={
             "candidate_events": len(candidates),
             "schedule_changes": len(schedule),
@@ -865,6 +917,7 @@ async def _event_preparation(
             "fundamental_observations": len(observations),
             "event_timing_placebo_delay_sessions": _PLACEBO_DELAY_SESSIONS,
             "invalid_transaction_clocks_rejected": invalid_transaction_clocks,
+            "equal_weight_all_events_rebalances": len(unscreened_null),
         },
         failed_gates=failed_gates,
     )

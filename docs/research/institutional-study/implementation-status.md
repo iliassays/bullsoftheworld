@@ -25,6 +25,12 @@ being visible in Atlas does not mean it is validated, deployable, or connected t
   the run to diagnostic (phase 13 §13.2), independent of the null-model comparisons.
 - Event books are additionally gated against the uncosted market benchmark at realistic and
   30 bps costs (phase 12 market null); the 21-session placebo answers timing, not exposure.
+- Event books also run a 1/N null (`equal_weight_all_events`) through the same harness: equal
+  weight in **every** candidate event, unscreened and unranked, entering on the same session the
+  book's signal maps to and ageing out on the same time stop. The universe is deliberately the
+  candidates *before* screening — equal-weighting the screened set would be a near-copy of the
+  book, a null that cannot lose. The book must therefore show that its screen and its sizing
+  earn their complexity, not merely that events carry a return.
 - Code-resident constants that define an event family (activist roster fragments, book policy,
   cluster parameters, placebo delay) are embedded in the frozen specification hash — editing one
   produces a new specification, never a silent rewrite of a frozen trial's history.

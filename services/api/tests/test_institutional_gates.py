@@ -11,11 +11,14 @@ the frozen specification hash), #5 (cluster minimum), and #6 (explicit data-bloc
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from api.institutional_research.institutional_backtests import (
     _CLUSTER_MINIMUM_INSIDERS,
     _EVENT_BOOK_POLICY_KWARGS,
+    _unscreened_equal_weight_null,
     strategy_code_constants,
 )
 from api.institutional_research.portfolio import data_blocked_refusal
@@ -24,6 +27,7 @@ from api.institutional_research.workflow import (
     cost_survival_gate,
     event_market_null_gate,
 )
+from bulls.analytics.filing_book import CandidateEvent
 
 # --- concern #1a: the 30 bps kill rule is a gate, not a metric ------------------------------
 
@@ -155,6 +159,97 @@ def test_editing_a_constant_changes_the_specification_hash() -> None:
 
 def test_non_event_strategies_have_no_code_constants() -> None:
     assert strategy_code_constants("us_factor_sleeve_v1") is None
+
+
+# --- concern #1b: event books face a 1/N null, not only the placebo -------------------------
+
+
+def _event(symbol: str, at: dt.datetime) -> CandidateEvent:
+    return CandidateEvent(symbol=symbol, issuer_cik=1, kind="insider_cluster", signal_at=at)
+
+
+def _sessions(count: int, start: dt.date = dt.date(2026, 1, 5)) -> list[dt.date]:
+    return [start + dt.timedelta(days=index) for index in range(count)]
+
+
+def test_null_equal_weights_every_event_and_sums_to_one() -> None:
+    sessions = _sessions(10)
+    at = dt.datetime.combine(sessions[1], dt.time.max, tzinfo=dt.UTC)
+    schedule = _unscreened_equal_weight_null(
+        candidates_by_session={at: [_event("AAA", at), _event("BBB", at)]},
+        session_dates=sessions,
+        time_stop_days=365,
+    )
+    assert schedule[sessions[1]] == {"AAA": 0.5, "BBB": 0.5}
+    assert sum(schedule[sessions[1]].values()) == pytest.approx(1.0)
+
+
+def test_null_never_holds_an_event_before_its_signal_session() -> None:
+    """The null must not see an event earlier than the strategy did."""
+    sessions = _sessions(10)
+    at = dt.datetime.combine(sessions[4], dt.time.max, tzinfo=dt.UTC)
+    schedule = _unscreened_equal_weight_null(
+        candidates_by_session={at: [_event("AAA", at)]},
+        session_dates=sessions,
+        time_stop_days=365,
+    )
+    assert min(schedule) == sessions[4]
+    assert all(as_of >= sessions[4] for as_of in schedule)
+
+
+def test_null_ages_positions_out_on_the_books_time_stop() -> None:
+    sessions = _sessions(12)
+    at = dt.datetime.combine(sessions[0], dt.time.max, tzinfo=dt.UTC)
+    schedule = _unscreened_equal_weight_null(
+        candidates_by_session={at: [_event("AAA", at)]},
+        session_dates=sessions,
+        time_stop_days=5,
+    )
+    assert schedule[sessions[0]] == {"AAA": 1.0}
+    # Entry at sessions[0] expires 5 days later, so sessions[5] holds nothing.
+    assert schedule[sessions[5]] == {}
+
+
+def test_null_emits_only_when_the_active_set_changes() -> None:
+    """Mirrors the book's emit_unchanged=False; a rebalance every session is noise."""
+    sessions = _sessions(8)
+    at = dt.datetime.combine(sessions[2], dt.time.max, tzinfo=dt.UTC)
+    schedule = _unscreened_equal_weight_null(
+        candidates_by_session={at: [_event("AAA", at)]},
+        session_dates=sessions,
+        time_stop_days=365,
+    )
+    assert list(schedule) == [sessions[2]]
+
+
+def test_null_is_unscreened_so_it_can_differ_from_the_book() -> None:
+    """The whole point: the null holds names the book's screen would reject.
+
+    A null built from the screened set would be a near-copy of the book and could never
+    lose, which is the failure mode this construction exists to avoid.
+    """
+    sessions = _sessions(6)
+    at = dt.datetime.combine(sessions[1], dt.time.max, tzinfo=dt.UTC)
+    many = [_event(f"S{index}", at) for index in range(20)]
+    schedule = _unscreened_equal_weight_null(
+        candidates_by_session={at: many},
+        session_dates=sessions,
+        time_stop_days=365,
+    )
+    held = schedule[sessions[1]]
+    # 20 names, while the book's policy caps concurrent positions at 20 and each at 5%.
+    assert len(held) == 20
+    assert _EVENT_BOOK_POLICY_KWARGS["max_position_pct"] == 0.05
+    assert all(weight == pytest.approx(0.05) for weight in held.values())
+
+
+def test_null_is_empty_without_sessions() -> None:
+    assert (
+        _unscreened_equal_weight_null(
+            candidates_by_session={}, session_dates=[], time_stop_days=365
+        )
+        == {}
+    )
 
 
 # --- concern #5: the insider sleeve requires a real cluster ---------------------------------
