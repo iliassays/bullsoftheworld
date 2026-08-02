@@ -134,8 +134,9 @@ follow-up (section L). Line references are to the tree as of this audit.
 ### B9. LOW — Assorted
 - `decision_board.py::load_decision_candidate_path` re-runs the whole board to find one
   candidate — O(portfolios × events) per chart click; fine at n=2 books, revisit at n≳20 (L6).
-- `sessions_since_discovery = len(path_prices)` counts the discovery session itself (reads "1"
-  on day zero).
+- `sessions_since_discovery = len(path_prices)` counted the discovery session itself (read "1"
+  on day zero). **Fixed 2026-07-28**: the clock starts after the discovery close, same-session
+  returns stay null, and the discovery candle is excluded from post-discovery MFE/MAE.
 - `DecisionPathChart.tsx::marker` labels every non-exit signal "Discovered", including later
   re-qualifications.
 - `decision-ticket.ts` mixes the live `currentPrice` with the snapshot-date NAV for
