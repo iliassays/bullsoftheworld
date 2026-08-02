@@ -25,6 +25,9 @@ from api.routers.screener import (
     _enrich,
     _filter_screens_by_cap_tier,
     _institutional_13f,
+    _liquid,
+    _ownership_flow,
+    _persistence_note,
     _screenable_analytics_date_query,
     _screenable_analytics_timestamp_query,
     _screenable_codes,
@@ -32,10 +35,17 @@ from api.routers.screener import (
     _validated_cap_tier,
 )
 from api.swr import json_response, serve_cached
-from bulls.analytics import buffett_quality_score, graham_score, smart_money_score
+from bulls.analytics import (
+    ReportedAccumulationInput,
+    assess_reported_accumulation,
+    buffett_quality_score,
+    graham_score,
+    smart_money_score,
+)
 from bulls.core.config import get_settings
 from bulls.core.models import (
     DailyBar,
+    InstitutionalHoldingSummary,
     MarketSummary,
     QuoteSnapshot,
     SecFiling,
@@ -84,6 +94,7 @@ _EVIDENCE: dict[str, str] = {
     "us_financial_risk": "utility",
     "institutional_13f_accumulation": "utility",
     "institutional_13f_distribution": "utility",
+    "reported_accumulation_near_low": "utility",
 }
 
 # The reversal-family edge is regime-dependent: proven on a *recovering* market, likely a
@@ -214,8 +225,8 @@ _SCANNER_PACKS: dict[str, ScannerPack] = {
             ScannerTabSpec(
                 "value",
                 "Value",
-                "Valuation and dividend shortlists with profitability checks.",
-                ("value_quality", "dividend_quality"),
+                "Valuation, dividend, and delayed ownership evidence near yearly lows.",
+                ("reported_accumulation_near_low", "value_quality", "dividend_quality"),
             ),
         ),
         home_boards=("quality_reversal", "active_today", "value_quality"),
@@ -238,8 +249,12 @@ _SCANNER_PACKS: dict[str, ScannerPack] = {
             ScannerTabSpec(
                 "funds",
                 "Funds",
-                "Quarter-end institutional changes reported through Form 13F.",
-                ("institutional_13f_accumulation", "institutional_13f_distribution"),
+                "Delayed institutional evidence reported through Form 13F.",
+                (
+                    "reported_accumulation_near_low",
+                    "institutional_13f_accumulation",
+                    "institutional_13f_distribution",
+                ),
             ),
         ),
         home_boards=(
@@ -572,6 +587,226 @@ async def _dividend_quality(
             for c, lc, y, roe, _pe in rows
             if y is not None
         ],
+    )
+
+
+async def _dse_reported_accumulation_near_low(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    rows = list(
+        await session.scalars(
+            select(TickerAnalytics)
+            .where(
+                TickerAnalytics.market == market,
+                _cap_tier_condition(cap_tier),
+                TickerAnalytics.code.in_(_clean_codes(market)),
+                TickerAnalytics.pct_from_52w_low.isnot(None),
+                TickerAnalytics.pct_from_52w_low.between(0, 15),
+                TickerAnalytics.institute_delta >= 0.10,
+                _liquid(market, cap_tier),
+            )
+            .order_by(
+                TickerAnalytics.institute_delta.desc(),
+                TickerAnalytics.pct_from_52w_low.asc(),
+            )
+            .limit(max(120, limit * 8))
+        )
+    )
+    flows = await _ownership_flow(session, market, [row.code for row in rows], "institute")
+    ranked: list[tuple[float, float, ScreenItem]] = []
+    for row in rows:
+        flow = flows.get(row.code)
+        if flow is None or len(flow.series) < 2:
+            continue
+        change_pp = flow.series[-1] - flow.series[-2]
+        assessment = assess_reported_accumulation(
+            ReportedAccumulationInput(
+                market="DSE",
+                pct_above_52w_low=row.pct_from_52w_low,
+                institutional_change_pp=change_pp,
+            )
+        )
+        if not assessment.eligible:
+            continue
+        persistence = _persistence_note(flow.series, "buy")
+        note = f"Reported institutional stake {change_pp:+.2f} pp"
+        if persistence:
+            note += f" · {persistence}"
+        ranked.append(
+            (
+                change_pp,
+                row.pct_from_52w_low,
+                ScreenItem(
+                    code=row.code,
+                    last_close=row.last_close,
+                    value=round(row.pct_from_52w_low, 2),
+                    note=note,
+                    flow=flow.series,
+                    flow_dates=flow.dates,
+                    comparison_as_of=flow.dates[-2],
+                    data_as_of=flow.dates[-1],
+                    why=(
+                        f"The completed-session close is {row.pct_from_52w_low:.1f}% above its "
+                        f"52-week low. The reported institutional ownership category rose "
+                        f"{change_pp:+.2f} percentage points between {flow.dates[-2]} and "
+                        f"{flow.dates[-1]}."
+                    ),
+                    scanner_label="Delayed ownership clue",
+                    how_to_read=(
+                        "This joins price location with reported ownership history. It is a "
+                        "research clue, not proof of an institutional trade or a reversal."
+                    ),
+                    risk_note=(
+                        "DSE reports a category percentage, not buyer identities, trade dates, "
+                        "prices, or intent. A stock near its yearly low can be a value trap."
+                    ),
+                    check_next=[
+                        "Disclosure history",
+                        "Reason for the decline",
+                        "Earnings trend",
+                        "Price/volume confirmation",
+                    ],
+                ),
+            )
+        )
+    ranked.sort(key=lambda entry: (-entry[0], entry[1], entry[2].code))
+    return ScreenOut(
+        key="reported_accumulation_near_low",
+        title="Reported Accumulation Near Yearly Low",
+        description=(
+            "Liquid names near their 52-week low where the disclosed institutional ownership "
+            "category increased. Delayed category data, not identified trades."
+        ),
+        value_label="% above 52w low",
+        group="value",
+        evidence=_EVIDENCE["reported_accumulation_near_low"],
+        items=[item for _, _, item in ranked[:limit]],
+    )
+
+
+async def _us_reported_accumulation_near_low(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    latest_period = (
+        select(
+            InstitutionalHoldingSummary.code,
+            func.max(InstitutionalHoldingSummary.report_date).label("report_date"),
+        )
+        .where(InstitutionalHoldingSummary.market == market)
+        .group_by(InstitutionalHoldingSummary.code)
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(InstitutionalHoldingSummary, TickerAnalytics)
+            .join(
+                latest_period,
+                (latest_period.c.code == InstitutionalHoldingSummary.code)
+                & (latest_period.c.report_date == InstitutionalHoldingSummary.report_date),
+            )
+            .join(
+                TickerAnalytics,
+                (TickerAnalytics.market == InstitutionalHoldingSummary.market)
+                & (TickerAnalytics.code == InstitutionalHoldingSummary.code),
+            )
+            .where(
+                InstitutionalHoldingSummary.market == market,
+                _cap_tier_condition(cap_tier),
+                TickerAnalytics.code.in_(_clean_codes(market)),
+                TickerAnalytics.pct_from_52w_low.isnot(None),
+                TickerAnalytics.pct_from_52w_low.between(0, 15),
+                _liquid(market, cap_tier),
+            )
+            .order_by(TickerAnalytics.pct_from_52w_low.asc())
+            .limit(max(500, limit * 20))
+        )
+    ).all()
+    ranked: list[tuple[float, float, ScreenItem]] = []
+    for summary, analytics in rows:
+        adding = summary.new_positions + summary.increased_positions
+        reducing = summary.reduced_positions + summary.exited_positions
+        assessment = assess_reported_accumulation(
+            ReportedAccumulationInput(
+                market="US",
+                pct_above_52w_low=analytics.pct_from_52w_low,
+                adding_managers=adding,
+                reducing_managers=reducing,
+                net_share_change=summary.net_share_change,
+            )
+        )
+        if not assessment.eligible or assessment.net_manager_breadth_pct is None:
+            continue
+        breadth = assessment.net_manager_breadth_pct
+        ranked.append(
+            (
+                breadth,
+                analytics.pct_from_52w_low,
+                ScreenItem(
+                    code=analytics.code,
+                    last_close=analytics.last_close,
+                    value=round(analytics.pct_from_52w_low, 2),
+                    note=(
+                        f"Net manager breadth {breadth:+.0f}% · "
+                        f"{adding} adding vs {reducing} reducing"
+                    ),
+                    comparison_as_of=(
+                        summary.prior_report_date.isoformat()
+                        if summary.prior_report_date
+                        else None
+                    ),
+                    data_as_of=summary.report_date.isoformat(),
+                    public_as_of=summary.latest_filing_date.isoformat(),
+                    why=(
+                        f"The completed-session close is {analytics.pct_from_52w_low:.1f}% above "
+                        f"its 52-week low. For the {summary.report_date} Form 13F reporting period, "
+                        f"{adding} managers reported new/increased positions versus {reducing} "
+                        f"reduced/exited positions (net breadth {breadth:+.0f}%)."
+                    ),
+                    scanner_label="Delayed 13F breadth clue",
+                    how_to_read=(
+                        "Manager breadth is used instead of raw percentage share change because "
+                        "splits, new coverage, and small prior denominators can distort that metric."
+                    ),
+                    risk_note=(
+                        "Form 13F can arrive up to 45 days after quarter-end and excludes shorts, "
+                        "trade dates, execution prices, and manager intent. Near-low stocks can "
+                        "remain weak."
+                    ),
+                    check_next=[
+                        "Filing/public date",
+                        "Manager breadth",
+                        "Business deterioration",
+                        "Price/volume confirmation",
+                    ],
+                ),
+            )
+        )
+    ranked.sort(key=lambda entry: (-entry[0], entry[1], entry[2].code))
+    return ScreenOut(
+        key="reported_accumulation_near_low",
+        title="Reported Accumulation Near Yearly Low",
+        description=(
+            "Liquid names near their 52-week low with positive manager breadth in the latest "
+            "reported Form 13F period. Delayed holdings evidence, not live institutional flow."
+        ),
+        value_label="% above 52w low",
+        group="value",
+        evidence=_EVIDENCE["reported_accumulation_near_low"],
+        items=[item for _, _, item in ranked[:limit]],
+    )
+
+
+_REPORTED_ACCUMULATION_BUILDERS = {
+    "DSE": _dse_reported_accumulation_near_low,
+    "US": _us_reported_accumulation_near_low,
+}
+
+
+async def _reported_accumulation_near_low(
+    session, market: str, limit: int, cap_tier: str | None = None
+) -> ScreenOut:
+    return await _REPORTED_ACCUMULATION_BUILDERS[market](
+        session, market, limit, cap_tier
     )
 
 
@@ -1518,6 +1753,7 @@ _BOARD_BUILDERS = {
     "active_today": _trending_board,
     "value_quality": _value_quality,
     "dividend_quality": _dividend_quality,
+    "reported_accumulation_near_low": _reported_accumulation_near_low,
     "lens_agreement": _lens_agreement,
     "lens_buffett_quality": _lens_buffett_quality,
     "lens_graham_value": _lens_graham_value,

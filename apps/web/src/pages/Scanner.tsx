@@ -38,6 +38,7 @@ const BOARD_ICON: Record<string, string> = {
   us_financial_risk: "⚠️",
   institutional_13f_accumulation: "🏛️",
   institutional_13f_distribution: "🏛️",
+  reported_accumulation_near_low: "🔎",
 };
 
 const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; label: string }>> = {
@@ -113,6 +114,18 @@ const BOARD_TEXT: Record<string, Record<Lang, { title: string; desc: string; lab
       label: "লভ্যাংশ চেক",
     },
   },
+  reported_accumulation_near_low: {
+    en: {
+      title: "Near Low + Reported Accumulation",
+      desc: "Near a 52-week low while delayed ownership reports show broader or higher institutional participation.",
+      label: "Delayed ownership clue",
+    },
+    bn: {
+      title: "নিম্নদামের কাছে প্রাতিষ্ঠানিক অংশ বৃদ্ধি",
+      desc: "৫২-সপ্তাহের নিম্নদামের কাছে আছে, আর প্রকাশিত মালিকানা প্রতিবেদনে প্রাতিষ্ঠানিক অংশ বেড়েছে।",
+      label: "বিলম্বিত মালিকানা তথ্য",
+    },
+  },
   lens_agreement: {
     en: {
       title: "Multi-Lens Agreement",
@@ -180,6 +193,11 @@ function boardText(board: Screen, lang: Lang) {
 }
 
 function metricText(board: Screen, item: ScreenItem, lang: Lang): string {
+  if (board.key === "reported_accumulation_near_low") {
+    return lang === "bn"
+      ? `নিম্নদাম থেকে ${item.value.toFixed(1)}% ওপরে`
+      : `${item.value.toFixed(1)}% above low`;
+  }
   if (board.key === "most_active") return lang === "bn" ? `৳${item.value.toFixed(1)}cr` : `Tk ${item.value.toFixed(1)}cr`;
   if (board.value_label === "RSI") return `RSI ${item.value.toFixed(0)}`;
   if (board.value_label === "yield") return `${item.value.toFixed(1)}%`;
@@ -210,6 +228,8 @@ function liquidityText(item: ScreenItem, lang: Lang): string | null {
 
 function defaultRisk(board: Screen, lang: Lang): string {
   if (lang === "bn") {
+    if (board.key === "reported_accumulation_near_low")
+      return "প্রকাশিত মালিকানা তথ্য বিলম্বিত এবং এতে ক্রেতার পরিচয়, লেনদেনের তারিখ, দাম বা উদ্দেশ্য জানা যায় না। বার্ষিক নিম্নদামের কাছের শেয়ার আরও পড়তে পারে।";
     if (board.key === "lens_agreement") return "Agreement strong হলেও এটি recommendation নয়। নতুন খবর, দাম বেশি হয়ে যাওয়া, বা হঠাৎ liquidity change আলাদা ঝুঁকি।";
     if (board.key === "lens_buffett_quality") return "ভালো কোম্পানিও দামে বেশি হলে রিটার্ন খারাপ হতে পারে। one-off EPS বা অতিরিক্ত ঋণ দেখুন।";
     if (board.key === "lens_graham_value") return "সস্তা শেয়ার value trap হতে পারে, বিশেষ করে EPS কমছে বা governance/news দুর্বল হলে।";
@@ -221,6 +241,8 @@ function defaultRisk(board: Screen, lang: Lang): string {
     if (board.key === "active_today" || board.key === "most_active") return "অ্যাক্টিভ মানেই দাম বাড়বে নয়; heavy selling-ও হতে পারে।";
     return "অনেক পড়া শেয়ার আরও পড়তে পারে; বিস্তৃত ডাউনট্রেন্ডে এই প্যাটার্ন প্রায়ই falling knife, তলদেশ নয়। এটি buy signal নয়।";
   }
+  if (board.key === "reported_accumulation_near_low")
+    return "Ownership reports are delayed and do not reveal live trades, prices, or intent. A stock near its yearly low can keep falling.";
   if (board.key === "oversold_quality") return "Oversold can stay oversold, and a genuine business problem deserves a low price. This is a research zone, not a buy signal.";
   if (board.key === "lens_agreement") return "Agreement is not a recommendation. New news, valuation stretch, and sudden liquidity changes can still break the setup.";
   if (board.key === "lens_buffett_quality") return "A good business can still be a poor trade if price is stretched. Check one-off EPS, debt and valuation.";
@@ -236,6 +258,8 @@ function defaultRisk(board: Screen, lang: Lang): string {
 function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
   if (lang === "en" && item.check_next?.length) return item.check_next;
   if (lang === "bn") {
+    if (board.key === "reported_accumulation_near_low")
+      return ["প্রকাশের ইতিহাস", "দাম কমার কারণ", "আয়ের ধারা", "দাম ও ভলিউমের সমর্থন"];
     if (board.key === "lens_agreement") return ["লেন্স comparison", "খবর", "ADTV/order size", "মূল লেভেল"];
     if (board.key === "lens_buffett_quality") return ["৫ বছরের EPS", "ঋণ/NAV", "ডিভিডেন্ড", "valuation"];
     if (board.key === "lens_graham_value") return ["EPS ট্রেন্ড", "ঋণ/NAV", "খবর", "সেক্টর P/E"];
@@ -247,6 +271,8 @@ function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
     if (board.key === "active_today" || board.key === "most_active") return ["খবর", "দামের দিক", "ADTV", "খাত"];
     return ["খবর", "ভলিউম", "সাপোর্ট", "অর্ডার সাইজ"];
   }
+  if (board.key === "reported_accumulation_near_low")
+    return ["Disclosure history", "Reason for decline", "Earnings trend", "Price/volume confirmation"];
   if (board.key === "lens_agreement") return ["Lens comparison", "News", "ADTV/order size", "Key levels"];
   if (board.key === "lens_buffett_quality") return ["5Y EPS", "Debt/NAV", "Dividend history", "Valuation"];
   if (board.key === "lens_graham_value") return ["EPS trend", "Debt/NAV", "News", "Sector P/E"];
@@ -260,6 +286,15 @@ function checksFor(board: Screen, item: ScreenItem, lang: Lang): string[] {
 
 function scannerWhy(board: Screen, item: ScreenItem, lang: Lang, fallback: string): string {
   if (lang === "bn") {
+    if (board.key === "reported_accumulation_near_low") {
+      const flow = item.flow ?? [];
+      const change = flow.length >= 2 ? flow[flow.length - 1] - flow[flow.length - 2] : null;
+      const changeText =
+        change == null
+          ? "প্রকাশিত প্রাতিষ্ঠানিক অংশ বেড়েছে"
+          : `প্রকাশিত প্রাতিষ্ঠানিক অংশ ${change.toFixed(2)} শতাংশ পয়েন্ট বেড়েছে`;
+      return `সর্বশেষ সম্পূর্ণ সেশনের দাম ৫২-সপ্তাহের নিম্নদামের চেয়ে ${item.value.toFixed(1)}% ওপরে। ${changeText}।`;
+    }
     if (board.key === "quality_reversal") {
       return `৫২-সপ্তাহের উচ্চতা থেকে প্রায় ${Math.abs(item.value).toFixed(0)}% নিচে, তবু লাভজনক এবং সদ্য নিজের ৫ দিনের উচ্চতা ছাড়িয়ে গেছে।`;
     }
@@ -362,6 +397,18 @@ function ScannerSheet({ picked, onClose }: { picked: Picked; onClose: () => void
           {liqParts.length > 0 && (
             <Row label={lang === "bn" ? "লিকুইডিটি" : "Liquidity"}>{liqParts.join(" — ")}</Row>
           )}
+          {item.data_as_of && (
+            <Row label={lang === "bn" ? "প্রতিবেদনের সময়কাল" : "Report period"}>
+              {item.comparison_as_of
+                ? `${item.comparison_as_of} → ${item.data_as_of}`
+                : item.data_as_of}
+            </Row>
+          )}
+          {item.public_as_of && (
+            <Row label={lang === "bn" ? "সর্বশেষ প্রকাশের তারিখ" : "Latest public filing"}>
+              {item.public_as_of}
+            </Row>
+          )}
           <Row label={lang === "bn" ? "ঝুঁকি" : "Risk"}>{risk}</Row>
         </div>
 
@@ -386,6 +433,7 @@ function ScannerRow({ board, item, onPick }: { board: Screen; item: ScreenItem; 
   const liq = liquidityText(item, lang);
   const liqWarning =
     liq && item.liquidity && !item.liquidity.includes("Deep") && !item.liquidity.includes("Tradeable");
+  const showBoardMetric = board.key === "reported_accumulation_near_low";
   return (
     <button onClick={onPick} className="flex w-full items-center gap-3 py-3 text-left">
       <CompanyLogo code={item.code} size={28} />
@@ -403,7 +451,11 @@ function ScannerRow({ board, item, onPick }: { board: Screen; item: ScreenItem; 
       <div className="shrink-0 text-right tnum">
         {item.last_close > 0 && <div className="text-[13px] font-semibold">{formatMoney(item.last_close)}</div>}
         <div className="text-xs font-semibold">
-          {item.change_1d != null ? <Pct value={item.change_1d} /> : <span className="text-muted">{metricText(board, item, lang)}</span>}
+          {item.change_1d != null && !showBoardMetric ? (
+            <Pct value={item.change_1d} />
+          ) : (
+            <span className="text-muted">{metricText(board, item, lang)}</span>
+          )}
         </div>
       </div>
     </button>

@@ -454,6 +454,7 @@ class ScreenItem(BaseModel):
     flow_dates: list[str] = []  # ISO date of each flow point, aligned with `flow`
     comparison_as_of: str | None = None  # prior disclosure/report date for the displayed change
     data_as_of: str | None = None  # latest disclosure/report date for the displayed change
+    public_as_of: str | None = None  # when the report became public, when separately knowable
     period_spark: list[float] = []  # ownership: price over the disclosure window (oldest→newest)
     category: str | None = None  # DSE category (A/B/G/N/Z), for execution context
     adtv_mn: float | None = None  # 20D average daily traded value, ৳ millions

@@ -360,6 +360,7 @@ export interface ScreenItem {
   flow_dates?: string[]; // ISO date of each flow point, aligned with `flow`
   comparison_as_of?: string | null; // prior ownership/13F report date for this change
   data_as_of?: string | null; // latest ownership/13F report date for this change
+  public_as_of?: string | null; // filing/publication date when distinct from the report period
   period_spark?: number[]; // ownership: price over the disclosure window (oldest→newest)
   category?: string | null;
   adtv_mn?: number | null;

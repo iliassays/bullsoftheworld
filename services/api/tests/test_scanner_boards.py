@@ -42,6 +42,7 @@ def test_evidence_classes_match_the_research() -> None:
     assert all(_EVIDENCE[k] == "framework" for k in _TABS["lens"])
     # Value tab claims usefulness, not edge.
     assert all(_EVIDENCE[k] == "utility" for k in _TABS["value"])
+    assert _EVIDENCE["reported_accumulation_near_low"] == "utility"
 
 
 def test_regime_sensitive_boards_are_the_reversal_family() -> None:
@@ -98,6 +99,7 @@ def test_us_pack_is_eod_and_does_not_reuse_dse_reversal_claims() -> None:
         "us_recent_filings",
         "us_cashflow_quality",
         "us_financial_risk",
+        "reported_accumulation_near_low",
         "institutional_13f_accumulation",
         "institutional_13f_distribution",
     } == keys
@@ -108,6 +110,14 @@ def test_us_pack_is_eod_and_does_not_reuse_dse_reversal_claims() -> None:
         "institutional_13f_accumulation",
         "us_financial_risk",
     )
+
+
+def test_reported_accumulation_board_is_registered_in_each_market_specific_tab() -> None:
+    dse_value = scanner_pack_for("DSE").tab("value")
+    us_funds = scanner_pack_for("US").tab("funds")
+
+    assert dse_value.boards[0] == "reported_accumulation_near_low"
+    assert us_funds.boards[0] == "reported_accumulation_near_low"
 
 
 def test_cashflow_quality_requires_positive_cash_and_profit_margins() -> None:
