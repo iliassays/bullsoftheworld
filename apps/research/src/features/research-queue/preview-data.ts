@@ -64,6 +64,20 @@ export const demoQueueSnapshot: ResearchQueueSnapshot = {
         ],
       },
       liquidity: { averageDailyValue: "$2.8m", capacity: "$185k", exitDays: 2.4 },
+      researchClues: [
+        {
+          key: "reported_accumulation_near_low",
+          title: "Reported accumulation near yearly low",
+          summary:
+            "The completed-session close is 8.4% above its 52-week low. In the 2026-06-30 Form 13F period, 9 managers reported new/increased positions versus 3 reduced/exited positions (net breadth +50%).",
+          dataAsOf: "2026-06-30",
+          publicAsOf: "2026-07-14",
+          limitations: [
+            "Form 13F is delayed and excludes shorts, trade dates, execution prices, and manager intent.",
+            "Manager breadth reduces raw-share denominator distortion but does not prove coordinated or current buying.",
+          ],
+        },
+      ],
       flags: ["Financing dependency", "Event concentration"],
       scenarios: [
         { id: "bear", value: 4.6, returnPct: -45, premise: "Catalyst delay and discounted financing." },
@@ -128,6 +142,20 @@ export const demoQueueSnapshot: ResearchQueueSnapshot = {
         ],
       },
       liquidity: { averageDailyValue: "৳4.1cr", capacity: "৳18.4l", exitDays: 1.8 },
+      researchClues: [
+        {
+          key: "reported_accumulation_near_low",
+          title: "Reported accumulation near yearly low",
+          summary:
+            "The completed-session close is 6.2% above its 52-week low, while the reported institutional ownership category increased +0.40 percentage points from the prior disclosure.",
+          dataAsOf: "2026-06-30",
+          publicAsOf: null,
+          limitations: [
+            "DSE ownership is a delayed category percentage; it does not identify buyers, trades, prices, or intent.",
+            "The source stores the reporting period but not a trustworthy publication timestamp, so this clue is excluded from historical point-in-time strategy claims.",
+          ],
+        },
+      ],
       flags: ["Government-linked", "One-off normalization"],
       scenarios: [
         { id: "bear", value: 91, returnPct: -27, premise: "Operating gain proves temporary." },

@@ -7,7 +7,11 @@ from dataclasses import asdict
 from sqlalchemy import Date, String, column, func, or_, select, values
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.institutional_research.evidence import EVIDENCE_ADAPTERS, EvidenceBundle
+from api.institutional_research.evidence import (
+    EVIDENCE_ADAPTERS,
+    EvidenceBundle,
+    ReportedAccumulationEvidence,
+)
 from api.institutional_research.schemas import (
     DimensionOut,
     EvidenceItemOut,
@@ -17,9 +21,15 @@ from api.institutional_research.schemas import (
     FactorsOut,
     LiquidityOut,
     ResearchCandidateOut,
+    ResearchClueOut,
     ResearchQueueSnapshotOut,
 )
 from api.institutional_research.universe import apply_research_product_scope
+from bulls.analytics.reported_accumulation import (
+    ReportedAccumulationAssessment,
+    ReportedAccumulationInput,
+    assess_reported_accumulation,
+)
 from bulls.analytics.research_queue import (
     ResearchQueueInputs,
     ResearchQueueScore,
@@ -151,6 +161,83 @@ def _flags(row: TickerAnalytics, score: ResearchQueueScore, coverage: float) -> 
     return flags
 
 
+def _dse_reported_accumulation_clue(
+    analytics: TickerAnalytics,
+    reported: ReportedAccumulationEvidence,
+    _: ReportedAccumulationAssessment,
+) -> ResearchClueOut:
+    change = reported.institutional_change_pp or 0
+    return ResearchClueOut(
+        key="reported_accumulation_near_low",
+        title="Reported accumulation near yearly low",
+        summary=(
+            f"The completed-session close is {analytics.pct_from_52w_low:.1f}% above its "
+            f"52-week low, while the reported institutional ownership category increased "
+            f"{change:+.2f} percentage points from the prior disclosure."
+        ),
+        data_as_of=reported.report_date,
+        public_as_of=None,
+        limitations=[
+            "DSE ownership is a delayed category percentage; it does not identify buyers, trades, prices, or intent.",
+            "The source stores the reporting period but not a trustworthy publication timestamp, so this clue is excluded from historical point-in-time strategy claims.",
+        ],
+    )
+
+
+def _us_reported_accumulation_clue(
+    analytics: TickerAnalytics,
+    reported: ReportedAccumulationEvidence,
+    assessment: ReportedAccumulationAssessment,
+) -> ResearchClueOut:
+    adding = reported.adding_managers or 0
+    reducing = reported.reducing_managers or 0
+    breadth = assessment.net_manager_breadth_pct or 0
+    return ResearchClueOut(
+        key="reported_accumulation_near_low",
+        title="Reported accumulation near yearly low",
+        summary=(
+            f"The completed-session close is {analytics.pct_from_52w_low:.1f}% above its "
+            f"52-week low. In the {reported.report_date} Form 13F period, {adding} managers "
+            f"reported new/increased positions versus {reducing} reduced/exited positions "
+            f"(net breadth {breadth:+.0f}%)."
+        ),
+        data_as_of=reported.report_date,
+        public_as_of=reported.public_date,
+        limitations=[
+            "Form 13F is delayed and excludes shorts, trade dates, execution prices, and manager intent.",
+            "Manager breadth reduces raw-share denominator distortion but does not prove coordinated or current buying.",
+        ],
+    )
+
+
+_REPORTED_ACCUMULATION_CLUE_BUILDERS = {
+    "DSE": _dse_reported_accumulation_clue,
+    "US": _us_reported_accumulation_clue,
+}
+
+
+def _research_clues(
+    analytics: TickerAnalytics,
+    evidence: EvidenceBundle,
+) -> list[ResearchClueOut]:
+    reported = evidence.reported_accumulation
+    if reported is None:
+        return []
+    assessment = assess_reported_accumulation(
+        ReportedAccumulationInput(
+            market=analytics.market,
+            pct_above_52w_low=analytics.pct_from_52w_low,
+            institutional_change_pp=reported.institutional_change_pp,
+            adding_managers=reported.adding_managers,
+            reducing_managers=reported.reducing_managers,
+            net_share_change=reported.net_share_change,
+        )
+    )
+    if not assessment.eligible or analytics.pct_from_52w_low is None:
+        return []
+    return [_REPORTED_ACCUMULATION_CLUE_BUILDERS[analytics.market](analytics, reported, assessment)]
+
+
 def _candidate(
     *,
     symbol: Symbol,
@@ -234,6 +321,7 @@ def _candidate(
                 "participation rate; capacity is not executable size."
             ),
         ),
+        research_clues=_research_clues(analytics, evidence),
         flags=_flags(analytics, score, coverage),
         sparkline=path[-11:],
     )

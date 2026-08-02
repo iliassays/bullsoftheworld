@@ -37,6 +37,15 @@ export interface ResearchEvidenceRequirement {
   asOf: string | null;
 }
 
+export interface ResearchClue {
+  key: string;
+  title: string;
+  summary: string;
+  dataAsOf: string;
+  publicAsOf: string | null;
+  limitations: string[];
+}
+
 export interface ResearchScenario {
   id: "bear" | "base" | "bull";
   value: number;
@@ -86,6 +95,7 @@ export interface ResearchCandidate {
     exitDays: number;
     basis?: string;
   };
+  researchClues?: ResearchClue[];
   flags: string[];
   scenarios: ResearchScenario[];
   sparkline: number[];

@@ -85,6 +85,15 @@ class LiquidityOut(ApiModel):
     basis: str
 
 
+class ResearchClueOut(ApiModel):
+    key: str
+    title: str
+    summary: str
+    data_as_of: dt.date
+    public_as_of: dt.date | None = None
+    limitations: list[str]
+
+
 class ResearchCandidateOut(ApiModel):
     id: str
     market: Literal["DSE", "US"]
@@ -109,6 +118,7 @@ class ResearchCandidateOut(ApiModel):
     factor_details: FactorDetailsOut
     evidence: EvidenceOut
     liquidity: LiquidityOut
+    research_clues: list[ResearchClueOut] = Field(default_factory=list)
     flags: list[str]
     scenarios: list[dict] = Field(default_factory=list)
     sparkline: list[float] = Field(default_factory=list)

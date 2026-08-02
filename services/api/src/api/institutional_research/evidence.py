@@ -13,6 +13,7 @@ from bulls.core.models import (
     InstitutionalHoldingSummary,
     SecFiling,
     SecFinancialFact,
+    ShareholdingSnapshot,
     ShortVolumeDaily,
     TickerAnalytics,
 )
@@ -35,12 +36,25 @@ class EvidenceItem:
     url: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ReportedAccumulationEvidence:
+    market: str
+    report_date: dt.date
+    prior_report_date: dt.date | None
+    public_date: dt.date | None
+    institutional_change_pp: float | None = None
+    adding_managers: int | None = None
+    reducing_managers: int | None = None
+    net_share_change: int | None = None
+
+
 @dataclass(slots=True)
 class EvidenceBundle:
     official_count: int = 0
     latest_official_date: dt.date | None = None
     requirements: list[EvidenceRequirement] = field(default_factory=list)
     items: list[EvidenceItem] = field(default_factory=list)
+    reported_accumulation: ReportedAccumulationEvidence | None = None
 
 
 class MarketEvidenceAdapter(Protocol):
@@ -112,6 +126,49 @@ class DseEvidenceAdapter:
                     published_at=row["published_at"],
                     url=None,
                 )
+            )
+        ownership_ranked = (
+            select(
+                ShareholdingSnapshot.code.label("code"),
+                ShareholdingSnapshot.as_of_date.label("as_of_date"),
+                ShareholdingSnapshot.institute.label("institute"),
+                func.row_number()
+                .over(
+                    partition_by=ShareholdingSnapshot.code,
+                    order_by=ShareholdingSnapshot.as_of_date.desc(),
+                )
+                .label("rank"),
+            )
+            .where(
+                ShareholdingSnapshot.market == "DSE",
+                ShareholdingSnapshot.code.in_(codes),
+                ShareholdingSnapshot.as_of_date <= cutoff,
+                ShareholdingSnapshot.institute.isnot(None),
+            )
+            .subquery()
+        )
+        ownership_rows = (
+            await session.execute(
+                select(ownership_ranked)
+                .where(ownership_ranked.c.rank <= 2)
+                .order_by(ownership_ranked.c.code, ownership_ranked.c.rank)
+            )
+        ).mappings()
+        ownership_by_code: dict[str, list[tuple[dt.date, float]]] = {}
+        for row in ownership_rows:
+            ownership_by_code.setdefault(row["code"], []).append(
+                (row["as_of_date"], float(row["institute"]))
+            )
+        for code, history in ownership_by_code.items():
+            if len(history) < 2:
+                continue
+            latest, previous = history[0], history[1]
+            bundles[code].reported_accumulation = ReportedAccumulationEvidence(
+                market="DSE",
+                report_date=latest[0],
+                prior_report_date=previous[0],
+                public_date=None,
+                institutional_change_pp=latest[1] - previous[1],
             )
         for bundle in bundles.values():
             bundle.requirements.append(
@@ -197,6 +254,48 @@ class UsEvidenceAdapter:
                     published_at=row["published_at"],
                     url=row["url"],
                 )
+            )
+
+        holding_ranked = (
+            select(
+                InstitutionalHoldingSummary.code.label("code"),
+                InstitutionalHoldingSummary.report_date.label("report_date"),
+                InstitutionalHoldingSummary.prior_report_date.label("prior_report_date"),
+                InstitutionalHoldingSummary.latest_filing_date.label("public_date"),
+                InstitutionalHoldingSummary.new_positions.label("new_positions"),
+                InstitutionalHoldingSummary.increased_positions.label("increased_positions"),
+                InstitutionalHoldingSummary.reduced_positions.label("reduced_positions"),
+                InstitutionalHoldingSummary.exited_positions.label("exited_positions"),
+                InstitutionalHoldingSummary.net_share_change.label("net_share_change"),
+                func.row_number()
+                .over(
+                    partition_by=InstitutionalHoldingSummary.code,
+                    order_by=(
+                        InstitutionalHoldingSummary.report_date.desc(),
+                        InstitutionalHoldingSummary.latest_filing_date.desc(),
+                    ),
+                )
+                .label("rank"),
+            )
+            .where(
+                InstitutionalHoldingSummary.market == "US",
+                InstitutionalHoldingSummary.code.in_(codes),
+                InstitutionalHoldingSummary.latest_filing_date <= cutoff,
+            )
+            .subquery()
+        )
+        holding_rows = (
+            await session.execute(select(holding_ranked).where(holding_ranked.c.rank == 1))
+        ).mappings()
+        for row in holding_rows:
+            bundles[row["code"]].reported_accumulation = ReportedAccumulationEvidence(
+                market="US",
+                report_date=row["report_date"],
+                prior_report_date=row["prior_report_date"],
+                public_date=row["public_date"],
+                adding_managers=int(row["new_positions"] + row["increased_positions"]),
+                reducing_managers=int(row["reduced_positions"] + row["exited_positions"]),
+                net_share_change=row["net_share_change"],
             )
 
         requirement_queries = {

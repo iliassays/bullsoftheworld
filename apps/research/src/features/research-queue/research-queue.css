@@ -681,6 +681,10 @@
     background: color-mix(in srgb, var(--negative-soft) 32%, var(--surface));
   }
 
+  .inspector-section--clues {
+    background: color-mix(in srgb, var(--accent-soft) 18%, var(--surface));
+  }
+
   .inspector-section__eyebrow {
     display: flex;
     align-items: center;
@@ -696,6 +700,57 @@
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.55;
+  }
+
+  .inspector-clue-disclaimer {
+    color: var(--text-faint) !important;
+  }
+
+  .inspector-clue-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 9px;
+  }
+
+  .inspector-clue {
+    border-left: 2px solid var(--accent);
+    padding-left: 9px;
+  }
+
+  .inspector-clue > strong,
+  .inspector-clue > small {
+    display: block;
+  }
+
+  .inspector-clue > strong {
+    color: var(--text);
+    font-size: 11px;
+  }
+
+  .inspector-clue > small {
+    margin-top: 2px;
+    color: var(--text-faint);
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .inspector-clue details {
+    margin-top: 7px;
+    color: var(--text-faint);
+    font-size: 9px;
+  }
+
+  .inspector-clue summary {
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .inspector-clue ul {
+    display: grid;
+    gap: 3px;
+    margin: 5px 0 0;
+    padding-left: 14px;
+    line-height: 1.45;
   }
 
   .inspector-catalyst {

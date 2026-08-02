@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleDollarSign,
   FileCheck2,
+  Landmark,
   Scale,
   ShieldAlert,
   UserRound,
@@ -160,6 +161,37 @@ export function ResearchInspector({ candidate }: { candidate: ResearchCandidate 
             </span>
             <p>{candidate.keyChange}</p>
           </section>
+          {(candidate.researchClues?.length ?? 0) > 0 && (
+            <section className="inspector-section inspector-section--clues">
+              <span className="inspector-section__eyebrow">
+                <Landmark aria-hidden="true" size={14} />
+                Cross-evidence observations
+              </span>
+              <p className="inspector-clue-disclaimer">
+                Research clues only. They do not affect urgency, qualify a strategy, or create a paper target.
+              </p>
+              <div className="inspector-clue-list">
+                {candidate.researchClues?.map((clue) => (
+                  <article className="inspector-clue" key={clue.key}>
+                    <strong>{clue.title}</strong>
+                    <small>
+                      Report period {clue.dataAsOf}
+                      {clue.publicAsOf ? ` · public by ${clue.publicAsOf}` : " · publication date unavailable"}
+                    </small>
+                    <p>{clue.summary}</p>
+                    <details>
+                      <summary>Limits of this observation</summary>
+                      <ul>
+                        {clue.limitations.map((limitation) => (
+                          <li key={limitation}>{limitation}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
           <section className="inspector-section">
             <span className="inspector-section__eyebrow">
               <Scale aria-hidden="true" size={14} />
