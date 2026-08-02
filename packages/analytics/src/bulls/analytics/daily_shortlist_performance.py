@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import random
 import statistics
+from bisect import bisect_right
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -37,6 +38,7 @@ class ShortlistPriceBar:
     high: float
     low: float
     close: float
+    volume: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +108,31 @@ class ShortlistPerformanceReport:
 
 
 @dataclass(frozen=True, slots=True)
+class MatchedControlHorizon:
+    sessions: int
+    selection_sessions: int
+    shortlist_mean_return_pct: float | None
+    control_mean_return_pct: float | None
+    shortlist_minus_control_pct: float | None
+    daily_difference_median_pct: float | None
+    shortlist_outperformed_rate_pct: float | None
+    difference_ci_low_pct: float | None
+    difference_ci_high_pct: float | None
+    next_open_shortlist_mean_pct: float | None
+    next_open_control_mean_pct: float | None
+    next_open_difference_pct: float | None
+    next_open_ci_low_pct: float | None
+    next_open_ci_high_pct: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class MatchedControlReport:
+    control: str
+    selection_sessions: int
+    horizons: tuple[MatchedControlHorizon, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _Observation:
     selection_date: dt.date
     return_pct: float
@@ -159,6 +186,31 @@ def _cluster_bootstrap_mean_ci(
     return means[int(iterations * 0.025)], means[int(iterations * 0.975) - 1]
 
 
+def _block_bootstrap_mean_ci(
+    values: list[float],
+    *,
+    block_length: int,
+    iterations: int = 2_000,
+    seed: int = 29,
+) -> tuple[float | None, float | None]:
+    """Circular block bootstrap for overlapping forward-return session baskets."""
+    if len(values) < max(8, block_length * 2):
+        return None, None
+    rng = random.Random(seed)
+    sample_size = len(values)
+    means: list[float] = []
+    for _ in range(iterations):
+        sample: list[float] = []
+        while len(sample) < sample_size:
+            start = rng.randrange(sample_size)
+            sample.extend(
+                values[(start + offset) % sample_size] for offset in range(block_length)
+            )
+        means.append(statistics.fmean(sample[:sample_size]))
+    means.sort()
+    return means[int(iterations * 0.025)], means[int(iterations * 0.975) - 1]
+
+
 def _limit_locked_entry(selection_close: float, entry: ShortlistPriceBar) -> bool:
     if selection_close <= 0 or entry.open <= 0:
         return False
@@ -207,6 +259,208 @@ def independent_episodes(
             kept.append(appearance)
         last_seen[appearance.code] = index
     return kept
+
+
+def eligible_universe_by_date(
+    bars: list[ShortlistPriceBar],
+    *,
+    selection_dates: list[dt.date],
+    eligible_codes: set[str],
+    min_bars: int = 260,
+    min_average_volume: float = 5_000.0,
+) -> dict[dt.date, tuple[str, ...]]:
+    """Reconstruct the shortlist's liquidity/seasoning universe without future inputs."""
+    bars_by_code: dict[str, list[ShortlistPriceBar]] = defaultdict(list)
+    for bar in bars:
+        if bar.code in eligible_codes:
+            bars_by_code[bar.code].append(bar)
+    for series in bars_by_code.values():
+        series.sort(key=lambda item: item.date)
+    dates_by_code = {
+        code: [bar.date for bar in series]
+        for code, series in bars_by_code.items()
+    }
+
+    result: dict[dt.date, tuple[str, ...]] = {}
+    for selection_date in sorted(set(selection_dates)):
+        eligible: list[str] = []
+        for code, series in bars_by_code.items():
+            dates = dates_by_code[code]
+            end = bisect_right(dates, selection_date)
+            if end < min_bars:
+                continue
+            window = series[end - min_bars : end]
+            if not window or window[-1].date != selection_date or window[-1].close <= 0:
+                continue
+            recent = window[-20:]
+            if not recent or statistics.fmean(bar.volume for bar in recent) < min_average_volume:
+                continue
+            eligible.append(code)
+        result[selection_date] = tuple(sorted(eligible))
+    return result
+
+
+def _gross_returns(
+    *,
+    codes: set[str],
+    selection_close_by_code: dict[str, float],
+    selection_index: int,
+    horizon: int,
+    market_dates: list[dt.date],
+    bars_by_code: dict[str, dict[dt.date, ShortlistPriceBar]],
+) -> tuple[list[float], list[float]]:
+    """Return selection-close and next-open gross outcomes for one equal-weight basket."""
+    entry_date = market_dates[selection_index + 1]
+    target_date = market_dates[selection_index + horizon]
+    close_returns: list[float] = []
+    next_open_returns: list[float] = []
+    for code in codes:
+        selection_close = selection_close_by_code.get(code)
+        code_bars = bars_by_code.get(code, {})
+        target = code_bars.get(target_date)
+        if (
+            selection_close is None
+            or selection_close <= 0
+            or target is None
+            or target.close <= 0
+        ):
+            continue
+        if _has_suspicious_jump(
+            code_bars=code_bars,
+            market_dates=market_dates,
+            start_index=selection_index,
+            end_index=selection_index + horizon,
+        ):
+            continue
+        close_returns.append((target.close / selection_close - 1.0) * 100.0)
+
+        entry = code_bars.get(entry_date)
+        if (
+            entry is not None
+            and entry.open > 0
+            and not _limit_locked_entry(selection_close, entry)
+        ):
+            next_open_returns.append((target.close / entry.open - 1.0) * 100.0)
+    return close_returns, next_open_returns
+
+
+def evaluate_matched_eligible_control(
+    *,
+    appearances: list[ShortlistAppearance],
+    bars: list[ShortlistPriceBar],
+    market_dates: list[dt.date],
+    eligible_by_date: dict[dt.date, tuple[str, ...]],
+) -> MatchedControlReport:
+    """Compare each daily slate with the same date's non-selected eligible universe.
+
+    Each date contributes one equal-weight shortlist return and one equal-weight control return.
+    This avoids treating five names exposed to one market session as five independent regimes.
+    Circular block bootstrap intervals preserve some dependence from overlapping horizons.
+    """
+    sessions = sorted(set(market_dates))
+    date_index = {date: index for index, date in enumerate(sessions)}
+    bars_by_code: dict[str, dict[dt.date, ShortlistPriceBar]] = defaultdict(dict)
+    for bar in bars:
+        bars_by_code[bar.code][bar.date] = bar
+    appearances_by_date: dict[dt.date, list[ShortlistAppearance]] = defaultdict(list)
+    for appearance in appearances:
+        appearances_by_date[appearance.as_of].append(appearance)
+
+    horizon_reports: list[MatchedControlHorizon] = []
+    for horizon in HORIZONS:
+        shortlist_baskets: list[float] = []
+        control_baskets: list[float] = []
+        differences: list[float] = []
+        shortlist_open_baskets: list[float] = []
+        control_open_baskets: list[float] = []
+        open_differences: list[float] = []
+
+        for selection_date in sorted(appearances_by_date):
+            selection_index = date_index.get(selection_date)
+            if (
+                selection_index is None
+                or selection_index + horizon >= len(sessions)
+            ):
+                continue
+            selected = appearances_by_date[selection_date]
+            selected_close = {item.code: item.close for item in selected}
+            selected_codes = set(selected_close)
+            control_codes = set(eligible_by_date.get(selection_date, ())) - selected_codes
+            control_close = {
+                code: bar.close
+                for code in control_codes
+                if (bar := bars_by_code.get(code, {}).get(selection_date)) is not None
+                and bar.close > 0
+            }
+
+            shortlist_returns, shortlist_open_returns = _gross_returns(
+                codes=selected_codes,
+                selection_close_by_code=selected_close,
+                selection_index=selection_index,
+                horizon=horizon,
+                market_dates=sessions,
+                bars_by_code=bars_by_code,
+            )
+            control_returns, control_open_returns = _gross_returns(
+                codes=control_codes,
+                selection_close_by_code=control_close,
+                selection_index=selection_index,
+                horizon=horizon,
+                market_dates=sessions,
+                bars_by_code=bars_by_code,
+            )
+            shortlist_return = _mean(shortlist_returns)
+            control_return = _mean(control_returns)
+            if shortlist_return is None or control_return is None:
+                continue
+            shortlist_baskets.append(shortlist_return)
+            control_baskets.append(control_return)
+            differences.append(shortlist_return - control_return)
+
+            shortlist_open = _mean(shortlist_open_returns)
+            control_open = _mean(control_open_returns)
+            if shortlist_open is not None and control_open is not None:
+                shortlist_open_baskets.append(shortlist_open)
+                control_open_baskets.append(control_open)
+                open_differences.append(shortlist_open - control_open)
+
+        ci_low, ci_high = _block_bootstrap_mean_ci(
+            differences,
+            block_length=horizon,
+        )
+        open_ci_low, open_ci_high = _block_bootstrap_mean_ci(
+            open_differences,
+            block_length=horizon,
+        )
+        horizon_reports.append(
+            MatchedControlHorizon(
+                sessions=horizon,
+                selection_sessions=len(differences),
+                shortlist_mean_return_pct=_rounded(_mean(shortlist_baskets)),
+                control_mean_return_pct=_rounded(_mean(control_baskets)),
+                shortlist_minus_control_pct=_rounded(_mean(differences)),
+                daily_difference_median_pct=_rounded(_median(differences)),
+                shortlist_outperformed_rate_pct=_rounded(
+                    _positive_rate(differences),
+                    2,
+                ),
+                difference_ci_low_pct=_rounded(ci_low),
+                difference_ci_high_pct=_rounded(ci_high),
+                next_open_shortlist_mean_pct=_rounded(_mean(shortlist_open_baskets)),
+                next_open_control_mean_pct=_rounded(_mean(control_open_baskets)),
+                next_open_difference_pct=_rounded(_mean(open_differences)),
+                next_open_ci_low_pct=_rounded(open_ci_low),
+                next_open_ci_high_pct=_rounded(open_ci_high),
+            )
+        )
+
+    return MatchedControlReport(
+        control=(
+            "Same-date liquid, seasoned, active non-Z universe excluding shortlisted names"
+        ),
+        selection_sessions=len(appearances_by_date),
+        horizons=tuple(horizon_reports),
+    )
 
 
 def _summarize_horizon(
