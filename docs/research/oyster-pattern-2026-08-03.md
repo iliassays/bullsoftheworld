@@ -84,6 +84,53 @@ STAK but failed matched controls overall and was rejected. Oyster v1 instead tes
 break and controlled retest explicitly. A positive chart anecdote cannot override the former-runner
 rejection, and duplicated episodes across the two studies are not independent trials.
 
-## Decision
+## Production evidence
 
-Pending production DSE and US event studies. Market conclusions remain separate.
+### DSE daily approximation: rejected
+
+The production DSE event study evaluated 83 causal episodes across 64 eligible current-listed
+companies. Results were weak in discovery, validation, and holdout windows:
+
+| Horizon | Median close return | Positive close rate | Mean excess vs DSEX |
+|---:|---:|---:|---:|
+| 1 session | -0.56% | 37.35% | -0.22% |
+| 3 sessions | -0.94% | 36.14% | -0.17% |
+| 5 sessions | -1.23% | 36.14% | -0.42% |
+| 10 sessions | -1.23% | 38.55% | -0.83% |
+| 20 sessions | -1.96% | 40.96% | -2.20% |
+
+Only 6.02% of episodes traded 20% above the signal-session high within 20 sessions. That is an
+opportunity diagnostic, not an executable win rate, and it does not compensate for the negative
+typical path. The nine-event holdout is too small to override the larger negative discovery and
+validation samples. Current-listed survivorship bias makes these already weak results an upper
+bound.
+
+**DSE decision:** do not add an Oyster board, Agent Decision, target, paper trade, or alert. A
+future intraday study would be a new registered experiment, not a reason to relabel this result.
+
+### US daily approximation: rejected
+
+The production US study scanned 5,520 eligible current-listed common stocks/ADRs and evaluated
+2,544 causal episodes across 1,160 symbols. The apparent discovery-period effect did not remain
+stable out of sample:
+
+| Window | Events | 20-session median close return | Positive close rate | Mean excess vs SPY |
+|---|---:|---:|---:|---:|
+| Discovery | 1,135 | +1.79% | 53.83% | +3.52% |
+| Validation | 825 | +0.76% | 50.67% | +1.17% |
+| Holdout | 584 | -1.54% | 47.35% | -1.91% |
+
+In holdout, the median maximum high reached +11.89% within 20 sessions, but the median minimum low
+was -12.72%. The +10% opportunity rate of 54.42% is therefore not a win rate: it uses an ex-post
+maximum, has no executable exit, ignores the adverse path, and lacks a matched volatile-penny
+control. The later sample reverses the earlier benchmark lift, so a control study cannot rescue
+the frozen v1 rule without creating a new hypothesis and a new untouched holdout.
+
+**US decision:** do not add an Oyster board, Agent Decision, target, paper trade, or alert. Keep
+the detector and event harness as a rejected, reproducible experiment. The named pattern may be
+revisited only with licensed point-in-time intraday bars and a newly registered specification.
+
+## Final decision
+
+Oyster daily v1 is rejected independently for both DSE and US. No customer-facing chart-pattern
+surface is warranted, and no production scanner was changed.
