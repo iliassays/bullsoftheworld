@@ -21,7 +21,7 @@ from bulls.core.db import get_sessionmaker
 from bulls.core.models import DailyBar, RegulatoryDataState, Symbol, TickerAnalytics
 from bulls.market_data.calendar import is_trading_day, to_market_tz
 from ingestion.sec import sec_target_symbol_count
-from ingestion.us_worker import most_recent_due_session
+from ingestion.us_worker import eod_run_state_key, most_recent_due_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s sec-watchdog %(levelname)s %(message)s")
 log = logging.getLogger("sec-watchdog")
@@ -52,6 +52,9 @@ TARGET_13F_QUARTERS = 8
 # chance to run for the due session.
 _EOD_CRON_ATTEMPT_UTC = dt.time(22, 45)
 _EOD_CRON_GRACE = dt.timedelta(minutes=10)
+_EOD_RUNNING_MAX_AGE = dt.timedelta(hours=3)
+_EOD_RETRY_MAX_AGE = dt.timedelta(minutes=75)
+_EOD_RETRY_ALERT_ATTEMPT = 4
 
 
 def _unit_active(unit: str) -> bool:
@@ -106,8 +109,7 @@ def _state_problems(
             problems.append(f"SEC EDGAR refresh is {age.total_seconds() / 3600:.1f} hours old")
         if sec_targets > 0 and sec.symbols_covered / sec_targets < 0.9:
             problems.append(
-                "SEC EDGAR covers "
-                f"{sec.symbols_covered}/{sec_targets} SEC-targetable symbols"
+                f"SEC EDGAR covers {sec.symbols_covered}/{sec_targets} SEC-targetable symbols"
             )
         details = sec.details or {}
         requested = int(details.get("symbols_requested") or 0)
@@ -200,6 +202,45 @@ def _eod_state_problems(
     if analytics_date is None or analytics_date < due_session:
         problems.append(f"US analytics latest {analytics_date}; expected {due_session}")
     return problems
+
+
+def _is_eod_problem(problem: str) -> bool:
+    return problem.startswith(("US EOD ", "US analytics "))
+
+
+def _eod_recovery_action(
+    raw_state,
+    now: dt.datetime,
+    due_session: dt.date,
+) -> str | None:
+    """Describe a fresh bounded recovery attempt, or return None when an alert is actionable."""
+
+    if isinstance(raw_state, bytes):
+        raw_state = raw_state.decode()
+    if not raw_state:
+        return None
+    try:
+        state = json.loads(raw_state)
+        updated_at = dt.datetime.fromisoformat(str(state["updated_at"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=dt.UTC)
+    if state.get("session_date") != due_session.isoformat():
+        return None
+
+    status = state.get("status")
+    age = now - updated_at
+    attempt = int(state.get("attempt") or 0)
+    if status == "running" and dt.timedelta(0) <= age <= _EOD_RUNNING_MAX_AGE:
+        return f"US EOD recovery attempt {attempt} is running ({state.get('stage') or 'working'})"
+    if (
+        status == "retry_pending"
+        and attempt < _EOD_RETRY_ALERT_ATTEMPT
+        and dt.timedelta(0) <= age <= _EOD_RETRY_MAX_AGE
+    ):
+        return f"US EOD recovery attempt {attempt} is awaiting the next hourly missing-symbol retry"
+    return None
 
 
 async def _api_ready(base_url: str) -> bool:
@@ -346,6 +387,9 @@ async def _record_status_transition(
 
 
 async def _send_alert(problems: list[str], actions: list[str]) -> None:
+    if not problems:
+        log.warning("suppressed empty Wall Street health alert")
+        return
     settings = get_settings()
     recipients = [
         value.strip()
@@ -400,8 +444,19 @@ async def main() -> int:
 
     redis = aioredis.from_url(settings.redis_url)
     should_email = False
+    email_problems = list(problems)
     try:
-        if not problems:
+        due_session = most_recent_due_session(now)
+        recovery_action = _eod_recovery_action(
+            await redis.get(eod_run_state_key(due_session)),
+            now,
+            due_session,
+        )
+        if recovery_action:
+            actions.append(recovery_action)
+            email_problems = [problem for problem in problems if not _is_eod_problem(problem)]
+
+        if not email_problems:
             await redis.delete(COOLDOWN_KEY)
         else:
             should_email = bool(
@@ -420,7 +475,7 @@ async def main() -> int:
             email_scheduled=should_email,
         )
     except Exception:
-        if problems:
+        if email_problems:
             log.warning("Redis watchdog state unavailable; emailing", exc_info=True)
             should_email = True
         else:
@@ -435,7 +490,7 @@ async def main() -> int:
     log.error("PROBLEMS: %s | actions: %s | emailed=%s", problems, actions, should_email)
     if should_email:
         try:
-            await _send_alert(problems, actions)
+            await _send_alert(email_problems, actions)
         except Exception:
             log.exception("alert email failed")
     return 1

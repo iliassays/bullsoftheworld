@@ -160,9 +160,7 @@ def parse_yahoo_chart(data: dict[str, Any], *, market: str, code: str) -> list[B
                 close=close_f,
                 volume=int(volume or 0),
                 adjusted_close=(
-                    float(adjusted[i])
-                    if i < len(adjusted) and adjusted[i] is not None
-                    else None
+                    float(adjusted[i]) if i < len(adjusted) and adjusted[i] is not None else None
                 ),
                 source="yahoo_chart",
             )
@@ -176,13 +174,22 @@ class YahooUsEodProvider:
     def __init__(self, *, timeout: float = 20.0) -> None:
         self._timeout = timeout
         self._names_by_code: dict[str, str] | None = None  # lazy, one fetch for the whole run
+        self._http_client: httpx.AsyncClient | None = None
 
     def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            headers={"User-Agent": _UA, "Accept": "application/json"},
-            timeout=self._timeout,
-            follow_redirects=True,
-        )
+        # Daily ingestion makes thousands of requests. Reusing the pool avoids a TCP/TLS setup
+        # per symbol and lets bounded retries converge before the watchdog deadline.
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                headers={"User-Agent": _UA, "Accept": "application/json"},
+                timeout=self._timeout,
+                follow_redirects=True,
+            )
+        return self._http_client
+
+    async def aclose(self) -> None:
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
     async def list_symbols(self) -> list[Symbol]:
         records = await fetch_us_security_master(_UA)
@@ -212,14 +219,16 @@ class YahooUsEodProvider:
             "events": "history",
             "includeAdjustedClose": "true",
         }
-        async with self._client() as client:
-            try:
-                resp = await client.get(YAHOO_CHART_URL.format(symbol=yahoo_symbol(code)), params=params)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    return []
-                raise
+        client = self._client()
+        try:
+            resp = await client.get(
+                YAHOO_CHART_URL.format(symbol=yahoo_symbol(code)), params=params
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return []
+            raise
         return [
             bar
             for bar in parse_yahoo_chart(resp.json(), market=self.market, code=code.upper())

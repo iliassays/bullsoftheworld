@@ -13,19 +13,22 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 import math
+import uuid
 from pathlib import Path
 from typing import ClassVar
 
 from arq import cron
 from arq.connections import RedisSettings
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 
 from bulls.core.config import get_settings
 from bulls.core.db import bind_tenant_context, get_sessionmaker, verify_runtime_database_role
 from bulls.core.markets import US_VERIFIED_CALENDAR_YEARS
-from bulls.core.models import DailyBar, QuoteSnapshot, Symbol
+from bulls.core.models import DailyBar, QuoteSnapshot, Symbol, TickerAnalytics
+from bulls.market_data import get_provider
 from bulls.market_data.calendar import most_recent_completed_session
 from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 from ingestion.alerts import check_price_alerts
@@ -51,15 +54,38 @@ log = logging.getLogger(__name__)
 MARKET = "US"
 TENANT_ID = "bullsofwallst"
 _COMPLETION_TTL_S = 400 * 24 * 60 * 60
+_RUN_STATE_TTL_S = 48 * 60 * 60
+_CHAIN_LOCK_TTL_S = 3 * 60 * 60
 _CHAIN_VERSION = "v2"
+_LOCK_RELEASE_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+end
+return 0
+"""
 
 
 async def startup(ctx) -> None:
     await verify_runtime_database_role()
 
 
+async def shutdown(ctx) -> None:
+    provider = get_provider(MARKET)
+    close = getattr(provider, "aclose", None)
+    if close is not None:
+        await close()
+
+
 def _completion_key(session_date: dt.date) -> str:
     return f"ingestion:{TENANT_ID}:eod-complete:{_CHAIN_VERSION}:{session_date.isoformat()}"
+
+
+def eod_run_state_key(session_date: dt.date) -> str:
+    return f"ingestion:{TENANT_ID}:eod-run:{_CHAIN_VERSION}:{session_date.isoformat()}"
+
+
+def _chain_lock_key(session_date: dt.date) -> str:
+    return f"ingestion:{TENANT_ID}:eod-lock:{_CHAIN_VERSION}:{session_date.isoformat()}"
 
 
 def most_recent_due_session(now: dt.datetime) -> dt.date:
@@ -106,6 +132,105 @@ async def _coverage(session_date: dt.date) -> tuple[int, int]:
     return ready, covered
 
 
+async def _analytics_date() -> dt.date | None:
+    sm = get_sessionmaker()
+    async with sm() as session:
+        await bind_tenant_context(session, TENANT_ID)
+        return await session.scalar(
+            select(func.max(TickerAnalytics.as_of_date)).where(TickerAnalytics.market == MARKET)
+        )
+
+
+async def _missing_ready_codes(session_date: dt.date) -> list[str]:
+    """Return ready symbols lacking the due-session bar without a large Python IN clause."""
+
+    bar_exists = exists().where(
+        DailyBar.market == MARKET,
+        DailyBar.code == Symbol.code,
+        DailyBar.date == session_date,
+    )
+    sm = get_sessionmaker()
+    async with sm() as session:
+        await bind_tenant_context(session, TENANT_ID)
+        return list(
+            await session.scalars(
+                select(Symbol.code)
+                .where(
+                    Symbol.market == MARKET,
+                    Symbol.is_active.is_(True),
+                    Symbol.is_hidden.is_(False),
+                    Symbol.data_status == "ready",
+                    ~bar_exists,
+                )
+                .order_by(Symbol.code)
+            )
+        )
+
+
+def _decode_run_state(raw) -> dict:
+    if isinstance(raw, bytes):
+        raw = raw.decode()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+async def _next_attempt(redis, session_date: dt.date) -> int:
+    if redis is None:
+        return 1
+    previous = _decode_run_state(await redis.get(eod_run_state_key(session_date)))
+    if (
+        previous.get("session_date") != session_date.isoformat()
+        or previous.get("status") == "complete"
+    ):
+        return 1
+    return int(previous.get("attempt") or 0) + 1
+
+
+async def _write_run_state(
+    redis,
+    session_date: dt.date,
+    *,
+    status: str,
+    stage: str,
+    attempt: int,
+    ready: int | None = None,
+    covered: int | None = None,
+    required: int | None = None,
+    missing: int | None = None,
+    detail: str | None = None,
+) -> None:
+    if redis is None:
+        return
+    payload = {
+        "session_date": session_date.isoformat(),
+        "status": status,
+        "stage": stage,
+        "attempt": attempt,
+        "updated_at": dt.datetime.now(dt.UTC).isoformat(),
+        "ready": ready,
+        "covered": covered,
+        "required": required,
+        "missing": missing,
+        "detail": detail,
+    }
+    await redis.set(
+        eod_run_state_key(session_date),
+        json.dumps(payload, sort_keys=True),
+        ex=_RUN_STATE_TTL_S,
+    )
+
+
+async def _release_chain_lock(redis, key: str, token: str) -> None:
+    if redis is None:
+        return
+    await redis.eval(_LOCK_RELEASE_SCRIPT, 1, key, token)
+
+
 async def _evaluate_eod_price_alerts() -> int:
     sm = get_sessionmaker()
     async with sm() as session:
@@ -131,55 +256,191 @@ async def run_us_eod_chain(ctx) -> str:
         )
     redis = ctx.get("redis") if ctx else None
     completion_key = _completion_key(session_date)
-    if redis is not None and await redis.get(completion_key):
-        return f"skipped: {session_date} EOD chain already complete"
+    lock_key = _chain_lock_key(session_date)
+    lock_token = uuid.uuid4().hex
+    if redis is not None and not await redis.set(
+        lock_key,
+        lock_token,
+        nx=True,
+        ex=_CHAIN_LOCK_TTL_S,
+    ):
+        return f"skipped: {session_date} EOD chain already running"
 
-    ready, covered = await _coverage(session_date)
-    if ready == 0:
-        return "skipped: no retail-ready US symbols"
-    required = math.ceil(ready * get_settings().us_eod_min_coverage)
-
-    bars = {"bars_upserted": 0}
-    if covered < required:
-        bars = await collect(MARKET, days=US_DAILY_LOOKBACK_DAYS)
-        ready, covered = await _coverage(session_date)
-    if covered < required:
-        raise RuntimeError(
-            f"US EOD coverage below gate for {session_date}: {covered}/{ready}, required {required}"
-        )
-
-    eod_snapshot = await publish_us_eod()
-    analytics = await compute_all(MARKET)
-    # Squeeze-taxonomy archive rides after analytics; its failure never breaks the chain.
+    attempt = await _next_attempt(redis, session_date)
+    ready = covered = required = 0
     try:
-        squeeze = await run_squeeze_scan(MARKET)
-        log.info("us squeeze scan: %s", squeeze)
-    except Exception:
-        log.exception("US squeeze scan failed; EOD chain continues")
-    levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
-    volume = await run_eod_volume_agent(MARKET, tenant_id=TENANT_ID)
-    factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
-    market_note = await run_market_update(MARKET, tenant_id=TENANT_ID)
-    price_alerts = await _evaluate_eod_price_alerts()
-    portfolios = await snapshot_portfolios(MARKET, tenant_id=TENANT_ID)
-    buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
-    if redis is not None:
-        await redis.set(completion_key, "1", ex=_COMPLETION_TTL_S)
-    log.info(
-        "us_eod_complete session=%s coverage=%s/%s bars=%s analytics=%s",
-        session_date,
-        covered,
-        ready,
-        bars["bars_upserted"],
-        analytics["computed"],
-    )
-    return (
-        f"session={session_date} coverage={covered}/{ready} bars={bars['bars_upserted']} "
-        f"eod_snapshot={eod_snapshot} analytics={analytics['computed']} "
-        f"levels={levels['published']} volume={volume['published']} "
-        f"factors={factors['published']} market={market_note['published']} "
-        f"price_alerts={price_alerts} portfolios={portfolios} buzz={buzz}"
-    )
+        ready, covered = await _coverage(session_date)
+        if ready == 0:
+            await _write_run_state(
+                redis,
+                session_date,
+                status="skipped",
+                stage="coverage",
+                attempt=attempt,
+                detail="no retail-ready US symbols",
+            )
+            return "skipped: no retail-ready US symbols"
+        required = math.ceil(ready * get_settings().us_eod_min_coverage)
+        analytics_date = await _analytics_date()
+
+        # A marker is an optimization, never the source of truth. Publishing a new ready cohort
+        # can change the denominator after a completed run, so bars and analytics must still agree.
+        completion_exists = redis is not None and await redis.get(completion_key)
+        if (
+            completion_exists
+            and covered >= required
+            and analytics_date is not None
+            and analytics_date >= session_date
+        ):
+            await _write_run_state(
+                redis,
+                session_date,
+                status="complete",
+                stage="verified",
+                attempt=attempt,
+                ready=ready,
+                covered=covered,
+                required=required,
+                missing=ready - covered,
+            )
+            return f"skipped: {session_date} EOD chain already complete"
+        if completion_exists:
+            await redis.delete(completion_key)
+            log.warning(
+                "invalidated stale US EOD completion marker session=%s coverage=%s/%s analytics=%s",
+                session_date,
+                covered,
+                ready,
+                analytics_date,
+            )
+
+        bars = {"bars_upserted": 0, "symbols": 0, "symbols_with_data": 0}
+        if covered < required:
+            missing_codes = await _missing_ready_codes(session_date)
+            await _write_run_state(
+                redis,
+                session_date,
+                status="running",
+                stage="pulling_missing_bars",
+                attempt=attempt,
+                ready=ready,
+                covered=covered,
+                required=required,
+                missing=len(missing_codes),
+            )
+            bars = await collect(
+                MARKET,
+                days=US_DAILY_LOOKBACK_DAYS,
+                codes=missing_codes,
+            )
+            ready, covered = await _coverage(session_date)
+        if covered < required:
+            detail = (
+                f"coverage {covered}/{ready}; required {required}; "
+                "next scheduled recovery will retry only missing symbols"
+            )
+            await _write_run_state(
+                redis,
+                session_date,
+                status="retry_pending",
+                stage="coverage_gate",
+                attempt=attempt,
+                ready=ready,
+                covered=covered,
+                required=required,
+                missing=ready - covered,
+                detail=detail,
+            )
+            log.warning("US EOD %s", detail)
+            return f"retry_pending: {session_date} {detail}"
+
+        await _write_run_state(
+            redis,
+            session_date,
+            status="running",
+            stage="publishing_analytics",
+            attempt=attempt,
+            ready=ready,
+            covered=covered,
+            required=required,
+            missing=ready - covered,
+        )
+        eod_snapshot = await publish_us_eod()
+        analytics = await compute_all(MARKET)
+        # Squeeze-taxonomy archive rides after analytics; its failure never breaks the chain.
+        try:
+            squeeze = await run_squeeze_scan(MARKET)
+            log.info("us squeeze scan: %s", squeeze)
+        except Exception:
+            log.exception("US squeeze scan failed; EOD chain continues")
+        levels = await run_levels_agent(MARKET, tenant_id=TENANT_ID)
+        volume = await run_eod_volume_agent(MARKET, tenant_id=TENANT_ID)
+        factors = await run_factor_agents(MARKET, tenant_id=TENANT_ID)
+        market_note = await run_market_update(MARKET, tenant_id=TENANT_ID)
+        price_alerts = await _evaluate_eod_price_alerts()
+        portfolios = await snapshot_portfolios(MARKET, tenant_id=TENANT_ID)
+        buzz = await snapshot_all(MARKET, tenant_id=TENANT_ID)
+        if redis is not None:
+            await redis.set(completion_key, "1", ex=_COMPLETION_TTL_S)
+        await _write_run_state(
+            redis,
+            session_date,
+            status="complete",
+            stage="complete",
+            attempt=attempt,
+            ready=ready,
+            covered=covered,
+            required=required,
+            missing=ready - covered,
+        )
+        log.info(
+            "us_eod_complete session=%s coverage=%s/%s requested=%s with_data=%s bars=%s "
+            "analytics=%s",
+            session_date,
+            covered,
+            ready,
+            bars["symbols"],
+            bars["symbols_with_data"],
+            bars["bars_upserted"],
+            analytics["computed"],
+        )
+        return (
+            f"session={session_date} coverage={covered}/{ready} bars={bars['bars_upserted']} "
+            f"eod_snapshot={eod_snapshot} analytics={analytics['computed']} "
+            f"levels={levels['published']} volume={volume['published']} "
+            f"factors={factors['published']} market={market_note['published']} "
+            f"price_alerts={price_alerts} portfolios={portfolios} buzz={buzz}"
+        )
+    except asyncio.CancelledError:
+        await _write_run_state(
+            redis,
+            session_date,
+            status="failed",
+            stage="cancelled",
+            attempt=attempt,
+            ready=ready or None,
+            covered=covered or None,
+            required=required or None,
+            missing=(ready - covered) if ready else None,
+            detail="EOD chain was cancelled before completion",
+        )
+        raise
+    except Exception as error:
+        await _write_run_state(
+            redis,
+            session_date,
+            status="failed",
+            stage="exception",
+            attempt=attempt,
+            ready=ready or None,
+            covered=covered or None,
+            required=required or None,
+            missing=(ready - covered) if ready else None,
+            detail=f"{type(error).__name__}: {error}",
+        )
+        raise
+    finally:
+        await _release_chain_lock(redis, lock_key, lock_token)
 
 
 async def refresh_us_security_master(ctx) -> str:
@@ -302,6 +563,7 @@ async def import_us_option_sentiment(
 
 class WorkerSettings:
     on_startup: ClassVar = startup
+    on_shutdown: ClassVar = shutdown
     functions: ClassVar = [
         run_us_eod_chain,
         refresh_us_security_master,
@@ -316,10 +578,16 @@ class WorkerSettings:
         # First attempt 22:45 UTC = 17:45 ET winter / 18:45 ET summer — inside the 1-3h
         # post-close window users actually check, and safely past the provider's 90-minute
         # publication delay in both DST states (the due-time gate skips it if not ready yet).
-        # 23:30 and 01:30 are recovery runs; 13:30 verifies the previous session after restarts.
-        # Coverage gate + completion key make every run idempotent.
+        # Hourly post-close recovery retries only missing symbols. A distributed lock prevents
+        # overlap, while 13:30 verifies the previous session after provider delays or restarts.
+        # Coverage revalidation + the completion marker make every run idempotent.
         cron(run_us_eod_chain, hour=22, minute=45, run_at_startup=False),
-        cron(run_us_eod_chain, hour={1, 13, 23}, minute=30, run_at_startup=True),
+        cron(
+            run_us_eod_chain,
+            hour={0, 1, 2, 3, 4, 5, 13, 23},
+            minute=30,
+            run_at_startup=True,
+        ),
         cron(refresh_us_security_master, weekday="sun", hour=12, minute=0),
         # FINRA publishes the daily file ~18:00 ET; 23:45 UTC = 18:45 EST / 19:45 EDT is past it
         # year-round. Startup run + a multi-session catch-up window make missed evenings heal.

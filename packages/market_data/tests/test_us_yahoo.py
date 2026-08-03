@@ -21,6 +21,19 @@ async def test_reviewed_symbol_domain_does_not_require_a_security_master_fetch()
     assert await provider.get_company_website("nxtc") == "nextcure.com"
 
 
+async def test_yahoo_provider_reuses_and_closes_its_connection_pool() -> None:
+    provider = YahooUsEodProvider()
+    first = provider._client()
+
+    assert provider._client() is first
+    await provider.aclose()
+    assert first.is_closed
+
+    second = provider._client()
+    assert second is not first
+    await provider.aclose()
+
+
 def test_parse_yahoo_chart_builds_daily_bars_and_skips_bad_rows() -> None:
     payload = {
         "chart": {
@@ -37,7 +50,7 @@ def test_parse_yahoo_chart_builds_daily_bars_and_skips_bad_rows() -> None:
                                 "close": [187.0, None, 185.0, 190.0],
                                 "volume": [1000, None, 2000, 3000],
                             }
-                        ]
+                        ],
                     },
                 }
             ],
@@ -58,7 +71,12 @@ def test_parse_yahoo_chart_builds_daily_bars_and_skips_bad_rows() -> None:
 
 
 def test_parse_yahoo_chart_returns_empty_on_provider_error() -> None:
-    assert parse_yahoo_chart({"chart": {"result": None, "error": {"code": "Not Found"}}}, market="US", code="NOPE") == []
+    assert (
+        parse_yahoo_chart(
+            {"chart": {"result": None, "error": {"code": "Not Found"}}}, market="US", code="NOPE"
+        )
+        == []
+    )
 
 
 def test_yahoo_eod_range_excludes_the_still_forming_session() -> None:
@@ -68,7 +86,10 @@ def test_yahoo_eod_range_excludes_the_still_forming_session() -> None:
         requested,
         now=dt.datetime(2026, 7, 17, 14, 0, tzinfo=dt.UTC),
     ) == dt.date(2026, 7, 16)
-    assert completed_history_end(
-        requested,
-        now=dt.datetime(2026, 7, 17, 21, 30, tzinfo=dt.UTC),
-    ) == requested
+    assert (
+        completed_history_end(
+            requested,
+            now=dt.datetime(2026, 7, 17, 21, 30, tzinfo=dt.UTC),
+        )
+        == requested
+    )

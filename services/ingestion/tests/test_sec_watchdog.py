@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from types import SimpleNamespace
+
+import pytest
 
 from ingestion.sec_watchdog import (
     _eod_cron_has_run,
+    _eod_recovery_action,
     _eod_state_problems,
+    _send_alert,
     _state_problems,
     _status_event,
 )
@@ -251,3 +256,38 @@ def test_eod_state_suppresses_coverage_alert_before_cron_has_attempted_the_pull(
     due = dt.date(2026, 7, 10)
     now = dt.datetime(2026, 7, 10, 21, 31, tzinfo=dt.UTC)
     assert _eod_state_problems(now, due, 60, dt.date(2026, 7, 9), 0, dt.date(2026, 7, 9), 0.9) == []
+
+
+def test_eod_recovery_is_active_while_a_fresh_attempt_is_running() -> None:
+    due = dt.date(2026, 7, 31)
+    now = dt.datetime(2026, 8, 1, 0, 0, tzinfo=dt.UTC)
+    state = {
+        "session_date": due.isoformat(),
+        "status": "running",
+        "stage": "pulling_missing_bars",
+        "attempt": 2,
+        "updated_at": (now - dt.timedelta(minutes=30)).isoformat(),
+    }
+
+    assert _eod_recovery_action(json.dumps(state), now, due) == (
+        "US EOD recovery attempt 2 is running (pulling_missing_bars)"
+    )
+
+
+def test_eod_recovery_stops_suppressing_alerts_after_bounded_retries() -> None:
+    due = dt.date(2026, 7, 31)
+    now = dt.datetime(2026, 8, 1, 2, 0, tzinfo=dt.UTC)
+    state = {
+        "session_date": due.isoformat(),
+        "status": "retry_pending",
+        "stage": "coverage_gate",
+        "attempt": 4,
+        "updated_at": (now - dt.timedelta(minutes=20)).isoformat(),
+    }
+
+    assert _eod_recovery_action(json.dumps(state), now, due) is None
+
+
+@pytest.mark.asyncio
+async def test_empty_health_alert_is_suppressed_before_email_configuration() -> None:
+    await _send_alert([], [])
