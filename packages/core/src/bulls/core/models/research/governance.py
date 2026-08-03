@@ -194,6 +194,13 @@ class ResearchStrategyTrial(Base):
             "status",
             "registered_at",
         ),
+        Index(
+            "ix_research_strategy_trials_org_family",
+            "organization_id",
+            "tenant_id",
+            "market",
+            "strategy_key",
+        ),
         UniqueConstraint(
             "workspace_id",
             "strategy_key",

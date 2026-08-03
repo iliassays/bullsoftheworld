@@ -623,6 +623,10 @@ async def _dse_reported_accumulation_near_low(
             ReportedAccumulationInput(
                 market="DSE",
                 pct_above_52w_low=row.pct_from_52w_low,
+                evidence_age_days=max(
+                    0,
+                    (row.as_of_date - dt.date.fromisoformat(flow.dates[-1])).days,
+                ),
                 institutional_change_pp=change_pp,
             )
         )
@@ -729,9 +733,11 @@ async def _us_reported_accumulation_near_low(
             ReportedAccumulationInput(
                 market="US",
                 pct_above_52w_low=analytics.pct_from_52w_low,
+                evidence_age_days=max(0, (analytics.as_of_date - summary.report_date).days),
                 adding_managers=adding,
                 reducing_managers=reducing,
                 net_share_change=summary.net_share_change,
+                share_basis_comparable=summary.share_basis_comparable,
             )
         )
         if not assessment.eligible or assessment.net_manager_breadth_pct is None:
@@ -750,9 +756,7 @@ async def _us_reported_accumulation_near_low(
                         f"{adding} adding vs {reducing} reducing"
                     ),
                     comparison_as_of=(
-                        summary.prior_report_date.isoformat()
-                        if summary.prior_report_date
-                        else None
+                        summary.prior_report_date.isoformat() if summary.prior_report_date else None
                     ),
                     data_as_of=summary.report_date.isoformat(),
                     public_as_of=summary.latest_filing_date.isoformat(),
@@ -764,8 +768,8 @@ async def _us_reported_accumulation_near_low(
                     ),
                     scanner_label="Delayed 13F breadth clue",
                     how_to_read=(
-                        "Manager breadth is used instead of raw percentage share change because "
-                        "splits, new coverage, and small prior denominators can distort that metric."
+                        "Manager breadth and net shares must agree, and adjusted-price factors must "
+                        "show that the two report periods use a comparable share basis."
                     ),
                     risk_note=(
                         "Form 13F can arrive up to 45 days after quarter-end and excludes shorts, "
@@ -805,9 +809,7 @@ _REPORTED_ACCUMULATION_BUILDERS = {
 async def _reported_accumulation_near_low(
     session, market: str, limit: int, cap_tier: str | None = None
 ) -> ScreenOut:
-    return await _REPORTED_ACCUMULATION_BUILDERS[market](
-        session, market, limit, cap_tier
-    )
+    return await _REPORTED_ACCUMULATION_BUILDERS[market](session, market, limit, cap_tier)
 
 
 def _quality_score(row: TickerAnalytics) -> int:

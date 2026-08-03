@@ -27,7 +27,8 @@ async def test_research_tables_force_tenant_market_row_security() -> None:
             rows = (
                 await session.execute(
                     text(
-                        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, p.qual "
+                        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity, "
+                        "coalesce(p.qual, p.with_check) "
                         "FROM pg_class c "
                         "JOIN pg_namespace n ON n.oid = c.relnamespace "
                         "JOIN pg_policies p ON p.schemaname = n.nspname "

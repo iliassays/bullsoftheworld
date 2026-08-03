@@ -17,6 +17,7 @@ AccumulationStrength = Literal["gradual", "meaningful", "broad"]
 class ReportedAccumulationPolicy:
     market: Literal["DSE", "US"]
     max_pct_above_52w_low: float
+    max_report_age_days: int
     min_institutional_change_pp: float | None = None
     min_manager_actions: int | None = None
     min_net_manager_breadth_pct: float | None = None
@@ -26,10 +27,12 @@ class ReportedAccumulationPolicy:
 class ReportedAccumulationInput:
     market: Literal["DSE", "US"]
     pct_above_52w_low: float | None
+    evidence_age_days: int | None = None
     institutional_change_pp: float | None = None
     adding_managers: int | None = None
     reducing_managers: int | None = None
     net_share_change: int | None = None
+    share_basis_comparable: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,11 +47,13 @@ REPORTED_ACCUMULATION_POLICIES: dict[str, ReportedAccumulationPolicy] = {
     "DSE": ReportedAccumulationPolicy(
         market="DSE",
         max_pct_above_52w_low=15.0,
+        max_report_age_days=75,
         min_institutional_change_pp=0.10,
     ),
     "US": ReportedAccumulationPolicy(
         market="US",
         max_pct_above_52w_low=15.0,
+        max_report_age_days=180,
         min_manager_actions=5,
         min_net_manager_breadth_pct=10.0,
     ),
@@ -59,12 +64,22 @@ def _near_low(value: float | None, policy: ReportedAccumulationPolicy) -> bool:
     return value is not None and 0 <= value <= policy.max_pct_above_52w_low
 
 
+def _fresh_evidence(
+    observation: ReportedAccumulationInput,
+    policy: ReportedAccumulationPolicy,
+) -> bool:
+    age = observation.evidence_age_days
+    return age is not None and 0 <= age <= policy.max_report_age_days
+
+
 def _dse_assessment(
     observation: ReportedAccumulationInput,
     policy: ReportedAccumulationPolicy,
 ) -> ReportedAccumulationAssessment:
     change = observation.institutional_change_pp
     minimum = policy.min_institutional_change_pp or 0
+    if not _fresh_evidence(observation, policy):
+        return ReportedAccumulationAssessment(False, None, None, "reported_evidence_stale")
     if not _near_low(observation.pct_above_52w_low, policy):
         return ReportedAccumulationAssessment(False, None, None, "outside_yearly_low_zone")
     if change is None or change < minimum:
@@ -79,8 +94,12 @@ def _us_assessment(
     observation: ReportedAccumulationInput,
     policy: ReportedAccumulationPolicy,
 ) -> ReportedAccumulationAssessment:
+    if not _fresh_evidence(observation, policy):
+        return ReportedAccumulationAssessment(False, None, None, "reported_evidence_stale")
     if not _near_low(observation.pct_above_52w_low, policy):
         return ReportedAccumulationAssessment(False, None, None, "outside_yearly_low_zone")
+    if observation.share_basis_comparable is not True:
+        return ReportedAccumulationAssessment(False, None, None, "share_basis_not_comparable")
     adding = observation.adding_managers or 0
     reducing = observation.reducing_managers or 0
     actions = adding + reducing
@@ -90,10 +109,10 @@ def _us_assessment(
     if breadth < (policy.min_net_manager_breadth_pct or 0):
         return ReportedAccumulationAssessment(False, None, breadth, "manager_breadth_not_positive")
     if observation.net_share_change is None or observation.net_share_change <= 0:
-        return ReportedAccumulationAssessment(False, None, breadth, "net_reported_shares_not_higher")
-    strength: AccumulationStrength = (
-        "broad" if breadth >= 30 and adding >= 5 else "meaningful"
-    )
+        return ReportedAccumulationAssessment(
+            False, None, breadth, "net_reported_shares_not_higher"
+        )
+    strength: AccumulationStrength = "broad" if breadth >= 30 and adding >= 5 else "meaningful"
     return ReportedAccumulationAssessment(True, strength, breadth, "positive_manager_breadth")
 
 

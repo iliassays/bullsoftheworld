@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, Float, Integer, String
+from sqlalchemy import BigInteger, CheckConstraint, Date, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bulls.core.db import Base
@@ -92,6 +92,12 @@ class ShareholdingSnapshot(Base):
     market: Mapped[str] = mapped_column(String(8), primary_key=True)
     code: Mapped[str] = mapped_column(String(16), primary_key=True)
     as_of_date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    # DSE identifies the reporting period but not a reliable publication timestamp. Preserve when
+    # Atlas first observed the row so historical research cannot use it before it was knowable.
+    first_seen_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
     sponsor_director: Mapped[float | None] = mapped_column(Float)
     govt: Mapped[float | None] = mapped_column(Float)
     institute: Mapped[float | None] = mapped_column(Float)

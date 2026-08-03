@@ -17,7 +17,7 @@ import asyncio
 import datetime as dt
 import sys
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.core.db import get_sessionmaker
@@ -42,6 +42,11 @@ async def _upsert_series(session, model, rows: list[dict], pk: tuple[str, ...]) 
         return
     stmt = pg_insert(model).values(rows)
     update_cols = {c: getattr(stmt.excluded, c) for c in rows[0] if c not in pk}
+    if "first_seen_at" in update_cols:
+        update_cols["first_seen_at"] = func.coalesce(
+            model.first_seen_at,
+            stmt.excluded.first_seen_at,
+        )
     stmt = stmt.on_conflict_do_update(index_elements=list(pk), set_=update_cols)
     await session.execute(stmt)
 
@@ -54,7 +59,7 @@ async def _persist(session, info: CompanyInfo, fetched_at: dt.datetime) -> int:
     await _upsert_series(
         session,
         ShareholdingSnapshot,
-        [s.model_dump() for s in info.shareholdings],
+        [dict(s.model_dump(), first_seen_at=fetched_at) for s in info.shareholdings],
         ("market", "code", "as_of_date"),
     )
     await _upsert_series(

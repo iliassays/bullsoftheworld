@@ -12,6 +12,8 @@ the frozen specification hash), #5 (cluster minimum), and #6 (explicit data-bloc
 from __future__ import annotations
 
 import datetime as dt
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -24,6 +26,7 @@ from api.institutional_research.institutional_backtests import (
     _unscreened_equal_weight_null,
     strategy_code_constants,
 )
+from api.institutional_research.investment import family_trial_count
 from api.institutional_research.portfolio import data_blocked_refusal
 from api.institutional_research.workflow import (
     COST_SURVIVAL_FLOOR_BPS,
@@ -32,6 +35,24 @@ from api.institutional_research.workflow import (
 )
 from bulls.analytics.filing_book import CandidateEvent
 from bulls.analytics.research_strategy import StrategyBar, StrategySecurity
+
+
+@pytest.mark.asyncio
+async def test_family_trial_count_is_scoped_to_the_research_organization() -> None:
+    session = SimpleNamespace(scalar=AsyncMock(return_value=7))
+    workspace = SimpleNamespace(
+        organization_id="organization-a",
+        tenant_id="bullsofdhaka",
+        market="DSE",
+    )
+
+    assert await family_trial_count(
+        session,
+        workspace=workspace,
+        strategy_key="dse_reversal_v1",
+    ) == 7
+    statement = session.scalar.await_args.args[0]
+    assert "research_strategy_trials.organization_id" in str(statement)
 
 # --- concern #1a: the 30 bps kill rule is a gate, not a metric ------------------------------
 
@@ -313,7 +334,7 @@ def test_dse_null_needs_a_full_trailing_window_before_admitting_a_name() -> None
     assert early == {}
 
 
-def test_dse_null_emits_only_when_the_eligible_set_changes() -> None:
+def test_dse_null_rebalances_on_every_strategy_decision_date() -> None:
     sessions = _sessions(30)
     securities = [_dse_security("LIQ", sessions=sessions, value=10_000_000.0)]
     schedule = _eligible_universe_equal_weight_null(
@@ -321,7 +342,8 @@ def test_dse_null_emits_only_when_the_eligible_set_changes() -> None:
         rebalance_dates=[sessions[22], sessions[25], sessions[28]],
         minimum_average_daily_value_mn=2.0,
     )
-    assert list(schedule) == [sessions[22]]
+    assert list(schedule) == [sessions[22], sessions[25], sessions[28]]
+    assert all(weights == {"LIQ": 1.0} for weights in schedule.values())
 
 
 def test_dse_null_is_empty_without_rebalances() -> None:

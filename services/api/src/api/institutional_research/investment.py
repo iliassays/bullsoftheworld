@@ -285,16 +285,18 @@ async def family_trial_count(
     workspace: ResearchWorkspace,
     strategy_key: str,
 ) -> int:
-    """Trials ever registered for this strategy family across ALL workspaces.
+    """Trials registered for this strategy family across the research organization.
 
     The deflated-Sharpe denominator (phase 13 §13.3.3) must count the family's full
-    trial history within the tenant/market; scoping it to one workspace would let a
-    fresh workspace restart the multiple-testing penalty at one.
+    organization history; scoping it to one workspace would let a fresh workspace restart the
+    multiple-testing penalty at one. Organization-wide SELECT RLS makes this count invariant to
+    the caller's workspace memberships while retaining the tenant and market boundary.
     """
     count = await session.scalar(
         select(func.count(ResearchStrategyTrial.id)).where(
             ResearchStrategyTrial.tenant_id == workspace.tenant_id,
             ResearchStrategyTrial.market == workspace.market,
+            ResearchStrategyTrial.organization_id == workspace.organization_id,
             ResearchStrategyTrial.strategy_key == strategy_key,
         )
     )

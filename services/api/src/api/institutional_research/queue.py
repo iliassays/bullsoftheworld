@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from collections import defaultdict
 from dataclasses import asdict
 
 from sqlalchemy import Date, String, column, func, or_, select, values
@@ -227,10 +228,12 @@ def _research_clues(
         ReportedAccumulationInput(
             market=analytics.market,
             pct_above_52w_low=analytics.pct_from_52w_low,
+            evidence_age_days=max(0, (analytics.as_of_date - reported.report_date).days),
             institutional_change_pp=reported.institutional_change_pp,
             adding_managers=reported.adding_managers,
             reducing_managers=reported.reducing_managers,
             net_share_change=reported.net_share_change,
+            share_basis_comparable=reported.share_basis_comparable,
         )
     )
     if not assessment.eligible or analytics.pct_from_52w_low is None:
@@ -327,6 +330,23 @@ def _candidate(
     )
 
 
+async def _load_evidence_by_analytics_cutoff(
+    session: AsyncSession,
+    *,
+    adapter,
+    rows: list[tuple[Symbol, TickerAnalytics]],
+) -> dict[str, EvidenceBundle]:
+    """Load each symbol's evidence no later than its own analytics snapshot."""
+
+    codes_by_cutoff: dict[dt.date, list[str]] = defaultdict(list)
+    for _, analytics in rows:
+        codes_by_cutoff[analytics.as_of_date].append(analytics.code)
+    evidence: dict[str, EvidenceBundle] = {}
+    for cutoff, codes in sorted(codes_by_cutoff.items()):
+        evidence.update(await adapter.load(session, codes, cutoff=cutoff))
+    return evidence
+
+
 async def build_research_queue(
     session: AsyncSession,
     *,
@@ -402,17 +422,19 @@ async def build_research_queue(
             candidates=[],
         )
 
-    cutoff = max(analytics.as_of_date for _, analytics in rows)
-    codes = [analytics.code for _, analytics in rows]
     adapter = EVIDENCE_ADAPTERS[market]
-    evidence = await adapter.load(session, codes, cutoff=cutoff)
+    evidence = await _load_evidence_by_analytics_cutoff(
+        session,
+        adapter=adapter,
+        rows=rows,
+    )
     candidates = [
         _candidate(
             symbol=symbol,
             analytics=analytics,
             evidence=evidence[analytics.code],
             path=[],
-            cutoff=cutoff,
+            cutoff=analytics.as_of_date,
         )
         for symbol, analytics in rows
     ]

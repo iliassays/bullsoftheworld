@@ -6,7 +6,7 @@ import datetime as dt
 import statistics
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.institutional_research.evidence import EVIDENCE_ADAPTERS
@@ -298,6 +298,8 @@ async def build_company_dossier(
                     ShareholdingSnapshot.market == market,
                     ShareholdingSnapshot.code == normalized_code,
                     ShareholdingSnapshot.as_of_date <= cutoff,
+                    ShareholdingSnapshot.first_seen_at.isnot(None),
+                    func.date(ShareholdingSnapshot.first_seen_at) <= cutoff,
                 )
                 .order_by(ShareholdingSnapshot.as_of_date.desc())
                 .limit(2)
@@ -311,7 +313,7 @@ async def build_company_dossier(
                 .where(
                     InstitutionalHoldingSummary.market == market,
                     InstitutionalHoldingSummary.code == normalized_code,
-                    InstitutionalHoldingSummary.report_date <= cutoff,
+                    InstitutionalHoldingSummary.latest_filing_date <= cutoff,
                 )
                 .order_by(InstitutionalHoldingSummary.report_date.desc())
                 .limit(1)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import math
 import re
 import zipfile
 from collections import defaultdict
@@ -92,6 +93,7 @@ class InstitutionalSummary(BaseModel):
     unchanged_positions: int
     net_share_change: int | None
     net_change_pct: float | None
+    share_basis_comparable: bool | None
     source_url: str
     updated_at: dt.datetime
 
@@ -509,6 +511,53 @@ def _change_type(current: int, prior: int | None) -> tuple[str, int | None, floa
     return "unchanged", 0, 0.0
 
 
+_COMMON_SPLIT_FACTORS = (1.5, 2.0, 3.0, 4.0, 5.0, 10.0, 20.0, 25.0, 50.0, 100.0)
+_MINIMUM_SHARE_BASIS_PAIRS = 5
+_SPLIT_CONSENSUS_FRACTION = 0.70
+_SPLIT_FACTOR_TOLERANCE = 0.12
+
+
+def _share_basis_comparability(
+    code: str,
+    current_map: dict[tuple[str, int], RawInstitutionalPosition],
+    prior_map: dict[tuple[str, int], RawInstitutionalPosition],
+) -> bool | None:
+    """Infer whether two 13F periods use a comparable reported-share basis.
+
+    Yahoo closes cannot reveal splits because its raw historical close is already split-adjusted.
+    Instead, this guard uses paired managers' raw SEC share counts. A CUSIP change or a broad
+    cluster around a common split/reverse-split factor makes the basis unsafe. Sparse coverage
+    abstains rather than claiming comparability.
+    """
+
+    pairs = [
+        (current_map[(code, manager)], prior_map[(code, manager)])
+        for item_code, manager in current_map
+        if item_code == code and (code, manager) in prior_map
+    ]
+    if len(pairs) < _MINIMUM_SHARE_BASIS_PAIRS:
+        return None
+    if any(current.cusip != prior.cusip for current, prior in pairs):
+        return False
+    ratios = [
+        current.shares / prior.shares
+        for current, prior in pairs
+        if current.shares > 0 and prior.shares > 0
+    ]
+    if len(ratios) < _MINIMUM_SHARE_BASIS_PAIRS:
+        return None
+    required_votes = max(
+        _MINIMUM_SHARE_BASIS_PAIRS,
+        math.ceil(len(ratios) * _SPLIT_CONSENSUS_FRACTION),
+    )
+    candidate_factors = (*_COMMON_SPLIT_FACTORS, *(1 / value for value in _COMMON_SPLIT_FACTORS))
+    for factor in candidate_factors:
+        votes = sum(abs(ratio / factor - 1.0) <= _SPLIT_FACTOR_TOLERANCE for ratio in ratios)
+        if votes >= required_votes:
+            return False
+    return True
+
+
 def build_holding_changes(
     current: ArchiveResult,
     prior: ArchiveResult,
@@ -533,6 +582,7 @@ def build_holding_changes(
         total_shares = 0
         total_value = 0.0
         prior_total_shares = sum(row.shares for row in prior.positions if row.code == code)
+        share_basis_comparable = _share_basis_comparability(code, current_map, prior_map)
         latest_filing = current.report_date
         for manager_cik in managers:
             cur = current_map.get((code, manager_cik))
@@ -630,6 +680,7 @@ def build_holding_changes(
                 net_change_pct=(
                     round(net_change / prior_total_shares * 100, 2) if prior_total_shares else None
                 ),
+                share_basis_comparable=share_basis_comparable,
                 source_url=DATASET_PAGE,
                 updated_at=now,
             )

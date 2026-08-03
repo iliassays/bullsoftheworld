@@ -246,6 +246,92 @@ def test_aggregate_change_is_not_inflated_by_manager_cik_migration() -> None:
     assert summaries[0].net_change_pct == 0
 
 
+def test_share_basis_comparability_rejects_split_consensus() -> None:
+    prior_date = dt.date(2025, 12, 31)
+    current_date = dt.date(2026, 3, 31)
+    managers = range(1, 7)
+    prior = ArchiveResult(
+        source_url="https://www.sec.gov/prior.zip",
+        report_date=prior_date,
+        positions=tuple(_position("SPLT", manager, 100, 1000, prior_date) for manager in managers),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, prior_date) for manager in managers},
+    )
+    current = ArchiveResult(
+        source_url="https://www.sec.gov/current.zip",
+        report_date=current_date,
+        positions=tuple(
+            _position("SPLT", manager, 1000, 1000, current_date) for manager in managers
+        ),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, current_date) for manager in managers},
+    )
+
+    _, summaries = build_holding_changes(current, prior)
+
+    assert summaries[0].share_basis_comparable is False
+
+
+def test_share_basis_comparability_abstains_when_manager_pairs_are_sparse() -> None:
+    prior_date = dt.date(2025, 12, 31)
+    current_date = dt.date(2026, 3, 31)
+    managers = range(1, 4)
+    prior = ArchiveResult(
+        source_url="https://www.sec.gov/prior.zip",
+        report_date=prior_date,
+        positions=tuple(_position("THIN", manager, 100, 1000, prior_date) for manager in managers),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, prior_date) for manager in managers},
+    )
+    current = ArchiveResult(
+        source_url="https://www.sec.gov/current.zip",
+        report_date=current_date,
+        positions=tuple(
+            _position("THIN", manager, 110, 1100, current_date) for manager in managers
+        ),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, current_date) for manager in managers},
+    )
+
+    _, summaries = build_holding_changes(current, prior)
+
+    assert summaries[0].share_basis_comparable is None
+
+
+def test_share_basis_comparability_accepts_non_consensus_manager_changes() -> None:
+    prior_date = dt.date(2025, 12, 31)
+    current_date = dt.date(2026, 3, 31)
+    current_shares = (80, 95, 100, 112, 130, 160)
+    managers = range(1, 7)
+    prior = ArchiveResult(
+        source_url="https://www.sec.gov/prior.zip",
+        report_date=prior_date,
+        positions=tuple(_position("VAR", manager, 100, 1000, prior_date) for manager in managers),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, prior_date) for manager in managers},
+    )
+    current = ArchiveResult(
+        source_url="https://www.sec.gov/current.zip",
+        report_date=current_date,
+        positions=tuple(
+            _position("VAR", manager, shares, 1000, current_date)
+            for manager, shares in zip(managers, current_shares, strict=True)
+        ),
+        matches=(),
+        unmatched_cusips=0,
+        manager_filings={manager: _filing(manager, current_date) for manager in managers},
+    )
+
+    _, summaries = build_holding_changes(current, prior)
+
+    assert summaries[0].share_basis_comparable is True
+
+
 def test_watched_manager_survives_bounded_position_retention() -> None:
     prior_date = dt.date(2025, 12, 31)
     current_date = dt.date(2026, 3, 31)

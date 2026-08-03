@@ -178,6 +178,8 @@ class InstitutionalHoldingSummary(Base):
     unchanged_positions: Mapped[int] = mapped_column(Integer)
     net_share_change: Mapped[int | None] = mapped_column(BigInteger)
     net_change_pct: Mapped[float | None] = mapped_column(Float)
+    # Null means the retained quarter pair is too sparse to rule out a split-like distortion.
+    share_basis_comparable: Mapped[bool | None] = mapped_column(Boolean)
     source_url: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
 

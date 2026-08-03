@@ -46,6 +46,7 @@ class ReportedAccumulationEvidence:
     adding_managers: int | None = None
     reducing_managers: int | None = None
     net_share_change: int | None = None
+    share_basis_comparable: bool | None = None
 
 
 @dataclass(slots=True)
@@ -143,6 +144,8 @@ class DseEvidenceAdapter:
                 ShareholdingSnapshot.market == "DSE",
                 ShareholdingSnapshot.code.in_(codes),
                 ShareholdingSnapshot.as_of_date <= cutoff,
+                ShareholdingSnapshot.first_seen_at.isnot(None),
+                func.date(ShareholdingSnapshot.first_seen_at) <= cutoff,
                 ShareholdingSnapshot.institute.isnot(None),
             )
             .subquery()
@@ -267,6 +270,7 @@ class UsEvidenceAdapter:
                 InstitutionalHoldingSummary.reduced_positions.label("reduced_positions"),
                 InstitutionalHoldingSummary.exited_positions.label("exited_positions"),
                 InstitutionalHoldingSummary.net_share_change.label("net_share_change"),
+                InstitutionalHoldingSummary.share_basis_comparable.label("share_basis_comparable"),
                 func.row_number()
                 .over(
                     partition_by=InstitutionalHoldingSummary.code,
@@ -296,6 +300,7 @@ class UsEvidenceAdapter:
                 adding_managers=int(row["new_positions"] + row["increased_positions"]),
                 reducing_managers=int(row["reduced_positions"] + row["exited_positions"]),
                 net_share_change=row["net_share_change"],
+                share_basis_comparable=row["share_basis_comparable"],
             )
 
         requirement_queries = {

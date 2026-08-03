@@ -80,19 +80,16 @@ def _eligible_universe_equal_weight_null(
     }
 
     schedule: dict[dt.date, dict[str, float]] = {}
-    previous: frozenset[str] = frozenset()
     for as_of in rebalance_dates:
         eligible = []
         for code, values in traded_value.items():
             average = _trailing_average_daily_value_mn(values, as_of=as_of)
             if average is not None and average >= minimum_average_daily_value_mn:
                 eligible.append(code)
-        active = frozenset(eligible)
-        if not active or active == previous:
+        if not eligible:
             continue
         weight = round(1.0 / len(eligible), 6)
         schedule[as_of] = {code: weight for code in sorted(eligible)}
-        previous = active
     return schedule
 
 
