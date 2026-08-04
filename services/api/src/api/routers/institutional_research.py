@@ -30,6 +30,7 @@ from api.institutional_research.lifecycle import (
     get_automation_policy,
     upsert_automation_policy,
 )
+from api.institutional_research.model_experiments import load_model_experiment_board
 from api.institutional_research.options import (
     OptionChainPreviewOut,
     load_option_chain_preview,
@@ -57,6 +58,7 @@ from api.institutional_research.schemas import (
     InvestmentMandateUpdate,
     InvestmentOperatingViewOut,
     LifecycleDispatchOut,
+    ModelExperimentBoardOut,
     ResearchQueueSnapshotOut,
     ResearchRunOut,
     ResearchShadowPortfolioOut,
@@ -392,6 +394,25 @@ async def strategy_readiness(
             "does not exist. Changing a status is a reviewed code change, not a runtime "
             "decision."
         ),
+    )
+
+
+@router.get("/model-experiments/latest")
+async def latest_model_experiment(
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> ModelExperimentBoardOut:
+    """Return this market's latest offline model audit and certified universe state."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    return await load_model_experiment_board(
+        session,
+        tenant_id=tenant.name,
+        market=tenant.market,
     )
 
 

@@ -75,6 +75,15 @@ export function useInvestmentOperatingView(workspaceId: string | undefined) {
   });
 }
 
+export function useModelExperiment() {
+  return useQuery({
+    queryKey: ["research", "model-experiment"],
+    queryFn: () => researchApi.modelExperiment(),
+    enabled: !isResearchPreview,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useConfigureInvestmentMandate(workspaceId: string | undefined) {
   const client = useQueryClient();
   return useMutation({

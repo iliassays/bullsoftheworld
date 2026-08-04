@@ -626,6 +626,77 @@ class StrategyReadinessBoardOut(ApiModel):
     methodology: str
 
 
+class ResearchUniverseFoundationOut(ApiModel):
+    snapshot_id: uuid.UUID
+    as_of_date: dt.date
+    policy_key: str
+    policy_version: str
+    source_mode: Literal["point_in_time", "current_projection"]
+    model_ready: bool
+    candidate_count: int
+    eligible_count: int
+    ineligible_count: int
+    data_blocked_count: int
+    model_eligible_count: int
+    model_blockers: dict[str, int]
+
+
+class ModelWindowMetricsOut(ApiModel):
+    rows: int
+    dates: int
+    mean_daily_rank_ic: float | None
+    median_daily_rank_ic: float | None
+    positive_ic_dates_pct: float | None
+    trades: int
+    mean_net_pct: float | None
+    mean_stressed_pct: float | None
+    annualized_net_pct: float | None
+    hit_rate_pct: float | None
+    sharpe: float | None
+    maximum_drawdown_pct: float | None
+
+
+class ModelCoefficientOut(ApiModel):
+    feature: str
+    coefficient: float
+
+
+class ModelHorizonOut(ApiModel):
+    horizon_sessions: int
+    specification_hash: str
+    selected_penalty: float
+    research_verdict: str
+    promotion_status: str
+    promotion_blockers: list[str]
+    discovery: ModelWindowMetricsOut | None
+    validation: ModelWindowMetricsOut | None
+    holdout: ModelWindowMetricsOut | None
+    momentum_holdout: ModelWindowMetricsOut | None
+    top_coefficients: list[ModelCoefficientOut]
+
+
+class ModelExperimentOut(ApiModel):
+    artifact_schema_version: str
+    artifact_sha256: str
+    generated_at: dt.datetime
+    data_cutoff: dt.date
+    data_scope: str
+    symbols_streamed: int
+    bounded_sample: bool
+    status: Literal["diagnostic", "rejected"]
+    limitations: list[str]
+    horizons: list[ModelHorizonOut]
+
+
+class ModelExperimentBoardOut(ApiModel):
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    generated_at: dt.datetime
+    foundation: ResearchUniverseFoundationOut | None
+    experiment: ModelExperimentOut | None
+    methodology: str
+
+
 class SqueezeEntryOut(ApiModel):
     market: Literal["DSE", "US"]
     code: str

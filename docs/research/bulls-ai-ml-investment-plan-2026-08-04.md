@@ -586,11 +586,12 @@ Exit: event features demonstrably add out-of-sample value or remain research-onl
 - intraday/order-book models only after timestamped trade/quote depth is sufficient; and
 - alternative data only when its economic mechanism, legal right and incremental value are tested.
 
-## 14. Immediate next build
+## 14. Implemented baseline and next build
 
-The market-bound current-session universe policy is implemented. The next work is **historical
-point-in-time reconstruction, the feature/label contract and a reproducible baseline harness**,
-not an AI prediction widget.
+The market-bound current-session universe policy, causal feature/label contract, reproducible
+ridge baseline harness and tenant-bound Strategy Lab model audit are implemented. The remaining
+foundation work is **historical point-in-time reconstruction**; a browser widget does not remove
+that gate.
 
 Before fitting a return model:
 
@@ -615,6 +616,36 @@ controls: momentum-only, equal-weight, matched-liquidity, random-rank
 portfolio: long-only top bucket, volatility scaled, cost/capacity constrained
 status: diagnostic only
 ```
+
+### 2026-08-04 production diagnostic
+
+Atlas evaluated the linear baseline on the production server without copying the database:
+
+- 5,470 currently active product-eligible U.S. common-stock/ADR histories;
+- 955,275 five-session and 237,566 twenty-session causal observations;
+- completed-close features, next-session-open entry, SPY-relative labels and explicit doubled-cost
+  stress;
+- 2016-2022 discovery, 2023-2024 validation and 2025 onward untouched holdout; and
+- current survivors only, because historical listing/delisting and corporate-action evidence is
+  not yet point-in-time complete.
+
+Both horizons failed the frozen economic gate:
+
+| Horizon | Holdout mean net | Doubled-cost mean | Annualized net | Sharpe | Max drawdown | Decision |
+|---|---:|---:|---:|---:|---:|---|
+| 5 sessions | -0.12% | -0.22% | -5.94% | -0.44 | -24.26% | rejected |
+| 20 sessions | -0.55% | -0.66% | -6.96% | -0.78 | -13.87% | rejected |
+
+The artifact remains immutable under `var/research/us-eod-rank/<run>/model-evaluation.json`. Atlas
+serves only a validated, compact projection on `/institutional-research/model-experiments/latest`;
+the requesting tenant market must match the artifact market. Strategy Lab displays the certified
+universe, chronological metrics, momentum control, fitted drivers, limitations and exact promotion
+blockers. This experiment creates no candidate, target, paper trade or order.
+
+The next model iteration must be a new preregistered hypothesis, not threshold tuning against this
+holdout. First repair dated listing, capitalization, delisting and corporate-action evidence; then
+test an economically motivated nonlinear challenger and event-feature ablations against this frozen
+linear baseline.
 
 For DSE, complete the foundation repair and forward Daily Shortlist experiment in parallel. Do not
 train a high-capacity model merely because 197,000 bar rows look large; the calendar history and

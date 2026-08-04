@@ -8,6 +8,7 @@ import { useResearchWorkspaces } from "../research-queue/useResearchQueue";
 import { useCreateShadowPortfolio, useInvestmentOperatingView, useResearchRun, useResearchRuns, useRunBacktest } from "./hooks";
 import { backtestResult } from "./model";
 import { PerformanceChart } from "./PerformanceChart";
+import { ModelExperimentPanel } from "./ModelExperimentPanel";
 
 const CAP_OPTIONS: readonly SelectOption<string>[] = [
   { value: "all", label: "All capitalization tiers" },
@@ -111,6 +112,7 @@ export function HypothesisLabPage() {
         </aside>
 
         <main className="lab-results">
+          <ModelExperimentPanel />
           {!result ? (
             <section className="atlas-empty"><TestTube2 aria-hidden="true" size={28} /><h2>No completed experiment</h2><p>Run the market-bound registered strategy. Atlas will retain every input, result, failure gate, and evidence fingerprint.</p></section>
           ) : (

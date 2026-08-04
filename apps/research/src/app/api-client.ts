@@ -454,6 +454,68 @@ export interface StrategyReadinessBoard {
   methodology: string;
 }
 
+export interface ModelWindowMetrics {
+  rows: number;
+  dates: number;
+  meanDailyRankIc: number | null;
+  medianDailyRankIc: number | null;
+  positiveIcDatesPct: number | null;
+  trades: number;
+  meanNetPct: number | null;
+  meanStressedPct: number | null;
+  annualizedNetPct: number | null;
+  hitRatePct: number | null;
+  sharpe: number | null;
+  maximumDrawdownPct: number | null;
+}
+
+export interface ModelHorizon {
+  horizonSessions: number;
+  specificationHash: string;
+  selectedPenalty: number;
+  researchVerdict: string;
+  promotionStatus: string;
+  promotionBlockers: string[];
+  discovery: ModelWindowMetrics | null;
+  validation: ModelWindowMetrics | null;
+  holdout: ModelWindowMetrics | null;
+  momentumHoldout: ModelWindowMetrics | null;
+  topCoefficients: Array<{ feature: string; coefficient: number }>;
+}
+
+export interface ModelExperimentBoard {
+  tenantId: string;
+  market: "DSE" | "US";
+  generatedAt: string;
+  foundation: {
+    snapshotId: string;
+    asOfDate: string;
+    policyKey: string;
+    policyVersion: string;
+    sourceMode: "point_in_time" | "current_projection";
+    modelReady: boolean;
+    candidateCount: number;
+    eligibleCount: number;
+    ineligibleCount: number;
+    dataBlockedCount: number;
+    modelEligibleCount: number;
+    modelBlockers: Record<string, number>;
+  } | null;
+  experiment: {
+    artifactSchemaVersion: string;
+    artifactSha256: string;
+    generatedAt: string;
+    dataCutoff: string;
+    dataScope: string;
+    symbolsStreamed: number;
+    boundedSample: boolean;
+    status: "diagnostic" | "rejected";
+    limitations: string[];
+    horizons: ModelHorizon[];
+  } | null;
+  methodology: string;
+}
+
 export type DecisionCandidateState = "ready" | "manage" | "exit" | "blocked" | "closed";
 
 export interface DecisionCandidate {
@@ -1013,6 +1075,18 @@ export const researchApi = {
       board.market !== researchDeployment.market
     ) {
       throw new ResearchApiError(502, "The API returned readiness data outside this tenant boundary");
+    }
+    return board;
+  },
+  async modelExperiment(): Promise<ModelExperimentBoard> {
+    const board = await request<ModelExperimentBoard>(
+      "/institutional-research/model-experiments/latest",
+    );
+    if (
+      board.tenantId !== researchDeployment.tenant ||
+      board.market !== researchDeployment.market
+    ) {
+      throw new ResearchApiError(502, "The API returned a model audit outside this tenant boundary");
     }
     return board;
   },

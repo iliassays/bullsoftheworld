@@ -202,6 +202,24 @@ describe("research API tenant boundary", () => {
     await expect(researchApi.calibration("workspace-dse")).rejects.toMatchObject({ status: 502 });
   });
 
+  it("rejects a statistical model audit from another market", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          tenantId: "bullsofwallst",
+          market: "US",
+          generatedAt: "2026-08-04T10:00:00Z",
+          foundation: null,
+          experiment: null,
+          methodology: "test",
+        }),
+      ),
+    );
+
+    await expect(researchApi.modelExperiment()).rejects.toMatchObject({ status: 502 });
+  });
+
   it("rejects an automation policy crossing the market boundary", async () => {
     vi.stubGlobal(
       "fetch",
