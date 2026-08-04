@@ -39,6 +39,7 @@ from ingestion.history import DAILY_LOOKBACK_DAYS, collect
 from ingestion.market_summary import DAILY_LOOKBACK_DAYS as SUMMARY_LOOKBACK_DAYS
 from ingestion.market_summary import collect as collect_summary
 from ingestion.portfolio_snapshot import run as snapshot_portfolios_run
+from ingestion.research_universe_snapshot import materialize_research_universe
 from ingestion.scheduler import poll_market
 from ingestion.signals.news_agents import run_news_agents
 from ingestion.signals.runner import (
@@ -179,6 +180,32 @@ async def refresh_analytics(ctx) -> str:
         counts["patterns"],
     )
     return f"analytics={counts['computed']} patterns={counts['patterns']}"
+
+
+async def refresh_research_universe(ctx) -> str:
+    """Persist the current policy-versioned DSE research universe after analytics completes."""
+
+    del ctx
+    try:
+        result = await materialize_research_universe(MARKET)
+    except ValueError as error:
+        if str(error).startswith(("No completed analytics", "Analytics refresh is incomplete")):
+            log.warning("research universe pending for %s: %s", MARKET, error)
+            return f"pending: {error}"
+        raise
+    log.info(
+        "research universe: date=%s eligible=%s blocked=%s model_ready=%s reused=%s",
+        result["as_of_date"],
+        result["eligible_count"],
+        result["data_blocked_count"],
+        result["model_ready"],
+        result["reused"],
+    )
+    return (
+        f"universe={result['snapshot_id']} date={result['as_of_date']} "
+        f"eligible={result['eligible_count']} blocked={result['data_blocked_count']} "
+        f"model_ready={result['model_ready']} reused={result['reused']}"
+    )
 
 
 async def run_squeeze_scan_task(ctx) -> str:
@@ -524,6 +551,7 @@ class WorkerSettings:
         pull_eod_summary,
         refresh_company,
         refresh_analytics,
+        refresh_research_universe,
         snapshot_portfolios,
         recover_eod_chain,
         run_trending,
@@ -573,6 +601,10 @@ class WorkerSettings:
         ),
         # Recompute analytics 15 min after the bar pull, so the screener is fresh by night.
         cron(refresh_analytics, hour=13, minute=15, run_at_startup=False),
+        # Immutable universe snapshot follows the completed analytics + cap-tier archive. The
+        # second run is a cheap recovery because an existing policy hash is reused before bars load.
+        cron(refresh_research_universe, hour=13, minute=32, run_at_startup=True),
+        cron(refresh_research_universe, hour=14, minute=32, run_at_startup=False),
         # Squeeze-taxonomy archive right after analytics; isolated from the EOD chain.
         cron(run_squeeze_scan_task, hour=13, minute=22, run_at_startup=False),
         # Public Daily Shortlist archive follows the same completed analytics snapshot. The task is

@@ -37,6 +37,7 @@ from ingestion.buzz import snapshot_all
 from ingestion.finra_short import collect as collect_finra_short
 from ingestion.history import US_DAILY_LOOKBACK_DAYS, collect
 from ingestion.portfolio_snapshot import run as snapshot_portfolios
+from ingestion.research_universe_snapshot import materialize_research_universe
 from ingestion.restricted_research import refresh_restricted_market_data
 from ingestion.security_master import collect as refresh_security_master
 from ingestion.signals.runner import (
@@ -449,6 +450,32 @@ async def refresh_us_security_master(ctx) -> str:
     return f"security_master={stats}"
 
 
+async def refresh_research_universe(ctx) -> str:
+    """Persist the current policy-versioned US universe outside the critical EOD chain."""
+
+    del ctx
+    try:
+        result = await materialize_research_universe(MARKET)
+    except ValueError as error:
+        if str(error).startswith(("No completed analytics", "Analytics refresh is incomplete")):
+            log.warning("research universe pending for %s: %s", MARKET, error)
+            return f"pending: {error}"
+        raise
+    log.info(
+        "us_research_universe date=%s eligible=%s blocked=%s model_ready=%s reused=%s",
+        result["as_of_date"],
+        result["eligible_count"],
+        result["data_blocked_count"],
+        result["model_ready"],
+        result["reused"],
+    )
+    return (
+        f"universe={result['snapshot_id']} date={result['as_of_date']} "
+        f"eligible={result['eligible_count']} blocked={result['data_blocked_count']} "
+        f"model_ready={result['model_ready']} reused={result['reused']}"
+    )
+
+
 async def pull_finra_short_volume(ctx) -> str:
     """FINRA Reg SHO daily short volume — whole US universe, self-healing catch-up.
 
@@ -567,6 +594,7 @@ class WorkerSettings:
     functions: ClassVar = [
         run_us_eod_chain,
         refresh_us_security_master,
+        refresh_research_universe,
         pull_finra_short_volume,
         run_short_flow_notes,
         run_finra_short_chain,
@@ -589,6 +617,11 @@ class WorkerSettings:
             run_at_startup=True,
         ),
         cron(refresh_us_security_master, weekday="sun", hour=12, minute=0),
+        # The full US universe is intentionally outside the EOD chain. 06:15 UTC follows the last
+        # overnight recovery attempt; 14:15 verifies after the 13:30 safety run. Existing snapshots
+        # are reused before the bounded bar query, so the second pass is normally cheap.
+        cron(refresh_research_universe, hour=6, minute=15, run_at_startup=True),
+        cron(refresh_research_universe, hour=14, minute=15, run_at_startup=False),
         # FINRA publishes the daily file ~18:00 ET; 23:45 UTC = 18:45 EST / 19:45 EDT is past it
         # year-round. Startup run + a multi-session catch-up window make missed evenings heal.
         # One ordered job prevents a note evaluation from racing ahead of the file transaction.

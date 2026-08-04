@@ -75,6 +75,8 @@ from bulls.core.models.research import (
     ResearchShadowPortfolio,
     ResearchShadowSnapshot,
     ResearchStrategyTrial,
+    ResearchUniverseMember,
+    ResearchUniverseSnapshot,
     ResearchWorkspace,
     ResearchWorkspaceMembership,
 )
@@ -181,6 +183,8 @@ __all__ = [
     "ResearchShadowPortfolio",
     "ResearchShadowSnapshot",
     "ResearchStrategyTrial",
+    "ResearchUniverseMember",
+    "ResearchUniverseSnapshot",
     "ResearchWorkspace",
     "ResearchWorkspaceMembership",
     "SecFiling",

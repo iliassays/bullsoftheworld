@@ -32,6 +32,10 @@ from bulls.core.models.research.tenancy import (
     ResearchWorkspace,
     ResearchWorkspaceMembership,
 )
+from bulls.core.models.research.universe import (
+    ResearchUniverseMember,
+    ResearchUniverseSnapshot,
+)
 
 __all__ = [
     "CatalystEvent",
@@ -55,6 +59,8 @@ __all__ = [
     "ResearchShadowPortfolio",
     "ResearchShadowSnapshot",
     "ResearchStrategyTrial",
+    "ResearchUniverseMember",
+    "ResearchUniverseSnapshot",
     "ResearchWorkspace",
     "ResearchWorkspaceMembership",
 ]

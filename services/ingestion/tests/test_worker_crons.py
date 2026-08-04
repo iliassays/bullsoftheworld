@@ -10,6 +10,7 @@ import datetime as dt
 
 import pytest
 
+import ingestion.us_worker as us_worker_module
 import ingestion.worker as worker_module
 from ingestion.research_worker import WorkerSettings as ResearchWorkerSettings
 from ingestion.sec_worker import WorkerSettings as SecWorkerSettings
@@ -79,6 +80,62 @@ def test_daily_shortlist_archive_runs_after_analytics_and_recovers_on_startup() 
     assert shortlist.hour == analytics.hour == 13
     assert shortlist.minute > analytics.minute
     assert shortlist.run_at_startup
+
+
+def test_research_universe_jobs_follow_analytics_and_have_recovery_runs() -> None:
+    dse_jobs = [
+        job for job in WorkerSettings.cron_jobs if job.name == "cron:refresh_research_universe"
+    ]
+    us_jobs = [
+        job
+        for job in UsWorkerSettings.cron_jobs
+        if job.name == "cron:refresh_research_universe"
+    ]
+
+    assert [(job.hour, job.minute) for job in dse_jobs] == [(13, 32), (14, 32)]
+    assert [job.run_at_startup for job in dse_jobs] == [True, False]
+    assert [(job.hour, job.minute) for job in us_jobs] == [(6, 15), (14, 15)]
+    assert [job.run_at_startup for job in us_jobs] == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_research_universe_worker_reports_an_incomplete_refresh_as_pending(
+    monkeypatch,
+) -> None:
+    async def incomplete(_market: str):
+        raise ValueError("Analytics refresh is incomplete for DSE")
+
+    monkeypatch.setattr(worker_module, "materialize_research_universe", incomplete)
+
+    assert await worker_module.refresh_research_universe({}) == (
+        "pending: Analytics refresh is incomplete for DSE"
+    )
+
+
+@pytest.mark.asyncio
+async def test_us_research_universe_worker_surfaces_snapshot_counts(monkeypatch) -> None:
+    async def materialize(market: str) -> dict[str, object]:
+        assert market == "US"
+        return {
+            "snapshot_id": "snapshot-1",
+            "as_of_date": "2026-08-03",
+            "eligible_count": 321,
+            "data_blocked_count": 7,
+            "model_ready": False,
+            "reused": False,
+        }
+
+    monkeypatch.setattr(
+        us_worker_module,
+        "materialize_research_universe",
+        materialize,
+    )
+
+    result = await us_worker_module.refresh_research_universe({})
+
+    assert "eligible=321" in result
+    assert "blocked=7" in result
+    assert "model_ready=False" in result
 
 
 @pytest.mark.asyncio
