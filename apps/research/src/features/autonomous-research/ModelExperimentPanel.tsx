@@ -1,7 +1,7 @@
 import { AlertTriangle, Database, FlaskConical, ShieldX } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { ModelHorizon, ModelWindowMetrics } from "../../app/api-client";
+import type { ModelHorizon, ModelSleeve, ModelWindowMetrics } from "../../app/api-client";
 import { StatusBadge } from "../../design-system";
 import { useModelExperiment } from "./hooks";
 
@@ -18,6 +18,73 @@ function verdictLabel(value: string): string {
   return value === "promising_diagnostic_but_data_blocked"
     ? "Promising diagnostic · blocked"
     : "Rejected by current test";
+}
+
+function compactUsd(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(0)}m`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}k`;
+  return `$${value.toFixed(0)}`;
+}
+
+function sleeveBoundary(sleeve: ModelSleeve): string {
+  const upper = sleeve.contract.maximumAdv
+    ? `–${compactUsd(sleeve.contract.maximumAdv)}`
+    : "+";
+  return `${compactUsd(sleeve.contract.minimumAdv)}${upper} ADV · $${sleeve.contract.minimumPrice.toFixed(0)}+ price`;
+}
+
+function SegmentedChallenger({ horizon }: { horizon: ModelHorizon }) {
+  const challenger = horizon.segmentedChallenger;
+  if (!challenger) return null;
+  return (
+    <div className="model-audit__challenger">
+      <div className="model-audit__challenger-heading">
+        <span>
+          <small>Preregistered challenger</small>
+          <strong>Liquidity sleeves + regime abstention + constrained sizing</strong>
+        </span>
+        <em>{challenger.trialCount} registered trials</em>
+      </div>
+      <div className="model-audit__sleeves" role="table" aria-label="Segmented challenger holdout results">
+        <div role="row">
+          <span>Sleeve and frozen boundary</span>
+          <span>Holdout after 2× costs</span>
+          <span>Evidence</span>
+          <span>Decision</span>
+        </div>
+        {challenger.sleeves.map((sleeve) => {
+          const holdout = sleeve.holdout;
+          const abstained = Object.values(holdout?.abstentions ?? {}).reduce((total, count) => total + count, 0);
+          const passed = sleeve.researchVerdict === "promising_diagnostic_but_data_blocked";
+          return (
+            <div key={sleeve.key} role="row">
+              <span>
+                <strong>{sleeve.label}</strong>
+                <small>{sleeveBoundary(sleeve)}</small>
+                <small>{sleeve.contract.allowedTrendRegimes.join(" / ").replaceAll("_", " ")} · normal volatility</small>
+              </span>
+              <span className={(holdout?.meanStressedPct ?? 0) >= 0 ? "value-up" : "value-down"}>
+                <strong>{sleeve.status === "evaluated" ? signed(holdout?.meanStressedPct) : "Blocked"}</strong>
+                <small>Sharpe lower 95%: {metric(holdout?.sharpeLower95)}</small>
+              </span>
+              <span>
+                <strong>{holdout?.investedDates ?? 0} invested dates</strong>
+                <small>{abstained} abstentions · {holdout?.trades.toLocaleString() ?? 0} selections</small>
+              </span>
+              <span>
+                <StatusBadge tone={passed ? "warning" : "negative"}>{passed ? "Diagnostic only" : "Rejected"}</StatusBadge>
+                <small>{sleeve.status === "data_blocked" ? sleeve.blockers[0] : "No Agent decision created"}</small>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p>
+        <ShieldX aria-hidden="true" size={15} />
+        Historical cap-tier testing remains blocked: Bulls does not backfill today&apos;s market cap into old dates.
+      </p>
+    </div>
+  );
 }
 
 function ComparisonRow({ label, model, baseline }: {
@@ -72,6 +139,8 @@ function HoldoutStory({ horizon }: { horizon: ModelHorizon }) {
           ))}
         </div>
       </div>
+
+      <SegmentedChallenger horizon={horizon} />
 
       <div className="model-audit__blockers">
         <ShieldX aria-hidden="true" size={16} />

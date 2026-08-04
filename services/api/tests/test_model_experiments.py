@@ -53,6 +53,42 @@ def _artifact(market: str = "US") -> dict:
                 "coefficients_by_absolute_weight": [
                     {"feature": "log_adv_20", "coefficient": 0.02}
                 ],
+                "segmented_challenger": {
+                    "key": "us_eod_segmented_rank_challenger",
+                    "version": "v1",
+                    "trial_count": 15,
+                    "cap_segmentation_status": "blocked_missing_point_in_time_market_cap",
+                    "methodology": "Frozen liquidity sleeves and constrained construction.",
+                    "sleeves": [
+                        {
+                            "key": "deep_liquidity",
+                            "label": "Deep liquidity",
+                            "status": "evaluated",
+                            "contract": {
+                                "minimum_price": 5,
+                                "minimum_adv": 50_000_000,
+                                "maximum_adv": None,
+                                "minimum_cross_section": 50,
+                                "allowed_trend_regimes": ["risk_on", "transition"],
+                                "allowed_volatility_regimes": ["normal"],
+                                "construction": {
+                                    "book_notional": 5_000_000,
+                                    "max_positions": 10,
+                                    "minimum_positions": 8,
+                                    "max_position_weight": 0.15,
+                                    "max_adv_participation": 0.01,
+                                    "minimum_predicted_net_excess": 0,
+                                },
+                            },
+                            "selected_penalty": 0.01,
+                            "research_verdict": "rejected_or_requires_new_preregistered_hypothesis",
+                            "promotion_status": "blocked",
+                            "promotion_blockers": ["forward evidence missing"],
+                            "model_results": {"validation": window, "holdout": window},
+                            "momentum_baseline": {"holdout": window},
+                        }
+                    ],
+                },
             }
         },
     }
@@ -70,6 +106,12 @@ def test_parse_artifact_returns_compact_audited_projection(tmp_path: Path) -> No
     assert result.horizons[0].holdout is not None
     assert result.horizons[0].holdout.mean_stressed_pct == -0.2
     assert result.horizons[0].top_coefficients[0].feature == "log_adv_20"
+    challenger = result.horizons[0].segmented_challenger
+    assert challenger is not None
+    assert challenger.trial_count == 15
+    assert challenger.sleeves[0].contract.book_notional == 5_000_000
+    assert challenger.sleeves[0].holdout is not None
+    assert challenger.sleeves[0].holdout.mean_stressed_pct == -0.2
     assert len(result.artifact_sha256) == 64
 
 

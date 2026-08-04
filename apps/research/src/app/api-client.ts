@@ -461,12 +461,51 @@ export interface ModelWindowMetrics {
   medianDailyRankIc: number | null;
   positiveIcDatesPct: number | null;
   trades: number;
+  investedDates: number | null;
+  abstentions: Record<string, number>;
   meanNetPct: number | null;
   meanStressedPct: number | null;
   annualizedNetPct: number | null;
   hitRatePct: number | null;
   sharpe: number | null;
+  sharpeStandardError: number | null;
+  sharpeLower95: number | null;
+  years: number | null;
+  meanEffectivePositions: number | null;
   maximumDrawdownPct: number | null;
+}
+
+export interface ModelSleeve {
+  key: string;
+  label: string;
+  status: "evaluated" | "data_blocked";
+  contract: {
+    minimumPrice: number;
+    minimumAdv: number;
+    maximumAdv: number | null;
+    allowedTrendRegimes: string[];
+    allowedVolatilityRegimes: string[];
+    bookNotional: number;
+    maxPositions: number;
+    minimumPositions: number;
+    maxPositionWeight: number;
+    maxAdvParticipation: number;
+  };
+  selectedPenalty: number | null;
+  researchVerdict: string;
+  blockers: string[];
+  validation: ModelWindowMetrics | null;
+  holdout: ModelWindowMetrics | null;
+  momentumHoldout: ModelWindowMetrics | null;
+}
+
+export interface ModelSegmentedChallenger {
+  key: string;
+  version: string;
+  trialCount: number;
+  capSegmentationStatus: string;
+  methodology: string;
+  sleeves: ModelSleeve[];
 }
 
 export interface ModelHorizon {
@@ -481,6 +520,7 @@ export interface ModelHorizon {
   holdout: ModelWindowMetrics | null;
   momentumHoldout: ModelWindowMetrics | null;
   topCoefficients: Array<{ feature: string; coefficient: number }>;
+  segmentedChallenger: ModelSegmentedChallenger | null;
 }
 
 export interface ModelExperimentBoard {

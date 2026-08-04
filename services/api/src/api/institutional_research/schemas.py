@@ -648,6 +648,8 @@ class ModelWindowMetricsOut(ApiModel):
     median_daily_rank_ic: float | None
     positive_ic_dates_pct: float | None
     trades: int
+    invested_dates: int | None = None
+    abstentions: dict[str, int] = Field(default_factory=dict)
     mean_net_pct: float | None
     mean_stressed_pct: float | None
     annualized_net_pct: float | None
@@ -658,12 +660,48 @@ class ModelWindowMetricsOut(ApiModel):
     sharpe_standard_error: float | None = None
     sharpe_lower_95: float | None = None
     years: float | None = None
+    mean_effective_positions: float | None = None
     maximum_drawdown_pct: float | None
 
 
 class ModelCoefficientOut(ApiModel):
     feature: str
     coefficient: float
+
+
+class ModelSleeveContractOut(ApiModel):
+    minimum_price: float
+    minimum_adv: float
+    maximum_adv: float | None
+    allowed_trend_regimes: list[str]
+    allowed_volatility_regimes: list[str]
+    book_notional: float
+    max_positions: int
+    minimum_positions: int
+    max_position_weight: float
+    max_adv_participation: float
+
+
+class ModelSleeveOut(ApiModel):
+    key: str
+    label: str
+    status: Literal["evaluated", "data_blocked"]
+    contract: ModelSleeveContractOut
+    selected_penalty: float | None
+    research_verdict: str
+    blockers: list[str]
+    validation: ModelWindowMetricsOut | None
+    holdout: ModelWindowMetricsOut | None
+    momentum_holdout: ModelWindowMetricsOut | None
+
+
+class ModelSegmentedChallengerOut(ApiModel):
+    key: str
+    version: str
+    trial_count: int
+    cap_segmentation_status: str
+    methodology: str
+    sleeves: list[ModelSleeveOut]
 
 
 class ModelHorizonOut(ApiModel):
@@ -678,6 +716,7 @@ class ModelHorizonOut(ApiModel):
     holdout: ModelWindowMetricsOut | None
     momentum_holdout: ModelWindowMetricsOut | None
     top_coefficients: list[ModelCoefficientOut]
+    segmented_challenger: ModelSegmentedChallengerOut | None = None
 
 
 class ModelExperimentOut(ApiModel):

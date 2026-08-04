@@ -17,6 +17,9 @@ from api.institutional_research.schemas import (
     ModelExperimentBoardOut,
     ModelExperimentOut,
     ModelHorizonOut,
+    ModelSegmentedChallengerOut,
+    ModelSleeveContractOut,
+    ModelSleeveOut,
     ModelWindowMetricsOut,
     ResearchUniverseFoundationOut,
 )
@@ -48,6 +51,12 @@ def _window_metrics(value: Any) -> ModelWindowMetricsOut | None:
         median_daily_rank_ic=_optional_float(value.get("median_daily_rank_ic")),
         positive_ic_dates_pct=_optional_float(value.get("positive_ic_dates_pct")),
         trades=int(book.get("trades") or 0),
+        invested_dates=(
+            int(book["invested_dates"]) if book.get("invested_dates") is not None else None
+        ),
+        abstentions={
+            str(key): int(count) for key, count in (book.get("abstentions") or {}).items()
+        },
         mean_net_pct=_optional_float(book.get("mean_net_pct")),
         mean_stressed_pct=_optional_float(book.get("mean_stressed_pct")),
         annualized_net_pct=_optional_float(book.get("annualized_net_pct")),
@@ -56,7 +65,78 @@ def _window_metrics(value: Any) -> ModelWindowMetricsOut | None:
         sharpe_standard_error=_optional_float(book.get("sharpe_standard_error")),
         sharpe_lower_95=_optional_float(book.get("sharpe_lower_95")),
         years=_optional_float(book.get("years")),
+        mean_effective_positions=_optional_float(book.get("mean_effective_positions")),
         maximum_drawdown_pct=_optional_float(book.get("maximum_drawdown_pct")),
+    )
+
+
+def _sleeve_contract(value: Any) -> ModelSleeveContractOut:
+    if not isinstance(value, dict):
+        raise ValueError("model sleeve contract is malformed")
+    construction = value.get("construction")
+    if not isinstance(construction, dict):
+        raise ValueError("model sleeve construction is malformed")
+    return ModelSleeveContractOut(
+        minimum_price=float(value["minimum_price"]),
+        minimum_adv=float(value["minimum_adv"]),
+        maximum_adv=_optional_float(value.get("maximum_adv")),
+        allowed_trend_regimes=[str(item) for item in value.get("allowed_trend_regimes") or []],
+        allowed_volatility_regimes=[
+            str(item) for item in value.get("allowed_volatility_regimes") or []
+        ],
+        book_notional=float(construction["book_notional"]),
+        max_positions=int(construction["max_positions"]),
+        minimum_positions=int(construction["minimum_positions"]),
+        max_position_weight=float(construction["max_position_weight"]),
+        max_adv_participation=float(construction["max_adv_participation"]),
+    )
+
+
+def _segmented_challenger(value: Any) -> ModelSegmentedChallengerOut | None:
+    if not isinstance(value, dict):
+        return None
+    sleeve_rows = value.get("sleeves")
+    if not isinstance(sleeve_rows, list):
+        raise ValueError("segmented challenger sleeve list is malformed")
+    sleeves: list[ModelSleeveOut] = []
+    for row in sleeve_rows:
+        if not isinstance(row, dict):
+            raise ValueError("segmented challenger sleeve is malformed")
+        status = str(row.get("status") or "data_blocked")
+        if status not in {"evaluated", "data_blocked"}:
+            raise ValueError("segmented challenger sleeve status is invalid")
+        model_results = row.get("model_results")
+        baseline_results = row.get("momentum_baseline")
+        model_results = model_results if isinstance(model_results, dict) else {}
+        baseline_results = baseline_results if isinstance(baseline_results, dict) else {}
+        sleeves.append(
+            ModelSleeveOut(
+                key=str(row.get("key") or "unknown"),
+                label=str(row.get("label") or row.get("key") or "Unknown sleeve"),
+                status=status,
+                contract=_sleeve_contract(row.get("contract")),
+                selected_penalty=(
+                    float(row["selected_penalty"])
+                    if row.get("selected_penalty") is not None
+                    else None
+                ),
+                research_verdict=str(row.get("research_verdict") or "data_blocked"),
+                blockers=[
+                    str(item)
+                    for item in (row.get("promotion_blockers") or row.get("blockers") or [])
+                ],
+                validation=_window_metrics(model_results.get("validation")),
+                holdout=_window_metrics(model_results.get("holdout")),
+                momentum_holdout=_window_metrics(baseline_results.get("holdout")),
+            )
+        )
+    return ModelSegmentedChallengerOut(
+        key=str(value.get("key") or "unknown"),
+        version=str(value.get("version") or "unknown"),
+        trial_count=int(value.get("trial_count") or 0),
+        cap_segmentation_status=str(value.get("cap_segmentation_status") or "unknown"),
+        methodology=str(value.get("methodology") or ""),
+        sleeves=sleeves,
     )
 
 
@@ -107,6 +187,9 @@ def _parse_artifact(path: Path, *, market: str) -> ModelExperimentOut:
                     for row in coefficient_rows[:6]
                     if isinstance(row, dict)
                 ],
+                segmented_challenger=_segmented_challenger(
+                    model.get("segmented_challenger")
+                ),
             )
         )
 
