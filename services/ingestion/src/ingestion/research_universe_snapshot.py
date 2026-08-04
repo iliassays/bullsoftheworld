@@ -25,7 +25,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import String, column, func, select, text, true, values
+from sqlalchemy import String, column, func, select, text, true, union, values
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from bulls.analytics.universe_policy import (
@@ -39,6 +39,7 @@ from bulls.analytics.universe_policy import (
     universe_input_fingerprint,
 )
 from bulls.core.db import get_sessionmaker
+from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     CapTierObservation,
     DailyBar,
@@ -380,6 +381,30 @@ def _bar_batch_statement(
     )
 
 
+def _session_calendar_statement(market: str, *, through_date: dt.date):
+    """Return the bounded completed-session calendar from independent stored projections.
+
+    ``market_summaries`` is a useful product projection but can lag an otherwise completed EOD
+    chain.  The configured market benchmark is a second authoritative trading-session witness.
+    Taking their union keeps DSE and US on one profile-driven path and prevents a stale summary
+    row from blocking an otherwise auditable universe snapshot.
+    """
+
+    benchmark_code = get_market_profile(market).benchmark_code
+    dates = union(
+        select(MarketSummary.date.label("date")).where(
+            MarketSummary.market == market,
+            MarketSummary.date <= through_date,
+        ),
+        select(DailyBar.date.label("date")).where(
+            DailyBar.market == market,
+            DailyBar.code == benchmark_code,
+            DailyBar.date <= through_date,
+        ),
+    ).subquery("research_session_calendar")
+    return select(dates.c.date).order_by(dates.c.date.desc()).limit(_RECENT_SESSIONS)
+
+
 async def _bar_states(
     session,
     *,
@@ -390,12 +415,7 @@ async def _bar_states(
     """Load at most 300 indexed bars per code; never aggregate the full bar store."""
 
     session_dates = list(
-        await session.scalars(
-            select(MarketSummary.date)
-            .where(MarketSummary.market == market, MarketSummary.date <= as_of_date)
-            .order_by(MarketSummary.date.desc())
-            .limit(_RECENT_SESSIONS)
-        )
+        await session.scalars(_session_calendar_statement(market, through_date=as_of_date))
     )
     if len(session_dates) != _RECENT_SESSIONS or session_dates[0] != as_of_date:
         raise ValueError(

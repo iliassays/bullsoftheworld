@@ -13,6 +13,7 @@ from ingestion.research_universe_snapshot import (
     CandidateState,
     ListingObservationState,
     _bar_batch_statement,
+    _session_calendar_statement,
     build_policy_input,
     candidate_input_fingerprint,
     listing_observation_matches,
@@ -165,6 +166,25 @@ def test_bar_query_is_lateral_and_bounded_per_symbol() -> None:
     assert "JOIN LATERAL" in sql
     assert "LIMIT" in sql
     assert "GROUP BY" not in sql
+
+
+def test_session_calendar_combines_summary_and_configured_benchmark() -> None:
+    statement = _session_calendar_statement(
+        "US",
+        through_date=dt.date(2026, 8, 3),
+    )
+    sql = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).upper()
+
+    assert "UNION" in sql
+    assert "MARKET_SUMMARY" in sql
+    assert "DAILY_BARS" in sql
+    assert "SPY" in sql
+    assert "LIMIT 20" in sql
 
 
 def test_quality_report_keeps_research_and_model_readiness_separate() -> None:
