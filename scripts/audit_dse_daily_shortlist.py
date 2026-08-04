@@ -196,6 +196,17 @@ async def run() -> None:
         benchmark=benchmark,
         market_dates=market_dates,
     )
+    rank_performance = {
+        str(rank): asdict(
+            evaluate_shortlist_performance(
+                appearances=[row for row in appearances if row.rank == rank],
+                bars=bars,
+                benchmark=benchmark,
+                market_dates=market_dates,
+            )
+        )
+        for rank in sorted({row.rank for row in appearances})
+    }
     eligible = eligible_universe_by_date(
         bars,
         selection_dates=[row.as_of_date for row in snapshots],
@@ -221,6 +232,7 @@ async def run() -> None:
             market_dates,
         ),
         "performance": asdict(performance),
+        "rank_performance": rank_performance,
         "matched_control": asdict(matched_control),
         "limitations": [
             "Reconstructed rows include only currently listed names and are survivor-biased.",
@@ -232,8 +244,12 @@ async def run() -> None:
     print(json.dumps(payload, indent=2, default=_json_default))
 
 
-if __name__ == "__main__":
+async def main() -> None:
     try:
-        asyncio.run(run())
+        await run()
     finally:
-        asyncio.run(dispose_engine())
+        await dispose_engine()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
