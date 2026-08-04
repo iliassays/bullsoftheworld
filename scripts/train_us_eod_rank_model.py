@@ -45,11 +45,17 @@ from research.modeling.cross_sectional_rank import (
     rank_features,
     temporal_window,
 )
+from research.modeling.segmented_challenger import (
+    DEFAULT_LIQUIDITY_SLEEVES,
+    LiquiditySleeveSpec,
+    evaluate_constructed_book,
+    filter_liquidity_sleeve,
+)
 
 from bulls.core.db import dispose_engine, get_sessionmaker
 from bulls.core.models import DailyBar, SecurityMaster
 
-ARTIFACT_SCHEMA_VERSION = "atlas-cross-sectional-model-artifact-v1"
+ARTIFACT_SCHEMA_VERSION = "atlas-cross-sectional-model-artifact-v2"
 DEFAULT_HORIZONS = (5, 20)
 SHARD_SYMBOLS = 200
 MINIMUM_CROSS_SECTION = 100
@@ -244,40 +250,214 @@ async def build_datasets(
         "observation_counts": {str(key): value for key, value in observation_counts.items()},
         "benchmark_first_date": benchmark["date"].min().isoformat(),
         "benchmark_latest_date": benchmark["date"].max().isoformat(),
+        "benchmark_regime_contract": {
+            "trend": "risk_on when SPY close > SMA200 and SMA50 > SMA200; risk_off for the inverse; transition otherwise",
+            "volatility": "high when trailing 20-session annualized SPY volatility >= 25%",
+            "known_at": "completed signal-session close",
+        },
+        "capitalization_segmentation": "blocked_missing_point_in_time_market_cap",
         "limitations": [
             "Historical listing and delisting reconstruction is unavailable before July 2026.",
             "The current active security master therefore creates survivorship selection bias.",
             "Positive results are upper-bound diagnostics; negative results remain useful rejections.",
             "No model output is connected to Atlas targets, orders, or paper positions.",
+            "Historical cap-tier sleeves remain blocked until point-in-time market cap exists.",
         ],
     }
     (run_dir / "dataset-manifest.json").write_text(json.dumps(metadata, indent=2))
     return metadata
 
 
-def _load_ranked_panel(run_dir: Path, horizon: int) -> pl.DataFrame:
+def _load_panel(run_dir: Path, horizon: int) -> pl.DataFrame:
     paths = sorted((run_dir / f"horizon-{horizon}").glob("part-*.parquet"))
     if not paths:
         raise RuntimeError(f"No dataset shards found for horizon {horizon}")
     frame = pl.scan_parquet(paths).collect(engine="streaming")
-    frame = frame.filter(pl.len().over("date") >= MINIMUM_CROSS_SECTION)
-    return rank_features(frame)
+    return frame.filter(pl.len().over("date") >= MINIMUM_CROSS_SECTION)
+
+
+def _load_ranked_panel(run_dir: Path, horizon: int) -> pl.DataFrame:
+    return rank_features(_load_panel(run_dir, horizon))
 
 
 def _trial_score(result: dict[str, Any]) -> tuple[float, float]:
+    """Rank a penalty trial, most informative statistic first.
+
+    Rank IC is primary because it is computed across the entire cross-section on
+    every rebalance date, whereas the top-book return summarises only ``positions``
+    names — hundreds of times less data per date, and correspondingly noisier.
+    Selecting a hyperparameter on the noisiest number available is how a grid
+    search ends up fitting the validation window. The stressed book return stays
+    on as a tiebreaker so a model that ranks well but cannot survive costs still
+    loses to one that does.
+    """
+
     top_book = result.get("top_book") or {}
     stressed = top_book.get("mean_stressed_pct")
     rank_ic = result.get("mean_daily_rank_ic")
     return (
-        float(stressed) if stressed is not None else float("-inf"),
         float(rank_ic) if rank_ic is not None else float("-inf"),
+        float(stressed) if stressed is not None else float("-inf"),
     )
+
+
+def _evaluate_sleeve_window(
+    frame: pl.DataFrame,
+    *,
+    score_column: str,
+    spec: CrossSectionalSpec,
+    sleeve: LiquiditySleeveSpec,
+) -> dict[str, Any]:
+    result = evaluate_ranking(
+        frame,
+        score_column=score_column,
+        horizon=spec.horizon,
+        positions=spec.positions_per_rebalance,
+    )
+    result["top_book"] = evaluate_constructed_book(
+        frame,
+        score_column=score_column,
+        horizon=spec.horizon,
+        construction=sleeve.construction,
+    )
+    return result
+
+
+def _train_liquidity_sleeve(
+    raw_panel: pl.DataFrame,
+    *,
+    spec: CrossSectionalSpec,
+    sleeve: LiquiditySleeveSpec,
+) -> dict[str, Any]:
+    """Train one preregistered liquidity/regime sleeve without inspecting holdout."""
+
+    eligible = filter_liquidity_sleeve(raw_panel, sleeve)
+    if eligible.is_empty():
+        return {
+            "key": sleeve.key,
+            "label": sleeve.label,
+            "status": "data_blocked",
+            "contract": sleeve.as_dict(),
+            "blockers": ["no dates satisfy the frozen sleeve contract"],
+        }
+    panel = rank_features(eligible)
+    windows = {
+        name: temporal_window(panel, spec, name)
+        for name in ("discovery", "validation", "holdout")
+    }
+    window_dates = {name: frame["date"].n_unique() for name, frame in windows.items()}
+    if min(window_dates.values()) < 10:
+        return {
+            "key": sleeve.key,
+            "label": sleeve.label,
+            "status": "data_blocked",
+            "contract": sleeve.as_dict(),
+            "rows": {name: frame.height for name, frame in windows.items()},
+            "dates": window_dates,
+            "blockers": ["fewer than 10 eligible dates exist in at least one temporal window"],
+        }
+
+    trials: list[dict[str, Any]] = []
+    for penalty in spec.ridge_penalties:
+        model = fit_ridge(windows["discovery"], penalty=penalty)
+        scored = attach_scores(windows["validation"], model)
+        result = _evaluate_sleeve_window(
+            scored,
+            score_column="model_score",
+            spec=spec,
+            sleeve=sleeve,
+        )
+        trials.append({"penalty": penalty, "validation": result})
+    selected_trial = max(trials, key=lambda trial: _trial_score(trial["validation"]))
+    selected_penalty = float(selected_trial["penalty"])
+
+    pre_holdout = pl.concat(
+        (windows["discovery"], windows["validation"]),
+        how="vertical_relaxed",
+    )
+    model = fit_ridge(pre_holdout, penalty=selected_penalty)
+    model_results: dict[str, Any] = {}
+    momentum_results: dict[str, Any] = {}
+    for name, frame in windows.items():
+        model_results[name] = _evaluate_sleeve_window(
+            attach_scores(frame, model),
+            score_column="model_score",
+            spec=spec,
+            sleeve=sleeve,
+        )
+        momentum_results[name] = _evaluate_sleeve_window(
+            frame,
+            score_column="x_residual_return_60",
+            spec=spec,
+            sleeve=sleeve,
+        )
+
+    holdout_book = model_results["holdout"].get("top_book") or {}
+    diagnostic_promising = all(
+        (
+            (model_results["holdout"].get("median_daily_rank_ic") or 0) > 0,
+            (holdout_book.get("mean_stressed_pct") or 0) > 0,
+            (holdout_book.get("sharpe_lower_95") or 0) > 0,
+            (holdout_book.get("invested_dates") or 0) >= 30,
+        )
+    )
+    return finite_dict(
+        {
+            "key": sleeve.key,
+            "label": sleeve.label,
+            "status": "evaluated",
+            "contract": sleeve.as_dict(),
+            "rows": {name: frame.height for name, frame in windows.items()},
+            "dates": window_dates,
+            "penalty_trials": trials,
+            "selected_penalty": selected_penalty,
+            "model": model.as_dict(),
+            "model_results": model_results,
+            "momentum_baseline": momentum_results,
+            "research_verdict": (
+                "promising_diagnostic_but_data_blocked"
+                if diagnostic_promising
+                else "rejected_or_requires_new_preregistered_hypothesis"
+            ),
+            "promotion_status": "blocked",
+            "promotion_blockers": [
+                "historical security universe is not point-in-time complete",
+                "point-in-time capitalization is unavailable, so cap sleeves are blocked",
+                "no independent forward shadow period has completed",
+            ],
+        }
+    )
+
+
+def train_segmented_challenger(
+    raw_panel: pl.DataFrame,
+    *,
+    spec: CrossSectionalSpec,
+) -> dict[str, Any]:
+    """Evaluate every frozen sleeve and retain failures instead of selecting on holdout."""
+
+    return {
+        "key": "us_eod_segmented_rank_challenger",
+        "version": "v1",
+        "trial_count": len(DEFAULT_LIQUIDITY_SLEEVES) * len(spec.ridge_penalties),
+        "cap_segmentation_status": "blocked_missing_point_in_time_market_cap",
+        "methodology": (
+            "Separate point-in-time price/liquidity sleeves; SPY trend and volatility gates; "
+            "positive expected-net-return abstention; inverse-volatility weights; 1% ADV "
+            "participation and 15% position caps. No sleeve is chosen using holdout results."
+        ),
+        "sleeves": [
+            _train_liquidity_sleeve(raw_panel, spec=spec, sleeve=sleeve)
+            for sleeve in DEFAULT_LIQUIDITY_SLEEVES
+        ],
+    }
 
 
 def train_horizon(run_dir: Path, spec: CrossSectionalSpec) -> dict[str, Any]:
     """Tune on validation only, then inspect the model-specific holdout once."""
 
-    panel = _load_ranked_panel(run_dir, spec.horizon)
+    raw_panel = _load_panel(run_dir, spec.horizon)
+    panel = rank_features(raw_panel)
     discovery = temporal_window(panel, spec, "discovery")
     validation = temporal_window(panel, spec, "validation")
     holdout = temporal_window(panel, spec, "holdout")
@@ -338,11 +518,18 @@ def train_horizon(run_dir: Path, spec: CrossSectionalSpec) -> dict[str, Any]:
         )
     }
     holdout_book = windows["holdout"].get("top_book") or {}
+    # The gate tests the LOWER 95% bound of the holdout Sharpe, not the point
+    # estimate. A fixed `sharpe > 0.5` threshold ignores how much holdout actually
+    # exists: the annualised Sharpe standard error is roughly 1/sqrt(years), so on
+    # the ~1.6 years available it is ~0.79 — a 0.5 threshold sits only ~0.6 sigma
+    # above zero and passes for a coin roughly one run in four, per horizon. Using
+    # the lower bound makes the bar self-adjusting: it tightens automatically when
+    # the window is short and relaxes as real out-of-sample history accumulates.
     diagnostic_promising = all(
         (
             (windows["holdout"].get("median_daily_rank_ic") or 0) > 0,
             (holdout_book.get("mean_stressed_pct") or 0) > 0,
-            (holdout_book.get("sharpe") or 0) > 0.5,
+            (holdout_book.get("sharpe_lower_95") or 0) > 0,
         )
     )
     coefficients = sorted(
@@ -373,6 +560,10 @@ def train_horizon(run_dir: Path, spec: CrossSectionalSpec) -> dict[str, Any]:
             "coefficients_by_absolute_weight": coefficients,
             "model_results": windows,
             "momentum_baseline": baselines,
+            "segmented_challenger": train_segmented_challenger(
+                raw_panel,
+                spec=spec,
+            ),
             "research_verdict": (
                 "promising_diagnostic_but_data_blocked"
                 if diagnostic_promising

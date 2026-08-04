@@ -653,6 +653,11 @@ class ModelWindowMetricsOut(ApiModel):
     annualized_net_pct: float | None
     hit_rate_pct: float | None
     sharpe: float | None
+    # Sharpe uncertainty travels with the estimate so a short window cannot be
+    # read as a strong result. Optional: artefacts written before v2 omit them.
+    sharpe_standard_error: float | None = None
+    sharpe_lower_95: float | None = None
+    years: float | None = None
     maximum_drawdown_pct: float | None
 
 

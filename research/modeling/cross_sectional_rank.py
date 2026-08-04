@@ -48,7 +48,7 @@ class CrossSectionalSpec:
     """Frozen model and execution contract; change ``version`` when any field changes."""
 
     key: str = "us_eod_cross_sectional_rank"
-    version: str = "v1"
+    version: str = "v2"
     market: str = "US"
     horizon: int = 5
     minimum_history: int = 252
@@ -57,7 +57,13 @@ class CrossSectionalSpec:
     positions_per_rebalance: int = 10
     discovery_end: dt.date = dt.date(2022, 12, 31)
     validation_end: dt.date = dt.date(2024, 12, 31)
-    ridge_penalties: tuple[float, ...] = (0.1, 1.0, 10.0, 100.0)
+    # Dimensionless ridge penalties, expressed as a multiple of the mean feature
+    # variance (see ``fit_ridge``). v1 used absolute penalties (0.1 … 100) against a
+    # weighted Gram matrix pinned at ~1/12, so its *least* penalised setting already
+    # shrank coefficients ~55% and its top two settings were numerically identical
+    # (score rank correlation 0.9995). The grid below spans light to heavy shrinkage
+    # and stays correct if the feature scaling ever changes.
+    ridge_penalties: tuple[float, ...] = (0.001, 0.01, 0.1, 1.0, 10.0)
     data_scope: str = "current_survivors_diagnostic_upper_bound"
 
     def spec_hash(self) -> str:
@@ -129,7 +135,39 @@ def build_benchmark_calendar(
         )
         .with_row_index("session_ordinal")
         .with_columns(adjustment=pl.col("adjusted_close") / pl.col("close"))
-        .with_columns(adjusted_open=pl.col("open") * pl.col("adjustment"))
+        .with_columns(
+            adjusted_open=pl.col("open") * pl.col("adjustment"),
+            benchmark_sma_50=_rolling_mean("adjusted_close", 50),
+            benchmark_sma_200=_rolling_mean("adjusted_close", 200),
+            benchmark_return_1=(
+                pl.col("adjusted_close") / pl.col("adjusted_close").shift(1) - 1.0
+            ),
+        )
+        .with_columns(
+            benchmark_volatility_20=(
+                _rolling_std("benchmark_return_1", 20) * math.sqrt(252.0)
+            )
+        )
+        .with_columns(
+            benchmark_trend_regime=(
+                pl.when(
+                    (pl.col("adjusted_close") > pl.col("benchmark_sma_200"))
+                    & (pl.col("benchmark_sma_50") > pl.col("benchmark_sma_200"))
+                )
+                .then(pl.lit("risk_on"))
+                .when(
+                    (pl.col("adjusted_close") < pl.col("benchmark_sma_200"))
+                    & (pl.col("benchmark_sma_50") < pl.col("benchmark_sma_200"))
+                )
+                .then(pl.lit("risk_off"))
+                .otherwise(pl.lit("transition"))
+            ),
+            benchmark_volatility_regime=(
+                pl.when(pl.col("benchmark_volatility_20") >= 0.25)
+                .then(pl.lit("high"))
+                .otherwise(pl.lit("normal"))
+            ),
+        )
     )
 
     expressions: list[pl.Expr] = []
@@ -153,6 +191,9 @@ def build_benchmark_calendar(
     return frame.with_columns(expressions).select(
         "date",
         "session_ordinal",
+        "benchmark_trend_regime",
+        "benchmark_volatility_regime",
+        "benchmark_volatility_20",
         *(f"benchmark_return_{lookback}" for lookback in (5, 20, 60, 120)),
         *(item for horizon in horizons for item in (f"benchmark_fwd_{horizon}", f"benchmark_exit_date_{horizon}")),
     )
@@ -294,6 +335,9 @@ def build_symbol_observations(
         "code",
         "close",
         "adv_20",
+        "benchmark_trend_regime",
+        "benchmark_volatility_regime",
+        "benchmark_volatility_20",
         "gross_return",
         f"benchmark_fwd_{horizon}",
         "gross_excess",
@@ -343,7 +387,17 @@ def fit_ridge(
     penalty: float,
     target: str = "net_excess",
 ) -> RidgeModel:
-    """Fit a date-balanced ridge model using sufficient statistics only."""
+    """Fit a date-balanced ridge model using sufficient statistics only.
+
+    ``penalty`` is DIMENSIONLESS: it is applied as a multiple of the mean feature
+    variance rather than as an absolute value. The date weights are normalised to
+    sum to one, which makes the weighted Gram matrix a weighted *average* — its
+    scale is fixed near Var(uniform on [-0.5, 0.5]) = 1/12 and does not grow with
+    the sample the way a textbook ``X'X`` does. An absolute penalty is therefore
+    unanchored: 0.1 already shrinks coefficients ~55% while 10 and 100 collapse to
+    the same model. Scaling by the Gram trace keeps a given penalty meaning the
+    same amount of shrinkage regardless of sample size or feature scaling.
+    """
 
     if penalty < 0:
         raise ValueError("penalty must be non-negative")
@@ -374,8 +428,14 @@ def fit_ridge(
     centered_y = response - y_mean
     xtwx = centered_x.T @ (centered_x * weights[:, None])
     xtwy = centered_x.T @ (centered_y * weights)
+    # Anchor the penalty to the observed feature scale so the grid is comparable
+    # across samples. Degenerate panels (a single date, or a constant feature)
+    # fall back to an absolute penalty rather than dividing by zero.
+    gram_scale = float(np.trace(xtwx) / len(feature_names))
+    if not math.isfinite(gram_scale) or gram_scale <= 0.0:
+        gram_scale = 1.0
     coefficients = np.linalg.solve(
-        xtwx + penalty * np.eye(len(feature_names)),
+        xtwx + penalty * gram_scale * np.eye(len(feature_names)),
         xtwy,
     )
     intercept = y_mean - float(x_mean @ coefficients)
@@ -442,15 +502,35 @@ def evaluate_top_book(
         if standard_deviation > 0
         else None
     )
+
+    # A Sharpe ratio without its uncertainty invites over-reading a short window.
+    # Under IID returns (Lo, 2002) the per-period estimate has standard error
+    # sqrt((1 + S**2 / 2) / n); annualising multiplies it by sqrt(periods_per_year),
+    # which reduces to roughly 1/sqrt(years) — i.e. it depends on elapsed time, not
+    # on how finely that time is sliced. Shortening the horizon buys more
+    # observations but a larger annualisation factor, and the two cancel.
+    sharpe_standard_error: float | None = None
+    sharpe_lower_95: float | None = None
+    if sharpe is not None and returns.size > 1:
+        periodic = sharpe / math.sqrt(periods_per_year)
+        sharpe_standard_error = float(
+            math.sqrt((1.0 + 0.5 * periodic**2) / returns.size)
+            * math.sqrt(periods_per_year)
+        )
+        sharpe_lower_95 = float(sharpe - 1.96 * sharpe_standard_error)
+
     return {
         "dates": per_date.height,
         "trades": selected.height,
         "symbols": selected["code"].n_unique(),
+        "years": float(per_date.height / periods_per_year),
         "mean_net_pct": float(np.mean(returns) * 100.0),
         "mean_stressed_pct": float(np.mean(stressed) * 100.0),
         "annualized_net_pct": float(np.mean(returns) * periods_per_year * 100.0),
         "hit_rate_pct": float(np.mean(returns > 0) * 100.0),
         "sharpe": sharpe,
+        "sharpe_standard_error": sharpe_standard_error,
+        "sharpe_lower_95": sharpe_lower_95,
         "maximum_drawdown_pct": (
             _drawdown(returns) * 100.0 if _drawdown(returns) is not None else None
         ),

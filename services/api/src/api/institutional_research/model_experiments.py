@@ -53,6 +53,9 @@ def _window_metrics(value: Any) -> ModelWindowMetricsOut | None:
         annualized_net_pct=_optional_float(book.get("annualized_net_pct")),
         hit_rate_pct=_optional_float(book.get("hit_rate_pct")),
         sharpe=_optional_float(book.get("sharpe")),
+        sharpe_standard_error=_optional_float(book.get("sharpe_standard_error")),
+        sharpe_lower_95=_optional_float(book.get("sharpe_lower_95")),
+        years=_optional_float(book.get("years")),
         maximum_drawdown_pct=_optional_float(book.get("maximum_drawdown_pct")),
     )
 
