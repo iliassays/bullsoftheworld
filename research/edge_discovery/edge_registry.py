@@ -509,18 +509,31 @@ REGISTRY: tuple[Edge, ...] = (
         key="us_quality_value",
         market="US",
         family="fundamental",
-        status="data_blocked",
+        status="rejected",
         horizon_sessions=126,
-        verdict="The best-instrumented untested hypothesis in the platform.",
-        evidence="4.22M SEC Company Facts observations across 5,188 codes with genuine known_at "
-        "point-in-time gating from 2018-07-19 — the only large dataset here with real "
-        "PIT semantics. Position-horizon fundamentals are also the family least "
-        "damaged by survivorship, because quality screens systematically avoid the "
-        "names that delist.",
-        blocked_on=(
-            "SEC Company Facts extract not in the research cache (2.8GB)",
-            "US delisted price histories",
-        ),
+        verdict="Tested 2026-08 and rejected on its own preregistered kill criterion: strongly "
+        "positive in discovery and validation, significantly NEGATIVE in the holdout. This was "
+        "the last untested hypothesis in the registry and the best-instrumented one.",
+        evidence="Earnings yield (TTM net income / market cap) combined with return on equity, "
+        "top quintile, 126-session hold, next-open entry, every input gated on real SEC "
+        "known_at via as-of join. Discovery +1.59% (t=+11.32), validation +1.62% (t=+15.72), "
+        "holdout -0.69% (t=-6.11) with a -4.18% median and a 42.8% win rate. The full-period "
+        "monthly-rebalanced portfolio does beat SPY on raw return (19.64% vs 16.26% CAGR, $357 "
+        "vs $292 per $100) but not risk-adjusted (0.79 vs 0.82 return/vol, -44.2% vs -33.7% "
+        "drawdown) — and that window includes the in-sample years, so it is not independent "
+        "evidence. Recorded in fairness: the holdout carries only 149 signal dates, because a "
+        "126-session horizon consumes most of the reserved window.",
+        metrics={
+            "discovery_excess_pct": 1.59,
+            "validation_excess_pct": 1.62,
+            "holdout_excess_pct": -0.69,
+            "holdout_t": -6.11,
+            "holdout_win_rate": 0.428,
+            "portfolio_cagr_pct": 19.64,
+            "spy_cagr_pct": 16.26,
+            "portfolio_max_dd_pct": -44.2,
+            "spy_max_dd_pct": -33.7,
+        },
     ),
     Edge(
         key="us_activist_13d",
