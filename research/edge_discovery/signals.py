@@ -13,6 +13,28 @@ from __future__ import annotations
 
 import polars as pl
 
+# Below this raw price the tick size is a large fraction of the price itself, so a single
+# minimum increment prints as an enormous "return". Verified 2026-08: PPCB quoted at $0.01 and
+# ticking to $0.02 produced a 21-session return of +4,166,567% — arithmetically correct and
+# completely meaningless. Any study that lets these rows in has its mean set by quoting
+# granularity rather than by the market, which is exactly how the microcap "edge" in this
+# programme turned out to be an artefact.
+MIN_TRADEABLE_PRICE = 1.00
+
+
+def tradeable() -> pl.Expr:
+    """Data-quality floor applied to EVERY study, independent of the strategy's own filters.
+
+    Two failure modes, both observed in production data:
+
+    * **Sub-penny quoting.** See ``MIN_TRADEABLE_PRICE`` above.
+    * **Zero-volume sessions.** 351,354 US bars have ``volume = 0``. The close is carried
+      forward from the last trade, so the bar is a quote, not a transaction. A fill cannot be
+      assumed at a price where nothing traded, and 223 of the extreme microcap "winners" in this
+      programme had no volume on the session they were supposedly bought.
+    """
+    return (pl.col("close") >= MIN_TRADEABLE_PRICE) & (pl.col("volume") > 0)
+
 
 def eligible(min_liq_decile: int = 4, min_price: float = 5.0, min_bars: int = 252) -> pl.Expr:
     """Baseline tradability gate.
@@ -20,9 +42,13 @@ def eligible(min_liq_decile: int = 4, min_price: float = 5.0, min_bars: int = 25
     The price floor uses the *raw* close, not the adjusted close: adjusted prices are
     retroactively restated, so filtering on an adjusted level would apply a threshold the market
     never saw and would quietly encode future split knowledge.
+
+    ``tradeable()`` is folded in unconditionally. A caller lowering ``min_price`` to reach the
+    microcap universe must not be able to lower it into the sub-penny noise floor as well.
     """
     return (
-        (pl.col("liq_decile") >= min_liq_decile)
+        tradeable()
+        & (pl.col("liq_decile") >= min_liq_decile)
         & (pl.col("close") >= min_price)
         & (pl.col("bars_seen") >= min_bars)
         & pl.col("adv_20").is_not_null()
