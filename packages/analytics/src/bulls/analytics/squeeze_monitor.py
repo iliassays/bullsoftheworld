@@ -150,7 +150,12 @@ class SqueezeInputs(BaseModel):
     short_interest_days_to_cover: float | None = None
     short_interest_settlement_date: dt.date | None = None
     short_interest_change_pct: float | None = None
-    recent_dilution_filing: bool = False
+    # Tri-state, deliberately. ``True`` = a financing filing was found; ``False`` = the archive
+    # was searched and none exists; ``None`` = the dataset is not available to search at all.
+    # Collapsing None into False is what made this check silently claim "no dilution risk" on
+    # every card while the S-1/S-3/424B forms were never ingested (verified 2026-08: zero such
+    # rows in edgar_filing_events, which holds ownership forms only).
+    recent_dilution_filing: bool | None = None
     insider_net_selling_30d: bool = False
     prior_state: SqueezeState = "none"
     prior_trigger_price: float | None = None
@@ -258,9 +263,12 @@ def _common_context(inputs: SqueezeInputs) -> tuple[list[str], list[str], list[s
             "No disseminated FINRA short-interest record covers this session, so short "
             "positioning is unknown rather than low."
         )
-    if inputs.recent_dilution_filing:
-        counter.append(
-            "Recent financing/dilution filing (S-1/S-3/424B family) within 90 days."
+    if inputs.recent_dilution_filing is True:
+        counter.append("Recent financing/dilution filing (S-1/S-3/424B family) within 90 days.")
+    elif inputs.recent_dilution_filing is None:
+        quality.append(
+            "Financing/dilution filings (S-1/S-3/424B family) are not collected, so dilution "
+            "risk is unassessed rather than absent."
         )
     if inputs.insider_net_selling_30d:
         counter.append(

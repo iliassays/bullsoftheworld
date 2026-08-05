@@ -174,6 +174,10 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
         short_interest_by_code: dict[str, ShortInterestObservation] = {}
         shares_outstanding_by_code: dict[str, float] = {}
         dilution_codes: set[str] = set()
+        # Whether the financing-filing archive can be searched at all. Derived from the data
+        # rather than assumed, so this starts reporting real results the moment those forms are
+        # ingested, and reports "unassessed" until then instead of a silent False.
+        dilution_data_available = False
         insider_selling_codes: set[str] = set()
         if market == "US":
             short_rows = (
@@ -291,6 +295,13 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                 ).all()
                 for (cik,) in filing_rows:
                     dilution_codes.update(symbol_by_cik[cik])
+                dilution_data_available = (
+                    await session.scalar(
+                        select(EdgarFilingEvent.accession_number)
+                        .where(EdgarFilingEvent.form.in_(_DILUTION_FORMS))
+                        .limit(1)
+                    )
+                ) is not None
                 selling_floor = dt.datetime.combine(
                     session_date - dt.timedelta(days=30), dt.time.min, tzinfo=dt.UTC
                 )
@@ -367,7 +378,9 @@ async def run_squeeze_scan(market: str) -> dict[str, int]:
                         if analytics.code in short_interest_by_code
                         else None
                     ),
-                    recent_dilution_filing=analytics.code in dilution_codes,
+                    recent_dilution_filing=(
+                        (analytics.code in dilution_codes) if dilution_data_available else None
+                    ),
                     insider_net_selling_30d=analytics.code in insider_selling_codes,
                     prior_state=prior.state if prior is not None else "none",
                     prior_trigger_price=prior.trigger_price if prior is not None else None,

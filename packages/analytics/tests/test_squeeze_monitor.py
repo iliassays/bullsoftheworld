@@ -284,3 +284,30 @@ def test_dilution_and_insider_selling_surface_as_counter_evidence() -> None:
 
     assert any("dilution" in item.lower() for item in result.counter_evidence)
     assert any("insider" in item.lower() for item in result.counter_evidence)
+
+
+def test_dilution_risk_reports_unassessed_when_the_archive_is_unavailable() -> None:
+    """A missing dataset must read as unknown, never as an absent risk.
+
+    The financing-filing forms (S-1/S-3/424B) are not ingested, so this check had nothing to
+    search. While the field was a plain bool it defaulted to False and every card silently
+    implied no dilution risk had been found -- absence of a warning reading as absence of risk,
+    which is the omit-over-mislead failure the module exists to prevent.
+    """
+    inputs = _inputs(recent_dilution_filing=None)
+    assessment = evaluate_compression_breakout(inputs)
+    assert any("unassessed rather than absent" in note for note in assessment.data_quality)
+    assert not any("financing/dilution filing" in note for note in assessment.counter_evidence)
+
+
+def test_dilution_risk_stays_silent_when_the_archive_was_searched_and_found_nothing() -> None:
+    inputs = _inputs(recent_dilution_filing=False)
+    assessment = evaluate_compression_breakout(inputs)
+    assert not any("dilution" in note.lower() for note in assessment.data_quality)
+    assert not any("financing/dilution filing" in note for note in assessment.counter_evidence)
+
+
+def test_dilution_risk_is_counter_evidence_when_a_filing_exists() -> None:
+    inputs = _inputs(recent_dilution_filing=True)
+    assessment = evaluate_compression_breakout(inputs)
+    assert any("financing/dilution filing" in note for note in assessment.counter_evidence)
