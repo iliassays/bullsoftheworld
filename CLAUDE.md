@@ -107,9 +107,16 @@ uv run granian --interface asgi api.main:app --host 0.0.0.0 --port 8000   # run 
   `pull_eod_bars` 13:00 → `pull_eod_summary` 13:05 → `refresh_analytics` 13:15 → `run_trending` 13:25
   → `run_factor_signals` 13:40 → `run_market_signals` (Evening Wrap → feed+FB) 13:50; `run_morning_watch`
   3:30; `run_weekly_recap` Thu 14:00. arq weekday strings are `mon,tues,wed,thurs,fri,sat,sun`.
-- **⚠️ Do NOT deploy during the session or the 13:00–13:50 UTC EOD window.** Heavy restart churn can
-  hang the worker's cron loop and silently drop the EOD jobs (the 2026-06-29 incident). Batch changes
-  outside those hours.
+- **US SEC worker rhythm (arq cron, UTC, every day — no trading-day gate):**
+  `collect_edgar_filing_events` 3:30; `refresh_sec_company_data` 6:15 (runs ~1h — ~4,700 symbols
+  sequentially at 5 req/s); `refresh_sec_institutional_data` Sun 10:00. This worker sets
+  `retry_jobs=False` + `run_at_startup=False`, so a job killed mid-flight is **not** retried and
+  **not** re-run by the restart — it is lost until its next daily slot.
+- **⚠️ Do NOT deploy during 03:15–09:15 or 12:55–14:00 UTC.** `./deploy.sh` now refuses inside those
+  windows (`ALLOW_RISKY_DEPLOY=1` overrides). The first window covers the DSE session plus the US SEC
+  crons; the second covers the DSE EOD chain. Restart churn can hang the worker's cron loop and
+  silently drop the EOD jobs (2026-06-29), and it kills any in-flight SEC refresh outright
+  (2026-08-06: a 06:21 deploy killed the 06:15 EDGAR pass; nothing surfaced it for 12 hours).
 - **Watchdog:** `ingestion.watchdog` runs as an independent systemd timer (every 5 min) — checks
   worker liveness, intraday quote freshness, API health, and post-EOD data freshness; restarts the
   worker + emails `iliasfromberlin@gmail.com` on fault. Units in `infra/systemd/`.

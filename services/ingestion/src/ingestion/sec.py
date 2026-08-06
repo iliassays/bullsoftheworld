@@ -436,10 +436,7 @@ async def sec_target_symbol_count() -> int:
     sm = get_sessionmaker()
     async with sm() as session:
         target_scope = _ready_cik_statement().order_by(None).subquery()
-        return int(
-            await session.scalar(select(func.count()).select_from(target_scope))
-            or 0
-        )
+        return int(await session.scalar(select(func.count()).select_from(target_scope)) or 0)
 
 
 async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, int, str, bool]]:
@@ -447,9 +444,7 @@ async def _ready_cik_codes(codes: list[str] | None = None) -> list[tuple[str, in
         return []
     sm = get_sessionmaker()
     async with sm() as session:
-        rows = (
-            await session.execute(_ready_cik_statement(codes).order_by(Symbol.code))
-        ).all()
+        rows = (await session.execute(_ready_cik_statement(codes).order_by(Symbol.code))).all()
         cik_counts = dict(
             (
                 await session.execute(
@@ -513,6 +508,50 @@ def _new_filing_sources(
     }
 
 
+def refresh_state(
+    *,
+    started_at: dt.datetime,
+    completed_at: dt.datetime,
+    symbols_requested: int,
+    symbols_completed: int,
+    symbols_failed: int,
+    filings: int,
+    facts: int,
+) -> dict:
+    """Build the `RegulatoryDataState` row for a completed full refresh.
+
+    `last_success_at` carries `started_at`, not `completed_at`, and that is deliberate. A full
+    pass walks ~4,700 symbols sequentially at 5 req/s, so by the time the last symbol lands the
+    first one's data is already an hour old. Ageing from the start treats the snapshot as being
+    as stale as its oldest row — the conservative reading `sec_watchdog.SEC_MAX_AGE` wants.
+    Stamping `completed_at` here would silently buy back the whole run duration before the
+    watchdog trips. `details.completed_at` answers the separate question of when the job last
+    finished, and `details.duration_seconds` is what the deploy.sh protected window is sized on.
+
+    Nothing is written at all unless the loop ran to completion, which is what let the
+    2026-08-06 deploy-interrupted run be detected rather than papered over.
+    """
+    return {
+        "market": MARKET,
+        "source": SOURCE,
+        "as_of_date": started_at.date(),
+        "last_success_at": started_at,
+        "records": filings + facts,
+        "symbols_covered": symbols_completed,
+        "downloaded_bytes": 0,
+        "details": {
+            "symbols_requested": symbols_requested,
+            "symbols_failed": symbols_failed,
+            "filings": filings,
+            "facts": facts,
+            "started_at": started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "duration_seconds": round((completed_at - started_at).total_seconds(), 1),
+            "retention": "selected facts 8y/24 periods; filing metadata 7y; no raw JSON",
+        },
+    }
+
+
 async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
     selected = await _ready_cik_codes(codes)
     client = SecEdgarClient(_user_agent())
@@ -566,24 +605,17 @@ async def collect(*, codes: list[str] | None = None) -> dict[str, int]:
         raise RuntimeError(f"SEC refresh failed for all {len(selected)} selected symbols")
 
     if codes is None:
+        state = refresh_state(
+            started_at=fetched_at,
+            completed_at=dt.datetime.now(dt.UTC),
+            symbols_requested=len(selected),
+            symbols_completed=completed,
+            symbols_failed=failed,
+            filings=filings_total,
+            facts=facts_total,
+        )
         sm = get_sessionmaker()
         async with sm() as session:
-            state = {
-                "market": MARKET,
-                "source": SOURCE,
-                "as_of_date": fetched_at.date(),
-                "last_success_at": fetched_at,
-                "records": filings_total + facts_total,
-                "symbols_covered": completed,
-                "downloaded_bytes": 0,
-                "details": {
-                    "symbols_requested": len(selected),
-                    "symbols_failed": failed,
-                    "filings": filings_total,
-                    "facts": facts_total,
-                    "retention": "selected facts 8y/24 periods; filing metadata 7y; no raw JSON",
-                },
-            }
             await _upsert(session, RegulatoryDataState, [state], ("market", "source"))
             await session.commit()
     if completed:

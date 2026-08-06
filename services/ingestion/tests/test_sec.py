@@ -16,6 +16,7 @@ from ingestion.sec import (
     _sector_from_sic,
     _ttm_value,
     _upsert,
+    refresh_state,
 )
 from ingestion.sec_13f import (
     MAPPING_SCOPE,
@@ -100,6 +101,53 @@ def test_sec_refresh_embeds_only_new_filing_documents() -> None:
     assert _new_filing_sources("TEST", [old, new], {old.accession_number}) == {
         ("TEST", new.accession_number)
     }
+
+
+def test_sec_freshness_ages_from_the_start_of_the_pass_not_its_end() -> None:
+    """A long pass must not buy back its own duration before the watchdog trips.
+
+    Regression guard for the 2026-08-06 review: `last_success_at` looks like an oversight
+    but is the conservative choice, because the snapshot is only as fresh as its oldest row.
+    """
+    started = dt.datetime(2026, 8, 5, 6, 15, 1, tzinfo=dt.UTC)
+    completed = started + dt.timedelta(minutes=52)
+
+    state = refresh_state(
+        started_at=started,
+        completed_at=completed,
+        symbols_requested=4732,
+        symbols_completed=4732,
+        symbols_failed=0,
+        filings=1647355,
+        facts=1289376,
+    )
+
+    assert state["last_success_at"] == started
+    assert state["details"]["completed_at"] == completed.isoformat()
+    assert state["details"]["duration_seconds"] == pytest.approx(3120.0)
+
+    # The watchdog's own arithmetic, at the moment SEC_MAX_AGE would trip on the start stamp.
+    now = started + dt.timedelta(hours=36)
+    assert now - state["last_success_at"] == dt.timedelta(hours=36)
+    # Had the row stamped completion, the same instant would read as comfortably fresh.
+    assert now - completed < dt.timedelta(hours=36)
+
+
+def test_sec_refresh_state_reports_partial_symbol_failures() -> None:
+    state = refresh_state(
+        started_at=dt.datetime(2026, 8, 5, 6, 15, tzinfo=dt.UTC),
+        completed_at=dt.datetime(2026, 8, 5, 7, 5, tzinfo=dt.UTC),
+        symbols_requested=4732,
+        symbols_completed=4000,
+        symbols_failed=732,
+        filings=10,
+        facts=5,
+    )
+
+    assert state["symbols_covered"] == 4000
+    assert state["details"]["symbols_requested"] == 4732
+    assert state["details"]["symbols_failed"] == 732
+    assert state["records"] == 15
 
 
 def test_sec_lineage_resume_selects_only_codes_without_a_source_manifest() -> None:

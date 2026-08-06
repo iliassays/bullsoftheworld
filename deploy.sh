@@ -15,6 +15,46 @@ APP=/home/ubuntu/bullsofdhaka
 API_URL=https://api.bullsofdhaka.com
 SITE_URL=https://bullsofdhaka.com
 
+# Restarting the workers kills whatever cron job is mid-flight. The SEC worker runs with
+# retry_jobs=False and run_at_startup=False, so an interrupted refresh is not retried and is
+# not re-run by the restart — it is simply lost until its next daily slot, silently. On
+# 2026-08-06 a 06:21 UTC deploy killed the 06:15 SEC EDGAR pass six minutes in; nothing
+# surfaced it until the watchdog crossed its 36h threshold at 18:32.
+#
+# Windows are UTC. Sources: cron_jobs in services/ingestion/src/ingestion/sec_worker.py and
+# the worker rhythm table in CLAUDE.md. Set ALLOW_RISKY_DEPLOY=1 to override.
+PROTECTED_WINDOWS=(
+  "03:15|09:15|DSE intraday polling, EDGAR daily index (03:30), SEC EDGAR company refresh (06:15, ~1h over ~4,700 symbols)"
+  "12:55|14:00|DSE EOD chain (13:00 pull_eod_bars through 13:50 run_market_signals)"
+)
+
+_to_minutes() {
+  local hhmm=$1
+  echo $((10#${hhmm%%:*} * 60 + 10#${hhmm##*:}))
+}
+
+assert_deploy_window_clear() {
+  if [[ "${ALLOW_RISKY_DEPLOY:-}" == "1" ]]; then
+    echo "! ALLOW_RISKY_DEPLOY=1 — skipping the protected-window check" >&2
+    return 0
+  fi
+  local now entry start end label
+  now=$(_to_minutes "$(date -u +%H:%M)")
+  for entry in "${PROTECTED_WINDOWS[@]}"; do
+    IFS='|' read -r start end label <<<"$entry"
+    if ((now >= $(_to_minutes "$start") && now < $(_to_minutes "$end"))); then
+      echo "refusing to deploy at $(date -u +%H:%M) UTC — inside a protected window" >&2
+      echo "  $start-$end UTC: $label" >&2
+      echo "" >&2
+      echo "Restarting now would drop that job with no retry. Wait until after $end UTC," >&2
+      echo "or re-run with ALLOW_RISKY_DEPLOY=1 if you accept losing the in-flight run." >&2
+      exit 1
+    fi
+  done
+}
+
+assert_deploy_window_clear
+
 echo "→ pushing code to origin/main"
 # Port 22 to github.com is often blocked on this network; fall back to the 443 SSH endpoint.
 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=8" \
