@@ -23,8 +23,14 @@ SITE_URL=https://bullsofdhaka.com
 #
 # Windows are UTC. Sources: cron_jobs in services/ingestion/src/ingestion/sec_worker.py and
 # the worker rhythm table in CLAUDE.md. Set ALLOW_RISKY_DEPLOY=1 to override.
+# The 06:15 SEC pass is latency-bound on SEC's own response times, not on our 5 req/s throttle,
+# so it is far slower than the throttle suggests: a measured full pass over 4,732 symbols took
+# 7350s (2h02m) on 2026-08-06. refresh_sec_company_data then adds a second pass over the ~200
+# restricted-research codes and run_sec_filing_agents, landing around 08:30. The end boundary
+# carries roughly an hour beyond that so a slow day at SEC does not silently breach it. Check
+# details->>'duration_seconds' on the sec_edgar regulatory_data_state row before narrowing it.
 PROTECTED_WINDOWS=(
-  "03:15|09:15|DSE intraday polling, EDGAR daily index (03:30), SEC EDGAR company refresh (06:15, ~1h over ~4,700 symbols)"
+  "03:15|09:45|DSE intraday polling, EDGAR daily index (03:30), SEC EDGAR company refresh (06:15, ~2h15m measured)"
   "12:55|14:00|DSE EOD chain (13:00 pull_eod_bars through 13:50 run_market_signals)"
 )
 
