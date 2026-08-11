@@ -45,6 +45,7 @@ from research.modeling.nonlinear_rank import (
     attach_rank_scores,
     feature_importance,
     fit_lambdarank,
+    top_k_reproducibility,
 )
 from research.modeling.segmented_challenger import (
     DEFAULT_LIQUIDITY_SLEEVES,
@@ -54,7 +55,7 @@ from research.modeling.segmented_challenger import (
 from bulls.core.db import dispose_engine, get_sessionmaker
 from bulls.core.models import DailyBar
 
-ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v2"
+ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v3"
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -207,6 +208,16 @@ def run_experiment(
         windows["validation"],
         spec=nonlinear_spec,
     )
+    validation_scored = attach_rank_scores(
+        windows["validation"],
+        fit.selection_model,
+        num_iteration=fit.best_iteration,
+    )
+    reused_scored = attach_rank_scores(
+        windows["holdout"],
+        fit.forward_model,
+        num_iteration=fit.best_iteration,
+    )
     nonlinear_results = {
         "discovery_in_sample": _evaluate(
             attach_rank_scores(
@@ -216,22 +227,35 @@ def run_experiment(
             ),
             score_column="nonlinear_rank_score",
         ),
-        "validation": _evaluate(
+        "validation": _evaluate(validation_scored, score_column="nonlinear_rank_score"),
+        "reused_historical_diagnostic": _evaluate(
+            reused_scored,
+            score_column="nonlinear_rank_score",
+        ),
+    }
+    repeat_fit = fit_lambdarank(
+        windows["discovery"],
+        windows["validation"],
+        spec=nonlinear_spec,
+    )
+    reproducibility = {
+        "model_selection_validation": top_k_reproducibility(
+            validation_scored,
             attach_rank_scores(
                 windows["validation"],
-                fit.selection_model,
-                num_iteration=fit.best_iteration,
+                repeat_fit.selection_model,
+                num_iteration=repeat_fit.best_iteration,
             ),
-            score_column="nonlinear_rank_score",
         ),
-        "reused_historical_diagnostic": _evaluate(
+        "reused_historical_diagnostic": top_k_reproducibility(
+            reused_scored,
             attach_rank_scores(
                 windows["holdout"],
-                fit.forward_model,
-                num_iteration=fit.best_iteration,
+                repeat_fit.forward_model,
+                num_iteration=repeat_fit.best_iteration,
             ),
-            score_column="nonlinear_rank_score",
         ),
+        "best_iteration_matches": fit.best_iteration == repeat_fit.best_iteration,
     }
     ridge = _ridge_comparator(
         windows["discovery"],
@@ -257,6 +281,11 @@ def run_experiment(
         ),
         "beats_momentum_after_doubled_costs": (
             _comparison_stressed(validation) > _comparison_stressed(momentum["validation"])
+        ),
+        "reproducible_top_ten_membership": (
+            reproducibility["best_iteration_matches"]
+            and reproducibility["model_selection_validation"]["reproducible"]
+            and reproducibility["reused_historical_diagnostic"]["reproducible"]
         ),
     }
     candidate_for_forward = all(criteria.values())
@@ -293,6 +322,7 @@ def run_experiment(
             "dates": dates,
             "best_iteration": fit.best_iteration,
             "feature_importance": feature_importance(fit.forward_model),
+            "reproducibility": reproducibility,
             "nonlinear_results": nonlinear_results,
             "ridge_comparator": ridge,
             "momentum_comparator": momentum,

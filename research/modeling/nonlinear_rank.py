@@ -270,6 +270,63 @@ def attach_rank_scores(
     return clean.with_columns(pl.Series(score_column, np.asarray(scores, dtype=float)))
 
 
+def top_k_reproducibility(
+    first: pl.DataFrame,
+    second: pl.DataFrame,
+    *,
+    score_column: str = "nonlinear_rank_score",
+    positions: int = 10,
+) -> dict[str, float | int | bool]:
+    """Compare decision membership from two fits over identical point-in-time rows."""
+
+    if positions <= 0:
+        raise ValueError("positions must be positive")
+    required = {"date", "code", score_column}
+    if missing := required.difference(first.columns):
+        raise ValueError(f"First score frame is missing columns: {sorted(missing)}")
+    if missing := required.difference(second.columns):
+        raise ValueError(f"Second score frame is missing columns: {sorted(missing)}")
+    left = first.select("date", "code", score_column).sort(["date", "code"])
+    right = second.select("date", "code", score_column).sort(["date", "code"])
+    left_keys = list(zip(left["date"].to_list(), left["code"].to_list(), strict=True))
+    right_keys = list(zip(right["date"].to_list(), right["code"].to_list(), strict=True))
+    if left_keys != right_keys:
+        raise ValueError("score frames do not contain the same date/code observations")
+
+    dates = np.asarray(left["date"].to_list())
+    codes = np.asarray(left["code"].to_list(), dtype=str)
+    first_scores = left[score_column].to_numpy()
+    second_scores = right[score_column].to_numpy()
+    absolute_delta = np.abs(first_scores - second_scores)
+    unique_dates = np.unique(dates)
+    exact_matches = 0
+    overlap_rates: list[float] = []
+    for date in unique_dates:
+        mask = dates == date
+        date_codes = codes[mask]
+        count = min(positions, len(date_codes))
+        first_order = np.lexsort((date_codes, -first_scores[mask]))[:count]
+        second_order = np.lexsort((date_codes, -second_scores[mask]))[:count]
+        first_members = set(date_codes[first_order])
+        second_members = set(date_codes[second_order])
+        exact_matches += first_members == second_members
+        overlap_rates.append(len(first_members & second_members) / count if count else 1.0)
+
+    evaluated_dates = len(unique_dates)
+    return {
+        "dates": evaluated_dates,
+        "exact_membership_dates": exact_matches,
+        "exact_membership_rate_pct": (
+            exact_matches / evaluated_dates * 100.0 if evaluated_dates else 100.0
+        ),
+        "mean_top_k_overlap_pct": (
+            float(np.mean(overlap_rates)) * 100.0 if overlap_rates else 100.0
+        ),
+        "max_absolute_score_delta": (float(absolute_delta.max()) if absolute_delta.size else 0.0),
+        "reproducible": exact_matches == evaluated_dates,
+    }
+
+
 def feature_importance(model: Any) -> list[dict[str, float | str]]:
     gains = np.asarray(model.feature_importance(importance_type="gain"), dtype=float)
     total = float(gains.sum())
@@ -294,4 +351,5 @@ __all__ = [
     "feature_importance",
     "fit_lambdarank",
     "prepare_ranking_matrix",
+    "top_k_reproducibility",
 ]

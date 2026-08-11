@@ -235,6 +235,9 @@ async def run() -> None:
         slippage_rate=all_ranks_base.slippage_rate * 2,
     )
     forward_appearances = [item for item in appearances if item.evidence_mode == "forward"]
+    registered_forward_appearances = [
+        item for item in forward_appearances if item.as_of > dt.date(2026, 8, 11)
+    ]
     portfolio_diagnostics = {
         "policy_status": {
             "classification": "post_audit_hypothesis_not_validation",
@@ -281,6 +284,26 @@ async def run() -> None:
                 policy=rank_one_stress,
                 market_dates=market_dates,
                 evidence_scope="existing_forward_archive_before_policy_registration",
+            )
+        ),
+        "registered_forward_rank1_base": asdict(
+            simulate_shortlist_portfolio(
+                appearances=registered_forward_appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=rank_one_base,
+                market_dates=market_dates,
+                evidence_scope="fresh_forward_after_policy_registration",
+            )
+        ),
+        "registered_forward_rank1_doubled_cost": asdict(
+            simulate_shortlist_portfolio(
+                appearances=registered_forward_appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=rank_one_stress,
+                market_dates=market_dates,
+                evidence_scope="fresh_forward_after_policy_registration",
             )
         ),
         "all_archived_all_ranks_sensitivity": asdict(

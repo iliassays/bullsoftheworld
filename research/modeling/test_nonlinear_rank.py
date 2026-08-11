@@ -13,6 +13,7 @@ from research.modeling.nonlinear_rank import (
     attach_rank_scores,
     fit_lambdarank,
     prepare_ranking_matrix,
+    top_k_reproducibility,
 )
 
 
@@ -114,3 +115,25 @@ def test_lambdarank_learns_a_planted_nonlinear_ordering() -> None:
 
     assert 1 <= fitted.best_iteration <= spec.max_rounds
     assert float(np.corrcoef(prediction_rank, target_rank)[0, 1]) > 0.35
+
+
+def test_top_k_reproducibility_compares_membership_with_stable_code_ties() -> None:
+    first = pl.DataFrame(
+        {
+            "date": [dt.date(2026, 1, 2)] * 4,
+            "code": ["A", "B", "C", "D"],
+            "nonlinear_rank_score": [0.9, 0.8, 0.8, 0.1],
+        }
+    )
+    same_members = first.with_columns(pl.Series("nonlinear_rank_score", [0.91, 0.81, 0.80, 0.11]))
+    changed_members = first.with_columns(
+        pl.Series("nonlinear_rank_score", [0.91, 0.79, 0.92, 0.11])
+    )
+
+    stable = top_k_reproducibility(first, same_members, positions=2)
+    changed = top_k_reproducibility(first, changed_members, positions=2)
+
+    assert stable["reproducible"] is True
+    assert stable["exact_membership_rate_pct"] == 100.0
+    assert changed["reproducible"] is False
+    assert changed["mean_top_k_overlap_pct"] == 50.0

@@ -41,3 +41,15 @@ forward contract. Artifact schema v2 records two separate clocks:
 
 This correction changes no feature, label, model parameter, admission criterion, or historical
 metric. The corrected artifact remains a failed historical candidate and cannot trade.
+
+## Reproducibility gate
+
+An immediate rerun with the same source-manifest hash, benchmark-regime hash, specification hash,
+row counts and selected iteration changed every post-selection refit score and changed top-ten
+membership on 6 of 17 reused diagnostic dates. The model already failed its positive-median-IC
+gate; this instability is an independent blocker.
+
+Artifact generation now fits the unchanged specification twice and requires identical top-ten
+membership on every model-selection and reused-diagnostic date. It records score deltas and
+membership overlap in `reproducibility`. This is a governance check, not a third model trial and
+does not permit parameter repair after outcomes have been seen.
