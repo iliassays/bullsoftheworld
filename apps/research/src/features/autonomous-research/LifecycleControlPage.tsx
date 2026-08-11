@@ -135,7 +135,7 @@ export function LifecycleControlPage() {
       <header className="atlas-page-header">
         <div><span className="atlas-page-header__eyebrow">Operations · registered process · completed market sessions only</span><h1>Automation and audit</h1><p>Configure the post-close process and inspect its immutable run ledger. This is an operator surface, not an investment-decision screen.</p></div>
         <span className="atlas-page-header__actions">
-          <Button onPress={() => navigate("/memory")} variant="secondary"><History size={14} />Research memory</Button>
+          <Button onPress={() => navigate("/memory")} variant="secondary"><History size={14} />Research outcomes</Button>
           <StatusBadge tone={statusTone(policy.data?.lastRunStatus)} dot>{policy.data?.lastRunStatus ?? "not configured"}</StatusBadge>
         </span>
       </header>

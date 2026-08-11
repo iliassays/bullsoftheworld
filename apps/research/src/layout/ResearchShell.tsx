@@ -1,15 +1,16 @@
 import {
   BookOpenCheck,
   CalendarDays,
+  ChartCandlestick,
   ChartNoAxesCombined,
   FileSearch,
   FlaskConical,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
   Moon,
   Radar,
-  Settings,
   Sun,
   X,
   Workflow,
@@ -18,7 +19,7 @@ import {
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import { AppTooltip, IconButton, StatusBadge } from "../design-system";
+import { IconButton, StatusBadge } from "../design-system";
 import { useResearchAuth } from "../app/auth";
 import { isResearchPreview, researchDeployment } from "../app/deployment";
 
@@ -34,15 +35,17 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Investment",
     items: [
-      { label: "Today", icon: LayoutDashboard, href: "/today" },
+      { label: "Command", icon: LayoutDashboard, href: "/today" },
       { label: "Portfolio & risk", icon: ChartNoAxesCombined, href: "/portfolio" },
       { label: "Strategy lab", icon: FlaskConical, href: "/hypotheses" },
+      { label: "Research outcomes", icon: History, href: "/memory" },
     ],
   },
   {
     label: "Research",
     items: [
       { label: "Research inbox", icon: BookOpenCheck, href: "/queue" },
+      { label: "Setup monitor", icon: ChartCandlestick, href: "/setups" },
       { label: "Condition scanner", icon: Radar, href: "/conditions" },
       { label: "Company research", icon: FileSearch, href: "/companies" },
       { label: "Catalysts", icon: CalendarDays, href: "/catalysts" },
@@ -122,17 +125,6 @@ export function ResearchShell() {
         </nav>
 
         <div className="research-sidebar__footer">
-          <AppTooltip label="Not enabled in this foundation build">
-            <span
-              aria-disabled="true"
-              className="research-nav__item research-nav__item--disabled"
-              role="button"
-              tabIndex={0}
-            >
-              <Settings aria-hidden="true" size={17} strokeWidth={1.8} />
-              <span>Workspace settings</span>
-            </span>
-          </AppTooltip>
           <div className="research-profile">
             <span className="research-profile__avatar">
               {(auth.user?.name || "User")

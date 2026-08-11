@@ -1,6 +1,8 @@
 import { researchDeployment } from "../../app/deployment";
+import { previewUsNxtc } from "../../app/preview-universe";
 import type {
   AutomationPolicy,
+  CalibrationSnapshot,
   DecisionEvent,
   InvestmentMandate,
   InvestmentOperatingView,
@@ -20,7 +22,7 @@ const secondaryCode = isDse ? "BXPHARMA" : "AEON";
 const strategyKey = isDse ? "dse_reversal_v1" : "us_breakout_v1";
 const initialCapital = isDse ? 10_000_000 : 100_000;
 const primaryShares = isDse ? 7300 : 1180;
-const primaryFillPrice = isDse ? 142.4 : 8.42;
+const primaryFillPrice = isDse ? 142.4 : previewUsNxtc.referencePrice;
 const primaryGrossValue = primaryShares * primaryFillPrice;
 
 const previewDecisionEvents: DecisionEvent[] = [
@@ -254,6 +256,31 @@ export const previewResearchRuns: ResearchRun[] = [
     ],
   },
 ];
+
+export const previewCalibrationSnapshot: CalibrationSnapshot = {
+  workspaceId: "00000000-0000-0000-0000-000000000001",
+  tenantId: researchDeployment.tenant,
+  market: researchDeployment.market,
+  pending: 7,
+  matured: 21,
+  buckets: [
+    {
+      signalStatus: "qualified",
+      horizonSessions: 10,
+      observations: 12,
+      averageReturnPct: 3.1,
+      positiveRatePct: 58.3,
+    },
+    {
+      signalStatus: "monitor",
+      horizonSessions: 10,
+      observations: 9,
+      averageReturnPct: 0.8,
+      positiveRatePct: 55.6,
+    },
+  ],
+  observations: [],
+};
 
 export const previewInvestmentOperatingView: InvestmentOperatingView = {
   workspaceId: "00000000-0000-0000-0000-000000000001",

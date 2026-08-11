@@ -102,6 +102,157 @@
     gap: 2px;
   }
 
+  .investment-workflow {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+
+  .investment-workflow > summary {
+    display: grid;
+    min-height: 52px;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 13px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .investment-workflow > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .investment-workflow > summary > svg:first-child {
+    color: var(--accent-strong);
+  }
+
+  .investment-workflow > summary > span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .investment-workflow > summary strong {
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .investment-workflow > summary small {
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .investment-workflow__chevron {
+    color: var(--text-faint);
+    transition: transform 150ms ease;
+  }
+
+  .investment-workflow[open] .investment-workflow__chevron {
+    transform: rotate(180deg);
+  }
+
+  .investment-workflow__body {
+    border-top: 1px solid var(--border);
+  }
+
+  .investment-workflow__body > p {
+    margin: 0;
+    color: var(--text-muted);
+    padding: 10px 13px;
+    font-size: 9px;
+    line-height: 1.5;
+  }
+
+  .investment-workflow ol {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin: 0;
+    border-top: 1px solid var(--border);
+    padding: 0;
+    list-style: none;
+  }
+
+  .investment-workflow li {
+    min-width: 0;
+    border-right: 1px solid var(--border);
+  }
+
+  .investment-workflow li:last-child {
+    border-right: 0;
+  }
+
+  .investment-workflow li > a {
+    display: grid;
+    width: 100%;
+    min-height: 82px;
+    grid-template-columns: 28px minmax(0, 1fr) 14px;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    padding: 11px;
+    text-decoration: none;
+    text-align: left;
+  }
+
+  .investment-workflow li > a:hover {
+    background: var(--surface-subtle);
+  }
+
+  .investment-workflow li > a:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--accent-strong);
+    outline-offset: -2px;
+  }
+
+  .investment-workflow li > a > span:nth-child(2) {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .investment-workflow__icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .investment-workflow li small {
+    color: var(--text-faint);
+    font-size: 7px;
+    font-weight: 750;
+  }
+
+  .investment-workflow li strong {
+    font-size: 10px;
+  }
+
+  .investment-workflow li em {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: 8px;
+    font-style: normal;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .investment-workflow li > a > svg {
+    color: var(--text-faint);
+  }
+
   .command-decision-strip {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -936,6 +1087,33 @@
       font-size: 22px;
     }
 
+    .investment-workflow > summary {
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      padding-inline: 10px;
+    }
+
+    .investment-workflow > summary small {
+      white-space: normal;
+    }
+
+    .investment-workflow ol {
+      grid-template-columns: 1fr;
+    }
+
+    .investment-workflow li,
+    .investment-workflow li:last-child {
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .investment-workflow li:last-child {
+      border-bottom: 0;
+    }
+
+    .investment-workflow li > a {
+      min-height: 66px;
+    }
+
     .command-status-strip {
       grid-template-columns: 1fr;
     }
@@ -1136,6 +1314,19 @@
       border-right: 0;
     }
   }
+}
+
+.setup-monitor-page .atlas-page-header {
+  margin-bottom: 18px;
+}
+
+.setup-monitor-page .squeeze-monitor,
+.setup-monitor-page .strategy-readiness {
+  margin-top: 0;
+}
+
+.setup-monitor-page .strategy-readiness {
+  margin-top: 16px;
 }
 
 .decision-board__filters {

@@ -13,11 +13,11 @@ describe("buildSqueezeLifecycle", () => {
 
     const events = buildSqueezeLifecycle(path);
 
-    expect(events.map((event) => event.state)).toEqual([
-      "watch",
-      "trigger_ready",
-      "confirmed",
-    ]);
+    expect(events.map((event) => event.state)).toEqual(
+      entry.state === "confirmed"
+        ? ["watch", "trigger_ready", "confirmed"]
+        : ["watch", "forming", "trigger_ready"],
+    );
     expect(events[0]!.date).toBe(path.entry.firstDiscoveredOn);
     expect(events[0]!.close).toBe(path.entry.discoveryPrice);
     expect(events[0]!.changeFromDiscoveryPct).toBeNull();

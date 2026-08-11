@@ -12,6 +12,7 @@ import { LifecycleControlPage } from "../features/autonomous-research/LifecycleC
 import { PortfolioIntelligencePage } from "../features/autonomous-research/PortfolioIntelligencePage";
 import { ResearchMemoryPage } from "../features/autonomous-research/ResearchMemoryPage";
 import { InvestmentCommandPage } from "../features/investment-command/InvestmentCommandPage";
+import { SetupMonitorPage } from "../features/investment-command/SetupMonitorPage";
 import { useResearchAuth } from "./auth";
 
 export function ResearchApp() {
@@ -31,6 +32,7 @@ export function ResearchApp() {
         <Route path="/companies/:ticker" element={<CompanyDossierPage />} />
         <Route path="/catalysts" element={<CatalystCalendarPage />} />
         <Route path="/conditions" element={<ConditionScannerPage />} />
+        <Route path="/setups" element={<SetupMonitorPage />} />
         <Route path="/hypotheses" element={<HypothesisLabPage />} />
         <Route path="/operations" element={<LifecycleControlPage />} />
         <Route path="/lifecycle" element={<Navigate to="/operations" replace />} />

@@ -4,6 +4,7 @@ import { researchApi } from "../../app/api-client";
 import { isResearchPreview } from "../../app/deployment";
 import {
   previewAutomationPolicy,
+  previewCalibrationSnapshot,
   previewInvestmentOperatingView,
   previewInvestmentMandate,
   previewResearchRuns,
@@ -133,7 +134,9 @@ export function useCreateShadowPortfolio(workspaceId: string | undefined) {
 export function useCalibration(workspaceId: string | undefined) {
   return useQuery({
     queryKey: ["research", "calibration", workspaceId],
-    queryFn: () => researchApi.calibration(workspaceId!),
+    queryFn: () => isResearchPreview
+      ? previewCalibrationSnapshot
+      : researchApi.calibration(workspaceId!),
     enabled: Boolean(workspaceId),
     staleTime: 0,
   });

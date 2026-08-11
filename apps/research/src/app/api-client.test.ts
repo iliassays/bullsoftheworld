@@ -1,6 +1,37 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { researchApi } from "./api-client";
+import { researchDeployment } from "./deployment";
+
+const own = researchDeployment.market === "DSE"
+  ? {
+      market: "DSE" as const,
+      tenantId: "bullsofdhaka" as const,
+      ticker: "BSC",
+      workspaceId: "workspace-dse",
+    }
+  : {
+      market: "US" as const,
+      tenantId: "bullsofwallst" as const,
+      ticker: "NXTC",
+      workspaceId: "workspace-us",
+    };
+
+const foreign = researchDeployment.market === "DSE"
+  ? {
+      market: "US" as const,
+      tenantId: "bullsofwallst" as const,
+      ticker: "AAPL",
+      workspaceId: "workspace-us",
+    }
+  : {
+      market: "DSE" as const,
+      tenantId: "bullsofdhaka" as const,
+      ticker: "BSC",
+      workspaceId: "workspace-dse",
+    };
+
+const strategyKey = own.market === "DSE" ? "dse_reversal_v1" : "us_breakout_v1";
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -20,13 +51,13 @@ describe("research API tenant boundary", () => {
       vi.fn().mockResolvedValue(
         jsonResponse([
           {
-            id: "workspace-us",
-            organizationId: "organization-us",
-            organizationName: "US Research",
-            tenantId: "bullsofwallst",
-            market: "US",
+            id: foreign.workspaceId,
+            organizationId: `organization-${foreign.market.toLowerCase()}`,
+            organizationName: `${foreign.market} Research`,
+            tenantId: foreign.tenantId,
+            market: foreign.market,
             name: "Core Research",
-            baseCurrency: "USD",
+            baseCurrency: foreign.market === "DSE" ? "BDT" : "USD",
             organizationRole: "owner",
             workspaceRole: "portfolio_manager",
           },
@@ -42,24 +73,24 @@ describe("research API tenant boundary", () => {
   it("rejects a queue containing a candidate from another market", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
-        tenantId: "bullsofdhaka",
-        market: "DSE",
-        workspaceId: "workspace-dse",
+        tenantId: own.tenantId,
+        market: own.market,
+        workspaceId: own.workspaceId,
         generatedAt: "2026-07-15T00:00:00Z",
         knowledgeCutoffAt: "2026-07-15T00:00:00Z",
-        candidates: [{ id: "US:AAPL", market: "US" }],
+        candidates: [{ id: `${foreign.market}:${foreign.ticker}`, market: foreign.market }],
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(researchApi.queue("workspace-dse")).rejects.toMatchObject({
+    await expect(researchApi.queue(own.workspaceId)).rejects.toMatchObject({
       status: 502,
     });
     expect(fetchMock).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({
-          "X-Tenant-Host": "research.bullsofdhaka.com",
+          "X-Tenant-Host": researchDeployment.tenantHost,
         }),
       }),
     );
@@ -68,9 +99,9 @@ describe("research API tenant boundary", () => {
   it("serializes queue filters for server-side universe selection", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
-        tenantId: "bullsofdhaka",
-        market: "DSE",
-        workspaceId: "workspace-dse",
+        tenantId: own.tenantId,
+        market: own.market,
+        workspaceId: own.workspaceId,
         generatedAt: "2026-07-15T00:00:00Z",
         knowledgeCutoffAt: "2026-07-15T00:00:00Z",
         universeCount: 396,
@@ -82,14 +113,14 @@ describe("research API tenant boundary", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await researchApi.queue("workspace-dse", {
+    await researchApi.queue(own.workspaceId, {
       capTier: "small",
       query: "  BSC & bank  ",
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(
-        "/institutional-research/workspaces/workspace-dse/queue?cap_tier=small&query=BSC+%26+bank",
+        `/institutional-research/workspaces/${own.workspaceId}/queue?cap_tier=small&query=BSC+%26+bank`,
       ),
       expect.objectContaining({ credentials: "include" }),
     );
@@ -100,18 +131,18 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          tenantId: "bullsofdhaka",
-          market: "DSE",
-          workspaceId: "workspace-dse",
+          tenantId: own.tenantId,
+          market: own.market,
+          workspaceId: own.workspaceId,
           candidate: {
-            market: "US",
-            ticker: "AAPL",
+            market: foreign.market,
+            ticker: foreign.ticker,
           },
         }),
       ),
     );
 
-    await expect(researchApi.dossier("workspace-dse", " bsc ")).rejects.toMatchObject({
+    await expect(researchApi.dossier(own.workspaceId, ` ${own.ticker.toLowerCase()} `)).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -119,27 +150,27 @@ describe("research API tenant boundary", () => {
   it("normalizes the requested ticker before loading a tenant-safe dossier", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
-        tenantId: "bullsofdhaka",
-        market: "DSE",
-        workspaceId: "workspace-dse",
+        tenantId: own.tenantId,
+        market: own.market,
+        workspaceId: own.workspaceId,
         candidate: {
-          market: "DSE",
-          ticker: "BSC",
+          market: own.market,
+          ticker: own.ticker,
         },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await researchApi.dossier("workspace-dse", " bsc ");
+    await researchApi.dossier(own.workspaceId, ` ${own.ticker.toLowerCase()} `);
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(
-        "/institutional-research/workspaces/workspace-dse/companies/BSC",
+        `/institutional-research/workspaces/${own.workspaceId}/companies/${own.ticker}`,
       ),
       expect.objectContaining({
         credentials: "include",
         headers: expect.objectContaining({
-          "X-Tenant-Host": "research.bullsofdhaka.com",
+          "X-Tenant-Host": researchDeployment.tenantHost,
         }),
       }),
     );
@@ -150,15 +181,15 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          id: "run-us",
-          workspaceId: "workspace-us",
-          tenantId: "bullsofwallst",
-          market: "US",
+          id: `run-${foreign.market.toLowerCase()}`,
+          workspaceId: foreign.workspaceId,
+          tenantId: foreign.tenantId,
+          market: foreign.market,
         }),
       ),
     );
 
-    await expect(researchApi.startCompanyResearch("workspace-dse", "BSC")).rejects.toMatchObject({
+    await expect(researchApi.startCompanyResearch(own.workspaceId, own.ticker)).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -169,16 +200,16 @@ describe("research API tenant boundary", () => {
       vi.fn().mockResolvedValue(
         jsonResponse([
           {
-            id: "portfolio-us",
-            workspaceId: "workspace-dse",
-            tenantId: "bullsofdhaka",
-            market: "US",
+            id: `portfolio-${foreign.market.toLowerCase()}`,
+            workspaceId: own.workspaceId,
+            tenantId: own.tenantId,
+            market: foreign.market,
           },
         ]),
       ),
     );
 
-    await expect(researchApi.reconcileShadowPortfolios("workspace-dse")).rejects.toMatchObject({
+    await expect(researchApi.reconcileShadowPortfolios(own.workspaceId)).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -188,9 +219,9 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          workspaceId: "workspace-dse",
-          tenantId: "bullsofwallst",
-          market: "US",
+          workspaceId: own.workspaceId,
+          tenantId: foreign.tenantId,
+          market: foreign.market,
           pending: 0,
           matured: 0,
           buckets: [],
@@ -199,7 +230,7 @@ describe("research API tenant boundary", () => {
       ),
     );
 
-    await expect(researchApi.calibration("workspace-dse")).rejects.toMatchObject({ status: 502 });
+    await expect(researchApi.calibration(own.workspaceId)).rejects.toMatchObject({ status: 502 });
   });
 
   it("rejects a statistical model audit from another market", async () => {
@@ -207,8 +238,8 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          tenantId: "bullsofwallst",
-          market: "US",
+          tenantId: foreign.tenantId,
+          market: foreign.market,
           generatedAt: "2026-08-04T10:00:00Z",
           foundation: null,
           experiment: null,
@@ -225,15 +256,15 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          id: "policy-us",
-          workspaceId: "workspace-dse",
-          tenantId: "bullsofwallst",
-          market: "US",
+          id: `policy-${foreign.market.toLowerCase()}`,
+          workspaceId: own.workspaceId,
+          tenantId: foreign.tenantId,
+          market: foreign.market,
         }),
       ),
     );
 
-    await expect(researchApi.automationPolicy("workspace-dse")).rejects.toMatchObject({
+    await expect(researchApi.automationPolicy(own.workspaceId)).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -243,19 +274,19 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          workspaceId: "workspace-dse",
-          tenantId: "bullsofdhaka",
-          market: "DSE",
+          workspaceId: own.workspaceId,
+          tenantId: own.tenantId,
+          market: own.market,
           mandate: {
-            workspaceId: "workspace-dse",
-            tenantId: "bullsofdhaka",
-            market: "DSE",
+            workspaceId: own.workspaceId,
+            tenantId: own.tenantId,
+            market: own.market,
           },
           trials: [
             {
-              workspaceId: "workspace-us",
-              tenantId: "bullsofwallst",
-              market: "US",
+              workspaceId: foreign.workspaceId,
+              tenantId: foreign.tenantId,
+              market: foreign.market,
             },
           ],
           portfolios: [],
@@ -263,7 +294,7 @@ describe("research API tenant boundary", () => {
       ),
     );
 
-    await expect(researchApi.investmentOperatingView("workspace-dse")).rejects.toMatchObject({
+    await expect(researchApi.investmentOperatingView(own.workspaceId)).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -273,21 +304,21 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          workspaceId: "workspace-dse",
-          tenantId: "bullsofdhaka",
-          market: "DSE",
+          workspaceId: own.workspaceId,
+          tenantId: own.tenantId,
+          market: own.market,
           mandate: {
-            workspaceId: "workspace-dse",
-            tenantId: "bullsofdhaka",
-            market: "DSE",
+            workspaceId: own.workspaceId,
+            tenantId: own.tenantId,
+            market: own.market,
           },
           trials: [],
           portfolios: [
             {
               mandate: {
-                workspaceId: "workspace-us",
-                tenantId: "bullsofwallst",
-                market: "US",
+                workspaceId: foreign.workspaceId,
+                tenantId: foreign.tenantId,
+                market: foreign.market,
               },
             },
           ],
@@ -295,7 +326,7 @@ describe("research API tenant boundary", () => {
       ),
     );
 
-    await expect(researchApi.investmentOperatingView("workspace-dse")).rejects.toMatchObject({
+    await expect(researchApi.investmentOperatingView(own.workspaceId)).rejects.toMatchObject({
       status: 502,
     });
   });
@@ -305,21 +336,21 @@ describe("research API tenant boundary", () => {
       "fetch",
       vi.fn().mockResolvedValue(
         jsonResponse({
-          workspaceId: "workspace-dse",
-          tenantId: "bullsofdhaka",
-          market: "DSE",
+          workspaceId: own.workspaceId,
+          tenantId: own.tenantId,
+          market: own.market,
           mandate: {
-            workspaceId: "workspace-dse",
-            tenantId: "bullsofdhaka",
-            market: "DSE",
+            workspaceId: own.workspaceId,
+            tenantId: own.tenantId,
+            market: own.market,
           },
           trials: [],
           portfolios: [
             {
               mandate: {
-                workspaceId: "workspace-dse",
-                tenantId: "bullsofdhaka",
-                market: "DSE",
+                workspaceId: own.workspaceId,
+                tenantId: own.tenantId,
+                market: own.market,
               },
               risk: {
                 largestPositionPct: 10,
@@ -334,36 +365,36 @@ describe("research API tenant boundary", () => {
       ),
     );
 
-    await expect(researchApi.investmentOperatingView("workspace-dse")).rejects.toMatchObject({
+    await expect(researchApi.investmentOperatingView(own.workspaceId)).rejects.toMatchObject({
       status: 502,
     });
   });
 
   it("sends a complete bounded automation policy to the workspace endpoint", async () => {
     const body = {
-      id: "policy-dse",
-      workspaceId: "workspace-dse",
-      tenantId: "bullsofdhaka",
-      market: "DSE",
+      id: `policy-${own.market.toLowerCase()}`,
+      workspaceId: own.workspaceId,
+      tenantId: own.tenantId,
+      market: own.market,
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(body));
     vi.stubGlobal("fetch", fetchMock);
 
-    await researchApi.configureAutomation("workspace-dse", {
+    await researchApi.configureAutomation(own.workspaceId, {
       enabled: true,
       queue_limit: 20,
       research_limit: 5,
       cap_tier: "small",
-      strategy_key: "dse_reversal_v1",
+      strategy_key: strategyKey,
       universe_limit: 25,
       initial_capital: 10_000_000,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/workspaces/workspace-dse/automation"),
+      expect.stringContaining(`/workspaces/${own.workspaceId}/automation`),
       expect.objectContaining({
         method: "PUT",
-        body: expect.stringContaining('"strategy_key":"dse_reversal_v1"'),
+        body: expect.stringContaining(`"strategy_key":"${strategyKey}"`),
       }),
     );
   });

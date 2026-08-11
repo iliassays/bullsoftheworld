@@ -1,4 +1,5 @@
 import type { ResearchQueueSnapshot } from "./model";
+import { previewUsNxtc } from "../../app/preview-universe";
 
 export const demoQueueSnapshot: ResearchQueueSnapshot = {
   generatedAt: "2026-07-15T08:42:00Z",
@@ -16,7 +17,7 @@ export const demoQueueSnapshot: ResearchQueueSnapshot = {
       sector: "Biotechnology",
       capTier: "micro",
       currency: "USD",
-      price: 8.42,
+      price: previewUsNxtc.referencePrice,
       dailyChangePct: 3.8,
       priority: 93,
       status: "needs_review",
@@ -84,7 +85,7 @@ export const demoQueueSnapshot: ResearchQueueSnapshot = {
         { id: "base", value: 10.1, returnPct: 20, premise: "Milestone lands inside the current cash window." },
         { id: "bull", value: 15.8, returnPct: 88, premise: "Positive data expands the addressable program." },
       ],
-      sparkline: [6.1, 6.4, 6.2, 6.8, 7.1, 6.9, 7.4, 7.8, 7.6, 8.1, 8.42],
+      sparkline: [6.1, 6.4, 6.2, 6.8, 7.1, 6.9, 7.4, 7.8, 7.6, 8.1, previewUsNxtc.referencePrice],
     },
     {
       id: "DSE:BSC",

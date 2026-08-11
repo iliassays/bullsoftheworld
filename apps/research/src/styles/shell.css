@@ -113,9 +113,13 @@
 
   .research-nav {
     display: flex;
+    min-height: 0;
+    flex: 1;
     flex-direction: column;
     gap: 3px;
     margin-top: 20px;
+    overflow-y: auto;
+    padding-bottom: 10px;
   }
 
   .research-nav__group {

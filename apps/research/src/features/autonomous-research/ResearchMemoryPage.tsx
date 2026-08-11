@@ -17,11 +17,11 @@ export function ResearchMemoryPage() {
   const calibration = useCalibration(workspace?.id);
   const failed = runs.isError || calibration.isError;
 
-  if (failed) return <section className="research-unavailable"><DatabaseZap size={26} /><h1>Research memory unavailable</h1><p>The immutable run ledger or forward observations could not be loaded.</p><Button onPress={() => { void runs.refetch(); void calibration.refetch(); }}><RefreshCw size={14} />Retry</Button></section>;
+  if (failed) return <section className="research-unavailable"><DatabaseZap size={26} /><h1>Research outcomes unavailable</h1><p>The immutable run ledger or forward observations could not be loaded.</p><Button onPress={() => { void runs.refetch(); void calibration.refetch(); }}><RefreshCw size={14} />Retry</Button></section>;
 
   return (
     <div className="atlas-page">
-      <header className="atlas-page-header"><div><span className="atlas-page-header__eyebrow">Immutable decisions · outcome calibration · no hindsight rewrite</span><h1>Research memory</h1><p>Every autonomous verdict remains tied to its original evidence cutoff, while future returns mature in a separate observation ledger.</p></div>{calibration.data && <StatusBadge tone="info" dot>{calibration.data.matured} matured · {calibration.data.pending} pending</StatusBadge>}</header>
+      <header className="atlas-page-header"><div><span className="atlas-page-header__eyebrow">Immutable decisions · outcome calibration · no hindsight rewrite</span><h1>Research outcomes</h1><p>Every autonomous verdict remains tied to its original evidence cutoff, while future returns mature in a separate observation ledger.</p></div>{calibration.data && <StatusBadge tone="info" dot>{calibration.data.matured} matured · {calibration.data.pending} pending</StatusBadge>}</header>
 
       <div className="memory-grid">
         <section className="atlas-panel">

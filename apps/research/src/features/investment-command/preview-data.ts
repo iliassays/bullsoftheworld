@@ -1,4 +1,5 @@
 import { researchDeployment } from "../../app/deployment";
+import { previewUsNxtc } from "../../app/preview-universe";
 import type {
   DecisionBoard,
   DecisionCandidate,
@@ -33,7 +34,11 @@ function candidate(
   returnPct: number,
   index: number,
 ): DecisionCandidate {
-  const discoveryPrice = market === "DSE" ? 48 + index * 17 : 3.2 + index * 1.8;
+  const discoveryPrice = market === "DSE"
+    ? 48 + index * 17
+    : code === previewUsNxtc.code
+      ? previewUsNxtc.referencePrice
+      : 3.2 + index * 1.8;
   return {
     id: `00000000-0000-0000-0000-00000000040${index}:${code}`,
     portfolioId: `00000000-0000-0000-0000-00000000040${index}`,
@@ -250,65 +255,88 @@ export const previewStrategyReadiness: StrategyReadinessBoard = {
       ],
 };
 
-const squeezeEntry = (code: string, company: string, state: "trigger_ready" | "confirmed") => ({
-  market,
-  code,
-  company,
-  capTier: "small",
-  evidenceMode: "forward" as const,
-  family: market === "DSE" ? "supply_constrained_breakout" : "compression_breakout",
-  familyLabel: market === "DSE" ? "Supply-constrained breakout" : "Compression breakout setup",
-  state,
-  previousState: state === "confirmed" ? "trigger_ready" : "forming",
-  stateReason:
-    state === "confirmed"
-      ? "Close exceeded the 20-session base high within the last 3 sessions with relative volume ≥ 1.5x."
-      : "Base is tight (5-session range within 1.5 ATR) and price sits within 3% of the base high.",
-  isNew: state !== "confirmed",
-  isNewConfirmation: state === "confirmed",
-  firstDiscoveredOn: "2026-07-21",
-  asOfDate: "2026-07-23",
-  sessionsSinceDiscovery: 3,
-  discoveryPrice: market === "DSE" ? 54 : 12.4,
-  asOfPrice: market === "DSE" ? 56.7 : 13.1,
-  returnSinceDiscoveryPct: 5.0,
-  firstConfirmedOn: state === "confirmed" ? "2026-07-23" : null,
-  confirmationPrice: state === "confirmed" ? 56.7 : null,
-  moveToConfirmationPct: state === "confirmed" ? 5.0 : null,
-  nextObservableOn: null,
-  nextObservablePrice: null,
-  returnSinceNextObservablePct: null,
-  maxFavorablePct: 6.2,
-  maxAdversePct: -1.1,
-  // Traded extremes always bracket the close-based pair.
-  peakTradedPct: 8.9,
-  troughTradedPct: -3.4,
-  setupPrice: market === "DSE" ? 56.7 : 13.1,
-  triggerPrice: market === "DSE" ? 57.4 : 13.4,
-  invalidationPrice: market === "DSE" ? 53.2 : 11.9,
-  riskPerShare: market === "DSE" ? 4.2 : 1.5,
-  planningObjectivePrice: market === "DSE" ? 65.8 : 16.4,
-  planningRewardRisk: 2.0,
-  expectedHolding: "Approximately 10-40 completed sessions",
-  liquidityCapacityNote: "About 0.42M per session at 2% of 20-session average traded value.",
-  supportingEvidence: [
-    "Volatility contraction: 14-session ATR fell ≥20% over 20 sessions.",
-    ...(market === "DSE"
-      ? ["Free float is only 24% of market capitalization (supply scarcity)."]
-      : ["Short-marked volume share elevated (66% 5-session, volume-weighted) — this is not short interest and cannot establish positioning."]),
-  ],
-  counterEvidence: market === "US" ? ["Recent financing/dilution filing (S-1/S-3/424B family) within 90 days."] : [],
-  dataQuality:
-    market === "DSE"
-      ? ["DSE prices are raw exchange closes without corporate-action adjustment; a bonus or rights ex-date can flip this state."]
-      : ["US universe currently stores survivors only; archived setups over-represent companies that did not delist."],
-  missingEvidence: [],
-  paperBookStatus:
-    market === "DSE"
-      ? "Locked forward collection only; this remains outside paper capital."
-      : "No paper book — this family has not passed its promotion gates.",
-  methodologyVersion: "squeeze-monitor-v3",
-});
+const squeezeEntry = (
+  code: string,
+  company: string,
+  state: "trigger_ready" | "confirmed",
+  family = market === "DSE" ? "supply_constrained_breakout" : "compression_breakout",
+) => {
+  const discoveryPrice = market === "DSE" ? 54 : previewUsNxtc.referencePrice;
+  const asOfPrice = market === "DSE"
+    ? state === "confirmed"
+      ? 58.2
+      : 56.7
+    : previewUsNxtc.latestPrice;
+  const triggerPrice = market === "DSE" ? 57.4 : previewUsNxtc.triggerPrice;
+  const invalidationPrice = market === "DSE" ? 53.2 : previewUsNxtc.invalidationPrice;
+  const returnSinceDiscoveryPct = Number(
+    (((asOfPrice / discoveryPrice) - 1) * 100).toFixed(2),
+  );
+  const riskPerShare = Number((asOfPrice - invalidationPrice).toFixed(2));
+
+  return {
+    market,
+    code,
+    company,
+    capTier: "small",
+    evidenceMode: "forward" as const,
+    family,
+    familyLabel:
+      family === "supply_constrained_breakout"
+        ? "Supply-constrained breakout"
+        : "Compression breakout setup",
+    state,
+    previousState: state === "confirmed" ? "trigger_ready" : "forming",
+    stateReason:
+      state === "confirmed"
+        ? "Close exceeded the 20-session base high within the last 3 sessions with relative volume ≥ 1.5x."
+        : "Base is tight (5-session range within 1.5 ATR) and price sits within 3% of the base high.",
+    isNew: state !== "confirmed",
+    isNewConfirmation: state === "confirmed",
+    firstDiscoveredOn: "2026-07-21",
+    asOfDate: "2026-07-23",
+    sessionsSinceDiscovery: 3,
+    discoveryPrice,
+    asOfPrice,
+    returnSinceDiscoveryPct,
+    firstConfirmedOn: state === "confirmed" ? "2026-07-23" : null,
+    confirmationPrice: state === "confirmed" ? asOfPrice : null,
+    moveToConfirmationPct: state === "confirmed" ? returnSinceDiscoveryPct : null,
+    nextObservableOn: null,
+    nextObservablePrice: null,
+    returnSinceNextObservablePct: null,
+    maxFavorablePct: 8.9,
+    maxAdversePct: -1.1,
+    // Traded extremes always bracket the close-based pair.
+    peakTradedPct: 10.2,
+    troughTradedPct: -3.4,
+    setupPrice: asOfPrice,
+    triggerPrice,
+    invalidationPrice,
+    riskPerShare,
+    planningObjectivePrice: Number((asOfPrice + 2 * riskPerShare).toFixed(2)),
+    planningRewardRisk: 2.0,
+    expectedHolding: "Approximately 10-40 completed sessions",
+    liquidityCapacityNote: "About 0.42M per session at 2% of 20-session average traded value.",
+    supportingEvidence: [
+      "Volatility contraction: 14-session ATR fell ≥20% over 20 sessions.",
+      ...(market === "DSE"
+        ? ["Free float is only 24% of market capitalization (supply scarcity)."]
+        : ["Short-marked volume share elevated (66% 5-session, volume-weighted) — this is not short interest and cannot establish positioning."]),
+    ],
+    counterEvidence: market === "US" ? ["Recent financing/dilution filing (S-1/S-3/424B family) within 90 days."] : [],
+    dataQuality:
+      market === "DSE"
+        ? ["DSE prices are raw exchange closes without corporate-action adjustment; a bonus or rights ex-date can flip this state."]
+        : ["US universe currently stores survivors only; archived setups over-represent companies that did not delist."],
+    missingEvidence: [],
+    paperBookStatus:
+      market === "DSE"
+        ? "Locked forward collection only; this remains outside paper capital."
+        : "No paper book — this family has not passed its promotion gates.",
+    methodologyVersion: "squeeze-monitor-v3",
+  };
+};
 
 export const previewSqueezeMonitor: SqueezeMonitor = {
   market,
@@ -346,8 +374,8 @@ export const previewSqueezeMonitor: SqueezeMonitor = {
       missingDatasets: [],
       entries:
         market === "US"
-          ? [squeezeEntry("NXTC", "NextCure, Inc.", "trigger_ready")]
-          : [squeezeEntry("BRACBANK", "BRAC Bank PLC", "trigger_ready")],
+          ? [squeezeEntry("NXTC", "NextCure, Inc.", "trigger_ready", "compression_breakout")]
+          : [squeezeEntry("BRACBANK", "BRAC Bank PLC", "trigger_ready", "compression_breakout")],
     },
     {
       family: "failed_breakdown_reversal",
@@ -388,7 +416,17 @@ export const previewSqueezeMonitor: SqueezeMonitor = {
 
 /** Deterministic synthetic candles so the preview chart exercises every overlay and level. */
 export function previewSqueezePath(family: string, code: string): SqueezePath {
-  const anchorPrice = market === "DSE" ? 54 : 12.4;
+  const state = family === "supply_constrained_breakout" ? "confirmed" : "trigger_ready";
+  const company =
+    code === "BXPHARMA"
+      ? "Beximco Pharmaceuticals"
+      : code === "BRACBANK"
+        ? "BRAC Bank PLC"
+        : code === "NXTC"
+          ? "NextCure, Inc."
+          : "Preview company";
+  const entry = squeezeEntry(code, company, state, family);
+  const anchorPrice = entry.discoveryPrice;
   // 120 calendar sessions ending on the preview archive date (2026-07-23).
   const start = new Date("2026-03-26T00:00:00Z");
   const closes: number[] = [];
@@ -399,6 +437,13 @@ export function previewSqueezePath(family: string, code: string): SqueezePath {
     const thrust = index > 110 ? anchorPrice * 0.008 * (index - 110) : 0;
     closes.push(Number((drift + wobble + thrust).toFixed(2)));
   }
+  closes.splice(
+    closes.length - 3,
+    3,
+    entry.discoveryPrice,
+    Number(((entry.discoveryPrice + entry.asOfPrice) / 2).toFixed(2)),
+    entry.asOfPrice,
+  );
   const ema = (period: number) => {
     const out: (number | null)[] = closes.map(() => null);
     if (closes.length < period) return out;
@@ -436,7 +481,7 @@ export function previewSqueezePath(family: string, code: string): SqueezePath {
     tenantId,
     family,
     familyLabel: market === "DSE" ? "Supply-constrained breakout" : "Compression breakout setup",
-    entry: squeezeEntry(code, market === "DSE" ? "Beximco Pharmaceuticals" : "Preview Industries", "confirmed"),
+    entry,
     points,
     stateHistory: [
       {
@@ -471,9 +516,12 @@ export function previewSqueezePath(family: string, code: string): SqueezePath {
       },
       {
         date: points[points.length - 2]!.date,
-        state: "trigger_ready",
+        state: state === "confirmed" ? "trigger_ready" : "forming",
         previousState: "watch",
-        reason: "Base is tight and price sits within 3% of the base high.",
+        reason:
+          state === "confirmed"
+            ? "Base is tight and price sits within 3% of the base high."
+            : "Volatility contracted while the base continued to form.",
         evidenceMode: "forward",
         methodologyVersion: "squeeze-monitor-v3",
         episodeNumber: 2,
@@ -481,9 +529,9 @@ export function previewSqueezePath(family: string, code: string): SqueezePath {
       },
       {
         date: points[points.length - 1]!.date,
-        state: "confirmed",
-        previousState: "trigger_ready",
-        reason: "Close exceeded the 20-session base high with relative volume ≥ 1.5x.",
+        state,
+        previousState: state === "confirmed" ? "trigger_ready" : "forming",
+        reason: entry.stateReason,
         evidenceMode: "forward",
         methodologyVersion: "squeeze-monitor-v3",
         episodeNumber: 2,

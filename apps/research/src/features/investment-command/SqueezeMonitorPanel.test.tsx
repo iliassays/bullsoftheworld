@@ -94,7 +94,12 @@ describe("SqueezeMonitorPanel availability states", () => {
     expect(html).toContain("not high probability");
     expect(html).toMatch(/Confirmed this scan|First seen this scan/);
     expect(html).toContain("First confirmed");
-    expect(html).toContain("before confirmation");
+    if (previewSqueezeMonitor.families[0]!.entries[0]!.firstConfirmedOn) {
+      expect(html).toContain("before confirmation");
+    } else {
+      expect(html).toContain("Not reached");
+      expect(html).toContain("condition, not an order");
+    }
     expect(html).toContain("Next observable open");
     expect(html).toContain("Gross follow-through");
     expect(html).toContain("after confirmation · not P&amp;L");

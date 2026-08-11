@@ -4,7 +4,7 @@ import { buildSqueezeMarkers } from "./SqueezeChart";
 import { previewSqueezeMonitor, previewSqueezePath } from "./preview-data";
 
 describe("buildSqueezeMarkers", () => {
-  it("shows the current episode and recent prior episodes that confirmed", () => {
+  it("shows the current episode and recent prior episodes without inventing confirmation", () => {
     const entry = previewSqueezeMonitor.families
       .flatMap((family) => family.entries)
       .find((candidate) => candidate.state === "confirmed");
@@ -22,8 +22,9 @@ describe("buildSqueezeMarkers", () => {
     expect(labels).toContain("D1");
     expect(labels).toContain("C1");
     expect(labels).toContain("D2");
-    expect(labels).toContain("C2");
     expect(labels).toContain("T2");
+    if (selected!.state === "confirmed") expect(labels).toContain("C2");
+    else expect(labels).not.toContain("C2");
   });
 
   it("does not render every unconfirmed historical episode", () => {

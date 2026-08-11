@@ -40,8 +40,7 @@ import {
   type DecisionAction,
 } from "./model";
 import { DecisionBoardPanel } from "./DecisionBoardPanel";
-import { SqueezeMonitorPanel } from "./SqueezeMonitorPanel";
-import { StrategyReadinessPanel } from "./StrategyReadinessPanel";
+import { InvestmentWorkflow } from "./InvestmentWorkflow";
 
 function dateTime(value: string | null | undefined): string {
   if (!value) return "Not available";
@@ -219,12 +218,6 @@ export function InvestmentCommandPage() {
         </section>
       )}
 
-      <DecisionBoardPanel workspaceId={workspace.id} />
-
-      <SqueezeMonitorPanel />
-
-      <StrategyReadinessPanel />
-
       <section aria-label="Decision summary" className="command-decision-strip">
         <button onClick={() => navigate("/portfolio")} type="button">
           <ShieldAlert aria-hidden="true" size={17} />
@@ -247,6 +240,16 @@ export function InvestmentCommandPage() {
           <em>Evidence work, not orders</em>
         </button>
       </section>
+
+      <InvestmentWorkflow
+        bookCount={books.length}
+        catalystCount={eventWatch.length}
+        researchAttention={inbox.length}
+        reviewCount={reviewCount}
+        targetCount={targetCount}
+      />
+
+      <DecisionBoardPanel workspaceId={workspace.id} />
 
       <div className="command-layout">
         <main>
