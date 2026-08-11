@@ -27,7 +27,7 @@ class LightGBMRankSpec:
     """One preregistered low-complexity LambdaRank configuration."""
 
     key: str = "us_eod_deep_liquidity_lambdarank"
-    version: str = "v1"
+    version: str = "v2"
     market: str = "US"
     horizon: int = 20
     relevance_bins: int = 10
@@ -45,7 +45,10 @@ class LightGBMRankSpec:
     early_stopping_rounds: int = 50
     num_threads: int = 4
     seed: int = 20260811
-    trial_count: int = 1
+    unit_row_weights: bool = True
+    lambdarank_query_normalization: bool = True
+    bagging_by_query: bool = True
+    trial_count: int = 2
 
     def spec_hash(self) -> str:
         payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
@@ -117,8 +120,9 @@ def prepare_ranking_matrix(
     *,
     relevance_bins: int = 10,
     target: str = "net_excess",
+    unit_row_weights: bool = True,
 ) -> RankingMatrix:
-    """Create date-local relevance labels and equal-total-weight date groups."""
+    """Create date-local relevance labels and contiguous ranking-query groups."""
 
     if relevance_bins < 2:
         raise ValueError("relevance_bins must be at least two")
@@ -133,7 +137,7 @@ def prepare_ranking_matrix(
             .clip(0, relevance_bins - 1)
             .cast(pl.Int32)
         ).alias("_relevance"),
-        (1.0 / count).alias("_date_weight"),
+        (pl.lit(1.0) if unit_row_weights else 1.0 / count).alias("_row_weight"),
     )
     groups = tuple(
         int(value)
@@ -148,7 +152,7 @@ def prepare_ranking_matrix(
     return RankingMatrix(
         features=labelled.select(RANK_FEATURE_COLUMNS).to_numpy(),
         labels=labelled["_relevance"].to_numpy(),
-        weights=labelled["_date_weight"].to_numpy(),
+        weights=labelled["_row_weight"].to_numpy(),
         groups=groups,
         dates=tuple(labelled["date"].to_list()),
         codes=tuple(str(code) for code in labelled["code"].to_list()),
@@ -161,6 +165,7 @@ def _parameters(spec: LightGBMRankSpec) -> dict[str, Any]:
         "metric": "ndcg",
         "eval_at": [10, 50],
         "lambdarank_truncation_level": 50,
+        "lambdarank_norm": spec.lambdarank_query_normalization,
         "learning_rate": spec.learning_rate,
         "num_leaves": spec.num_leaves,
         "max_depth": spec.max_depth,
@@ -168,6 +173,7 @@ def _parameters(spec: LightGBMRankSpec) -> dict[str, Any]:
         "feature_fraction": spec.feature_fraction,
         "bagging_fraction": spec.bagging_fraction,
         "bagging_freq": spec.bagging_freq,
+        "bagging_by_query": spec.bagging_by_query,
         "lambda_l1": spec.lambda_l1,
         "lambda_l2": spec.lambda_l2,
         "max_bin": spec.max_bin,
@@ -208,10 +214,12 @@ def fit_lambdarank(
     discovery_matrix = prepare_ranking_matrix(
         discovery,
         relevance_bins=spec.relevance_bins,
+        unit_row_weights=spec.unit_row_weights,
     )
     validation_matrix = prepare_ranking_matrix(
         validation,
         relevance_bins=spec.relevance_bins,
+        unit_row_weights=spec.unit_row_weights,
     )
     selection_model = lgb.train(
         _parameters(spec),
@@ -229,6 +237,7 @@ def fit_lambdarank(
     forward_matrix = prepare_ranking_matrix(
         pre_forward,
         relevance_bins=spec.relevance_bins,
+        unit_row_weights=spec.unit_row_weights,
     )
     forward_model = lgb.train(
         _parameters(spec),

@@ -81,3 +81,13 @@ all normal Atlas risk and governance gates.
 The artifact and failed criteria remain stored. Thresholds, sleeves, horizon or features will not
 be changed against the same reused diagnostic. Any such change is a separately preregistered
 experiment and increases the strategy-family trial count.
+
+## Post-run implementation finding
+
+The first v1 execution produced a one-leaf constant model. The relevance labels were balanced,
+but applying `1 / group size` as a row weight on top of LambdaRank's own query normalization
+reduced gradients by roughly the cross-section size; the frozen L1/L2 penalties then suppressed
+every split. This is an implementation-blocked null, not evidence about alpha. Its artifact remains
+at `var/research/us-nonlinear-rank/20260811T171106Z` and is not overwritten. The separately
+preregistered v2 correction is documented in
+`us-nonlinear-rank-challenger-v2-2026-08-11.md`.

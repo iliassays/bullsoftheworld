@@ -58,8 +58,10 @@ def test_relevance_and_weights_are_local_to_each_date() -> None:
     assert len(matrix.labels) == 40
     assert set(matrix.labels[:20]) == set(range(10))
     assert set(matrix.labels[20:]) == set(range(10))
-    assert np.isclose(matrix.weights[:20].sum(), 1.0)
-    assert np.isclose(matrix.weights[20:].sum(), 1.0)
+    assert np.all(matrix.weights == 1.0)
+    legacy_weights = prepare_ranking_matrix(frame, unit_row_weights=False).weights
+    assert np.isclose(legacy_weights[:20].sum(), 1.0)
+    assert np.isclose(legacy_weights[20:].sum(), 1.0)
 
 
 def test_frozen_spec_hash_changes_with_model_contract() -> None:
