@@ -62,6 +62,10 @@ strategy must generate a target and pass evidence, liquidity, sizing, exposure, 
   fail against an unavailable API.
 - Parameterized API boundary tests so the same suite verifies DSE and US isolation in both
   directions.
+- Added a one-time, replayable five-stage orientation tied to the actual Atlas workflow.
+- Added a persistent, searchable Help center with explicit `Meaning` and `Not` definitions.
+- Added fail-closed, first-party workflow analytics with per-tenant/user consent, sanitized routes,
+  bounded properties, pseudonymous sessions, and the existing 180-day deletion policy.
 
 ## UX and evidence guardrails
 
@@ -76,8 +80,8 @@ strategy must generate a target and pass evidence, liquidity, sizing, exposure, 
 
 ## Validation
 
-- DSE test configuration: 20 files, 80 tests passed.
-- US test configuration: 20 files, 80 tests passed.
+- DSE test configuration: 22 files, 90 tests passed.
+- US test configuration: 22 files, 90 tests passed.
 - DSE production build: passed.
 - US production build: passed.
 - Desktop visual review: Command, Setup Monitor, and Research Outcomes.
@@ -87,13 +91,12 @@ strategy must generate a target and pass evidence, liquidity, sizing, exposure, 
 
 ## Recommended next improvements
 
-1. Add a first-session orientation overlay using the same five-stage workflow, then never force it
-   again.
-2. Add a persistent glossary for target, execution, setup confirmation, evidence cutoff, MFE/MAE,
-   and promotion state.
-3. Instrument route completion, time-to-decision, empty-state exits, and workflow-stage transitions
-   before adding more dashboard modules.
-4. Add role-based default views only after observing real portfolio-manager and analyst behavior.
+1. Observe workflow-stage funnels and coarse time-to-Portfolio behavior before changing navigation.
+2. Add empty-state exit events only where a named empty state has a real next action; do not infer
+   successful completion from a route change.
+3. Add role-based default views only after observing real portfolio-manager and analyst behavior.
+4. Synchronize orientation and consent across devices only as part of a general tenant-scoped
+   account-preferences API.
 5. Continue replacing abbreviated score labels with visible definitions at the point of use.
 
 The next product step should be measured onboarding and comprehension, not another scanner or

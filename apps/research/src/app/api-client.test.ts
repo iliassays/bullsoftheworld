@@ -45,6 +45,36 @@ afterEach(() => {
 });
 
 describe("research API tenant boundary", () => {
+  it("records only explicitly consented Atlas product events through the tenant API", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "accepted" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await researchApi.productEvent({
+      analytics_consent: true,
+      name: "atlas_route_view",
+      path: "/companies/:ticker",
+      properties: {
+        atlas_stage: "investigate",
+        atlas_version: "orientation-v1",
+        market: own.market,
+        surface: "atlas",
+      },
+      session_id: "pseudonymous-session",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${researchDeployment.apiUrl}/product-events`,
+      expect.objectContaining({
+        body: expect.not.stringContaining(own.ticker),
+        credentials: "include",
+        headers: expect.objectContaining({
+          "X-Tenant-Host": researchDeployment.tenantHost,
+        }),
+        method: "POST",
+      }),
+    );
+  });
+
   it("rejects a workspace returned for another market tenant", async () => {
     vi.stubGlobal(
       "fetch",

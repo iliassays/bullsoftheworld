@@ -10,18 +10,34 @@ import {
   LogOut,
   Menu,
   Moon,
+  CircleHelp,
   Radar,
   Sun,
   X,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { IconButton, StatusBadge } from "../design-system";
 import { useResearchAuth } from "../app/auth";
 import { isResearchPreview, researchDeployment } from "../app/deployment";
+import { AtlasOnboarding } from "../features/help/AtlasOnboarding";
+import { ResearchHelpCenter } from "../features/help/ResearchHelpCenter";
+import {
+  notifyAtlasConsentChanged,
+  trackAtlasEvent,
+  useAtlasRouteAnalytics,
+} from "../features/help/analytics";
+import {
+  readAnalyticsConsent,
+  shouldShowOrientation,
+  writeAnalyticsConsent,
+  writeOrientationOutcome,
+  type AnalyticsConsent,
+  type AtlasExperienceIdentity,
+} from "../features/help/model";
 
 type Theme = "light" | "dark";
 
@@ -67,13 +83,53 @@ function initialTheme(): Theme {
 
 export function ResearchShell() {
   const auth = useResearchAuth();
+  const identity = useMemo<AtlasExperienceIdentity>(
+    () => ({ tenant: researchDeployment.tenant, userId: auth.user?.id ?? 0 }),
+    [auth.user?.id],
+  );
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [navOpen, setNavOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [replayOrientation, setReplayOrientation] = useState(false);
+  const [orientationRequired, setOrientationRequired] = useState(() =>
+    shouldShowOrientation(identity),
+  );
+  const [analyticsConsent, setAnalyticsConsent] = useState<AnalyticsConsent>(() =>
+    readAnalyticsConsent(identity),
+  );
+
+  useAtlasRouteAnalytics(identity);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("bulls-research-theme", theme);
   }, [theme]);
+
+  const changeAnalyticsConsent = (value: Exclude<AnalyticsConsent, null>) => {
+    writeAnalyticsConsent(identity, value);
+    setAnalyticsConsent(value);
+    notifyAtlasConsentChanged();
+  };
+
+  const openHelp = () => {
+    setHelpOpen(true);
+    void trackAtlasEvent(identity, "atlas_help_opened", window.location.pathname, {
+      source: "topbar",
+    });
+  };
+
+  const finishOrientation = (consent: Exclude<AnalyticsConsent, null>) => {
+    changeAnalyticsConsent(consent);
+    writeOrientationOutcome(identity, "completed");
+    setOrientationRequired(false);
+    setReplayOrientation(false);
+  };
+
+  const skipOrientation = () => {
+    writeOrientationOutcome(identity, "skipped");
+    setOrientationRequired(false);
+    setReplayOrientation(false);
+  };
 
   return (
     <div className="research-app-shell">
@@ -174,6 +230,9 @@ export function ResearchShell() {
               </span>
             </div>
             {isResearchPreview && <StatusBadge tone="warning">Preview dataset</StatusBadge>}
+            <IconButton label="Open Atlas help" onPress={openHelp}>
+              <CircleHelp aria-hidden="true" size={17} />
+            </IconButton>
             <IconButton label={`Use ${theme === "light" ? "dark" : "light"} theme`} onPress={() => setTheme(theme === "light" ? "dark" : "light")}>
               {theme === "light" ? <Moon aria-hidden="true" size={17} /> : <Sun aria-hidden="true" size={17} />}
             </IconButton>
@@ -184,6 +243,27 @@ export function ResearchShell() {
           <Outlet />
         </main>
       </div>
+
+      <AtlasOnboarding
+        analyticsConsent={analyticsConsent}
+        identity={identity}
+        isFirstSession={orientationRequired}
+        isOpen={orientationRequired || replayOrientation}
+        onComplete={finishOrientation}
+        onDismiss={() => setReplayOrientation(false)}
+        onSkip={skipOrientation}
+      />
+      <ResearchHelpCenter
+        analyticsConsent={analyticsConsent}
+        identity={identity}
+        isOpen={helpOpen}
+        onAnalyticsConsentChange={changeAnalyticsConsent}
+        onOpenChange={setHelpOpen}
+        onReplayOrientation={() => {
+          setHelpOpen(false);
+          setReplayOrientation(true);
+        }}
+      />
     </div>
   );
 }

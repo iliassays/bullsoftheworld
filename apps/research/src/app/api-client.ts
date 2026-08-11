@@ -16,6 +16,40 @@ export interface ResearchUser {
   role: "user" | "admin";
 }
 
+export type AtlasProductEventName =
+  | "atlas_onboarding_started"
+  | "atlas_onboarding_completed"
+  | "atlas_onboarding_skipped"
+  | "atlas_route_view"
+  | "atlas_workflow_stage_opened"
+  | "atlas_decision_surface_reached"
+  | "atlas_help_opened"
+  | "atlas_glossary_opened";
+
+export interface AtlasProductEventProperties {
+  atlas_stage?: string;
+  atlas_version?: string;
+  destination?: string;
+  elapsed_bucket?: string;
+  entry_point?: string;
+  evaluation?: string;
+  market?: "DSE" | "US";
+  query_length?: number;
+  result_count?: number;
+  route_group?: string;
+  source?: string;
+  surface?: string;
+  step?: string;
+}
+
+export interface AtlasProductEventPayload {
+  analytics_consent: true;
+  name: AtlasProductEventName;
+  path: string;
+  properties: AtlasProductEventProperties;
+  session_id: string;
+}
+
 export interface ResearchWorkspace {
   id: string;
   organizationId: string;
@@ -918,6 +952,12 @@ export const researchApi = {
     } finally {
       researchTokenStore.clear();
     }
+  },
+  async productEvent(payload: AtlasProductEventPayload): Promise<void> {
+    await request<{ status: "accepted" }>("/product-events", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
   async workspaces(): Promise<ResearchWorkspace[]> {
     const workspaces = await request<ResearchWorkspace[]>("/institutional-research/workspaces");

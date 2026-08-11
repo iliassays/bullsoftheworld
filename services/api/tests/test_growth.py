@@ -46,6 +46,32 @@ def test_product_event_requires_analytics_consent() -> None:
         ProductEventIn(name="add_watchlist", analytics_consent=False)
 
 
+def test_atlas_product_event_is_allowlisted_and_privacy_bounded() -> None:
+    event = ProductEventIn(
+        name="atlas_workflow_stage_opened",
+        analytics_consent=True,
+        session_id="atlas-session",
+        path="/companies/:ticker",
+        properties={
+            "atlas_stage": "investigate",
+            "atlas_version": "orientation-v1",
+            "entry_point": "discover",
+            "route_group": "investigate",
+            "result_count": 12,
+            "ticker": "NXTC",
+            "research_question": "free-form text must never be retained",
+        },
+    )
+
+    assert event.properties == {
+        "atlas_stage": "investigate",
+        "atlas_version": "orientation-v1",
+        "entry_point": "discover",
+        "route_group": "investigate",
+        "result_count": 12,
+    }
+
+
 def test_institutional_lead_requires_explicit_consent_and_valid_email() -> None:
     valid = {
         "organization": "Example Securities",
