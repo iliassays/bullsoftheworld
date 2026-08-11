@@ -4,5 +4,6 @@
 @import "./shell.css";
 @import "../features/research-queue/research-queue.css";
 @import "../features/company-dossier/company-dossier.css";
+@import "../features/condition-scanner/condition-scanner.css";
 @import "../features/autonomous-research/autonomous-research.css";
 @import "../features/investment-command/investment-command.css";

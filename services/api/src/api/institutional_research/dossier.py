@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import statistics
 import uuid
+from dataclasses import asdict
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,7 @@ from api.institutional_research.evidence import EVIDENCE_ADAPTERS
 from api.institutional_research.queue import _as_utc, _candidate
 from api.institutional_research.schemas import (
     CompanyDossierOut,
+    DossierConditionWorkbenchOut,
     DossierFundamentalsOut,
     DossierMarketDataOut,
     DossierPricePointOut,
@@ -22,6 +24,7 @@ from api.institutional_research.schemas import (
     ShortActivityOut,
 )
 from api.institutional_research.universe import apply_research_product_scope
+from bulls.analytics.research_conditions import build_condition_workbench
 from bulls.core.markets import get_market_profile
 from bulls.core.models import (
     DailyBar,
@@ -172,6 +175,14 @@ def _adjusted_ohlc(row: DailyBar) -> tuple[float, float, float, float]:
         float(row.low) * adjustment,
         adjusted_close,
     )
+
+
+def _condition_workbench(
+    rows: list[DossierPricePointOut],
+) -> DossierConditionWorkbenchOut:
+    """Serialize one shared analytics result into the public dossier contract."""
+
+    return DossierConditionWorkbenchOut.model_validate(asdict(build_condition_workbench(rows)))
 
 
 async def _price_history(
@@ -384,6 +395,7 @@ async def build_company_dossier(
             pe_vs_sector=analytics.pe_vs_sector,
         ),
         price_history=price_history,
+        condition_workbench=_condition_workbench(price_history),
         reported_ownership=reported_ownership,
         institutional_disclosure=institutional_disclosure,
         short_activity=short_activity,

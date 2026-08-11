@@ -5,10 +5,12 @@ from decimal import Decimal
 
 from api.institutional_research.dossier import (
     _adjusted_ohlc,
+    _condition_workbench,
     _institutional_disclosure,
     _reported_ownership,
     _short_activity,
 )
+from api.institutional_research.schemas import DossierPricePointOut
 from bulls.core.models import (
     DailyBar,
     InstitutionalHoldingSummary,
@@ -31,6 +33,34 @@ def test_adjusted_ohlc_applies_the_same_split_factor_to_the_complete_bar() -> No
     )
 
     assert _adjusted_ohlc(row) == (49.0, 52.0, 48.0, 50.0)
+
+
+def test_condition_workbench_serializes_shared_backend_overlays() -> None:
+    rows = [
+        DossierPricePointOut(
+            date=dt.date(2026, 1, 1) + dt.timedelta(days=index),
+            open=100 + index * 0.1,
+            high=101 + index * 0.1,
+            low=99 + index * 0.1,
+            close=100.5 + index * 0.1,
+            volume=1_000,
+        )
+        for index in range(80)
+    ]
+
+    result = _condition_workbench(rows)
+
+    assert result.methodology_version == "research-conditions-v1"
+    assert result.as_of_date == rows[-1].date
+    assert {series.key for series in result.overlays} == {"ema20", "ema50"}
+    assert {item.key for item in result.conditions} == {
+        "trend_alignment",
+        "participation_expansion",
+        "controlled_pullback_context",
+    }
+    payload = result.model_dump(by_alias=True)
+    assert payload["methodologyVersion"] == "research-conditions-v1"
+    assert payload["conditions"][0]["shortLabel"] == "T"
 
 
 def test_reported_ownership_uses_percentage_point_changes_and_reconciles_total() -> None:

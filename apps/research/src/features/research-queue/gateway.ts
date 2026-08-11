@@ -18,7 +18,7 @@ export interface ResearchQueueGateway {
   ): Promise<ResearchQueueSnapshot>;
 }
 
-const previewWorkspace: ResearchWorkspace = {
+export const previewWorkspace: ResearchWorkspace = {
   id: "00000000-0000-0000-0000-000000000001",
   organizationId: "00000000-0000-0000-0000-000000000001",
   organizationName: "Demonstration workspace",

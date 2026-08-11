@@ -367,7 +367,11 @@ async def run_us_eod_chain(ctx) -> str:
             missing=ready - covered,
         )
         eod_snapshot = await publish_us_eod()
-        analytics = await compute_all(MARKET)
+        analytics = await compute_all(
+            MARKET,
+            record_condition_forward=True,
+            alert_tenant_ids=(TENANT_ID,),
+        )
         # Squeeze-taxonomy archive rides after analytics; its failure never breaks the chain.
         try:
             squeeze = await run_squeeze_scan(MARKET)

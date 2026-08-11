@@ -147,6 +147,60 @@ class DossierPricePointOut(ApiModel):
     benchmark_close: float | None = None
 
 
+class DossierOverlayPointOut(ApiModel):
+    date: dt.date
+    value: float
+
+
+class DossierOverlaySeriesOut(ApiModel):
+    key: Literal["ema20", "ema50"]
+    label: str
+    points: list[DossierOverlayPointOut]
+
+
+class DossierConditionCheckOut(ApiModel):
+    fact_key: str
+    label: str
+    observed: float | None
+    expected: str
+    unit: Literal["percent", "multiple"]
+    passed: bool | None
+
+
+class DossierConditionTransitionOut(ApiModel):
+    date: dt.date
+    close: float
+    sequence: int = Field(ge=1)
+
+
+class DossierConditionEvaluationOut(ApiModel):
+    key: Literal[
+        "trend_alignment",
+        "participation_expansion",
+        "controlled_pullback_context",
+    ]
+    version: str
+    title: str
+    short_label: str
+    category: str
+    state: Literal["observed", "not_observed", "unavailable"]
+    summary: str
+    why_it_matters: str
+    limitation: str
+    checks: list[DossierConditionCheckOut]
+    transitions: list[DossierConditionTransitionOut]
+
+
+class DossierConditionWorkbenchOut(ApiModel):
+    methodology_version: str
+    timeframe: Literal["1d"]
+    as_of_date: dt.date | None
+    history_start_date: dt.date | None
+    disclaimer: str
+    overlays: list[DossierOverlaySeriesOut]
+    conditions: list[DossierConditionEvaluationOut]
+
+
 class DossierMarketDataOut(ApiModel):
     as_of_date: dt.date
     benchmark_code: str
@@ -227,10 +281,96 @@ class CompanyDossierOut(ApiModel):
     market_data: DossierMarketDataOut
     fundamentals: DossierFundamentalsOut
     price_history: list[DossierPricePointOut]
+    condition_workbench: DossierConditionWorkbenchOut
     reported_ownership: ReportedOwnershipOut | None = None
     institutional_disclosure: InstitutionalDisclosureOut | None = None
     short_activity: ShortActivityOut | None = None
     data_quality_notes: list[str] = Field(default_factory=list)
+
+
+ConditionKey = Literal[
+    "trend_alignment",
+    "participation_expansion",
+    "controlled_pullback_context",
+]
+
+
+class ResearchConditionDefinitionOut(ApiModel):
+    key: ConditionKey
+    version: str
+    title: str
+    category: str
+    why_it_matters: str
+    limitation: str
+
+
+class ResearchConditionCalibrationOut(ApiModel):
+    condition_key: ConditionKey
+    condition_version: str
+    evidence_mode: Literal["forward", "reconstructed"]
+    horizon_sessions: Literal[1, 5, 20, 60]
+    as_of_date: dt.date
+    history_start_date: dt.date | None
+    observations: int = Field(ge=0)
+    matured: int = Field(ge=0)
+    pending: int = Field(ge=0)
+    median_return_pct: float | None
+    positive_rate_pct: float | None
+    median_excess_return_pct: float | None
+    benchmark_observations: int = Field(ge=0)
+    average_max_favorable_pct: float | None
+    average_max_adverse_pct: float | None
+    universe_size: int = Field(ge=0)
+    point_in_time_complete: bool
+    warning_text: str | None
+
+
+class ResearchConditionScanItemOut(ApiModel):
+    ticker: str
+    company: str
+    sector: str | None
+    cap_tier: str
+    observed_on: dt.date
+    latest_session_date: dt.date
+    reference_close: float
+    latest_close: float
+    close_return_since_observation_pct: float
+    average_daily_value_mn: float | None
+    evidence_mode: Literal["forward", "reconstructed"]
+    is_new: bool
+    subscribed: bool
+    checks: list[DossierConditionCheckOut]
+
+
+class ResearchConditionScanOut(ApiModel):
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    workspace_id: uuid.UUID
+    generated_at: dt.datetime
+    latest_session_date: dt.date | None
+    methodology_version: str
+    definition: ResearchConditionDefinitionOut
+    observed_count: int = Field(ge=0)
+    new_count: int = Field(ge=0)
+    returned_count: int = Field(ge=0)
+    items: list[ResearchConditionScanItemOut]
+    calibrations: list[ResearchConditionCalibrationOut]
+    warnings: list[str]
+
+
+class ResearchConditionSubscriptionUpdate(ApiModel):
+    enabled: bool
+
+
+class ResearchConditionSubscriptionOut(ApiModel):
+    tenant_id: str
+    market: Literal["DSE", "US"]
+    ticker: str
+    condition_key: ConditionKey
+    condition_version: str
+    methodology_version: str
+    enabled: bool
+    last_alerted_on: dt.date | None
 
 
 class StartResearchRequest(ApiModel):

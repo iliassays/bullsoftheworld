@@ -11,6 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from api.deps import CurrentTenant, CurrentUser, DbSession
 from api.institutional_research.audit import record_research_audit_event
 from api.institutional_research.catalysts import load_catalyst_calendar
+from api.institutional_research.conditions import (
+    load_condition_scan,
+    set_condition_subscription,
+)
 from api.institutional_research.decision_board import (
     load_decision_board,
     load_decision_candidate_path,
@@ -59,6 +63,9 @@ from api.institutional_research.schemas import (
     InvestmentOperatingViewOut,
     LifecycleDispatchOut,
     ModelExperimentBoardOut,
+    ResearchConditionScanOut,
+    ResearchConditionSubscriptionOut,
+    ResearchConditionSubscriptionUpdate,
     ResearchQueueSnapshotOut,
     ResearchRunOut,
     ResearchShadowPortfolioOut,
@@ -642,6 +649,98 @@ async def research_queue(
         cap_tier=cap_tier,
         query=query,
     )
+
+
+@router.get("/workspaces/{workspace_id}/condition-scan")
+async def condition_scan(
+    workspace_id: uuid.UUID,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+    condition_key: str = Query(
+        "trend_alignment",
+        pattern="^(trend_alignment|participation_expansion|controlled_pullback_context)$",
+    ),
+    cap_tier: str | None = Query(
+        None,
+        pattern="^(mega|large|mid|small|micro|penny|unclassified)$",
+    ),
+    new_only: bool = Query(False),
+    limit: int = Query(100, ge=1, le=250),
+) -> ResearchConditionScanOut:
+    """Return calibrated completed-session condition evidence, never a trade queue."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    return await load_condition_scan(
+        session,
+        tenant_id=tenant.name,
+        market=tenant.market,
+        workspace_id=workspace_id,
+        user_id=user.id,
+        condition_key=condition_key,
+        cap_tier=cap_tier,
+        new_only=new_only,
+        limit=limit,
+    )
+
+
+@router.put("/workspaces/{workspace_id}/condition-subscriptions/{condition_key}/{code}")
+async def configure_condition_subscription(
+    workspace_id: uuid.UUID,
+    condition_key: str,
+    code: str,
+    payload: ResearchConditionSubscriptionUpdate,
+    request: Request,
+    tenant: CurrentTenant,
+    user: CurrentUser,
+    session: DbSession,
+) -> ResearchConditionSubscriptionOut:
+    """Opt in to a future observation alert for one exact ticker and condition."""
+
+    _require_research_access(tenant)
+    await bind_research_tenant_context(
+        session, tenant_id=tenant.name, market=tenant.market, user_id=user.id
+    )
+    authorized = await _authorized_workspace(
+        session=session,
+        workspace_id=workspace_id,
+        tenant=tenant,
+        user=user,
+        permission=ResearchPermission.VIEW_WORKSPACE,
+    )
+    try:
+        subscription = await set_condition_subscription(
+            session,
+            tenant_id=tenant.name,
+            market=tenant.market,
+            user_id=user.id,
+            code=code,
+            condition_key=condition_key,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    record_research_audit_event(
+        session,
+        workspace=authorized.workspace,
+        actor_user_id=user.id,
+        event_type="research_condition_subscription_changed",
+        resource_type="security_condition",
+        resource_id=f"{tenant.market}:{subscription.ticker}:{condition_key}",
+        request_id=getattr(request.state, "request_id", None),
+        attributes={"enabled": payload.enabled},
+    )
+    return subscription
 
 
 @router.get("/workspaces/{workspace_id}/catalysts")

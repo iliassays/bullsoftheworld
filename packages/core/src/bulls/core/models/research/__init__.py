@@ -3,6 +3,11 @@
 from bulls.core.models.research.audit import ResearchAuditEvent
 from bulls.core.models.research.automation import ResearchAutomationPolicy
 from bulls.core.models.research.catalysts import CatalystEvent
+from bulls.core.models.research.conditions import (
+    ResearchConditionCalibration,
+    ResearchConditionSubscription,
+    ResearchConditionTransition,
+)
 from bulls.core.models.research.datasets import (
     ResearchDataEntitlement,
     ResearchDatasetEvaluation,
@@ -45,6 +50,9 @@ __all__ = [
     "ResearchAutomationPolicy",
     "ResearchClaim",
     "ResearchClaimCitation",
+    "ResearchConditionCalibration",
+    "ResearchConditionSubscription",
+    "ResearchConditionTransition",
     "ResearchDataEntitlement",
     "ResearchDatasetEvaluation",
     "ResearchDatasetSnapshot",

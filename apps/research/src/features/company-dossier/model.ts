@@ -10,6 +10,58 @@ export interface DossierPricePoint {
   benchmarkClose: number | null;
 }
 
+export type ResearchConditionKey =
+  | "trend_alignment"
+  | "participation_expansion"
+  | "controlled_pullback_context";
+
+export type ResearchConditionState = "observed" | "not_observed" | "unavailable";
+
+export interface DossierOverlaySeries {
+  key: "ema20" | "ema50";
+  label: string;
+  points: Array<{ date: string; value: number }>;
+}
+
+export interface ResearchConditionCheck {
+  factKey: string;
+  label: string;
+  observed: number | null;
+  expected: string;
+  unit: "percent" | "multiple";
+  passed: boolean | null;
+}
+
+export interface ResearchConditionTransition {
+  date: string;
+  close: number;
+  sequence: number;
+}
+
+export interface ResearchConditionEvaluation {
+  key: ResearchConditionKey;
+  version: string;
+  title: string;
+  shortLabel: string;
+  category: string;
+  state: ResearchConditionState;
+  summary: string;
+  whyItMatters: string;
+  limitation: string;
+  checks: ResearchConditionCheck[];
+  transitions: ResearchConditionTransition[];
+}
+
+export interface ResearchConditionWorkbench {
+  methodologyVersion: string;
+  timeframe: "1d";
+  asOfDate: string | null;
+  historyStartDate: string | null;
+  disclaimer: string;
+  overlays: DossierOverlaySeries[];
+  conditions: ResearchConditionEvaluation[];
+}
+
 export interface ReportedOwnershipCategory {
   key: "sponsor_director" | "government" | "institutional" | "foreign" | "public";
   label: string;
@@ -49,6 +101,7 @@ export interface ResearchCompanyDossier {
     peVsSector: number | null;
   };
   priceHistory: DossierPricePoint[];
+  conditionWorkbench: ResearchConditionWorkbench;
   reportedOwnership: {
     asOfDate: string;
     previousAsOfDate: string | null;

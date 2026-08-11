@@ -28,6 +28,7 @@ from bulls.core.models import (
     CompanyProfile,
     DailyBar,
     DividendRecord,
+    MarketSummary,
     SectorPE,
     ShareholdingSnapshot,
     Symbol,
@@ -37,6 +38,15 @@ from bulls.core.models import (
 from bulls.market_data.calendar import most_recent_completed_session
 from bulls.market_data.providers.us_yahoo import EOD_PUBLICATION_DELAY
 from ingestion.lineage import content_sha256
+from ingestion.research_condition_evidence import (
+    CalibrationCollector,
+    CompiledConditionEvidence,
+    compile_condition_evidence,
+    dispatch_condition_alerts,
+    load_existing_condition_evidence,
+    persist_condition_calibrations,
+    persist_condition_transitions,
+)
 
 _LOOKBACK = 300  # enough for the 200-day SMA and 12-1 month momentum (needs ~253 bars)
 _BATCH_SIZE = 250
@@ -383,11 +393,25 @@ async def _persist_symbol_analytics(
     sector_pe,
     ownership,
     eps_growth,
-) -> tuple[int, int]:
+    *,
+    benchmark_closes: dict[dt.date, float],
+    condition_forward_date: dt.date | None,
+    existing_condition_evidence,
+) -> tuple[int, int, CompiledConditionEvidence | None]:
     if not bars:
-        return 0, 0
+        return 0, 0, None
     ascending = adjust_bars(bars)
     result = compute(ascending)
+    condition_evidence = compile_condition_evidence(
+        market=market,
+        code=code,
+        bars=ascending,
+        benchmark_closes=benchmark_closes,
+        forward_date=(
+            condition_forward_date if result.as_of_date == condition_forward_date else None
+        ),
+        existing=existing_condition_evidence,
+    )
     profile = profiles.get(code)
     row = {"market": market, "code": code, "as_of_date": result.as_of_date}
     row.update({field: getattr(result, field) for field in _FIELDS})
@@ -433,7 +457,7 @@ async def _persist_symbol_analytics(
         await session.execute(
             delete(TickerPattern).where(TickerPattern.market == market, TickerPattern.code == code)
         )
-        return 1, 0
+        return 1, 0, condition_evidence
 
     match = matches[0]
     pattern_row = {
@@ -457,7 +481,7 @@ async def _persist_symbol_analytics(
     await session.execute(
         pattern_stmt.on_conflict_do_update(index_elements=["market", "code"], set_=pattern_updates)
     )
-    return 1, 1
+    return 1, 1, condition_evidence
 
 
 async def compute_all(
@@ -467,10 +491,14 @@ async def compute_all(
     include_onboarding: bool = False,
     include_restricted: bool = False,
     as_of_date: dt.date | None = None,
+    record_condition_forward: bool = False,
+    alert_tenant_ids: tuple[str, ...] = (),
 ) -> dict[str, int]:
     """Compute + upsert analytics for every symbol with price history. Returns counts."""
     if include_restricted and not codes:
         raise ValueError("include_restricted requires an explicit non-empty code list")
+    if alert_tenant_ids and not record_condition_forward:
+        raise ValueError("condition alerts require record_condition_forward=True")
     market = market.upper()
     cutoff = as_of_date or analytics_cutoff_date(market)
     sm = get_sessionmaker()
@@ -514,9 +542,28 @@ async def compute_all(
         ownership = await _load_ownership(session, market)
         eps_growth = await _load_eps_growth(session, market)
         cash_dividends = await _load_latest_cash_dividend(session, market)
+        benchmark_closes = {
+            date: float(benchmark_close if benchmark_close is not None else dsex)
+            for date, benchmark_close, dsex in (
+                await session.execute(
+                    select(
+                        MarketSummary.date,
+                        MarketSummary.benchmark_close,
+                        MarketSummary.dsex,
+                    ).where(
+                        MarketSummary.market == market,
+                        MarketSummary.date <= cutoff,
+                    )
+                )
+            ).all()
+            if benchmark_close is not None or dsex is not None
+        }
 
     computed = 0
     patterns_found = 0
+    condition_transitions_written = 0
+    condition_observations: list[dict] = []
+    calibration = CalibrationCollector()
     async with sm() as session:
         for start in range(0, len(code_rows), _BATCH_SIZE):
             batch = code_rows[start : start + _BATCH_SIZE]
@@ -526,8 +573,14 @@ async def compute_all(
                 batch,
                 through_date=cutoff,
             )
+            existing_condition_evidence = await load_existing_condition_evidence(
+                session,
+                market=market,
+                codes=batch,
+            )
+            condition_rows: list[dict] = []
             for code in batch:
-                done, patterns = await _persist_symbol_analytics(
+                done, patterns, compiled_conditions = await _persist_symbol_analytics(
                     session,
                     market,
                     code,
@@ -537,9 +590,39 @@ async def compute_all(
                     sector_pe,
                     ownership,
                     eps_growth,
+                    benchmark_closes=benchmark_closes,
+                    condition_forward_date=cutoff if record_condition_forward else None,
+                    existing_condition_evidence=existing_condition_evidence.get(code, {}),
                 )
                 computed += done
                 patterns_found += patterns
+                if compiled_conditions is not None:
+                    condition_rows.extend(compiled_conditions.rows)
+                    condition_observations.extend(compiled_conditions.forward_observations)
+                    calibration.add(compiled_conditions)
+            condition_transitions_written += await persist_condition_transitions(
+                session, condition_rows
+            )
+            await session.commit()
+
+    condition_calibration_rows = calibration.rows(market, cutoff)
+    condition_calibrations_written = 0
+    if condition_calibration_rows:
+        async with sm() as session:
+            condition_calibrations_written = await persist_condition_calibrations(
+                session, condition_calibration_rows
+            )
+            await session.commit()
+
+    condition_alerts = 0
+    for tenant_id in dict.fromkeys(alert_tenant_ids):
+        async with sm() as session:
+            condition_alerts += await dispatch_condition_alerts(
+                session,
+                tenant_id=tenant_id,
+                market=market,
+                observations=condition_observations,
+            )
             await session.commit()
 
     if market.upper() != "DSE":
@@ -627,7 +710,14 @@ async def compute_all(
         )
         await session.commit()
 
-    return {"symbols": len(code_rows), "computed": computed, "patterns": patterns_found}
+    return {
+        "symbols": len(code_rows),
+        "computed": computed,
+        "patterns": patterns_found,
+        "condition_transitions": condition_transitions_written,
+        "condition_calibrations": condition_calibrations_written,
+        "condition_alerts": condition_alerts,
+    }
 
 
 async def _run(market: str) -> None:

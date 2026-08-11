@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Radar,
   Settings,
   Sun,
   X,
@@ -42,6 +43,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     label: "Research",
     items: [
       { label: "Research inbox", icon: BookOpenCheck, href: "/queue" },
+      { label: "Condition scanner", icon: Radar, href: "/conditions" },
       { label: "Company research", icon: FileSearch, href: "/companies" },
       { label: "Catalysts", icon: CalendarDays, href: "/catalysts" },
     ],

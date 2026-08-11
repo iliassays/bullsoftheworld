@@ -1,6 +1,11 @@
 import { researchDeployment, tenantRequestHeaders } from "./deployment";
 import type { ResearchCompanyDossier } from "../features/company-dossier/model";
 import type { CatalystCalendar } from "../features/catalyst-calendar/model";
+import type {
+  ConditionKey,
+  ConditionScan,
+  ConditionSubscription,
+} from "../features/condition-scanner/model";
 import type { OptionChainPreview } from "../features/options-lens/model";
 import type { ResearchQueueSnapshot } from "../features/research-queue/model";
 
@@ -788,6 +793,41 @@ function assertOptionChainBoundary(
   return chain;
 }
 
+function assertConditionScanBoundary(
+  scan: ConditionScan,
+  workspaceId: string,
+): ConditionScan {
+  if (
+    scan.tenantId !== researchDeployment.tenant ||
+    scan.market !== researchDeployment.market ||
+    scan.workspaceId !== workspaceId ||
+    scan.items.some((item) => !item.ticker || item.ticker !== item.ticker.toUpperCase())
+  ) {
+    throw new ResearchApiError(
+      502,
+      "The API returned condition evidence outside this tenant boundary",
+    );
+  }
+  return scan;
+}
+
+function assertConditionSubscriptionBoundary(
+  subscription: ConditionSubscription,
+  ticker: string,
+): ConditionSubscription {
+  if (
+    subscription.tenantId !== researchDeployment.tenant ||
+    subscription.market !== researchDeployment.market ||
+    subscription.ticker !== ticker
+  ) {
+    throw new ResearchApiError(
+      502,
+      "The API returned an alert subscription outside this tenant boundary",
+    );
+  }
+  return subscription;
+}
+
 function assertRunBoundary(run: ResearchRun, workspaceId: string): ResearchRun {
   if (
     run.tenantId !== researchDeployment.tenant ||
@@ -906,6 +946,41 @@ export const researchApi = {
       { signal },
     );
     return assertQueueBoundary(snapshot, workspaceId);
+  },
+  async conditionScan(
+    workspaceId: string,
+    filters: {
+      conditionKey: ConditionKey;
+      capTier?: string;
+      newOnly?: boolean;
+      limit?: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<ConditionScan> {
+    const parameters = new URLSearchParams({ condition_key: filters.conditionKey });
+    if (filters.capTier && filters.capTier !== "all") {
+      parameters.set("cap_tier", filters.capTier);
+    }
+    if (filters.newOnly) parameters.set("new_only", "true");
+    if (filters.limit) parameters.set("limit", String(filters.limit));
+    const scan = await request<ConditionScan>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/condition-scan?${parameters.toString()}`,
+      { signal },
+    );
+    return assertConditionScanBoundary(scan, workspaceId);
+  },
+  async setConditionSubscription(
+    workspaceId: string,
+    conditionKey: ConditionKey,
+    ticker: string,
+    enabled: boolean,
+  ): Promise<ConditionSubscription> {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    const subscription = await request<ConditionSubscription>(
+      `/institutional-research/workspaces/${encodeURIComponent(workspaceId)}/condition-subscriptions/${encodeURIComponent(conditionKey)}/${encodeURIComponent(normalizedTicker)}`,
+      { method: "PUT", body: JSON.stringify({ enabled }) },
+    );
+    return assertConditionSubscriptionBoundary(subscription, normalizedTicker);
   },
   async dossier(
     workspaceId: string,

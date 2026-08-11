@@ -172,7 +172,11 @@ async def refresh_analytics(ctx) -> str:
     today = to_market_tz(dt.datetime.now(dt.UTC)).date()
     if not is_trading_day(today):
         return "skipped: non-trading day"
-    counts = await compute_all(MARKET)
+    counts = await compute_all(
+        MARKET,
+        record_condition_forward=True,
+        alert_tenant_ids=(TENANT_ID,),
+    )
     log.info(
         "analytics refresh: %s/%s symbols, %s chart patterns",
         counts["computed"],
@@ -289,7 +293,11 @@ async def recover_eod_chain(ctx) -> str:
             f"(bars={latest_bar}, summary={latest_summary})"
         )
 
-    analytics = await compute_all(MARKET)
+    analytics = await compute_all(
+        MARKET,
+        record_condition_forward=True,
+        alert_tenant_ids=(TENANT_ID,),
+    )
     try:
         shortlist = await run_daily_shortlist_scan(MARKET, expected_as_of=today)
     except Exception:
@@ -401,10 +409,7 @@ async def run_volume_signals(ctx) -> str:
         counts["published"],
         counts["awaiting_confirmation"],
     )
-    return (
-        f"volume={counts['published']} "
-        f"awaiting_confirmation={counts['awaiting_confirmation']}"
-    )
+    return f"volume={counts['published']} awaiting_confirmation={counts['awaiting_confirmation']}"
 
 
 async def pull_news(ctx) -> str:

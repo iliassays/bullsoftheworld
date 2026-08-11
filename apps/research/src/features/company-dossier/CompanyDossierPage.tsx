@@ -13,7 +13,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { portalTickerUrl, researchDeployment } from "../../app/deployment";
 import { AppTooltip, Button, StatusBadge } from "../../design-system";
@@ -29,9 +29,11 @@ import {
 import { autonomousDecision, type AutonomousDecision } from "../autonomous-research/model";
 import { DecisionTicketPanel } from "./DecisionTicketPanel";
 import { DossierChart } from "./DossierChart";
+import { ResearchConditionPanel } from "./ResearchConditionPanel";
 import { buildDecisionTicket } from "./decision-ticket";
 import { FACTOR_GUIDANCE, factorReading, METRIC_GUIDANCE, type FactorKey } from "./guidance";
 import type { ResearchCompanyDossier } from "./model";
+import { chartMode, chartRange, selectedCondition } from "./research-condition";
 import { useCompanyDossier } from "./useCompanyDossier";
 
 function formatTimestamp(timestamp: string): string {
@@ -257,6 +259,7 @@ function ShortActivityPanel({ dossier }: { dossier: ResearchCompanyDossier }) {
 
 export function CompanyDossierPage() {
   const { ticker } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const workspaces = useResearchWorkspaces();
   const workspace = workspaces.data?.[0];
   const dossierQuery = useCompanyDossier(workspace?.id, ticker);
@@ -297,6 +300,19 @@ export function CompanyDossierPage() {
   const dossier = dossierQuery.data;
   const candidate = dossier.candidate;
   const currency = candidate.currency;
+  const selectedResearchCondition = selectedCondition(
+    dossier.conditionWorkbench,
+    searchParams.get("condition"),
+  );
+  const selectedChartMode = chartMode(searchParams.get("chart"));
+  const selectedChartRange = chartRange(searchParams.get("range"));
+  const updateContext = (key: "condition" | "chart" | "range", value: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set(key, value);
+      return next;
+    }, { replace: true });
+  };
   const evidenceTone = candidate.evidence.freshness === "fresh" ? "positive" : candidate.evidence.freshness === "aging" ? "warning" : "negative";
   const decisionTicket = buildDecisionTicket({
     ticker: candidate.ticker,
@@ -420,6 +436,11 @@ export function CompanyDossierPage() {
 
       <div className="dossier-layout">
         <div className="dossier-main-column">
+          <ResearchConditionPanel
+            onSelect={(key) => updateContext("condition", key)}
+            selected={selectedResearchCondition}
+            workbench={dossier.conditionWorkbench}
+          />
           <section className="dossier-panel dossier-panel--chart">
             <header className="dossier-panel__header">
               <span><Gauge aria-hidden="true" size={15} /><strong>Price and participation</strong></span>
@@ -430,8 +451,14 @@ export function CompanyDossierPage() {
               benchmarkCode={dossier.marketData.benchmarkCode}
               decisionEvents={decisionEvents}
               evidence={candidate.evidence.items}
+              mode={selectedChartMode}
+              onModeChange={(mode) => updateContext("chart", mode)}
+              onRangeChange={(range) => updateContext("range", range)}
+              overlays={dossier.conditionWorkbench.overlays}
               points={dossier.priceHistory}
+              range={selectedChartRange}
               resistance={dossier.marketData.nearestResistance}
+              selectedCondition={selectedResearchCondition}
               support={dossier.marketData.nearestSupport}
             />
             <div className="dossier-chart-stats">

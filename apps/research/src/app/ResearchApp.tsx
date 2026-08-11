@@ -4,6 +4,7 @@ import { ResearchShell } from "../layout/ResearchShell";
 import { CompanyDossierPage } from "../features/company-dossier/CompanyDossierPage";
 import { CompanyDossierLibraryPage } from "../features/company-dossier/CompanyDossierLibraryPage";
 import { CatalystCalendarPage } from "../features/catalyst-calendar/CatalystCalendarPage";
+import { ConditionScannerPage } from "../features/condition-scanner/ConditionScannerPage";
 import { ResearchQueuePage } from "../features/research-queue/ResearchQueuePage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { HypothesisLabPage } from "../features/autonomous-research/HypothesisLabPage";
@@ -29,6 +30,7 @@ export function ResearchApp() {
         <Route path="/companies" element={<CompanyDossierLibraryPage />} />
         <Route path="/companies/:ticker" element={<CompanyDossierPage />} />
         <Route path="/catalysts" element={<CatalystCalendarPage />} />
+        <Route path="/conditions" element={<ConditionScannerPage />} />
         <Route path="/hypotheses" element={<HypothesisLabPage />} />
         <Route path="/operations" element={<LifecycleControlPage />} />
         <Route path="/lifecycle" element={<Navigate to="/operations" replace />} />

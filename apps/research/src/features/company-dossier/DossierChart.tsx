@@ -10,16 +10,24 @@ import {
 
 import type { DecisionEvent } from "../../app/api-client";
 import type { ResearchEvidenceItem } from "../research-queue/model";
-import type { DossierPricePoint } from "./model";
-
-type ChartMode = "price" | "relative";
-type ChartRange = "3M" | "6M" | "1Y";
+import type {
+  DossierOverlaySeries,
+  DossierPricePoint,
+  ResearchConditionEvaluation,
+} from "./model";
+import type { DossierChartMode, DossierChartRange } from "./research-condition";
 
 interface DossierChartProps {
   points: readonly DossierPricePoint[];
   benchmarkCode: string;
   decisionEvents: readonly DecisionEvent[];
   evidence: readonly ResearchEvidenceItem[];
+  overlays: readonly DossierOverlaySeries[];
+  selectedCondition: ResearchConditionEvaluation;
+  mode: DossierChartMode;
+  range: DossierChartRange;
+  onModeChange: (mode: DossierChartMode) => void;
+  onRangeChange: (range: DossierChartRange) => void;
   support: number | null;
   resistance: number | null;
   averageCost: number | null;
@@ -35,7 +43,7 @@ interface HoverReading {
   benchmarkRelative?: number;
 }
 
-const RANGE_SESSIONS: Record<ChartRange, number> = {
+const RANGE_SESSIONS: Record<DossierChartRange, number> = {
   "3M": 66,
   "6M": 132,
   "1Y": 252,
@@ -48,25 +56,12 @@ const COLORS = {
   benchmark: "#68717b",
   ma20: "#2d6f9d",
   ma50: "#8366a3",
+  condition: "#a76b00",
   evidence: "#2d6f9d",
   grid: "#e4e6e1",
   axis: "#cfd3ce",
   text: "#68717b",
 };
-
-function movingAverage(
-  points: readonly DossierPricePoint[],
-  period: number,
-): Array<{ time: Time; value: number }> {
-  if (points.length < period) return [];
-  let total = points.slice(0, period).reduce((sum, point) => sum + point.close, 0);
-  const result = [{ time: points[period - 1]!.date as Time, value: total / period }];
-  for (let index = period; index < points.length; index += 1) {
-    total += points[index]!.close - points[index - period]!.close;
-    result.push({ time: points[index]!.date as Time, value: total / period });
-  }
-  return result;
-}
 
 function eventMarker(event: DecisionEvent): SeriesMarker<Time> | null {
   const time = event.effectiveDate as Time;
@@ -104,10 +99,28 @@ function eventMarker(event: DecisionEvent): SeriesMarker<Time> | null {
   return null;
 }
 
+export function buildConditionMarkers(
+  availableDates: readonly string[],
+  condition: ResearchConditionEvaluation,
+): SeriesMarker<Time>[] {
+  const dates = new Set(availableDates);
+  return condition.transitions
+    .filter((transition) => dates.has(transition.date))
+    .slice(-12)
+    .map((transition) => ({
+      time: transition.date as Time,
+      position: "belowBar",
+      color: COLORS.condition,
+      shape: "circle",
+      text: `${condition.shortLabel}${transition.sequence}`,
+    }));
+}
+
 function chartMarkers(
   availableDates: readonly string[],
   events: readonly DecisionEvent[],
   evidence: readonly ResearchEvidenceItem[],
+  condition: ResearchConditionEvaluation,
 ): SeriesMarker<Time>[] {
   const dates = new Set(availableDates);
   const markers = events
@@ -128,7 +141,7 @@ function chartMarkers(
       shape: "square",
       text: "E",
     }));
-  return [...markers, ...evidenceMarkers].sort((left, right) =>
+  return [...markers, ...evidenceMarkers, ...buildConditionMarkers(availableDates, condition)].sort((left, right) =>
     String(left.time).localeCompare(String(right.time)),
   );
 }
@@ -138,13 +151,17 @@ export function DossierChart({
   benchmarkCode,
   decisionEvents,
   evidence,
+  overlays,
+  selectedCondition,
+  mode,
+  range,
+  onModeChange,
+  onRangeChange,
   support,
   resistance,
   averageCost,
 }: DossierChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [mode, setMode] = useState<ChartMode>("price");
-  const [range, setRange] = useState<ChartRange>("1Y");
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
   const visiblePoints = useMemo(
@@ -205,6 +222,7 @@ export function DossierChart({
       visiblePoints.map((point) => point.date),
       decisionEvents,
       evidence,
+      selectedCondition,
     );
     if (mode === "price") {
       const candles = chart.addCandlestickSeries({
@@ -244,7 +262,8 @@ export function DossierChart({
         })),
       );
 
-      const addAverage = (period: number, color: string) => {
+      const addOverlay = (overlay: DossierOverlaySeries | undefined, color: string) => {
+        if (!overlay) return;
         const series = chart.addLineSeries({
           color,
           lineWidth: 1,
@@ -252,10 +271,16 @@ export function DossierChart({
           lastValueVisible: false,
           crosshairMarkerVisible: false,
         });
-        series.setData(movingAverage(visiblePoints, period));
+        const firstDate = visiblePoints[0]!.date;
+        const lastDate = visiblePoints[visiblePoints.length - 1]!.date;
+        series.setData(
+          overlay.points
+            .filter((point) => point.date >= firstDate && point.date <= lastDate)
+            .map((point) => ({ time: point.date as Time, value: point.value })),
+        );
       };
-      addAverage(20, COLORS.ma20);
-      addAverage(50, COLORS.ma50);
+      addOverlay(overlays.find((overlay) => overlay.key === "ema20"), COLORS.ma20);
+      addOverlay(overlays.find((overlay) => overlay.key === "ema50"), COLORS.ma50);
 
       if (support !== null) {
         candles.createPriceLine({
@@ -352,7 +377,9 @@ export function DossierChart({
     decisionEvents,
     evidence,
     mode,
+    overlays,
     resistance,
+    selectedCondition,
     support,
     themeRevision,
     visiblePoints,
@@ -369,25 +396,25 @@ export function DossierChart({
         <div aria-label="Chart mode" className="dossier-chart__segments">
           <button
             aria-pressed={mode === "price"}
-            onClick={() => setMode("price")}
+            onClick={() => onModeChange("price")}
             type="button"
           >
             Price
           </button>
           <button
             aria-pressed={mode === "relative"}
-            onClick={() => setMode("relative")}
+            onClick={() => onModeChange("relative")}
             type="button"
           >
             Relative to {benchmarkCode}
           </button>
         </div>
         <div aria-label="Chart range" className="dossier-chart__segments">
-          {(Object.keys(RANGE_SESSIONS) as ChartRange[]).map((item) => (
+          {(Object.keys(RANGE_SESSIONS) as DossierChartRange[]).map((item) => (
             <button
               aria-pressed={range === item}
               key={item}
-              onClick={() => setRange(item)}
+              onClick={() => onRangeChange(item)}
               type="button"
             >
               {item}
@@ -416,7 +443,7 @@ export function DossierChart({
           <>
             <strong>{latest.date}</strong>
             <span>Close {latest.close.toFixed(2)}</span>
-            <span>{mode === "price" ? "MA20 / MA50 · completed sessions" : "Indexed return from range start"}</span>
+            <span>{mode === "price" ? "EMA20 / EMA50 · completed sessions" : "Indexed return from range start"}</span>
           </>
         )}
       </div>
@@ -424,8 +451,9 @@ export function DossierChart({
       <div className="dossier-chart__key">
         {mode === "price" ? (
           <>
-            <span><i style={{ background: COLORS.ma20 }} />20-session average</span>
-            <span><i style={{ background: COLORS.ma50 }} />50-session average</span>
+            <span><i style={{ background: COLORS.ma20 }} />EMA20 · backend</span>
+            <span><i style={{ background: COLORS.ma50 }} />EMA50 · backend</span>
+            <span><i style={{ background: COLORS.condition }} />{selectedCondition.shortLabel}# · {selectedCondition.title}</span>
             <span><i style={{ background: COLORS.evidence }} />Official evidence</span>
             <span><i style={{ background: COLORS.accent }} />Portfolio target / cost</span>
           </>
