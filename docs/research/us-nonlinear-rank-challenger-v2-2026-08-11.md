@@ -24,7 +24,20 @@ v1 specification.
 
 ## Interpretation rule
 
-Genuine 2023-2024 validation is authoritative. The post-2024 window is reused historical evidence
-and cannot rescue failed validation. A v2 historical pass only permits fresh forward collection;
-it cannot create a target or trade. Failure is retained and will not be repaired by tuning this
-same historical sample.
+The 2023-2024 window is **model-selection validation**, not a pristine holdout: LightGBM uses it
+for early stopping, and Atlas uses its frozen metrics for the admission decision. The post-2024
+window is reused historical evidence and cannot rescue a failed admission gate. A v2 historical
+pass only permits fresh forward collection; it cannot create a target or trade. Failure is retained
+and will not be repaired by tuning this same historical sample.
+
+## Artifact-clock correction
+
+The first v2 artifact incorrectly used the last labelled training date as the start of the fresh
+forward contract. Artifact schema v2 records two separate clocks:
+
+- `training_label_cutoff`: the latest outcome label available to model fitting; and
+- `forward_contract.registered_at` / `starts_after`: the actual time the frozen artifact was
+  registered, with collection beginning only on a later market session.
+
+This correction changes no feature, label, model parameter, admission criterion, or historical
+metric. The corrected artifact remains a failed historical candidate and cannot trade.

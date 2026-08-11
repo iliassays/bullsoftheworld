@@ -14,7 +14,7 @@ import random
 import statistics
 from bisect import bisect_right
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 HORIZONS = (1, 3, 5, 10)
 EPISODE_COOLDOWN_SESSIONS = 10
@@ -133,6 +133,95 @@ class MatchedControlReport:
 
 
 @dataclass(frozen=True, slots=True)
+class ShortlistPortfolioPolicy:
+    """Frozen execution assumptions for one shortlist portfolio diagnostic."""
+
+    key: str
+    holding_sessions: int = 3
+    included_ranks: tuple[int, ...] = (1,)
+    initial_capital: float = 1_000_000.0
+    target_position_weight: float = 0.10
+    maximum_positions: int = 10
+    fee_rate: float = 0.004
+    slippage_rate: float = 0.0025
+    maximum_adv_participation: float = 0.02
+    minimum_target_fill: float = 0.50
+    settlement_sessions: int = 2
+
+    def __post_init__(self) -> None:
+        if self.holding_sessions <= 0:
+            raise ValueError("holding_sessions must be positive")
+        if not self.included_ranks or min(self.included_ranks) <= 0:
+            raise ValueError("included_ranks must contain positive ranks")
+        if self.initial_capital <= 0:
+            raise ValueError("initial_capital must be positive")
+        if not 0 < self.target_position_weight <= 1:
+            raise ValueError("target_position_weight must be in (0, 1]")
+        if self.maximum_positions <= 0:
+            raise ValueError("maximum_positions must be positive")
+        if min(self.fee_rate, self.slippage_rate, self.maximum_adv_participation) < 0:
+            raise ValueError("cost and participation rates cannot be negative")
+        if not 0 <= self.minimum_target_fill <= 1:
+            raise ValueError("minimum_target_fill must be in [0, 1]")
+        if self.settlement_sessions < 0:
+            raise ValueError("settlement_sessions cannot be negative")
+
+
+@dataclass(frozen=True, slots=True)
+class ShortlistPortfolioTrade:
+    code: str
+    rank: int
+    evidence_mode: str
+    signal_date: dt.date
+    entry_date: dt.date
+    exit_date: dt.date
+    entry_fill: float
+    exit_fill: float
+    shares: int
+    net_return_pct: float
+
+
+@dataclass(frozen=True, slots=True)
+class ShortlistPortfolioReport:
+    policy: ShortlistPortfolioPolicy
+    evidence_scope: str
+    start_date: dt.date | None
+    end_date: dt.date | None
+    signals_considered: int
+    entries: int
+    completed_trades: int
+    open_positions: int
+    total_return_pct: float
+    benchmark_return_pct: float
+    maximum_drawdown_pct: float
+    average_gross_exposure_pct: float
+    win_rate_pct: float | None
+    profit_factor: float | None
+    fees_paid: float
+    missing_entry_rejections: int
+    limit_locked_rejections: int
+    capacity_rejections: int
+    slot_rejections: int
+    duplicate_position_rejections: int
+    cash_rejections: int
+    delayed_suspension_exits: int
+    trades: tuple[ShortlistPortfolioTrade, ...]
+
+
+@dataclass(slots=True)
+class _PortfolioPosition:
+    code: str
+    rank: int
+    evidence_mode: str
+    signal_date: dt.date
+    entry_date: dt.date
+    entry_fill: float
+    shares: int
+    planned_exit_index: int
+    exit_was_delayed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class _Observation:
     selection_date: dt.date
     return_pct: float
@@ -144,6 +233,302 @@ class _Observation:
 
 def _rounded(value: float | None, digits: int = 3) -> float | None:
     return round(value, digits) if value is not None else None
+
+
+def _portfolio_drawdown(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    peak = values[0]
+    maximum = 0.0
+    for value in values:
+        peak = max(peak, value)
+        if peak > 0:
+            maximum = max(maximum, 1.0 - value / peak)
+    return maximum
+
+
+def _benchmark_period_return(
+    benchmark_by_date: dict[dt.date, float],
+    *,
+    start_date: dt.date,
+    end_date: dt.date,
+) -> float:
+    dates = [
+        date
+        for date in sorted(benchmark_by_date)
+        if start_date <= date <= end_date and benchmark_by_date[date] > 0
+    ]
+    if len(dates) < 2:
+        return 0.0
+    return benchmark_by_date[dates[-1]] / benchmark_by_date[dates[0]] - 1.0
+
+
+def _trailing_average_traded_value(
+    code_bars: dict[dt.date, ShortlistPriceBar],
+    *,
+    through: dt.date,
+    sessions: int = 20,
+) -> float:
+    history = [
+        bar.close * bar.volume
+        for date, bar in sorted(code_bars.items())
+        if date <= through and bar.close > 0 and bar.volume > 0
+    ][-sessions:]
+    return statistics.fmean(history) if history else 0.0
+
+
+def simulate_shortlist_portfolio(
+    *,
+    appearances: list[ShortlistAppearance],
+    bars: list[ShortlistPriceBar],
+    benchmark: list[BenchmarkClose],
+    policy: ShortlistPortfolioPolicy,
+    market_dates: list[dt.date] | None = None,
+    evidence_scope: str = "all_archived",
+) -> ShortlistPortfolioReport:
+    """Simulate a capital-constrained, next-open shortlist book.
+
+    The shortlist forms after a completed close. Entries therefore occur only at the next market
+    session's open. Planned exits use that market's session index; a suspended name remains open
+    until a later bar exists. Gross exposure is marked to completed closes, while sale proceeds are
+    unavailable for new entries until the configured settlement delay has elapsed.
+    """
+
+    sessions = sorted(set(market_dates or [bar.date for bar in bars]))
+    eligible = sorted(
+        (item for item in appearances if item.rank in policy.included_ranks),
+        key=lambda item: (item.as_of, item.rank, item.code),
+    )
+    if not sessions or not eligible:
+        return ShortlistPortfolioReport(
+            policy=policy,
+            evidence_scope=evidence_scope,
+            start_date=None,
+            end_date=None,
+            signals_considered=len(eligible),
+            entries=0,
+            completed_trades=0,
+            open_positions=0,
+            total_return_pct=0.0,
+            benchmark_return_pct=0.0,
+            maximum_drawdown_pct=0.0,
+            average_gross_exposure_pct=0.0,
+            win_rate_pct=None,
+            profit_factor=None,
+            fees_paid=0.0,
+            missing_entry_rejections=0,
+            limit_locked_rejections=0,
+            capacity_rejections=0,
+            slot_rejections=0,
+            duplicate_position_rejections=0,
+            cash_rejections=0,
+            delayed_suspension_exits=0,
+            trades=(),
+        )
+
+    date_index = {date: index for index, date in enumerate(sessions)}
+    bars_by_code: dict[str, dict[dt.date, ShortlistPriceBar]] = defaultdict(dict)
+    for bar in bars:
+        bars_by_code[bar.code][bar.date] = bar
+    benchmark_by_date = {item.date: item.close for item in benchmark if item.close > 0}
+
+    entries_by_date: dict[dt.date, list[ShortlistAppearance]] = defaultdict(list)
+    pending_signals = 0
+    for appearance in eligible:
+        signal_index = date_index.get(appearance.as_of)
+        if signal_index is None or signal_index + 1 >= len(sessions):
+            pending_signals += 1
+            continue
+        entries_by_date[sessions[signal_index + 1]].append(appearance)
+    for same_day in entries_by_date.values():
+        same_day.sort(key=lambda item: (item.rank, item.code))
+
+    if not entries_by_date:
+        empty = simulate_shortlist_portfolio(
+            appearances=[],
+            bars=bars,
+            benchmark=benchmark,
+            policy=policy,
+            market_dates=sessions,
+            evidence_scope=evidence_scope,
+        )
+        return replace(
+            empty,
+            signals_considered=len(eligible),
+            missing_entry_rejections=pending_signals,
+        )
+
+    start_date = min(entries_by_date)
+    start_index = date_index[start_date]
+    end_date = sessions[-1]
+    cash = policy.initial_capital
+    pending_cash: list[tuple[int, float]] = []
+    positions: dict[str, _PortfolioPosition] = {}
+    last_prices: dict[str, float] = {}
+    completed: list[ShortlistPortfolioTrade] = []
+    nav_curve = [policy.initial_capital]
+    exposure_curve: list[float] = []
+    fees_paid = 0.0
+    entries = 0
+    missing_entry_rejections = pending_signals
+    limit_locked_rejections = 0
+    capacity_rejections = 0
+    slot_rejections = 0
+    duplicate_position_rejections = 0
+    cash_rejections = 0
+    delayed_suspension_exits = 0
+
+    for session_index in range(start_index, len(sessions)):
+        date = sessions[session_index]
+        matured = [item for item in pending_cash if item[0] <= session_index]
+        cash += sum(value for _, value in matured)
+        pending_cash = [item for item in pending_cash if item[0] > session_index]
+
+        opening_positions_value = sum(
+            position.shares * last_prices.get(code, position.entry_fill)
+            for code, position in positions.items()
+        )
+        opening_nav = cash + sum(value for _, value in pending_cash) + opening_positions_value
+
+        for appearance in entries_by_date.get(date, []):
+            if appearance.code in positions:
+                duplicate_position_rejections += 1
+                continue
+            if len(positions) >= policy.maximum_positions:
+                slot_rejections += 1
+                continue
+            code_bars = bars_by_code.get(appearance.code, {})
+            entry_bar = code_bars.get(date)
+            selection_bar = code_bars.get(appearance.as_of)
+            if entry_bar is None or selection_bar is None or entry_bar.open <= 0:
+                missing_entry_rejections += 1
+                continue
+            if _limit_locked_entry(appearance.close, entry_bar):
+                limit_locked_rejections += 1
+                continue
+            desired_value = opening_nav * policy.target_position_weight
+            capacity_value = (
+                _trailing_average_traded_value(code_bars, through=appearance.as_of)
+                * policy.maximum_adv_participation
+            )
+            if capacity_value < desired_value * policy.minimum_target_fill:
+                capacity_rejections += 1
+                continue
+            entry_fill = entry_bar.open * (1.0 + policy.slippage_rate)
+            budget = min(desired_value, capacity_value, cash)
+            shares = int(budget / (entry_fill * (1.0 + policy.fee_rate)))
+            if shares <= 0:
+                cash_rejections += 1
+                continue
+            gross = shares * entry_fill
+            fee = gross * policy.fee_rate
+            cash -= gross + fee
+            fees_paid += fee
+            signal_index = date_index[appearance.as_of]
+            positions[appearance.code] = _PortfolioPosition(
+                code=appearance.code,
+                rank=appearance.rank,
+                evidence_mode=appearance.evidence_mode,
+                signal_date=appearance.as_of,
+                entry_date=date,
+                entry_fill=entry_fill,
+                shares=shares,
+                planned_exit_index=signal_index + policy.holding_sessions,
+            )
+            last_prices[appearance.code] = entry_bar.close
+            entries += 1
+
+        for code, position in list(positions.items()):
+            bar = bars_by_code.get(code, {}).get(date)
+            if bar is not None and bar.close > 0:
+                last_prices[code] = bar.close
+            if session_index < position.planned_exit_index:
+                continue
+            if bar is None or bar.close <= 0:
+                position.exit_was_delayed = True
+                continue
+            exit_fill = bar.close * (1.0 - policy.slippage_rate)
+            gross = position.shares * exit_fill
+            fee = gross * policy.fee_rate
+            fees_paid += fee
+            settlement_index = min(
+                session_index + policy.settlement_sessions,
+                len(sessions) - 1,
+            )
+            pending_cash.append((settlement_index, gross - fee))
+            net_multiple = (
+                exit_fill
+                * (1.0 - policy.fee_rate)
+                / (position.entry_fill * (1.0 + policy.fee_rate))
+            )
+            completed.append(
+                ShortlistPortfolioTrade(
+                    code=code,
+                    rank=position.rank,
+                    evidence_mode=position.evidence_mode,
+                    signal_date=position.signal_date,
+                    entry_date=position.entry_date,
+                    exit_date=date,
+                    entry_fill=round(position.entry_fill, 4),
+                    exit_fill=round(exit_fill, 4),
+                    shares=position.shares,
+                    net_return_pct=round((net_multiple - 1.0) * 100.0, 4),
+                )
+            )
+            if position.exit_was_delayed:
+                delayed_suspension_exits += 1
+            positions.pop(code)
+            last_prices.pop(code, None)
+
+        position_value = sum(
+            position.shares * last_prices.get(code, position.entry_fill)
+            for code, position in positions.items()
+        )
+        nav = cash + sum(value for _, value in pending_cash) + position_value
+        nav_curve.append(nav)
+        exposure_curve.append(position_value / nav if nav > 0 else 0.0)
+
+    final_nav = nav_curve[-1]
+    returns = [trade.net_return_pct for trade in completed]
+    gains = sum(value for value in returns if value > 0)
+    losses = abs(sum(value for value in returns if value <= 0))
+    benchmark_return = _benchmark_period_return(
+        benchmark_by_date,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return ShortlistPortfolioReport(
+        policy=policy,
+        evidence_scope=evidence_scope,
+        start_date=start_date,
+        end_date=end_date,
+        signals_considered=len(eligible),
+        entries=entries,
+        completed_trades=len(completed),
+        open_positions=len(positions),
+        total_return_pct=round((final_nav / policy.initial_capital - 1.0) * 100.0, 3),
+        benchmark_return_pct=round(benchmark_return * 100.0, 3),
+        maximum_drawdown_pct=round(_portfolio_drawdown(nav_curve) * 100.0, 3),
+        average_gross_exposure_pct=round(
+            statistics.fmean(exposure_curve) * 100.0 if exposure_curve else 0.0,
+            3,
+        ),
+        win_rate_pct=(
+            round(100.0 * sum(value > 0 for value in returns) / len(returns), 2)
+            if returns
+            else None
+        ),
+        profit_factor=round(gains / losses, 3) if losses > 0 else None,
+        fees_paid=round(fees_paid, 2),
+        missing_entry_rejections=missing_entry_rejections,
+        limit_locked_rejections=limit_locked_rejections,
+        capacity_rejections=capacity_rejections,
+        slot_rejections=slot_rejections,
+        duplicate_position_rejections=duplicate_position_rejections,
+        cash_rejections=cash_rejections,
+        delayed_suspension_exits=delayed_suspension_exits,
+        trades=tuple(completed),
+    )
 
 
 def _mean(values: list[float]) -> float | None:
@@ -173,14 +558,10 @@ def _cluster_bootstrap_mean_ci(
     if len(dates) < 8:
         return None, None
 
-    date_means = {
-        date: statistics.fmean(clusters[date])
-        for date in dates
-    }
+    date_means = {date: statistics.fmean(clusters[date]) for date in dates}
     rng = random.Random(seed)
     means = [
-        statistics.fmean(date_means[rng.choice(dates)] for _ in dates)
-        for _ in range(iterations)
+        statistics.fmean(date_means[rng.choice(dates)] for _ in dates) for _ in range(iterations)
     ]
     means.sort()
     return means[int(iterations * 0.025)], means[int(iterations * 0.975) - 1]
@@ -203,9 +584,7 @@ def _block_bootstrap_mean_ci(
         sample: list[float] = []
         while len(sample) < sample_size:
             start = rng.randrange(sample_size)
-            sample.extend(
-                values[(start + offset) % sample_size] for offset in range(block_length)
-            )
+            sample.extend(values[(start + offset) % sample_size] for offset in range(block_length))
         means.append(statistics.fmean(sample[:sample_size]))
     means.sort()
     return means[int(iterations * 0.025)], means[int(iterations * 0.975) - 1]
@@ -234,7 +613,10 @@ def _has_suspicious_jump(
         bar = code_bars.get(date)
         if bar is None or bar.close <= 0:
             continue
-        if previous_close is not None and abs(bar.close / previous_close - 1.0) > SUSPICIOUS_CLOSE_JUMP:
+        if (
+            previous_close is not None
+            and abs(bar.close / previous_close - 1.0) > SUSPICIOUS_CLOSE_JUMP
+        ):
             return True
         previous_close = bar.close
     return False
@@ -276,10 +658,7 @@ def eligible_universe_by_date(
             bars_by_code[bar.code].append(bar)
     for series in bars_by_code.values():
         series.sort(key=lambda item: item.date)
-    dates_by_code = {
-        code: [bar.date for bar in series]
-        for code, series in bars_by_code.items()
-    }
+    dates_by_code = {code: [bar.date for bar in series] for code, series in bars_by_code.items()}
 
     result: dict[dt.date, tuple[str, ...]] = {}
     for selection_date in sorted(set(selection_dates)):
@@ -318,12 +697,7 @@ def _gross_returns(
         selection_close = selection_close_by_code.get(code)
         code_bars = bars_by_code.get(code, {})
         target = code_bars.get(target_date)
-        if (
-            selection_close is None
-            or selection_close <= 0
-            or target is None
-            or target.close <= 0
-        ):
+        if selection_close is None or selection_close <= 0 or target is None or target.close <= 0:
             continue
         if _has_suspicious_jump(
             code_bars=code_bars,
@@ -335,11 +709,7 @@ def _gross_returns(
         close_returns.append((target.close / selection_close - 1.0) * 100.0)
 
         entry = code_bars.get(entry_date)
-        if (
-            entry is not None
-            and entry.open > 0
-            and not _limit_locked_entry(selection_close, entry)
-        ):
+        if entry is not None and entry.open > 0 and not _limit_locked_entry(selection_close, entry):
             next_open_returns.append((target.close / entry.open - 1.0) * 100.0)
     return close_returns, next_open_returns
 
@@ -377,10 +747,7 @@ def evaluate_matched_eligible_control(
 
         for selection_date in sorted(appearances_by_date):
             selection_index = date_index.get(selection_date)
-            if (
-                selection_index is None
-                or selection_index + horizon >= len(sessions)
-            ):
+            if selection_index is None or selection_index + horizon >= len(sessions):
                 continue
             selected = appearances_by_date[selection_date]
             selected_close = {item.code: item.close for item in selected}
@@ -455,9 +822,7 @@ def evaluate_matched_eligible_control(
         )
 
     return MatchedControlReport(
-        control=(
-            "Same-date liquid, seasoned, active non-Z universe excluding shortlisted names"
-        ),
+        control=("Same-date liquid, seasoned, active non-Z universe excluding shortlisted names"),
         selection_sessions=len(appearances_by_date),
         horizons=tuple(horizon_reports),
     )
@@ -513,10 +878,7 @@ def _summarize_horizon(
         )
         entry_date = market_dates[selection_index + 1]
         entry_bar = code_bars.get(entry_date)
-        locked = (
-            entry_bar is not None
-            and _limit_locked_entry(appearance.close, entry_bar)
-        )
+        locked = entry_bar is not None and _limit_locked_entry(appearance.close, entry_bar)
         if locked:
             limit_locked += 1
         next_open_return = (
@@ -530,9 +892,7 @@ def _summarize_horizon(
                 return_pct=return_pct,
                 benchmark_return_pct=benchmark_return_pct,
                 excess_return_pct=(
-                    return_pct - benchmark_return_pct
-                    if benchmark_return_pct is not None
-                    else None
+                    return_pct - benchmark_return_pct if benchmark_return_pct is not None else None
                 ),
                 next_open_return_pct=next_open_return,
                 limit_locked=locked,
@@ -541,19 +901,11 @@ def _summarize_horizon(
 
     returns = [item.return_pct for item in observations]
     benchmarks = [
-        item.benchmark_return_pct
-        for item in observations
-        if item.benchmark_return_pct is not None
+        item.benchmark_return_pct for item in observations if item.benchmark_return_pct is not None
     ]
-    excess = [
-        item.excess_return_pct
-        for item in observations
-        if item.excess_return_pct is not None
-    ]
+    excess = [item.excess_return_pct for item in observations if item.excess_return_pct is not None]
     next_open = [
-        item.next_open_return_pct
-        for item in observations
-        if item.next_open_return_pct is not None
+        item.next_open_return_pct for item in observations if item.next_open_return_pct is not None
     ]
     ci_low, ci_high = _cluster_bootstrap_mean_ci(observations)
     return HorizonPerformance(
@@ -616,11 +968,7 @@ def evaluate_shortlist_performance(
     benchmark: list[BenchmarkClose],
     market_dates: list[dt.date] | None = None,
 ) -> ShortlistPerformanceReport:
-    benchmark_by_date = {
-        item.date: item.close
-        for item in benchmark
-        if item.close > 0
-    }
+    benchmark_by_date = {item.date: item.close for item in benchmark if item.close > 0}
     sessions = sorted(set(market_dates)) if market_dates is not None else sorted(benchmark_by_date)
     bars_by_code: dict[str, dict[dt.date, ShortlistPriceBar]] = defaultdict(dict)
     for bar in bars:
@@ -657,8 +1005,7 @@ def evaluate_shortlist_performance(
         all_appearances=len(appearances),
         forward_appearances=len(forward),
         reconstructed_appearances=sum(
-            item.evidence_mode == "reconstructed"
-            for item in appearances
+            item.evidence_mode == "reconstructed" for item in appearances
         ),
         independent_episodes=len(episodes),
         cohorts=cohorts,

@@ -54,7 +54,7 @@ from research.modeling.segmented_challenger import (
 from bulls.core.db import dispose_engine, get_sessionmaker
 from bulls.core.models import DailyBar
 
-ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v1"
+ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v2"
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -250,8 +250,7 @@ def run_experiment(
     validation_book = validation.get("top_book") or {}
     criteria = {
         "positive_median_rank_ic": (validation.get("median_daily_rank_ic") or 0) > 0,
-        "positive_doubled_cost_top_ten":
-            (validation_book.get("mean_stressed_pct") or 0) > 0,
+        "positive_doubled_cost_top_ten": (validation_book.get("mean_stressed_pct") or 0) > 0,
         "at_least_20_independent_dates": (validation_book.get("dates") or 0) >= 20,
         "beats_ridge_after_doubled_costs": (
             _comparison_stressed(validation) > _comparison_stressed(ridge["validation"])
@@ -262,16 +261,17 @@ def run_experiment(
     }
     candidate_for_forward = all(criteria.values())
 
-    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    generated_at = dt.datetime.now(dt.UTC)
+    stamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
     output_dir = (output_root / stamp).resolve()
     output_dir.mkdir(parents=True, exist_ok=False)
     fit.selection_model.save_model(str(output_dir / "selection-model.txt"))
     fit.forward_model.save_model(str(output_dir / "forward-model.txt"))
-    registration_cutoff = panel["date"].max()
+    training_label_cutoff = panel["date"].max()
     result = finite_dict(
         {
             "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
-            "generated_at": dt.datetime.now(dt.UTC).isoformat(),
+            "generated_at": generated_at.isoformat(),
             "source_run": str(source_run),
             "source_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
             "source_manifest": source_manifest,
@@ -284,7 +284,7 @@ def run_experiment(
                 ).encode()
             ).hexdigest(),
             "data_scope": "current_survivors_diagnostic_upper_bound",
-            "registration_cutoff": registration_cutoff.isoformat(),
+            "training_label_cutoff": training_label_cutoff.isoformat(),
             "specification": asdict(nonlinear_spec),
             "specification_hash": nonlinear_spec.spec_hash(),
             "trial_count": nonlinear_spec.trial_count,
@@ -296,11 +296,11 @@ def run_experiment(
             "nonlinear_results": nonlinear_results,
             "ridge_comparator": ridge,
             "momentum_comparator": momentum,
-            "historical_forward_admission_criteria": criteria,
+            "model_selection_admission_criteria": criteria,
             "research_verdict": (
                 "candidate_for_fresh_forward_collection"
                 if candidate_for_forward
-                else "rejected_on_genuine_validation"
+                else "historical_gate_failed"
             ),
             "promotion_status": "blocked",
             "promotion_blockers": [
@@ -309,7 +309,8 @@ def run_experiment(
                 "no unchanged fresh-forward collection has matured",
             ],
             "forward_contract": {
-                "starts_after": registration_cutoff.isoformat(),
+                "registered_at": generated_at.isoformat(),
+                "starts_after": generated_at.date().isoformat(),
                 "minimum_market_sessions": 120,
                 "minimum_matured_signal_dates": 60,
                 "orders_enabled": False,

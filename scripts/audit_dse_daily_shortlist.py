@@ -20,10 +20,12 @@ from sqlalchemy import or_, select
 from bulls.analytics.daily_shortlist_performance import (
     BenchmarkClose,
     ShortlistAppearance,
+    ShortlistPortfolioPolicy,
     ShortlistPriceBar,
     eligible_universe_by_date,
     evaluate_matched_eligible_control,
     evaluate_shortlist_performance,
+    simulate_shortlist_portfolio,
 )
 from bulls.core.db import bind_tenant_context, dispose_engine, get_sessionmaker
 from bulls.core.models import DailyBar, DailyShortlistState, MarketSummary, Symbol
@@ -91,15 +93,11 @@ def _archive_integrity(
         "rows": len(snapshots),
         "sessions": len(snapshots_by_date),
         "forward_rows": sum(row.evidence_mode == "forward" for row in snapshots),
-        "reconstructed_rows": sum(
-            row.evidence_mode == "reconstructed" for row in snapshots
-        ),
+        "reconstructed_rows": sum(row.evidence_mode == "reconstructed" for row in snapshots),
         **counters,
         "incomplete_sessions": incomplete_sessions,
         "invalid_rank_sessions": invalid_rank_sessions,
-        "methodology_versions": sorted(
-            {row.methodology_version for row in snapshots}
-        ),
+        "methodology_versions": sorted({row.methodology_version for row in snapshots}),
     }
 
 
@@ -218,6 +216,94 @@ async def run() -> None:
         market_dates=market_dates,
         eligible_by_date=eligible,
     )
+    rank_one_base = ShortlistPortfolioPolicy(
+        key="dse_daily_shortlist_rank1_hold3_v1",
+    )
+    rank_one_stress = ShortlistPortfolioPolicy(
+        key="dse_daily_shortlist_rank1_hold3_v1_doubled_cost",
+        fee_rate=rank_one_base.fee_rate * 2,
+        slippage_rate=rank_one_base.slippage_rate * 2,
+    )
+    all_ranks_base = ShortlistPortfolioPolicy(
+        key="dse_daily_shortlist_all_ranks_hold3_sensitivity_v1",
+        included_ranks=(1, 2, 3, 4, 5),
+    )
+    all_ranks_stress = ShortlistPortfolioPolicy(
+        key="dse_daily_shortlist_all_ranks_hold3_sensitivity_v1_doubled_cost",
+        included_ranks=(1, 2, 3, 4, 5),
+        fee_rate=all_ranks_base.fee_rate * 2,
+        slippage_rate=all_ranks_base.slippage_rate * 2,
+    )
+    forward_appearances = [item for item in appearances if item.evidence_mode == "forward"]
+    portfolio_diagnostics = {
+        "policy_status": {
+            "classification": "post_audit_hypothesis_not_validation",
+            "registered_after": dt.date(2026, 8, 11),
+            "fresh_forward_starts_after": dt.date(2026, 8, 11),
+            "orders_enabled": False,
+            "minimum_matured_signal_dates": 60,
+        },
+        "all_archived_rank1_base": asdict(
+            simulate_shortlist_portfolio(
+                appearances=appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=rank_one_base,
+                market_dates=market_dates,
+                evidence_scope="all_archived_mixed_reconstructed_and_forward",
+            )
+        ),
+        "all_archived_rank1_doubled_cost": asdict(
+            simulate_shortlist_portfolio(
+                appearances=appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=rank_one_stress,
+                market_dates=market_dates,
+                evidence_scope="all_archived_mixed_reconstructed_and_forward",
+            )
+        ),
+        "existing_forward_rank1_base": asdict(
+            simulate_shortlist_portfolio(
+                appearances=forward_appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=rank_one_base,
+                market_dates=market_dates,
+                evidence_scope="existing_forward_archive_before_policy_registration",
+            )
+        ),
+        "existing_forward_rank1_doubled_cost": asdict(
+            simulate_shortlist_portfolio(
+                appearances=forward_appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=rank_one_stress,
+                market_dates=market_dates,
+                evidence_scope="existing_forward_archive_before_policy_registration",
+            )
+        ),
+        "all_archived_all_ranks_sensitivity": asdict(
+            simulate_shortlist_portfolio(
+                appearances=appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=all_ranks_base,
+                market_dates=market_dates,
+                evidence_scope="sensitivity_only_not_primary_hypothesis",
+            )
+        ),
+        "all_archived_all_ranks_doubled_cost_sensitivity": asdict(
+            simulate_shortlist_portfolio(
+                appearances=appearances,
+                bars=bars,
+                benchmark=benchmark,
+                policy=all_ranks_stress,
+                market_dates=market_dates,
+                evidence_scope="sensitivity_only_not_primary_hypothesis",
+            )
+        ),
+    }
 
     payload = {
         "generated_at": dt.datetime.now(dt.UTC),
@@ -234,6 +320,7 @@ async def run() -> None:
         "performance": asdict(performance),
         "rank_performance": rank_performance,
         "matched_control": asdict(matched_control),
+        "portfolio_diagnostics": portfolio_diagnostics,
         "limitations": [
             "Reconstructed rows include only currently listed names and are survivor-biased.",
             "Selection-close returns are follow-through, not executable returns.",

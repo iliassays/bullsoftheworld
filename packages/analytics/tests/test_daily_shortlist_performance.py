@@ -7,11 +7,13 @@ import pytest
 from bulls.analytics.daily_shortlist_performance import (
     BenchmarkClose,
     ShortlistAppearance,
+    ShortlistPortfolioPolicy,
     ShortlistPriceBar,
     eligible_universe_by_date,
     evaluate_matched_eligible_control,
     evaluate_shortlist_performance,
     independent_episodes,
+    simulate_shortlist_portfolio,
 )
 
 
@@ -197,18 +199,9 @@ def test_continuous_repeat_chain_remains_one_episode():
 
 def test_eligible_universe_is_reconstructed_with_only_information_available_that_day():
     bars = [
-        *[
-            _bar("AAA", day, open_=100, close=100, volume=10_000)
-            for day in range(1, 5)
-        ],
-        *[
-            _bar("BBB", day, open_=100, close=100, volume=100)
-            for day in range(1, 4)
-        ],
-        *[
-            _bar("CCC", day, open_=100, close=100, volume=10_000)
-            for day in range(2, 4)
-        ],
+        *[_bar("AAA", day, open_=100, close=100, volume=10_000) for day in range(1, 5)],
+        *[_bar("BBB", day, open_=100, close=100, volume=100) for day in range(1, 4)],
+        *[_bar("CCC", day, open_=100, close=100, volume=10_000) for day in range(2, 4)],
     ]
 
     eligible = eligible_universe_by_date(
@@ -264,3 +257,108 @@ def test_matched_control_compares_equal_weight_daily_baskets():
     assert one_session.next_open_control_mean_pct == pytest.approx(1.475)
     assert one_session.next_open_difference_pct == pytest.approx(3.286)
     assert one_session.difference_ci_low_pct is None
+
+
+def test_shortlist_portfolio_enters_next_open_and_exits_on_market_session_clock():
+    appearance = ShortlistAppearance("AAA", _date(1), 100.0, 1, "reconstructed")
+    bars = [
+        _bar("AAA", 1, open_=100, close=100, volume=100_000),
+        _bar("AAA", 2, open_=100, close=101, volume=100_000),
+        _bar("AAA", 3, open_=104, close=105, volume=100_000),
+        _bar("AAA", 4, open_=109, close=110, volume=100_000),
+        _bar("AAA", 5, open_=110, close=111, volume=100_000),
+    ]
+    policy = ShortlistPortfolioPolicy(
+        key="test",
+        initial_capital=1_000,
+        target_position_weight=1.0,
+        maximum_positions=1,
+        fee_rate=0.0,
+        slippage_rate=0.0,
+        maximum_adv_participation=1.0,
+        minimum_target_fill=0.0,
+        settlement_sessions=0,
+    )
+
+    report = simulate_shortlist_portfolio(
+        appearances=[appearance],
+        bars=bars,
+        benchmark=[],
+        policy=policy,
+        market_dates=[_date(day) for day in range(1, 6)],
+    )
+
+    assert report.entries == 1
+    assert report.completed_trades == 1
+    assert report.total_return_pct == pytest.approx(10.0)
+    assert report.trades[0].entry_date == _date(2)
+    assert report.trades[0].exit_date == _date(4)
+    assert report.trades[0].net_return_pct == pytest.approx(10.0)
+
+
+def test_shortlist_portfolio_rejects_limit_locked_next_open():
+    appearance = ShortlistAppearance("AAA", _date(1), 100.0, 1, "forward")
+    bars = [
+        _bar("AAA", 1, open_=100, close=100, volume=100_000),
+        _bar("AAA", 2, open_=108, close=108, high=108.1, low=108.0, volume=100_000),
+        _bar("AAA", 3, open_=108, close=109, volume=100_000),
+        _bar("AAA", 4, open_=109, close=110, volume=100_000),
+    ]
+    policy = ShortlistPortfolioPolicy(
+        key="test",
+        initial_capital=1_000,
+        target_position_weight=1.0,
+        fee_rate=0.0,
+        slippage_rate=0.0,
+        maximum_adv_participation=1.0,
+        minimum_target_fill=0.0,
+    )
+
+    report = simulate_shortlist_portfolio(
+        appearances=[appearance],
+        bars=bars,
+        benchmark=[],
+        policy=policy,
+        market_dates=[_date(day) for day in range(1, 5)],
+    )
+
+    assert report.entries == 0
+    assert report.limit_locked_rejections == 1
+    assert report.total_return_pct == pytest.approx(0.0)
+
+
+def test_shortlist_portfolio_applies_both_sides_of_costs_and_rank_filter():
+    appearances = [
+        ShortlistAppearance("AAA", _date(1), 100.0, 1, "forward"),
+        ShortlistAppearance("BBB", _date(1), 100.0, 2, "forward"),
+    ]
+    bars = [
+        *[_bar("AAA", day, open_=100, close=100, volume=100_000) for day in range(1, 5)],
+        *[_bar("BBB", day, open_=100, close=120, volume=100_000) for day in range(1, 5)],
+    ]
+    policy = ShortlistPortfolioPolicy(
+        key="test",
+        included_ranks=(1,),
+        initial_capital=1_000,
+        target_position_weight=1.0,
+        maximum_positions=1,
+        fee_rate=0.01,
+        slippage_rate=0.0,
+        maximum_adv_participation=1.0,
+        minimum_target_fill=0.0,
+        settlement_sessions=0,
+    )
+
+    report = simulate_shortlist_portfolio(
+        appearances=appearances,
+        bars=bars,
+        benchmark=[],
+        policy=policy,
+        market_dates=[_date(day) for day in range(1, 5)],
+    )
+
+    assert report.signals_considered == 1
+    assert report.entries == 1
+    assert report.fees_paid == pytest.approx(18.0)
+    assert report.total_return_pct == pytest.approx(-1.8)
+    assert report.trades[0].net_return_pct == pytest.approx(-1.9802)
