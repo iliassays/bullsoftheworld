@@ -102,6 +102,12 @@ def _stable_hash(value: Any) -> str:
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
+def _backtest_parameters(request: BacktestRequest) -> dict[str, Any]:
+    """Return economic parameters only; transport idempotency belongs to ``ResearchRun``."""
+
+    return request.model_dump(mode="json", exclude={"idempotency_key"})
+
+
 def _fact(
     key: str,
     value: Any,
@@ -907,7 +913,7 @@ async def execute_backtest(
         select(func.max(DailyBar.date)).where(DailyBar.market == workspace.market)
     )
     cutoff = dt.datetime.combine(latest_market_date or dt.date.today(), dt.time.max, tzinfo=dt.UTC)
-    parameters = request.model_dump(mode="json")
+    parameters = _backtest_parameters(request)
     risk_policy = risk_policy_from_mandate(mandate)
     institutional_strategy = request.strategy_key in {
         "us_activist_13d_v1",
@@ -1160,7 +1166,7 @@ async def execute_backtest(
         session, workspace=workspace, strategy_key=request.strategy_key
     )
     deflated_sharpe_summary, overfitting_gate = _deflated_sharpe_gate(
-        result.equity_curve, num_trials=max(family_trials, trial.trial_sequence)
+        result.equity_curve, num_trials=max(family_trials, 1)
     )
     if overfitting_gate is not None:
         result = result.model_copy(
@@ -1196,7 +1202,7 @@ async def execute_backtest(
                 )
         selective_deflated_sharpe, _selective_overfitting_gate = _deflated_sharpe_gate(
             evaluation_curve,
-            num_trials=trial.trial_sequence,
+            num_trials=max(family_trials, 1),
             threshold=0.80,
         )
         selective_admission = evaluate_selective_compression_admission(

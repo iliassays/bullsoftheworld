@@ -830,8 +830,8 @@ async def daily_shortlist(
             Symbol.data_status == "ready",
             (Symbol.category.is_(None)) | (Symbol.category != "Z"),
             TickerAnalytics.last_close > 0,
-            # Seasoning proxy: both require a long history, so their presence stands in for the
-            # module's bar count, which ticker_analytics does not store.
+            # Cheap pre-filter only. The exact MIN_BARS contract is enforced from DailyBar counts
+            # below; indicator presence alone is not a reliable history count.
             TickerAnalytics.sma_200.is_not(None),
             TickerAnalytics.week52_high.is_not(None),
         )
@@ -841,6 +841,25 @@ async def daily_shortlist(
     names: dict[str, tuple[str | None, str | None]] = {}
     candidates: list[ShortlistCandidate] = []
     selected_date = rows[0][0].as_of_date if rows else dt.date.today()
+    candidate_codes = [analytics.code for analytics, *_ in rows]
+    history_counts = (
+        {
+            code: int(count)
+            for code, count in (
+                await session.execute(
+                    select(DailyBar.code, func.count(DailyBar.date))
+                    .where(
+                        DailyBar.market == market,
+                        DailyBar.date <= selected_date,
+                        DailyBar.code.in_(candidate_codes),
+                    )
+                    .group_by(DailyBar.code)
+                )
+            ).all()
+        }
+        if candidate_codes
+        else {}
+    )
     session_dates = list(
         await session.scalars(
             select(DailyBar.date)
@@ -876,8 +895,7 @@ async def daily_shortlist(
                 code=analytics.code,
                 close=today.close,
                 avg_volume_20=analytics.avg_volume_20,
-                # None: the SQL seasoning gate above already enforced history.
-                bars_seen=None,
+                bars_seen=history_counts.get(analytics.code, 0),
                 change_pct=(
                     (today.close / previous.close - 1.0) * 100.0
                     if previous is not None and previous.close > 0

@@ -28,6 +28,7 @@ import asyncio
 import datetime as dt
 import logging
 from bisect import bisect_right
+from collections.abc import Collection
 from dataclasses import asdict
 
 from sqlalchemy import and_, func, select
@@ -98,6 +99,31 @@ async def _profiles(
         ).where(CompanyProfile.market == market)
     )
     return {code: (sector, eps, nav) for code, sector, eps, nav in rows}
+
+
+async def _history_counts(
+    session,
+    market: str,
+    as_of: dt.date,
+    *,
+    codes: Collection[str],
+) -> dict[str, int]:
+    """Count completed bars through ``as_of`` for the exact forward-scan universe."""
+
+    if not codes:
+        return {}
+    rows = (
+        await session.execute(
+            select(DailyBar.code, func.count(DailyBar.date))
+            .where(
+                DailyBar.market == market,
+                DailyBar.date <= as_of,
+                DailyBar.code.in_(sorted(codes)),
+            )
+            .group_by(DailyBar.code)
+        )
+    ).all()
+    return {code: int(count) for code, count in rows}
 
 
 async def _persist(session, market: str, slate, *, as_of: dt.date, mode: str) -> int:
@@ -230,6 +256,13 @@ async def run_forward(
 
         clean = await _clean_codes(session, market)
         profiles = await _profiles(session, market)
+        candidate_codes = {row.code for row in rows if row.code in clean}
+        history_counts = await _history_counts(
+            session,
+            market,
+            as_of,
+            codes=candidate_codes,
+        )
         session_dates = list(
             await session.scalars(
                 select(DailyBar.date)
@@ -258,7 +291,7 @@ async def run_forward(
                 code=analytics.code,
                 close=(today := bars_by_code[analytics.code][-1]).close,
                 avg_volume_20=analytics.avg_volume_20,
-                bars_seen=None,
+                bars_seen=history_counts.get(analytics.code, 0),
                 change_pct=(
                     (today.close / previous.close - 1) * 100
                     if len(bars_by_code[analytics.code]) > 1

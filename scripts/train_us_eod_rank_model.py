@@ -371,15 +371,28 @@ def _train_liquidity_sleeve(
     selected_trial = max(trials, key=lambda trial: _trial_score(trial["validation"]))
     selected_penalty = float(selected_trial["penalty"])
 
+    selection_model = fit_ridge(windows["discovery"], penalty=selected_penalty)
     pre_holdout = pl.concat(
         (windows["discovery"], windows["validation"]),
         how="vertical_relaxed",
     )
     model = fit_ridge(pre_holdout, penalty=selected_penalty)
-    model_results: dict[str, Any] = {}
+    # ``validation`` must remain a genuine discovery-only evaluation. Replaying validation with
+    # the refitted pre-holdout model is useful only as an explicitly labelled in-sample diagnostic.
+    model_results: dict[str, Any] = {
+        "validation": _evaluate_sleeve_window(
+            attach_scores(windows["validation"], selection_model),
+            score_column="model_score",
+            spec=spec,
+            sleeve=sleeve,
+        )
+    }
     momentum_results: dict[str, Any] = {}
     for name, frame in windows.items():
-        model_results[name] = _evaluate_sleeve_window(
+        result_name = (
+            f"{name}_refit_diagnostic" if name in {"discovery", "validation"} else name
+        )
+        model_results[result_name] = _evaluate_sleeve_window(
             attach_scores(frame, model),
             score_column="model_score",
             spec=spec,

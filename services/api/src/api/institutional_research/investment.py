@@ -96,6 +96,16 @@ def _hash(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _canonical_trial_specification(specification: dict[str, Any]) -> dict[str, Any]:
+    """Remove transport-only values that do not define an economic experiment."""
+
+    canonical = json.loads(json.dumps(specification, default=str))
+    request = canonical.get("request")
+    if isinstance(request, dict):
+        request.pop("idempotency_key", None)
+    return canonical
+
+
 def default_mandate_payload(market: str) -> InvestmentMandateUpdate:
     policy = RISK_POLICIES[market]
     return InvestmentMandateUpdate(
@@ -285,22 +295,35 @@ async def family_trial_count(
     workspace: ResearchWorkspace,
     strategy_key: str,
 ) -> int:
-    """Trials registered for this strategy family across the research organization.
+    """Distinct economic specifications tried by this family across the organization.
 
     The deflated-Sharpe denominator (phase 13 §13.3.3) must count the family's full
     organization history; scoping it to one workspace would let a fresh workspace restart the
     multiple-testing penalty at one. Organization-wide SELECT RLS makes this count invariant to
     the caller's workspace memberships while retaining the tenant and market boundary.
     """
-    count = await session.scalar(
-        select(func.count(ResearchStrategyTrial.id)).where(
-            ResearchStrategyTrial.tenant_id == workspace.tenant_id,
-            ResearchStrategyTrial.market == workspace.market,
-            ResearchStrategyTrial.organization_id == workspace.organization_id,
-            ResearchStrategyTrial.strategy_key == strategy_key,
+    rows = (
+        await session.execute(
+            select(
+                ResearchStrategyTrial.specification,
+                ResearchStrategyTrial.specification_hash,
+            ).where(
+                ResearchStrategyTrial.tenant_id == workspace.tenant_id,
+                ResearchStrategyTrial.market == workspace.market,
+                ResearchStrategyTrial.organization_id == workspace.organization_id,
+                ResearchStrategyTrial.strategy_key == strategy_key,
+            )
         )
-    )
-    return int(count or 0)
+    ).all()
+    # Exact API retries are one experiment. Historical rows may have hashes polluted by an
+    # idempotency key, so canonicalise them without rewriting the immutable audit ledger.
+    hashes = {
+        _hash(_canonical_trial_specification(specification))
+        if isinstance(specification, dict)
+        else specification_hash
+        for specification, specification_hash in rows
+    }
+    return len(hashes)
 
 
 async def register_strategy_trial(
@@ -335,6 +358,7 @@ async def register_strategy_trial(
     # NOTE: trial_sequence remains the per-workspace ledger ordinal (unique constraint);
     # the deflated-Sharpe denominator uses family_trial_count() below, which ignores the
     # workspace boundary so a fresh workspace cannot reset the multiple-testing penalty.
+    canonical_specification = _canonical_trial_specification(specification)
     trial = ResearchStrategyTrial(
         id=uuid.uuid4(),
         organization_id=workspace.organization_id,
@@ -352,8 +376,8 @@ async def register_strategy_trial(
         # family's trial count (Phase 13.3.3), not the earlier flat attempt>1 diagnostic flag.
         multiple_testing_policy="deflated_sharpe_v1",
         economic_hypothesis=_ECONOMIC_HYPOTHESES[strategy.key],
-        specification=specification,
-        specification_hash=_hash(specification),
+        specification=canonical_specification,
+        specification_hash=_hash(canonical_specification),
         outcome={},
         registered_at=dt.datetime.now(dt.UTC),
     )

@@ -28,8 +28,10 @@ from api.institutional_research.institutional_backtests import (
 )
 from api.institutional_research.investment import family_trial_count
 from api.institutional_research.portfolio import data_blocked_refusal
+from api.institutional_research.schemas import BacktestRequest
 from api.institutional_research.workflow import (
     COST_SURVIVAL_FLOOR_BPS,
+    _backtest_parameters,
     cost_survival_gate,
     event_market_null_gate,
 )
@@ -39,7 +41,24 @@ from bulls.analytics.research_strategy import StrategyBar, StrategySecurity
 
 @pytest.mark.asyncio
 async def test_family_trial_count_is_scoped_to_the_research_organization() -> None:
-    session = SimpleNamespace(scalar=AsyncMock(return_value=7))
+    rows = [
+        (
+            {
+                "request": {
+                    "idempotency_key": key,
+                    "strategy_key": "dse_reversal_v1",
+                    "universe_limit": limit,
+                }
+            },
+            f"legacy-{index}",
+        )
+        for index, (key, limit) in enumerate(
+            (("retry-key-a", 25), ("retry-key-b", 25), ("new-test", 50))
+        )
+    ]
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(all=lambda: rows))
+    )
     workspace = SimpleNamespace(
         organization_id="organization-a",
         tenant_id="bullsofdhaka",
@@ -50,9 +69,21 @@ async def test_family_trial_count_is_scoped_to_the_research_organization() -> No
         session,
         workspace=workspace,
         strategy_key="dse_reversal_v1",
-    ) == 7
-    statement = session.scalar.await_args.args[0]
+    ) == 2
+    statement = session.execute.await_args.args[0]
     assert "research_strategy_trials.organization_id" in str(statement)
+
+
+def test_backtest_frozen_parameters_exclude_transport_idempotency() -> None:
+    first = BacktestRequest(
+        idempotency_key="request-a",
+        strategy_key="dse_reversal_v1",
+        universe_limit=25,
+    )
+    retry = first.model_copy(update={"idempotency_key": "request-b"})
+
+    assert _backtest_parameters(first) == _backtest_parameters(retry)
+    assert "idempotency_key" not in _backtest_parameters(first)
 
 # --- concern #1a: the 30 bps kill rule is a gate, not a metric ------------------------------
 
