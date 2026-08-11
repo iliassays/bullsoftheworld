@@ -94,6 +94,24 @@ def _clean_rank_frame(frame: pl.DataFrame, *, target: str) -> pl.DataFrame:
     return frame.drop_nulls(list(required)).filter(finite).sort(["date", "code"])
 
 
+def attach_benchmark_regimes(
+    panel: pl.DataFrame,
+    regime_calendar: pl.DataFrame,
+) -> pl.DataFrame:
+    """Attach a causal SPY regime to legacy panels and fail closed on missing dates."""
+
+    columns = {"benchmark_trend_regime", "benchmark_volatility_regime"}
+    if columns.issubset(panel.columns):
+        return panel
+    joined = panel.join(regime_calendar, on="date", how="left")
+    missing = joined.filter(
+        pl.any_horizontal(*(pl.col(name).is_null() for name in columns))
+    ).height
+    if missing:
+        raise RuntimeError(f"SPY regime is unavailable for {missing} panel rows")
+    return joined
+
+
 def prepare_ranking_matrix(
     frame: pl.DataFrame,
     *,
@@ -262,6 +280,7 @@ __all__ = [
     "LightGBMRankSpec",
     "RankerFit",
     "RankingMatrix",
+    "attach_benchmark_regimes",
     "attach_rank_scores",
     "feature_importance",
     "fit_lambdarank",

@@ -14,6 +14,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import asyncio
 import datetime as dt
 import hashlib
 import json
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from sqlalchemy import select, text
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -30,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from research.modeling.cross_sectional_rank import (
     CrossSectionalSpec,
     attach_scores,
+    build_benchmark_calendar,
     evaluate_ranking,
     finite_dict,
     fit_ridge,
@@ -38,6 +41,7 @@ from research.modeling.cross_sectional_rank import (
 )
 from research.modeling.nonlinear_rank import (
     LightGBMRankSpec,
+    attach_benchmark_regimes,
     attach_rank_scores,
     feature_importance,
     fit_lambdarank,
@@ -46,6 +50,9 @@ from research.modeling.segmented_challenger import (
     DEFAULT_LIQUIDITY_SLEEVES,
     filter_liquidity_sleeve,
 )
+
+from bulls.core.db import dispose_engine, get_sessionmaker
+from bulls.core.models import DailyBar
 
 ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v1"
 
@@ -66,6 +73,51 @@ def _load_panel(source_run: Path) -> pl.DataFrame:
     if not paths:
         raise RuntimeError(f"No 20-session dataset shards found under {source_run}")
     return pl.scan_parquet(paths).collect(engine="streaming")
+
+
+async def _load_benchmark_regimes() -> pl.DataFrame:
+    """Read the completed SPY calendar required by panels created before regime persistence."""
+
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as session:
+        await session.execute(text("SET TRANSACTION READ ONLY"))
+        rows = (
+            await session.execute(
+                select(
+                    DailyBar.date,
+                    DailyBar.open,
+                    DailyBar.high,
+                    DailyBar.low,
+                    DailyBar.close,
+                    DailyBar.adjusted_close,
+                )
+                .where(DailyBar.market == "US", DailyBar.code == "SPY")
+                .order_by(DailyBar.date)
+            )
+        ).all()
+    if not rows:
+        raise RuntimeError("SPY benchmark history is missing")
+    calendar = build_benchmark_calendar(
+        pl.DataFrame(
+            {
+                "date": [row.date for row in rows],
+                "open": [float(row.open) for row in rows],
+                "high": [float(row.high) for row in rows],
+                "low": [float(row.low) for row in rows],
+                "close": [float(row.close) for row in rows],
+                "adjusted_close": [
+                    float(row.adjusted_close) if row.adjusted_close is not None else None
+                    for row in rows
+                ],
+            }
+        ),
+        horizons=(20,),
+    )
+    return calendar.select(
+        "date",
+        "benchmark_trend_regime",
+        "benchmark_volatility_regime",
+    )
 
 
 def _metric_score(result: dict[str, Any]) -> tuple[float, float]:
@@ -126,12 +178,16 @@ def _comparison_stressed(result: dict[str, Any]) -> float:
     return float(value) if value is not None else float("-inf")
 
 
-def run_experiment(source_run: Path, output_root: Path) -> Path:
+def run_experiment(
+    source_run: Path,
+    output_root: Path,
+    regime_calendar: pl.DataFrame,
+) -> Path:
     source_run = source_run.resolve()
     manifest_path = source_run / "dataset-manifest.json"
     manifest_bytes = manifest_path.read_bytes()
     source_manifest = json.loads(manifest_bytes)
-    raw_panel = _load_panel(source_run)
+    raw_panel = attach_benchmark_regimes(_load_panel(source_run), regime_calendar)
 
     sleeve = next(item for item in DEFAULT_LIQUIDITY_SLEEVES if item.key == "deep_liquidity")
     eligible = filter_liquidity_sleeve(raw_panel, sleeve)
@@ -219,6 +275,14 @@ def run_experiment(source_run: Path, output_root: Path) -> Path:
             "source_run": str(source_run),
             "source_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
             "source_manifest": source_manifest,
+            "benchmark_regime_sha256": hashlib.sha256(
+                json.dumps(
+                    regime_calendar.to_dicts(),
+                    sort_keys=True,
+                    default=str,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest(),
             "data_scope": "current_survivors_diagnostic_upper_bound",
             "registration_cutoff": registration_cutoff.isoformat(),
             "specification": asdict(nonlinear_spec),
@@ -257,11 +321,19 @@ def run_experiment(source_run: Path, output_root: Path) -> Path:
     return artifact
 
 
-def main(argv: list[str]) -> None:
+async def main(argv: list[str]) -> None:
     args = _parse_args(argv)
-    artifact = run_experiment(args.source_run, args.output_root)
+    regime_calendar = await _load_benchmark_regimes()
+    artifact = run_experiment(args.source_run, args.output_root, regime_calendar)
     print(json.dumps({"artifact": str(artifact)}, indent=2))
 
 
+async def _entrypoint(argv: list[str]) -> None:
+    try:
+        await main(argv)
+    finally:
+        await dispose_engine()
+
+
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    asyncio.run(_entrypoint(sys.argv[1:]))

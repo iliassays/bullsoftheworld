@@ -20,6 +20,8 @@ the thinner liquidity sleeves are excluded because the existing evidence rejecte
 ## Frozen data contract
 
 - U.S. current active, product-eligible common stocks and ADRs only.
+- Completed SPY bars provide the signal-date trend and volatility regime. Their canonical hash is
+  stored with the result when an older panel requires a read-only regime join.
 - Completed EOD observations; signal at close `t`, hypothetical entry at adjusted open `t+1`.
 - Twenty non-overlapping sessions to the exit; target is net SPY-relative return after the frozen
   trailing-dollar-volume cost schedule.

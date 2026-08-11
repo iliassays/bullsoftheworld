@@ -4,10 +4,12 @@ import datetime as dt
 
 import numpy as np
 import polars as pl
+import pytest
 
 from research.modeling.nonlinear_rank import (
     RANK_FEATURE_COLUMNS,
     LightGBMRankSpec,
+    attach_benchmark_regimes,
     attach_rank_scores,
     fit_lambdarank,
     prepare_ranking_matrix,
@@ -66,6 +68,27 @@ def test_frozen_spec_hash_changes_with_model_contract() -> None:
 
     assert baseline.spec_hash() == LightGBMRankSpec().spec_hash()
     assert baseline.spec_hash() != edited.spec_hash()
+
+
+def test_legacy_panel_receives_a_complete_point_in_time_regime_join() -> None:
+    date = dt.date(2024, 1, 5)
+    panel = pl.DataFrame({"date": [date], "code": ["AAA"]})
+    calendar = pl.DataFrame(
+        {
+            "date": [date],
+            "benchmark_trend_regime": ["risk_on"],
+            "benchmark_volatility_regime": ["normal"],
+        }
+    )
+
+    joined = attach_benchmark_regimes(panel, calendar)
+
+    assert joined["benchmark_trend_regime"].to_list() == ["risk_on"]
+    with pytest.raises(RuntimeError, match="unavailable"):
+        attach_benchmark_regimes(
+            panel,
+            calendar.filter(pl.col("date") != date),
+        )
 
 
 def test_lambdarank_learns_a_planted_nonlinear_ordering() -> None:
