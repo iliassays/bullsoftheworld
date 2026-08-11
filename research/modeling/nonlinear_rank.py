@@ -43,7 +43,7 @@ class LightGBMRankSpec:
     max_bin: int = 63
     max_rounds: int = 500
     early_stopping_rounds: int = 50
-    num_threads: int = 4
+    num_threads: int = 1
     seed: int = 20260811
     unit_row_weights: bool = True
     lambdarank_query_normalization: bool = True
@@ -107,9 +107,7 @@ def attach_benchmark_regimes(
     if columns.issubset(panel.columns):
         return panel
     joined = panel.join(regime_calendar, on="date", how="left")
-    missing = joined.filter(
-        pl.any_horizontal(*(pl.col(name).is_null() for name in columns))
-    ).height
+    missing = joined.filter(pl.any_horizontal(*(pl.col(name).is_null() for name in columns))).height
     if missing:
         raise RuntimeError(f"SPY regime is unavailable for {missing} panel rows")
     return joined
@@ -327,6 +325,62 @@ def top_k_reproducibility(
     }
 
 
+def top_k_membership(
+    frame: pl.DataFrame,
+    *,
+    score_column: str = "nonlinear_rank_score",
+    positions: int = 10,
+) -> dict[str, list[str]]:
+    """Return a canonical, JSON-safe decision set for independent-run comparison."""
+
+    if positions <= 0:
+        raise ValueError("positions must be positive")
+    required = {"date", "code", score_column}
+    if missing := required.difference(frame.columns):
+        raise ValueError(f"Score frame is missing columns: {sorted(missing)}")
+    membership: dict[str, list[str]] = {}
+    for day in (
+        frame.select("date", "code", score_column)
+        .sort(["date", "code"])
+        .partition_by("date", maintain_order=True)
+    ):
+        date = day["date"][0]
+        selected = day.sort(
+            [score_column, "code"],
+            descending=[True, False],
+        ).head(positions)
+        membership[date.isoformat()] = sorted(str(code) for code in selected["code"])
+    return membership
+
+
+def compare_top_k_membership(
+    first: dict[str, list[str]],
+    second: dict[str, list[str]],
+) -> dict[str, float | int | bool]:
+    """Compare canonical decision sets created by independent training processes."""
+
+    if first.keys() != second.keys():
+        raise ValueError("membership artifacts do not contain the same dates")
+    exact_matches = 0
+    overlaps: list[float] = []
+    for date in sorted(first):
+        left = set(first[date])
+        right = set(second[date])
+        if len(left) != len(first[date]) or len(right) != len(second[date]):
+            raise ValueError(f"membership artifact contains duplicate symbols on {date}")
+        exact_matches += left == right
+        denominator = max(len(left), len(right))
+        overlaps.append(len(left & right) / denominator if denominator else 1.0)
+    dates = len(first)
+    return {
+        "dates": dates,
+        "exact_membership_dates": exact_matches,
+        "exact_membership_rate_pct": exact_matches / dates * 100.0 if dates else 100.0,
+        "mean_top_k_overlap_pct": float(np.mean(overlaps)) * 100.0 if overlaps else 100.0,
+        "reproducible": exact_matches == dates,
+    }
+
+
 def feature_importance(model: Any) -> list[dict[str, float | str]]:
     gains = np.asarray(model.feature_importance(importance_type="gain"), dtype=float)
     total = float(gains.sum())
@@ -348,8 +402,10 @@ __all__ = [
     "RankingMatrix",
     "attach_benchmark_regimes",
     "attach_rank_scores",
+    "compare_top_k_membership",
     "feature_importance",
     "fit_lambdarank",
     "prepare_ranking_matrix",
+    "top_k_membership",
     "top_k_reproducibility",
 ]

@@ -14,7 +14,8 @@ and neither result below passes its own promotion gates.
   current SMA/52-week proxy.
 - U.S. model-selection validation remains separate from post-selection refit diagnostics.
 - The U.S. nonlinear artifact records training-label and forward-registration clocks separately.
-- Nonlinear experiments now require identical top-ten membership on an immediate identical rerun.
+- Nonlinear experiments now require identical top-ten membership both within one run and across
+  independent processes with identical input hashes.
 - The DSE shortlist audit now includes a capital-constrained, costed, next-open portfolio rather
   than presenting event-return averages as an executable book.
 
@@ -81,7 +82,8 @@ An identical rerun then exposed a reproducibility failure:
 - top-ten membership changed on 6 of 17 dates.
 
 Decision: **historical gate failed; promotion blocked**. Do not tune a third version on these same
-outcomes. The immediate-rerun membership gate is now part of artifact generation. The model may be
+outcomes. Artifact generation now uses single-thread deterministic training, persists canonical
+decision membership, and requires a separately generated matching artifact. The model may be
 revisited only with a materially deeper point-in-time panel and a newly registered experiment.
 
 ## Why another indicator is not the answer

@@ -11,8 +11,10 @@ from research.modeling.nonlinear_rank import (
     LightGBMRankSpec,
     attach_benchmark_regimes,
     attach_rank_scores,
+    compare_top_k_membership,
     fit_lambdarank,
     prepare_ranking_matrix,
+    top_k_membership,
     top_k_reproducibility,
 )
 
@@ -137,3 +139,25 @@ def test_top_k_reproducibility_compares_membership_with_stable_code_ties() -> No
     assert stable["exact_membership_rate_pct"] == 100.0
     assert changed["reproducible"] is False
     assert changed["mean_top_k_overlap_pct"] == 50.0
+
+
+def test_top_k_membership_supports_cross_process_artifact_comparison() -> None:
+    frame = pl.DataFrame(
+        {
+            "date": [dt.date(2026, 1, 2)] * 3 + [dt.date(2026, 1, 5)] * 3,
+            "code": ["B", "A", "C", "D", "E", "F"],
+            "nonlinear_rank_score": [0.8, 0.8, 0.1, 0.9, 0.7, 0.2],
+        }
+    )
+
+    membership = top_k_membership(frame, positions=2)
+    changed = {**membership, "2026-01-05": ["D", "F"]}
+    comparison = compare_top_k_membership(membership, changed)
+
+    assert membership == {
+        "2026-01-02": ["A", "B"],
+        "2026-01-05": ["D", "E"],
+    }
+    assert comparison["exact_membership_dates"] == 1
+    assert comparison["mean_top_k_overlap_pct"] == 75.0
+    assert comparison["reproducible"] is False

@@ -43,8 +43,10 @@ from research.modeling.nonlinear_rank import (
     LightGBMRankSpec,
     attach_benchmark_regimes,
     attach_rank_scores,
+    compare_top_k_membership,
     feature_importance,
     fit_lambdarank,
+    top_k_membership,
     top_k_reproducibility,
 )
 from research.modeling.segmented_challenger import (
@@ -55,7 +57,7 @@ from research.modeling.segmented_challenger import (
 from bulls.core.db import dispose_engine, get_sessionmaker
 from bulls.core.models import DailyBar
 
-ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v3"
+ARTIFACT_SCHEMA_VERSION = "atlas-nonlinear-rank-artifact-v4"
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -74,6 +76,35 @@ def _load_panel(source_run: Path) -> pl.DataFrame:
     if not paths:
         raise RuntimeError(f"No 20-session dataset shards found under {source_run}")
     return pl.scan_parquet(paths).collect(engine="streaming")
+
+
+def _previous_decision_membership(
+    output_root: Path,
+    *,
+    source_manifest_sha256: str,
+    benchmark_regime_sha256: str,
+    specification_hash: str,
+) -> tuple[Path, dict[str, dict[str, list[str]]]] | None:
+    """Find a separately generated artifact with the exact same research inputs."""
+
+    for path in sorted(output_root.glob("*/evaluation.json"), reverse=True):
+        try:
+            artifact = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            artifact.get("source_manifest_sha256") != source_manifest_sha256
+            or artifact.get("benchmark_regime_sha256") != benchmark_regime_sha256
+            or artifact.get("specification_hash") != specification_hash
+        ):
+            continue
+        membership = artifact.get("decision_membership")
+        if isinstance(membership, dict) and {
+            "model_selection_validation",
+            "reused_historical_diagnostic",
+        }.issubset(membership):
+            return path, membership
+    return None
 
 
 async def _load_benchmark_regimes() -> pl.DataFrame:
@@ -187,8 +218,17 @@ def run_experiment(
     source_run = source_run.resolve()
     manifest_path = source_run / "dataset-manifest.json"
     manifest_bytes = manifest_path.read_bytes()
+    source_manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
     source_manifest = json.loads(manifest_bytes)
     raw_panel = attach_benchmark_regimes(_load_panel(source_run), regime_calendar)
+    benchmark_regime_sha256 = hashlib.sha256(
+        json.dumps(
+            regime_calendar.to_dicts(),
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
 
     sleeve = next(item for item in DEFAULT_LIQUIDITY_SLEEVES if item.key == "deep_liquidity")
     eligible = filter_liquidity_sleeve(raw_panel, sleeve)
@@ -218,6 +258,10 @@ def run_experiment(
         fit.forward_model,
         num_iteration=fit.best_iteration,
     )
+    decision_membership = {
+        "model_selection_validation": top_k_membership(validation_scored),
+        "reused_historical_diagnostic": top_k_membership(reused_scored),
+    }
     nonlinear_results = {
         "discovery_in_sample": _evaluate(
             attach_rank_scores(
@@ -257,6 +301,37 @@ def run_experiment(
         ),
         "best_iteration_matches": fit.best_iteration == repeat_fit.best_iteration,
     }
+    previous = _previous_decision_membership(
+        output_root,
+        source_manifest_sha256=source_manifest_sha256,
+        benchmark_regime_sha256=benchmark_regime_sha256,
+        specification_hash=nonlinear_spec.spec_hash(),
+    )
+    if previous is None:
+        cross_process_reproducibility: dict[str, Any] = {
+            "status": "pending_independent_rerun",
+            "previous_artifact": None,
+            "reproducible": False,
+        }
+    else:
+        previous_path, previous_membership = previous
+        cross_process_reproducibility = {
+            "status": "evaluated",
+            "previous_artifact": str(previous_path.resolve()),
+            "model_selection_validation": compare_top_k_membership(
+                previous_membership["model_selection_validation"],
+                decision_membership["model_selection_validation"],
+            ),
+            "reused_historical_diagnostic": compare_top_k_membership(
+                previous_membership["reused_historical_diagnostic"],
+                decision_membership["reused_historical_diagnostic"],
+            ),
+        }
+        cross_process_reproducibility["reproducible"] = bool(
+            cross_process_reproducibility["model_selection_validation"]["reproducible"]
+            and cross_process_reproducibility["reused_historical_diagnostic"]["reproducible"]
+        )
+    reproducibility["cross_process"] = cross_process_reproducibility
     ridge = _ridge_comparator(
         windows["discovery"],
         windows["validation"],
@@ -286,6 +361,7 @@ def run_experiment(
             reproducibility["best_iteration_matches"]
             and reproducibility["model_selection_validation"]["reproducible"]
             and reproducibility["reused_historical_diagnostic"]["reproducible"]
+            and reproducibility["cross_process"]["reproducible"]
         ),
     }
     candidate_for_forward = all(criteria.values())
@@ -302,16 +378,9 @@ def run_experiment(
             "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             "generated_at": generated_at.isoformat(),
             "source_run": str(source_run),
-            "source_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "source_manifest_sha256": source_manifest_sha256,
             "source_manifest": source_manifest,
-            "benchmark_regime_sha256": hashlib.sha256(
-                json.dumps(
-                    regime_calendar.to_dicts(),
-                    sort_keys=True,
-                    default=str,
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest(),
+            "benchmark_regime_sha256": benchmark_regime_sha256,
             "data_scope": "current_survivors_diagnostic_upper_bound",
             "training_label_cutoff": training_label_cutoff.isoformat(),
             "specification": asdict(nonlinear_spec),
@@ -322,6 +391,7 @@ def run_experiment(
             "dates": dates,
             "best_iteration": fit.best_iteration,
             "feature_importance": feature_importance(fit.forward_model),
+            "decision_membership": decision_membership,
             "reproducibility": reproducibility,
             "nonlinear_results": nonlinear_results,
             "ridge_comparator": ridge,

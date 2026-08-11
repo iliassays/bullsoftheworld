@@ -50,6 +50,12 @@ membership on 6 of 17 reused diagnostic dates. The model already failed its posi
 gate; this instability is an independent blocker.
 
 Artifact generation now fits the unchanged specification twice and requires identical top-ten
-membership on every model-selection and reused-diagnostic date. It records score deltas and
-membership overlap in `reproducibility`. This is a governance check, not a third model trial and
-does not permit parameter repair after outcomes have been seen.
+membership on every model-selection and reused-diagnostic date. That same-process check proved
+insufficient because separate server processes still produced small floating-point score changes.
+Training therefore uses one CPU thread, and artifact schema v4 persists the exact canonical
+decision membership. The first artifact remains `pending_independent_rerun`; a later process with
+identical source, regime and specification hashes must reproduce every top-ten set. Score deltas,
+same-process overlap and cross-process overlap are recorded in `reproducibility`.
+
+This is a runtime and governance repair, not a third alpha-model trial, and it does not permit
+parameter repair after outcomes have been seen.
