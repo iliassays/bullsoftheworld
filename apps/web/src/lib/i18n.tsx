@@ -370,13 +370,20 @@ const STRINGS: Record<string, Entry> = {
   "feedchip.portfolio": { en: "💼 Portfolio", bn: "💼 পোর্টফোলিও" },
   "feedchip.allDesks": { en: "All desks", bn: "সব ডেস্ক" },
   "search.placeholder": {
-    en: "Search ticker… e.g. GP, Grameenphone",
-    bn: "টিকার খুঁজুন… যেমন GP, গ্রামীণফোন",
+    en: "Search stocks or agents…",
+    bn: "শেয়ার বা এজেন্ট খুঁজুন…",
   },
   "search.placeholder.us": {
-    en: "Search ticker… e.g. AAPL, Apple",
-    bn: "টিকার খুঁজুন… যেমন AAPL, অ্যাপল",
+    en: "Search stocks or agents…",
+    bn: "শেয়ার বা এজেন্ট খুঁজুন…",
   },
+  "search.ariaLabel": {
+    en: "Search by ticker, company or agent name",
+    bn: "টিকার, কোম্পানি বা এজেন্টের নাম দিয়ে খুঁজুন",
+  },
+  "search.stocks": { en: "Stocks", bn: "শেয়ার" },
+  "search.agents": { en: "Agents", bn: "এজেন্ট" },
+  "search.officialAgent": { en: "Official agent", bn: "অফিসিয়াল এজেন্ট" },
   // Symbol page — tabs
   "tab.overview": { en: "Overview", bn: "সারসংক্ষেপ" },
   "tab.investorLens": { en: "Investor Lens", bn: "ইনভেস্টর লেন্স" },

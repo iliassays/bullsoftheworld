@@ -11,9 +11,9 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from api.deps import (
@@ -446,6 +446,61 @@ class DeskOut(BaseModel):
     post_rule: str
     source_note: str
     last_post_at: str | None = None
+
+
+class DeskSearchOut(BaseModel):
+    handle: str
+    name: str
+    verified: bool = True
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _desk_search_statement(tenant_id: str, query: str, limit: int):
+    """Build the public desk lookup with tenant and official-account gates in the SQL itself."""
+    normalized = query.strip().removeprefix("@").strip()
+    escaped = _escape_like(normalized)
+    contains = f"%{escaped}%"
+    prefix = f"{escaped}%"
+    exact = normalized.casefold()
+    rank = case(
+        (func.lower(User.handle) == exact, 0),
+        (func.lower(User.name) == exact, 0),
+        (User.handle.ilike(prefix, escape="\\"), 1),
+        (User.name.ilike(prefix, escape="\\"), 1),
+        else_=2,
+    )
+    return (
+        select(User.handle, User.name)
+        .where(
+            User.tenant_id == tenant_id,
+            User.is_official.is_(True),
+            or_(
+                User.handle.ilike(contains, escape="\\"),
+                User.name.ilike(contains, escape="\\"),
+            ),
+        )
+        .order_by(rank, func.lower(User.name), func.lower(User.handle))
+        .limit(limit)
+    )
+
+
+@router.get("/desks")
+async def search_desks(
+    tenant: CurrentTenant,
+    session: DbSession,
+    q: str = Query(min_length=1, max_length=80),
+    limit: int = Query(default=4, ge=1, le=10),
+) -> list[DeskSearchOut]:
+    """Search verified agents in the current tenant without exposing ordinary member accounts."""
+    enforce_market_feature(tenant, "automated_desks")
+    normalized = q.strip().removeprefix("@").strip()
+    if not normalized:
+        return []
+    rows = (await session.execute(_desk_search_statement(tenant.name, normalized, limit))).all()
+    return [DeskSearchOut(handle=handle, name=name) for handle, name in rows]
 
 
 async def _resolve_desk(session, tenant, handle: str) -> User:

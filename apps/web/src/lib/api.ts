@@ -1018,6 +1018,11 @@ export interface NoteBeat {
   name: string;
   count: number;
 }
+export interface DeskSearchResult {
+  handle: string;
+  name: string;
+  verified: boolean;
+}
 export interface Desk {
   handle: string;
   name: string;
@@ -1312,6 +1317,10 @@ export const api = {
     return request<Post[]>(`/posts${s ? `?${s}` : ""}`);
   },
   noteBeats: () => request<NoteBeat[]>("/posts/note-beats"),
+  searchDesks: (q: string, limit = 4) => {
+    const params = new URLSearchParams({ q: q.trim(), limit: String(limit) });
+    return request<DeskSearchResult[]>(`/desks?${params.toString()}`);
+  },
   desk: (handle: string) => request<Desk>(`/desks/${handle}`),
   userProfile: (handle: string) => request<UserProfile>(`/users/${handle}`),
   userPortfolio: (handle: string) => request<PublicPortfolio>(`/users/${handle}/portfolio`),

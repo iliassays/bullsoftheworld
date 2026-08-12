@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useLang } from "../lib/i18n";
 import { useNavigate } from "../lib/nav";
-import { ApiError, api, type SymbolOut } from "../lib/api";
+import { ApiError, api, type DeskSearchResult, type SymbolOut } from "../lib/api";
+import { DeskIcon, hasDeskIcon } from "../lib/deskIcons";
+import { chooseSearchTarget } from "../lib/search-target";
 import { searchSymbols } from "../lib/symbols";
 import { useTenantConfig } from "../lib/tenant";
 import { trackProductEvent } from "../lib/analytics";
 import { CompanyLogo } from "./CompanyLogo";
+import { VerifiedBadge } from "./ui";
 
 const canOpenResearch = (status: SymbolOut["data_status"]) =>
   status === "ready" || status === "research_only";
@@ -23,6 +26,7 @@ export function SearchBar() {
   const { config } = useTenantConfig();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SymbolOut[]>([]);
+  const [agents, setAgents] = useState<DeskSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [preparingCode, setPreparingCode] = useState<string | null>(null);
   const [preparationMessage, setPreparationMessage] = useState<string | null>(null);
@@ -41,19 +45,27 @@ export function SearchBar() {
   useEffect(() => {
     if (!open || !raw) {
       setResults([]);
+      setAgents([]);
       return;
     }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      searchSymbols(raw, 8).then((symbols) => {
-        if (!cancelled) setResults(symbols);
+      Promise.all([
+        searchSymbols(raw, 6),
+        config.features.automated_desks
+          ? api.searchDesks(raw, 4).catch(() => [])
+          : Promise.resolve([]),
+      ]).then(([symbols, matchingAgents]) => {
+        if (cancelled) return;
+        setResults(symbols);
+        setAgents(matchingAgents);
       });
     }, 120);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, raw]);
+  }, [config.features.automated_desks, open, raw]);
 
   useEffect(() => {
     if (!preparingCode) return;
@@ -127,6 +139,31 @@ export function SearchBar() {
     navigate(`/s/${code}`);
   };
 
+  const goAgent = (agent: DeskSearchResult, rank = 1) => {
+    trackProductEvent("select_search_result", {
+      market: config.market,
+      result_rank: rank,
+      query_length: raw.length,
+      surface: "agent",
+      destination: "desk_profile",
+    });
+    setQ("");
+    setOpen(false);
+    navigate(`/desk/${encodeURIComponent(agent.handle)}`);
+  };
+
+  const chooseFirstResult = () => {
+    const target = chooseSearchTarget(raw, results, agents);
+    if (!target) return;
+    if (target.kind === "symbol") {
+      void go(target.value, results.indexOf(target.value) + 1);
+      return;
+    }
+    goAgent(target.value, results.length + agents.indexOf(target.value) + 1);
+  };
+
+  const hasResults = results.length > 0 || agents.length > 0;
+
   return (
     <div ref={boxRef} className="relative">
       <input
@@ -139,18 +176,36 @@ export function SearchBar() {
           setOpen(true);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && results[0]) void go(results[0], 1);
+          if (e.key === "Enter") chooseFirstResult();
           if (e.key === "Escape") setOpen(false);
         }}
         placeholder={`🔍 ${t(config.market === "US" ? "search.placeholder.us" : "search.placeholder")}`}
+        aria-label={t("search.ariaLabel")}
+        aria-autocomplete="list"
+        aria-expanded={open && hasResults}
+        aria-controls="global-search-results"
         className="w-full bg-card border border-border rounded-xl px-3 py-1.5 text-sm outline-none focus:border-accent"
       />
-      {open && results.length > 0 && (
-        <div className="absolute left-0 right-0 mt-1 bg-surface border border-border rounded-xl overflow-hidden z-50 shadow-lg">
+      {open && hasResults && (
+        <div
+          id="global-search-results"
+          role="listbox"
+          className="absolute left-0 right-0 mt-1 bg-surface border border-border rounded-xl overflow-hidden z-50 shadow-lg"
+        >
+          {results.length > 0 && (
+            <div className="border-b border-border/70 bg-card/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted">
+              {t("search.stocks")}
+            </div>
+          )}
           {results.map((s, index) => (
             <button
-              key={s.code}
-              onMouseDown={() => void go(s, index + 1)}
+              key={`symbol:${s.code}`}
+              type="button"
+              role="option"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                void go(s, index + 1);
+              }}
               className="w-full cursor-pointer text-left px-3 py-2 hover:bg-card flex items-center gap-2"
             >
               <CompanyLogo code={s.code} size={22} />
@@ -166,6 +221,48 @@ export function SearchBar() {
               )}
             </button>
           ))}
+          {agents.length > 0 && (
+            <div className="border-y border-border/70 bg-card/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted">
+              {t("search.agents")}
+            </div>
+          )}
+          {agents.map((agent, index) => {
+            const initials = agent.name
+              .split(/\s+/)
+              .map((part) => part[0])
+              .slice(0, 2)
+              .join("")
+              .toUpperCase();
+            return (
+              <button
+                key={`agent:${agent.handle}`}
+                type="button"
+                role="option"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  goAgent(agent, results.length + index + 1);
+                }}
+                className="w-full cursor-pointer text-left px-3 py-2 hover:bg-card flex items-center gap-2.5"
+              >
+                <span className="h-[26px] w-[26px] shrink-0 rounded-full border border-accent/40 bg-card text-accent grid place-items-center text-[9px] font-bold">
+                  {hasDeskIcon(agent.handle) ? (
+                    <DeskIcon handle={agent.handle} size={15} />
+                  ) : (
+                    initials
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1 text-[13px] font-semibold text-text">
+                    <span className="truncate">{agent.name}</span>
+                    {agent.verified && <VerifiedBadge size={13} />}
+                  </span>
+                  <span className="block truncate text-[10px] text-muted">
+                    @{agent.handle} · {t("search.officialAgent")}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
           {preparationMessage && (
             <div className="border-t border-border px-3 py-2 text-[10px] leading-relaxed text-muted">
               {preparationMessage}
