@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildConditionMarkers } from "./DossierChart";
+import { CHART_RANGES, buildConditionMarkers } from "./DossierChart";
 import type { ResearchConditionEvaluation } from "./model";
 
 function condition(): ResearchConditionEvaluation {
@@ -24,6 +24,10 @@ function condition(): ResearchConditionEvaluation {
 }
 
 describe("buildConditionMarkers", () => {
+  it("keeps chart range controls distinct from timeframe controls", () => {
+    expect(CHART_RANGES).toEqual(["3M", "6M", "1Y"]);
+  });
+
   it("shows only visible observations and caps chart annotation noise", () => {
     const availableDates = Array.from(
       { length: 15 },
@@ -44,5 +48,24 @@ describe("buildConditionMarkers", () => {
     });
 
     expect(markers).toEqual([]);
+  });
+
+  it("places a daily transition on its completed weekly display bar", () => {
+    const markers = buildConditionMarkers(
+      ["2026-08-07"],
+      {
+        ...condition(),
+        transitions: [{ date: "2026-08-04", close: 100, sequence: 7 }],
+      },
+      new Map([
+        ["2026-08-03", "2026-08-07"],
+        ["2026-08-04", "2026-08-07"],
+        ["2026-08-07", "2026-08-07"],
+      ]),
+    );
+
+    expect(markers).toEqual([
+      expect.objectContaining({ time: "2026-08-07", text: "T7" }),
+    ]);
   });
 });

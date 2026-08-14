@@ -28,12 +28,11 @@ import {
 } from "../autonomous-research/hooks";
 import { autonomousDecision, type AutonomousDecision } from "../autonomous-research/model";
 import { DecisionTicketPanel } from "./DecisionTicketPanel";
-import { DossierChart } from "./DossierChart";
-import { ResearchConditionPanel } from "./ResearchConditionPanel";
+import { InvestigationWorkbench } from "./InvestigationWorkbench";
 import { buildDecisionTicket } from "./decision-ticket";
 import { FACTOR_GUIDANCE, factorReading, METRIC_GUIDANCE, type FactorKey } from "./guidance";
 import type { ResearchCompanyDossier } from "./model";
-import { chartMode, chartRange, selectedCondition } from "./research-condition";
+import { chartMode, chartRange, chartTimeframe, selectedCondition } from "./research-condition";
 import { useCompanyDossier } from "./useCompanyDossier";
 
 function formatTimestamp(timestamp: string): string {
@@ -306,7 +305,8 @@ export function CompanyDossierPage() {
   );
   const selectedChartMode = chartMode(searchParams.get("chart"));
   const selectedChartRange = chartRange(searchParams.get("range"));
-  const updateContext = (key: "condition" | "chart" | "range", value: string) => {
+  const selectedChartTimeframe = chartTimeframe(searchParams.get("tf"));
+  const updateContext = (key: "condition" | "chart" | "range" | "tf", value: string) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set(key, value);
@@ -365,6 +365,24 @@ export function CompanyDossierPage() {
           <span><strong>Research limitations</strong>{dossier.dataQualityNotes.join(" ")}</span>
         </section>
       )}
+
+      <InvestigationWorkbench
+        analystError={startResearch.isError ? startResearch.error.message : null}
+        analystRunning={startResearch.isPending}
+        averageCost={decisionTicket.averageCost}
+        decision={decision}
+        decisionEvents={decisionEvents}
+        dossier={dossier}
+        mode={selectedChartMode}
+        onConditionChange={(key) => updateContext("condition", key)}
+        onModeChange={(mode) => updateContext("chart", mode)}
+        onRangeChange={(range) => updateContext("range", range)}
+        onRunAnalyst={() => startResearch.mutate(candidate.ticker)}
+        onTimeframeChange={(timeframe) => updateContext("tf", timeframe)}
+        range={selectedChartRange}
+        selectedCondition={selectedResearchCondition}
+        timeframe={selectedChartTimeframe}
+      />
 
       <DecisionTicketPanel ticket={decisionTicket} />
 
@@ -436,40 +454,6 @@ export function CompanyDossierPage() {
 
       <div className="dossier-layout">
         <div className="dossier-main-column">
-          <ResearchConditionPanel
-            onSelect={(key) => updateContext("condition", key)}
-            selected={selectedResearchCondition}
-            workbench={dossier.conditionWorkbench}
-          />
-          <section className="dossier-panel dossier-panel--chart">
-            <header className="dossier-panel__header">
-              <span><Gauge aria-hidden="true" size={15} /><strong>Price and participation</strong></span>
-              <small>{dossier.priceHistory.length} completed sessions · adjusted close where available</small>
-            </header>
-            <DossierChart
-              averageCost={decisionTicket.averageCost}
-              benchmarkCode={dossier.marketData.benchmarkCode}
-              decisionEvents={decisionEvents}
-              evidence={candidate.evidence.items}
-              mode={selectedChartMode}
-              onModeChange={(mode) => updateContext("chart", mode)}
-              onRangeChange={(range) => updateContext("range", range)}
-              overlays={dossier.conditionWorkbench.overlays}
-              points={dossier.priceHistory}
-              range={selectedChartRange}
-              resistance={dossier.marketData.nearestResistance}
-              selectedCondition={selectedResearchCondition}
-              support={dossier.marketData.nearestSupport}
-            />
-            <div className="dossier-chart-stats">
-              <Metric label="52-week range" value={`${formatNumber(dossier.marketData.week52Low, 2)} – ${formatNumber(dossier.marketData.week52High, 2)}`} />
-              <Metric help={`${METRIC_GUIDANCE.relativeVolume.definition} ${METRIC_GUIDANCE.relativeVolume.reference}`} label="Relative volume" value={dossier.marketData.relativeVolume === null ? "Not available" : `${dossier.marketData.relativeVolume.toFixed(2)}x`} detail="1.00x normal · <0.80x weak" />
-              <Metric help={`${METRIC_GUIDANCE.cmfObv.definition} ${METRIC_GUIDANCE.cmfObv.reference}`} label="CMF / OBV slope" value={`${formatNumber(dossier.marketData.cmf20, 2)} / ${formatNumber(dossier.marketData.obvSlope, 2)}`} detail="0 neutral · both negative warns" />
-              <Metric help={`${METRIC_GUIDANCE.rsi.definition} ${METRIC_GUIDANCE.rsi.reference}`} label="RSI (14)" value={formatNumber(dossier.marketData.rsi14, 1)} detail="75+ timing risk" />
-              <Metric help={`${METRIC_GUIDANCE.volatility.definition} ${METRIC_GUIDANCE.volatility.reference}`} label="Annualized volatility" value={dossier.marketData.volatilityPct === null ? "Not available" : `${dossier.marketData.volatilityPct.toFixed(1)}%`} detail="compare with same cap tier" />
-            </div>
-          </section>
-
           <section className="dossier-panel dossier-decision-frame">
             <header className="dossier-panel__header">
               <span><FileCheck2 aria-hidden="true" size={15} /><strong>Decision frame</strong></span>

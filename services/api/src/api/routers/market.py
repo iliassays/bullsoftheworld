@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime as dt
 import itertools
 import statistics
+from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -34,6 +35,7 @@ from bulls.analytics import (
     compute,
     detect_patterns,
 )
+from bulls.analytics.research_conditions import ResearchBar, build_condition_workbench
 from bulls.core.config import get_settings
 from bulls.core.markets import get_market_profile
 from bulls.core.models import (
@@ -49,7 +51,14 @@ from bulls.core.models import (
     UniverseOnboardingResult,
 )
 from bulls.core.scheduling import analysis_schedule
-from bulls.core.schemas.market import BarOut, QuoteOut, SymbolDetail, SymbolOut
+from bulls.core.schemas.market import (
+    BarOut,
+    PublicResearchChartOut,
+    QuoteOut,
+    SymbolDetail,
+    SymbolOut,
+    VolumeProfileCapabilityOut,
+)
 from bulls.market_data.calendar import is_trading_day, market_close_on, session_phase, to_market_tz
 
 _MOOD_TTL = 180  # quote-driven intraday read; stay well inside the 15-minute poll cadence
@@ -58,6 +67,7 @@ _MOOD_QUOTE_BATCH_WINDOW = dt.timedelta(minutes=30)
 router = APIRouter(tags=["market"])
 
 _MIN_ADTV_MN = 5.0
+_RESEARCH_CHART_LOOKBACK = 520
 
 
 def _escape_like(value: str) -> str:
@@ -747,6 +757,60 @@ async def get_bars(
             )
             out = out[-limit:]
     return out
+
+
+def _public_research_chart(
+    market: str, code: str, bars: Sequence[ResearchBar]
+) -> PublicResearchChartOut:
+    """Project shared analytics into the bounded, read-only Portal contract."""
+
+    workbench = asdict(build_condition_workbench(bars))
+    return PublicResearchChartOut(
+        market=market,
+        code=code,
+        source_frequency="completed_daily",
+        price_basis="corporate_action_adjusted",
+        **workbench,
+        volume_profile=VolumeProfileCapabilityOut(
+            status="unavailable",
+            method="not_available",
+            source_frequency="none",
+            reason=(
+                "Verified intraday volume-at-price coverage is not available for this symbol. "
+                "Daily OHLCV is deliberately not converted into an estimated volume profile."
+            ),
+        ),
+    )
+
+
+@router.get("/symbols/{code}/research-chart")
+async def get_research_chart(
+    code: str, tenant: CurrentTenant, session: DbSession
+) -> PublicResearchChartOut:
+    """Completed-session chart conditions scoped to the active tenant's market.
+
+    This endpoint intentionally excludes private Atlas evidence, strategy admission, paper
+    targets, and portfolio state. It uses the same versioned analytics implementation as Atlas.
+    """
+
+    code = code.upper()
+    symbol = await session.get(Symbol, (tenant.market, code))
+    if symbol is None or not symbol.is_public_research:
+        raise HTTPException(status_code=404, detail=f"Unknown symbol {code!r} in {tenant.market}")
+
+    rows = list(
+        await session.scalars(
+            select(DailyBar)
+            .where(DailyBar.market == tenant.market, DailyBar.code == code)
+            .order_by(DailyBar.date.desc())
+            .limit(_RESEARCH_CHART_LOOKBACK)
+        )
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No price history for {code!r} yet")
+
+    adjusted = adjust_bars(list(reversed(rows)))
+    return _public_research_chart(tenant.market, code, adjusted)
 
 
 class AnalyticsWithPatterns(AnalyticsResult):

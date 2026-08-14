@@ -205,6 +205,65 @@ export interface Bar {
   close: number;
   volume: number;
 }
+export type ResearchConditionKey =
+  | "trend_alignment"
+  | "participation_expansion"
+  | "controlled_pullback_context";
+export type ResearchConditionState = "observed" | "not_observed" | "unavailable";
+export interface ResearchChartOverlayPoint {
+  date: string;
+  value: number;
+}
+export interface ResearchChartOverlaySeries {
+  key: "ema20" | "ema50";
+  label: string;
+  points: ResearchChartOverlayPoint[];
+}
+export interface ResearchChartConditionCheck {
+  fact_key: string;
+  label: string;
+  observed: number | null;
+  expected: string;
+  unit: "percent" | "multiple";
+  passed: boolean | null;
+}
+export interface ResearchChartConditionTransition {
+  date: string;
+  close: number;
+  sequence: number;
+}
+export interface ResearchChartCondition {
+  key: ResearchConditionKey;
+  version: string;
+  title: string;
+  short_label: string;
+  category: string;
+  state: ResearchConditionState;
+  summary: string;
+  why_it_matters: string;
+  limitation: string;
+  checks: ResearchChartConditionCheck[];
+  transitions: ResearchChartConditionTransition[];
+}
+export interface PublicResearchChart {
+  market: string;
+  code: string;
+  source_frequency: "completed_daily";
+  price_basis: "corporate_action_adjusted";
+  methodology_version: string;
+  timeframe: "1d";
+  as_of_date: string | null;
+  history_start_date: string | null;
+  disclaimer: string;
+  overlays: ResearchChartOverlaySeries[];
+  conditions: ResearchChartCondition[];
+  volume_profile: {
+    status: "available" | "unavailable";
+    method: "trade_at_price" | "intraday_bar_estimate" | "not_available";
+    source_frequency: "trades" | "intraday" | "none";
+    reason: string;
+  };
+}
 export interface Digest {
   code: string;
   summary: string;
@@ -1245,6 +1304,8 @@ export const api = {
   bars: (code: string, limit = 180) =>
     request<Bar[]>(`/symbols/${code}/bars?limit=${limit}`),
   analytics: (code: string) => request<Analytics>(`/symbols/${code}/analytics`),
+  researchChart: (code: string) =>
+    request<PublicResearchChart>(`/symbols/${code}/research-chart`),
   levels: (code: string) =>
     request<{
       code: string;

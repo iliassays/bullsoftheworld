@@ -65,6 +65,28 @@ The new **Condition scanner** route provides:
 - company-research navigation and explicit observation-alert controls;
 - responsive light and dark layouts for both Bulls of Dhaka and Bulls of Wall Street.
 
+The company dossier now also contains an **Investigation Workbench v1**. It composes the
+existing tenant-bound dossier facts into one synchronized analyst surface rather than creating a
+second product or another data contract:
+
+- a primary completed-session price chart with daily and weekly aggregation, price/benchmark
+  modes, 3/6/12-month windows, EMA layers, support/resistance, evidence markers, condition
+  transitions, and paper-portfolio events;
+- a research-condition rail whose selection updates both the chart annotation and the definition,
+  actual value, registered threshold, limitation, and observed/not-observed state in the inspector;
+- inspector views for official evidence, fundamentals, the bounded autonomous analyst record, and
+  explicit missing-data states;
+- a timestamped evidence timeline that keeps condition transitions, official records, and
+  portfolio events distinct while sharing one point-in-time context;
+- balanced, chart-focus, and evidence-focus layouts saved locally under a tenant-specific key;
+- explicit daily-source labeling on weekly bars and moving-average overlays. Weekly rendering is
+  aggregation of stored daily records, not an intraday or native weekly data claim.
+
+The workbench does not create candidates, targets, fills, probability estimates, or analyst facts.
+It is an investigation surface over the existing dossier, condition registry, and paper-ledger
+contracts. DSE and US builds remain hard-bound to their own tenant, market, site, portal, and API
+domains.
+
 ### Remaining admission work
 
 This foundation answers *what matched, why, and what historically followed*. It does not establish a profitable edge. Before any condition can influence a strategy book, it still requires point-in-time universe reconstruction, corporate-action-complete data, cost/capacity modelling, regime and segment stability, untouched holdout validation, forward evidence, and the existing Atlas strategy-promotion controls.

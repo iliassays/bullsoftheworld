@@ -4,6 +4,7 @@ import type { ResearchConditionWorkbench } from "./model";
 import {
   chartMode,
   chartRange,
+  chartTimeframe,
   formatObservedValue,
   selectedCondition,
 } from "./research-condition";
@@ -60,6 +61,8 @@ describe("research condition context", () => {
     expect(chartMode("intraday")).toBe("price");
     expect(chartRange("6M")).toBe("6M");
     expect(chartRange("5Y")).toBe("1Y");
+    expect(chartTimeframe("1W")).toBe("1W");
+    expect(chartTimeframe("1h")).toBe("1D");
   });
 
   it("formats observed units without hiding negative values", () => {

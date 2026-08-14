@@ -2,22 +2,35 @@ import { useEffect, useRef, useState } from "react";
 import {
   ColorType,
   type IChartApi,
+  type ISeriesApi,
   LineStyle,
+  type SeriesMarker,
   type Time,
   createChart,
 } from "lightweight-charts";
 import { Link } from "../lib/nav";
-import { api, type Bar, type PatternMatch } from "../lib/api";
+import {
+  api,
+  type Bar,
+  type PatternMatch,
+  type PublicResearchChart,
+  type ResearchConditionKey,
+} from "../lib/api";
 import { useLang } from "../lib/i18n";
 import { patternLabel } from "../lib/patterns";
+import { recentTransitions, researchChartCopy } from "../lib/research-chart";
+import {
+  ResearchConditionInspector,
+  ResearchConditionTabs,
+} from "./research-chart/ResearchConditionPanel";
 
 const C = {
   up: "#2fbf71",
   down: "#f0564a",
-  ema9: "#e3b341",
   ema20: "#5b9cf5",
-  vwap: "#a78bfa",
+  ema50: "#a78bfa",
   pattern: "#e3b341",
+  transition: "#e3b341",
   grid: "#161b22",
   axis: "#232b36",
   text: "#8b97a6",
@@ -42,21 +55,6 @@ function ema(values: number[], period: number): (number | null)[] {
     out[i] = e;
   }
   return out;
-}
-
-function rollingVwap(bars: Bar[], period: number) {
-  const pts: { time: Time; value: number }[] = [];
-  for (let i = period - 1; i < bars.length; i++) {
-    let pv = 0;
-    let v = 0;
-    for (let j = i - period + 1; j <= i; j++) {
-      const tp = (bars[j].high + bars[j].low + bars[j].close) / 3;
-      pv += tp * bars[j].volume;
-      v += bars[j].volume;
-    }
-    if (v > 0) pts.push({ time: bars[i].date as Time, value: pv / v });
-  }
-  return pts;
 }
 
 function lineData(bars: Bar[], series: (number | null)[]) {
@@ -87,9 +85,8 @@ function PatternBadge({ pattern }: { pattern: PatternMatch }) {
 function Legend() {
   const { t } = useLang();
   const items: [string, string][] = [
-    ["9 EMA", C.ema9],
-    ["20 EMA", C.ema20],
-    ["20D volume-weighted avg", C.vwap],
+    ["EMA20", C.ema20],
+    ["EMA50", C.ema50],
     [t("chart.support"), C.up],
     [t("chart.resistance"), C.down],
   ];
@@ -106,14 +103,19 @@ function Legend() {
 }
 
 export function CandleChart({ code }: { code: string }) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
+  const copy = researchChartCopy(lang);
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candlesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const barsRef = useRef<Bar[]>([]);
   const [empty, setEmpty] = useState(false);
   const [tf, setTf] = useState("3M");
   const [pattern, setPattern] = useState<PatternMatch | null>(null);
+  const [research, setResearch] = useState<PublicResearchChart | null>();
+  const [selectedCondition, setSelectedCondition] =
+    useState<ResearchConditionKey>("trend_alignment");
 
   // Apply a timeframe by zooming the visible range (indicators stay computed on full history).
   const applyTf = (label: string) => {
@@ -130,6 +132,10 @@ export function CandleChart({ code }: { code: string }) {
   useEffect(() => {
     const el = wrapRef.current?.querySelector<HTMLDivElement>("[data-chart]");
     if (!el) return;
+
+    setEmpty(false);
+    setResearch(undefined);
+    setSelectedCondition("trend_alignment");
 
     const chart = createChart(el, {
       autoSize: true,
@@ -154,6 +160,7 @@ export function CandleChart({ code }: { code: string }) {
       wickUpColor: C.up,
       wickDownColor: C.down,
     });
+    candlesRef.current = candles;
     const volume = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
@@ -169,18 +176,22 @@ export function CandleChart({ code }: { code: string }) {
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       });
-    const ema9 = overlay(C.ema9);
     const ema20 = overlay(C.ema20);
-    const vwap = overlay(C.vwap, true);
+    const ema50 = overlay(C.ema50);
     const patResistance = overlay(C.pattern);
     const patSupport = overlay(C.pattern);
 
     let alive = true;
-    Promise.all([api.bars(code, 300), api.analytics(code).catch(() => null)])
-      .then(([bars, analytics]) => {
+    Promise.all([
+      api.bars(code, 520),
+      api.analytics(code).catch(() => null),
+      api.researchChart(code).catch(() => null),
+    ])
+      .then(([bars, analytics, researchChart]) => {
         if (!alive) return;
         if (!bars.length) return setEmpty(true);
         barsRef.current = bars;
+        setResearch(researchChart);
 
         candles.setData(
           bars.map((b) => ({ time: b.date as Time, open: b.open, high: b.high, low: b.low, close: b.close })),
@@ -193,9 +204,14 @@ export function CandleChart({ code }: { code: string }) {
           })),
         );
         const closes = bars.map((b) => b.close);
-        ema9.setData(lineData(bars, ema(closes, 9)));
-        ema20.setData(lineData(bars, ema(closes, 20)));
-        vwap.setData(rollingVwap(bars, 20));
+        const overlayData = (key: "ema20" | "ema50", fallbackPeriod: number) => {
+          const registered = researchChart?.overlays.find((series) => series.key === key);
+          return registered
+            ? registered.points.map((point) => ({ time: point.date as Time, value: point.value }))
+            : lineData(bars, ema(closes, fallbackPeriod));
+        };
+        ema20.setData(overlayData("ema20", 20));
+        ema50.setData(overlayData("ema50", 50));
 
         if (analytics?.nearest_support != null) {
           candles.createPriceLine({
@@ -215,26 +231,6 @@ export function CandleChart({ code }: { code: string }) {
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
             title: "R",
-          });
-        }
-        // Mark where the recent swing high / low formed (the structure behind S/R).
-        const markers = [];
-        if (analytics?.recent_swing_high) {
-          markers.push({
-            time: analytics.recent_swing_high.date as Time,
-            position: "aboveBar" as const,
-            color: C.down,
-            shape: "arrowDown" as const,
-            text: "SH",
-          });
-        }
-        if (analytics?.recent_swing_low) {
-          markers.push({
-            time: analytics.recent_swing_low.date as Time,
-            position: "belowBar" as const,
-            color: C.up,
-            shape: "arrowUp" as const,
-            text: "SL",
           });
         }
         // The single strongest currently-active chart pattern (framework evidence — see the
@@ -265,13 +261,20 @@ export function CandleChart({ code }: { code: string }) {
             });
           }
         }
-        if (markers.length) candles.setMarkers(markers.sort((a, b) => (a.time < b.time ? -1 : 1)));
-
         applyTf("3M");
       })
       .catch(() => setEmpty(true));
 
-    // Hover tooltip: date + OHLC.
+    const resizeObserver = new ResizeObserver(() => {
+      const tip = tipRef.current;
+      if (!tip) return;
+      tip.style.opacity = "0";
+      tip.style.transform = "translate(8px, 8px)";
+    });
+    resizeObserver.observe(el);
+
+    // Hover tooltip: date + OHLC. Measure it after writing the content so it
+    // remains inside the plot on narrow screens and after viewport changes.
     chart.subscribeCrosshairMove((param) => {
       const tip = tipRef.current;
       if (!tip) return;
@@ -288,39 +291,90 @@ export function CandleChart({ code }: { code: string }) {
         `<div style="font-variant-numeric:tabular-nums">O ${c.open} H ${c.high} L ${c.low} ` +
         `<span style="color:${up ? C.up : C.down};font-weight:700">C ${c.close}</span></div>`;
       tip.style.opacity = "1";
-      const x = Math.min(param.point.x + 12, el.clientWidth - 150);
+      const availableWidth = Math.max(0, el.clientWidth - 16);
+      tip.style.maxWidth = `${availableWidth}px`;
+      const tipWidth = Math.min(tip.offsetWidth, availableWidth);
+      const x = Math.min(param.point.x + 12, el.clientWidth - tipWidth - 8);
       tip.style.transform = `translate(${Math.max(8, x)}px, 8px)`;
     });
 
     return () => {
       alive = false;
+      resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
+      candlesRef.current = null;
       setPattern(null);
     };
   }, [code]);
+
+  useEffect(() => {
+    const candles = candlesRef.current;
+    if (!candles || !research) return;
+    const condition = research.conditions.find((item) => item.key === selectedCondition);
+    if (!condition) {
+      candles.setMarkers([]);
+      return;
+    }
+    const markers: SeriesMarker<Time>[] = recentTransitions(condition).map((transition) => ({
+      time: transition.date as Time,
+      position: "belowBar",
+      color: C.transition,
+      shape: "circle",
+      text: `${condition.short_label}${transition.sequence}`,
+    }));
+    candles.setMarkers(markers);
+  }, [research, selectedCondition]);
 
   if (empty) {
     return <div className="text-muted text-sm py-6 text-center">{t("chart.noHistory")}</div>;
   }
 
+  const activeCondition = research?.conditions.find((item) => item.key === selectedCondition);
+  const latestPriceDate = barsRef.current.at(-1)?.date;
+  const priceHasNewerBar = Boolean(
+    research?.as_of_date && latestPriceDate && latestPriceDate > research.as_of_date,
+  );
+
   return (
     <div className="rounded-2xl border border-border bg-surface p-3">
-      {pattern && <PatternBadge pattern={pattern} />}
-      <div className="flex justify-end gap-1">
-        {TIMEFRAMES.map((t) => (
-          <button
-            key={t.label}
-            onClick={() => applyTf(t.label)}
-            className={`text-[11px] px-2 py-0.5 rounded-md font-semibold ${
-              tf === t.label ? "bg-accent text-bg" : "text-muted bg-card"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-text">{copy.title}</h2>
+          {research?.as_of_date && (
+            <p className="mt-0.5 text-[10px] text-muted">
+              {copy.dataThrough} {research.as_of_date} · {copy.completedClose}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-1" aria-label="Chart range">
+          {TIMEFRAMES.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => applyTf(item.label)}
+              className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
+                tf === item.label ? "bg-accent text-bg" : "bg-card text-muted hover:text-text"
+              }`}
+            >
+              {lang === "bn" && item.label === "All" ? "সব" : item.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div ref={wrapRef} className="relative mt-2">
+      {pattern && <PatternBadge pattern={pattern} />}
+      {research && (
+        <div className="mt-3">
+          <ResearchConditionTabs
+            conditions={research.conditions}
+            lang={lang}
+            selected={selectedCondition}
+            onSelect={setSelectedCondition}
+          />
+        </div>
+      )}
+      {research === null && <p className="mt-3 text-xs text-warn">{copy.unavailable}</p>}
+      <div ref={wrapRef} className="relative mt-2 overflow-hidden">
         <div data-chart className="w-full" />
         <div
           ref={tipRef}
@@ -329,6 +383,14 @@ export function CandleChart({ code }: { code: string }) {
         />
       </div>
       <Legend />
+      {research && activeCondition && (
+        <ResearchConditionInspector
+          condition={activeCondition}
+          lang={lang}
+          research={research}
+          priceHasNewerBar={priceHasNewerBar}
+        />
+      )}
     </div>
   );
 }

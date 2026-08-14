@@ -15,7 +15,17 @@ import type {
   DossierPricePoint,
   ResearchConditionEvaluation,
 } from "./model";
-import type { DossierChartMode, DossierChartRange } from "./research-condition";
+import type {
+  DossierChartMode,
+  DossierChartRange,
+  DossierChartTimeframe,
+} from "./research-condition";
+import {
+  aggregateWeeklyOverlays,
+  aggregateWeeklyPricePoints,
+  weeklyDisplayDateMap,
+  type WorkbenchOverlayVisibility,
+} from "./workbench-state";
 
 interface DossierChartProps {
   points: readonly DossierPricePoint[];
@@ -26,8 +36,11 @@ interface DossierChartProps {
   selectedCondition: ResearchConditionEvaluation;
   mode: DossierChartMode;
   range: DossierChartRange;
+  timeframe: DossierChartTimeframe;
+  visibility: WorkbenchOverlayVisibility;
   onModeChange: (mode: DossierChartMode) => void;
   onRangeChange: (range: DossierChartRange) => void;
+  onTimeframeChange: (timeframe: DossierChartTimeframe) => void;
   support: number | null;
   resistance: number | null;
   averageCost: number | null;
@@ -43,11 +56,12 @@ interface HoverReading {
   benchmarkRelative?: number;
 }
 
-const RANGE_SESSIONS: Record<DossierChartRange, number> = {
-  "3M": 66,
-  "6M": 132,
-  "1Y": 252,
+const RANGE_SESSIONS: Record<DossierChartTimeframe, Record<DossierChartRange, number>> = {
+  "1D": { "3M": 66, "6M": 132, "1Y": 252 },
+  "1W": { "3M": 13, "6M": 26, "1Y": 52 },
 };
+
+export const CHART_RANGES = Object.keys(RANGE_SESSIONS["1D"]) as DossierChartRange[];
 
 const COLORS = {
   up: "#14835f",
@@ -102,13 +116,18 @@ function eventMarker(event: DecisionEvent): SeriesMarker<Time> | null {
 export function buildConditionMarkers(
   availableDates: readonly string[],
   condition: ResearchConditionEvaluation,
+  displayDateMap?: ReadonlyMap<string, string>,
 ): SeriesMarker<Time>[] {
   const dates = new Set(availableDates);
-  return condition.transitions
-    .filter((transition) => dates.has(transition.date))
+  const transitionsByDisplayDate = new Map<string, ResearchConditionEvaluation["transitions"][number]>();
+  for (const transition of condition.transitions) {
+    const displayDate = displayDateMap?.get(transition.date) ?? transition.date;
+    if (dates.has(displayDate)) transitionsByDisplayDate.set(displayDate, transition);
+  }
+  return [...transitionsByDisplayDate.entries()]
     .slice(-12)
-    .map((transition) => ({
-      time: transition.date as Time,
+    .map(([displayDate, transition]) => ({
+      time: displayDate as Time,
       position: "belowBar",
       color: COLORS.condition,
       shape: "circle",
@@ -117,21 +136,37 @@ export function buildConditionMarkers(
 }
 
 function chartMarkers(
+  sourcePoints: readonly DossierPricePoint[],
   availableDates: readonly string[],
   events: readonly DecisionEvent[],
   evidence: readonly ResearchEvidenceItem[],
   condition: ResearchConditionEvaluation,
+  timeframe: DossierChartTimeframe,
+  visibility: WorkbenchOverlayVisibility,
 ): SeriesMarker<Time>[] {
   const dates = new Set(availableDates);
-  const markers = events
-    .filter((event) => dates.has(event.effectiveDate))
+  const sourceDates = sourcePoints.map((point) => point.date);
+  const displayDateMap = timeframe === "1W"
+    ? weeklyDisplayDateMap(sourcePoints)
+    : new Map(sourceDates.map((date) => [date, date]));
+  const displayedDate = (date: string): string | null => {
+    const sourceDate = displayDateMap.has(date)
+      ? date
+      : sourceDates.find((candidate) => candidate >= date);
+    if (!sourceDate) return null;
+    const displayDate = displayDateMap.get(sourceDate);
+    return displayDate && dates.has(displayDate) ? displayDate : null;
+  };
+  const markers = (visibility.portfolio ? events : [])
+    .map((event) => ({ event, displayDate: displayedDate(event.effectiveDate) }))
+    .filter((item): item is { event: DecisionEvent; displayDate: string } => Boolean(item.displayDate))
     .flatMap((event) => {
-      const marker = eventMarker(event);
-      return marker ? [marker] : [];
+      const marker = eventMarker(event.event);
+      return marker ? [{ ...marker, time: event.displayDate as Time }] : [];
     });
-  const evidenceMarkers = evidence
+  const evidenceMarkers = (visibility.evidence ? evidence : [])
     .map((item) => item.publishedAt.slice(0, 10))
-    .map((publishedAt) => availableDates.find((date) => date >= publishedAt))
+    .map(displayedDate)
     .filter((date): date is string => Boolean(date))
     .filter((date, index, all) => all.indexOf(date) === index)
     .map<SeriesMarker<Time>>((date) => ({
@@ -141,7 +176,10 @@ function chartMarkers(
       shape: "square",
       text: "E",
     }));
-  return [...markers, ...evidenceMarkers, ...buildConditionMarkers(availableDates, condition)].sort((left, right) =>
+  const conditionMarkers = visibility.condition
+    ? buildConditionMarkers(availableDates, condition, displayDateMap)
+    : [];
+  return [...markers, ...evidenceMarkers, ...conditionMarkers].sort((left, right) =>
     String(left.time).localeCompare(String(right.time)),
   );
 }
@@ -155,8 +193,11 @@ export function DossierChart({
   selectedCondition,
   mode,
   range,
+  timeframe,
+  visibility,
   onModeChange,
   onRangeChange,
+  onTimeframeChange,
   support,
   resistance,
   averageCost,
@@ -164,9 +205,17 @@ export function DossierChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverReading | null>(null);
   const [themeRevision, setThemeRevision] = useState(0);
+  const timeframePoints = useMemo(
+    () => timeframe === "1W" ? aggregateWeeklyPricePoints(points) : [...points],
+    [points, timeframe],
+  );
+  const timeframeOverlays = useMemo(
+    () => timeframe === "1W" ? aggregateWeeklyOverlays(overlays) : [...overlays],
+    [overlays, timeframe],
+  );
   const visiblePoints = useMemo(
-    () => points.slice(-RANGE_SESSIONS[range]),
-    [points, range],
+    () => timeframePoints.slice(-RANGE_SESSIONS[timeframe][range]),
+    [range, timeframe, timeframePoints],
   );
 
   useEffect(() => {
@@ -219,10 +268,13 @@ export function DossierChart({
     });
 
     const markers = chartMarkers(
+      points,
       visiblePoints.map((point) => point.date),
       decisionEvents,
       evidence,
       selectedCondition,
+      timeframe,
+      visibility,
     );
     if (mode === "price") {
       const candles = chart.addCandlestickSeries({
@@ -279,10 +331,14 @@ export function DossierChart({
             .map((point) => ({ time: point.date as Time, value: point.value })),
         );
       };
-      addOverlay(overlays.find((overlay) => overlay.key === "ema20"), COLORS.ma20);
-      addOverlay(overlays.find((overlay) => overlay.key === "ema50"), COLORS.ma50);
+      if (visibility.ema20) {
+        addOverlay(timeframeOverlays.find((overlay) => overlay.key === "ema20"), COLORS.ma20);
+      }
+      if (visibility.ema50) {
+        addOverlay(timeframeOverlays.find((overlay) => overlay.key === "ema50"), COLORS.ma50);
+      }
 
-      if (support !== null) {
+      if (visibility.levels && support !== null) {
         candles.createPriceLine({
           price: support,
           color: COLORS.up,
@@ -292,7 +348,7 @@ export function DossierChart({
           title: "Support",
         });
       }
-      if (resistance !== null) {
+      if (visibility.levels && resistance !== null) {
         candles.createPriceLine({
           price: resistance,
           color: COLORS.down,
@@ -302,7 +358,7 @@ export function DossierChart({
           title: "Resistance",
         });
       }
-      if (averageCost !== null) {
+      if (visibility.portfolio && averageCost !== null) {
         candles.createPriceLine({
           price: averageCost,
           color: COLORS.accent,
@@ -377,11 +433,14 @@ export function DossierChart({
     decisionEvents,
     evidence,
     mode,
-    overlays,
+    points,
     resistance,
     selectedCondition,
     support,
     themeRevision,
+    timeframe,
+    timeframeOverlays,
+    visibility,
     visiblePoints,
   ]);
 
@@ -393,24 +452,38 @@ export function DossierChart({
   return (
     <div className="dossier-chart">
       <div className="dossier-chart__toolbar">
-        <div aria-label="Chart mode" className="dossier-chart__segments">
-          <button
-            aria-pressed={mode === "price"}
-            onClick={() => onModeChange("price")}
-            type="button"
-          >
-            Price
-          </button>
-          <button
-            aria-pressed={mode === "relative"}
-            onClick={() => onModeChange("relative")}
-            type="button"
-          >
-            Relative to {benchmarkCode}
-          </button>
+        <div className="dossier-chart__toolbar-group">
+          <div aria-label="Chart timeframe" className="dossier-chart__segments">
+            {(["1D", "1W"] as DossierChartTimeframe[]).map((item) => (
+              <button
+                aria-pressed={timeframe === item}
+                key={item}
+                onClick={() => onTimeframeChange(item)}
+                type="button"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          <div aria-label="Chart mode" className="dossier-chart__segments">
+            <button
+              aria-pressed={mode === "price"}
+              onClick={() => onModeChange("price")}
+              type="button"
+            >
+              Price
+            </button>
+            <button
+              aria-pressed={mode === "relative"}
+              onClick={() => onModeChange("relative")}
+              type="button"
+            >
+              Relative to {benchmarkCode}
+            </button>
+          </div>
         </div>
         <div aria-label="Chart range" className="dossier-chart__segments">
-          {(Object.keys(RANGE_SESSIONS) as DossierChartRange[]).map((item) => (
+          {CHART_RANGES.map((item) => (
             <button
               aria-pressed={range === item}
               key={item}
@@ -443,7 +516,7 @@ export function DossierChart({
           <>
             <strong>{latest.date}</strong>
             <span>Close {latest.close.toFixed(2)}</span>
-            <span>{mode === "price" ? "EMA20 / EMA50 · completed sessions" : "Indexed return from range start"}</span>
+            <span>{mode === "price" ? `Completed ${timeframe === "1W" ? "weekly" : "daily"} bars` : "Indexed return from range start"}</span>
           </>
         )}
       </div>
@@ -451,11 +524,11 @@ export function DossierChart({
       <div className="dossier-chart__key">
         {mode === "price" ? (
           <>
-            <span><i style={{ background: COLORS.ma20 }} />EMA20 · backend</span>
-            <span><i style={{ background: COLORS.ma50 }} />EMA50 · backend</span>
-            <span><i style={{ background: COLORS.condition }} />{selectedCondition.shortLabel}# · {selectedCondition.title}</span>
-            <span><i style={{ background: COLORS.evidence }} />Official evidence</span>
-            <span><i style={{ background: COLORS.accent }} />Portfolio target / cost</span>
+            {visibility.ema20 && <span><i style={{ background: COLORS.ma20 }} />EMA20 · daily source</span>}
+            {visibility.ema50 && <span><i style={{ background: COLORS.ma50 }} />EMA50 · daily source</span>}
+            {visibility.condition && <span><i style={{ background: COLORS.condition }} />{selectedCondition.shortLabel}# · {selectedCondition.title}</span>}
+            {visibility.evidence && <span><i style={{ background: COLORS.evidence }} />Official evidence</span>}
+            {visibility.portfolio && <span><i style={{ background: COLORS.accent }} />Portfolio events / cost</span>}
           </>
         ) : (
           <>

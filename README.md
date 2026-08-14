@@ -25,6 +25,32 @@ tenants/            per-market config (market, locale, branding, domains)
 The app only ever talks to a `MarketDataProvider` — swapping the DSE scraper for a licensed
 real-time feed is a one-line registry change. See [CLAUDE.md](CLAUDE.md) for principles.
 
+## Bulls Atlas 🧭
+
+Atlas is the institutional research and risk layer — point-in-time backtests, paper shadow books,
+evidence lineage, and the anti-overfitting machinery that keeps a good-looking chart from becoming
+a return claim. It ships as a separate authenticated app (`apps/research`) on its own CloudFront
+stack.
+
+> **📘 [Atlas Engineering Handbook](https://claude.ai/code/artifact/8077c3f9-89d7-43da-8a2c-4a74d344bb84)**
+> — architecture, technology rationale, the portfolio engine, the five anti-overfitting mechanisms,
+> the data model, and the honest strategy scoreboard. Start here to learn the system.
+
+Normative documents — read before changing any strategy or the product loop:
+
+| Document | Governs |
+|---|---|
+| [atlas-investment-mandate.md](docs/research/atlas-investment-mandate.md) | Strategy admission, the bounded portfolio, promotion gates |
+| [institutional-investment-operating-model.md](docs/research/institutional-investment-operating-model.md) | The daily product loop and information architecture |
+| [institutional-research-os.md](docs/architecture/institutional-research-os.md) | Approved architecture and explicit non-goals |
+| [atlas-alpha-evidence-audit-2026-08-11.md](docs/research/atlas-alpha-evidence-audit-2026-08-11.md) | Most recent evidence assessment |
+
+```bash
+uv run python scripts/certify_atlas_engine.py   # known-answer engine certification, no DB needed
+uv run pytest packages/analytics/tests          # the research engine test suite
+cd apps/research && npm install && npm run dev  # the Atlas app
+```
+
 ## Quickstart
 
 ```bash

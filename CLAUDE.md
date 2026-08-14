@@ -46,6 +46,38 @@ follow, tag stocks with cashtags (`$GP`), set sentiment (bull/bear), and watch m
     execution assumptions or promotion gates, and read
     `docs/research/institutional-investment-operating-model.md` before changing its product loop.
 
+## Engineering execution discipline
+
+Adapted for this repository from the
+[Karpathy-inspired coding guidelines](https://github.com/multica-ai/andrej-karpathy-skills).
+These rules apply to every coding agent and complement the platform contracts above.
+
+1. **Think before coding.** Read the relevant contracts and surrounding implementation before
+   choosing a design. Surface material assumptions, ambiguity, conflicting requirements and
+   tradeoffs. Ask only when the answer cannot be established safely from the repository, runtime or
+   production evidence. Push back on requests that would weaken data integrity, tenant isolation,
+   security, research validity or user comprehension.
+2. **Prefer the smallest sufficient design.** Implement only the behavior required for the stated
+   outcome. Reuse established modules and interfaces; do not add speculative configurability,
+   one-use abstractions or market-specific branches when the tenant model already owns the
+   difference. If a simpler implementation preserves the same contracts and verification, use it.
+3. **Keep changes surgical.** Every changed line must trace to the request or be necessary to keep
+   that change correct. Preserve unrelated working-tree edits, avoid adjacent refactors and match
+   local style. Remove only the dead code or imports introduced by the current change. Record
+   unrelated findings instead of silently fixing them.
+4. **Execute against verifiable outcomes.** For non-trivial work, state a brief architecture and
+   concrete acceptance checks before editing. Reproduce defects where practical, add focused tests,
+   and verify the narrow behavior followed by the affected integration boundary. Never claim a
+   migration, data repair, deployment or tenant-specific feature is complete until the corresponding
+   database/API/UI or public production path has been checked.
+5. **Treat absence and uncertainty honestly.** Do not manufacture fallback data, research
+   conclusions, successful states or freshness. Prefer an explicit unavailable/blocked state over a
+   plausible but unverified result. Financial calculations require point-in-time inputs, documented
+   assumptions and tests proportionate to their decision impact.
+
+For trivial, unambiguous edits, apply these rules with judgment; rigor must reduce mistakes without
+turning a one-line correction into a process exercise.
+
 ## Stack
 
 | Layer | Choice |
