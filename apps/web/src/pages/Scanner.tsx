@@ -4,6 +4,7 @@ import { DailyShortlistPanel } from "../components/DailyShortlistPanel";
 import { EvidenceChip, evidenceExplain } from "../components/EvidenceChip";
 import { SizeChips } from "../components/SizeChips";
 import { FreshnessTag } from "../components/FreshnessTag";
+import { ResearchConditionBoard } from "../components/ResearchConditionBoard";
 import { Link } from "../lib/nav";
 import { Empty, Pct, Spinner } from "../components/ui";
 import { api, type ScannerResponse, type Screen, type ScreenItem } from "../lib/api";
@@ -699,7 +700,7 @@ export function Scanner() {
     setResearchTabs(data.tabs);
     setStrategyPack(data.strategy_pack);
     setTab((current) =>
-      current === "watchlist" || data.tabs.some((candidate) => candidate.key === current)
+      current === "watchlist" || current === "conditions" || data.tabs.some((candidate) => candidate.key === current)
         ? current
         : data.tab,
     );
@@ -764,11 +765,14 @@ export function Scanner() {
       >
         <div className="flex gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1">
           {researchTabs.map((item) => seg(item.key, tabTitle(item)))}
+          {seg("conditions", lang === "bn" ? "গবেষণার শর্ত" : "Research conditions")}
           {seg("watchlist", t("scanner.watchlist"))}
         </div>
       </div>
 
-      {tab === "watchlist" ? (
+      {tab === "conditions" ? (
+        <ResearchConditionBoard size={tier === ALL_UNIVERSE ? undefined : tier} />
+      ) : tab === "watchlist" ? (
         <div className="flex flex-col gap-3">
           {user ? (
             <>

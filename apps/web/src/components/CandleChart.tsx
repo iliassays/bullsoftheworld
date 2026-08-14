@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ColorType,
   type IChartApi,
@@ -19,6 +20,7 @@ import {
 import { useLang } from "../lib/i18n";
 import { patternLabel } from "../lib/patterns";
 import { recentTransitions, researchChartCopy } from "../lib/research-chart";
+import { researchConditionFromSearch } from "../lib/research-conditions";
 import {
   ResearchConditionInspector,
   ResearchConditionTabs,
@@ -104,6 +106,7 @@ function Legend() {
 
 export function CandleChart({ code }: { code: string }) {
   const { lang, t } = useLang();
+  const [searchParams, setSearchParams] = useSearchParams();
   const copy = researchChartCopy(lang);
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -116,6 +119,20 @@ export function CandleChart({ code }: { code: string }) {
   const [research, setResearch] = useState<PublicResearchChart | null>();
   const [selectedCondition, setSelectedCondition] =
     useState<ResearchConditionKey>("trend_alignment");
+
+  useEffect(() => {
+    const requested = researchConditionFromSearch(searchParams.get("condition"));
+    if (requested) setSelectedCondition(requested);
+  }, [searchParams]);
+
+  const selectCondition = (condition: ResearchConditionKey) => {
+    setSelectedCondition(condition);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("condition", condition);
+      return next;
+    }, { replace: true });
+  };
 
   // Apply a timeframe by zooming the visible range (indicators stay computed on full history).
   const applyTf = (label: string) => {
@@ -369,7 +386,7 @@ export function CandleChart({ code }: { code: string }) {
             conditions={research.conditions}
             lang={lang}
             selected={selectedCondition}
-            onSelect={setSelectedCondition}
+            onSelect={selectCondition}
           />
         </div>
       )}

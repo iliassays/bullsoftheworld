@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConditionCalibration, ConditionCheck } from "./model";
-import { calibrationFor, formatConditionValue, signedPercent } from "./model";
+import {
+  calibrationFor,
+  capTierFromSearch,
+  conditionKeyFromSearch,
+  formatConditionValue,
+  observationFilterFromSearch,
+  signedPercent,
+} from "./model";
 
 function calibration(
   evidenceMode: "forward" | "reconstructed",
@@ -65,5 +72,19 @@ describe("condition calibration selection", () => {
     expect(calibrationFor(rows, "forward", 5)?.evidenceMode).toBe("forward");
     expect(calibrationFor(rows, "reconstructed", 5)?.evidenceMode).toBe("reconstructed");
     expect(calibrationFor(rows, "forward", 20)).toBeUndefined();
+  });
+});
+
+describe("condition scanner URL state", () => {
+  it("accepts only registered conditions and tenant-supported cap tiers", () => {
+    expect(conditionKeyFromSearch("participation_expansion")).toBe("participation_expansion");
+    expect(conditionKeyFromSearch("buy_now")).toBe("trend_alignment");
+    expect(capTierFromSearch("small", ["large", "small"])).toBe("small");
+    expect(capTierFromSearch("mega", ["large", "small"])).toBe("all");
+  });
+
+  it("fails closed to all observations for unknown state values", () => {
+    expect(observationFilterFromSearch("new")).toBe("new");
+    expect(observationFilterFromSearch("live")).toBe("all");
   });
 });

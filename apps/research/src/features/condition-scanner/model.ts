@@ -5,6 +5,26 @@ export type ConditionKey =
 
 export type ConditionEvidenceMode = "forward" | "reconstructed";
 
+const CONDITION_KEYS = new Set<ConditionKey>([
+  "trend_alignment",
+  "participation_expansion",
+  "controlled_pullback_context",
+]);
+
+export function conditionKeyFromSearch(value: string | null): ConditionKey {
+  return value && CONDITION_KEYS.has(value as ConditionKey)
+    ? (value as ConditionKey)
+    : "trend_alignment";
+}
+
+export function capTierFromSearch(value: string | null, allowed: readonly string[]): string {
+  return value && allowed.includes(value) ? value : "all";
+}
+
+export function observationFilterFromSearch(value: string | null): "all" | "new" {
+  return value === "new" ? "new" : "all";
+}
+
 export interface ConditionDefinition {
   key: ConditionKey;
   version: string;

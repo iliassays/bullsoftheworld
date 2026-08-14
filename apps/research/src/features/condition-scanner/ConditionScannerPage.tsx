@@ -12,7 +12,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { researchDeployment } from "../../app/deployment";
 import {
@@ -25,7 +25,10 @@ import {
 import { useConditionScan, useConditionScannerWorkspaces, useConditionSubscription } from "./hooks";
 import {
   calibrationFor,
+  capTierFromSearch,
+  conditionKeyFromSearch,
   formatConditionValue,
+  observationFilterFromSearch,
   signedPercent,
   type ConditionEvidenceMode,
   type ConditionKey,
@@ -297,10 +300,32 @@ function ConditionInspector({
 export function ConditionScannerPage() {
   const workspaces = useConditionScannerWorkspaces();
   const workspace = workspaces.data?.[0];
-  const [conditionKey, setConditionKey] = useState<ConditionKey>("trend_alignment");
-  const [capTier, setCapTier] = useState<CapFilter>("all");
-  const [observationFilter, setObservationFilter] = useState<ObservationFilter>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [conditionKey, setConditionKey] = useState<ConditionKey>(() =>
+    conditionKeyFromSearch(searchParams.get("condition")),
+  );
+  const [capTier, setCapTier] = useState<CapFilter>(() =>
+    capTierFromSearch(searchParams.get("cap"), researchDeployment.capTiers),
+  );
+  const [observationFilter, setObservationFilter] = useState<ObservationFilter>(() =>
+    observationFilterFromSearch(searchParams.get("state")),
+  );
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const updateSearch = (changes: { condition?: ConditionKey; cap?: CapFilter; state?: ObservationFilter }) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (changes.condition) next.set("condition", changes.condition);
+      if (changes.cap) {
+        if (changes.cap === "all") next.delete("cap");
+        else next.set("cap", changes.cap);
+      }
+      if (changes.state) {
+        if (changes.state === "all") next.delete("state");
+        else next.set("state", changes.state);
+      }
+      return next;
+    }, { replace: true });
+  };
   const scan = useConditionScan(workspace?.id, {
     conditionKey,
     capTier,
@@ -362,19 +387,29 @@ export function ConditionScannerPage() {
 
       <section aria-label="Condition scanner controls" className="condition-controls">
         <div className="condition-controls__families">
-          <SegmentedControl label="Research condition" onChange={setConditionKey} options={CONDITION_OPTIONS} value={conditionKey} />
+          <SegmentedControl
+            label="Research condition"
+            onChange={(value) => { setConditionKey(value); updateSearch({ condition: value }); }}
+            options={CONDITION_OPTIONS}
+            value={conditionKey}
+          />
         </div>
         <div className="condition-controls__filters">
           <SegmentedControl
             label="Observation state"
-            onChange={setObservationFilter}
+            onChange={(value) => { setObservationFilter(value); updateSearch({ state: value }); }}
             options={[
               { value: "all", label: "All observed", count: scan.data.observedCount },
               { value: "new", label: "New this session", count: scan.data.newCount },
             ]}
             value={observationFilter}
           />
-          <SelectField label="Capitalization tier" onChange={setCapTier} options={capOptions} value={capTier} />
+          <SelectField
+            label="Capitalization tier"
+            onChange={(value) => { setCapTier(value); updateSearch({ cap: value }); }}
+            options={capOptions}
+            value={capTier}
+          />
         </div>
       </section>
 

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_, select, true
 
 from api.deps import CurrentTenant, DbSession, OptionalUser, enforce_market_feature
+from api.public_condition_board import PublicConditionBoardOut, load_public_condition_board
 from api.routers.company import FinancialHealth, _financial_health
 from api.routers.screener import (
     ScreenItem,
@@ -2044,4 +2045,26 @@ async def radar(
         ],
         market_regime=regime,
         boards=boards,
+    )
+
+
+@router.get("/scanner/research-conditions")
+async def research_conditions(
+    tenant: CurrentTenant,
+    session: DbSession,
+    limit_per_condition: int = Query(5, ge=1, le=10),
+    size: str | None = Query(None, description="cap tier: mega | large | mid | small | micro"),
+) -> PublicConditionBoardOut:
+    """Small public projection of Atlas observations for the resolved tenant market.
+
+    The complete condition scanner, calibration, alerting, and workspace context remain inside
+    authenticated Atlas. This route intentionally exposes none of those private fields.
+    """
+    enforce_market_feature(tenant, "curated_screens")
+    cap_tier = _validated_cap_tier(tenant.market, size)
+    return await load_public_condition_board(
+        session,
+        market=tenant.market,
+        cap_tier=cap_tier,
+        limit_per_condition=limit_per_condition,
     )

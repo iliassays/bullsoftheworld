@@ -114,6 +114,7 @@ class MarketConfigOut(BaseModel):
     tenant_name: str
     brand_name: str
     site_url: str
+    research_site_url: str
     support_email: str
     logo_url: str
     tagline_en: str
@@ -153,6 +154,7 @@ async def market_config(tenant: CurrentTenant) -> MarketConfigOut:
         tenant_name=tenant.name,
         brand_name=tenant.display_name,
         site_url=tenant.site_url,
+        research_site_url=tenant.research_site_url,
         support_email=tenant.support_email,
         logo_url=tenant.logo_url,
         tagline_en=tenant.tagline_en,

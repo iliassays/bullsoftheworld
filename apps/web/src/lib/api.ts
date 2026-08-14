@@ -472,6 +472,41 @@ export interface ScannerResponse {
   market_regime?: "above_200dma" | "below_200dma" | null;
   boards: Screen[];
 }
+export type PublicConditionKey = ResearchConditionKey;
+export interface PublicConditionItem {
+  code: string;
+  name: string;
+  sector: string | null;
+  cap_tier: string;
+  observed_on: string;
+  latest_session_date: string;
+  reference_close: number;
+  latest_close: number;
+  close_return_since_observation_pct: number;
+  average_daily_value_mn: number | null;
+  evidence_mode: "forward" | "reconstructed";
+  is_new: boolean;
+}
+export interface PublicConditionGroup {
+  key: PublicConditionKey;
+  version: string;
+  title: string;
+  category: string;
+  why_it_matters: string;
+  limitation: string;
+  observed_count: number;
+  new_count: number;
+  items: PublicConditionItem[];
+}
+export interface PublicConditionBoard {
+  market: "DSE" | "US";
+  as_of_date: string | null;
+  generated_at: string;
+  methodology_version: string;
+  cap_tier: string | null;
+  groups: PublicConditionGroup[];
+  disclaimer: string;
+}
 // A localisable statement about a row: the server sends `kind` (+ at most one number) and the
 // client renders it, so a Bangla reader gets Bangla evidence rather than English prose.
 export interface ShortlistFact {
@@ -995,6 +1030,7 @@ export interface MarketConfig {
   tenant_name: string;
   brand_name: string;
   site_url: string;
+  research_site_url: string;
   support_email: string;
   logo_url: string;
   tagline_en: string;
@@ -1280,6 +1316,11 @@ export const api = {
     if (limit) params.set("limit", String(limit));
     if (size) params.set("size", size);
     return request<ScannerResponse>(`/scanner/radar?${params.toString()}`);
+  },
+  researchConditions: (limitPerCondition = 5, size?: string) => {
+    const params = new URLSearchParams({ limit_per_condition: String(limitPerCondition) });
+    if (size) params.set("size", size);
+    return request<PublicConditionBoard>(`/scanner/research-conditions?${params.toString()}`);
   },
   sectors: () => request<Sector[]>("/sectors"),
   screen: (

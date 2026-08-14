@@ -14,6 +14,7 @@ import {
   formatCheckValue,
   researchChartCopy,
 } from "../../lib/research-chart";
+import { useTenantConfig } from "../../lib/tenant";
 
 const STATE_TONE: Record<ResearchConditionState, string> = {
   observed: "border-up/40 bg-up/10 text-up",
@@ -92,8 +93,11 @@ export function ResearchConditionInspector({
   priceHasNewerBar: boolean;
 }) {
   const copy = researchChartCopy(lang);
+  const { config } = useTenantConfig();
   const text = conditionText(condition, lang);
   const latestTransition = condition.transitions[condition.transitions.length - 1];
+  const atlasUrl = new URL("/conditions", config.research_site_url);
+  atlasUrl.searchParams.set("condition", condition.key);
 
   return (
     <section className="mt-3 border-t border-border pt-3" aria-labelledby="research-condition-title">
@@ -171,6 +175,13 @@ export function ResearchConditionInspector({
           <p className="mt-2 leading-relaxed text-muted">{copy.profileUnavailable}</p>
         </details>
       )}
+
+      <a
+        className="mt-3 inline-flex cursor-pointer items-center text-xs font-semibold text-accent hover:underline"
+        href={atlasUrl.toString()}
+      >
+        {lang === "bn" ? "Atlas-এ এই শর্তের সব শেয়ার দেখুন ↗" : "See all securities with this condition in Atlas ↗"}
+      </a>
 
       <p className="mt-3 border-t border-border pt-2 text-[10px] leading-relaxed text-muted">
         {copy.disclaimer} · {research.methodology_version}

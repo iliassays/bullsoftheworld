@@ -53,6 +53,7 @@ const DSE_FALLBACK: MarketConfig = {
   tenant_name: "bullsofdhaka",
   brand_name: "Bulls of Dhaka",
   site_url: "https://bullsofdhaka.com",
+  research_site_url: "https://research.bullsofdhaka.com",
   support_email: "hello@bullsofdhaka.com",
   logo_url: "https://bullsofdhaka.com/logo-mark-v2.png",
   tagline_en: "Facts, not rumours",
@@ -115,6 +116,7 @@ const US_FALLBACK: MarketConfig = {
   tenant_name: "bullsofwallst",
   brand_name: "Bulls of Wall Street",
   site_url: "https://bullsofwallst.com",
+  research_site_url: "https://research.bullsofwallst.com",
   support_email: "hello@bullsofwallst.com",
   logo_url: "https://bullsofwallst.com/logo-mark-v2.png",
   tagline_en: "US market intelligence, not noise",
@@ -136,14 +138,23 @@ function normalizeConfig(config: MarketConfig): MarketConfig {
   const capTiers = config.cap_tiers?.length
     ? config.cap_tiers
     : fallbackConfig().cap_tiers;
+  const researchSiteUrl =
+    config.research_site_url ||
+    (config.market === "US" ? US_FALLBACK.research_site_url : DSE_FALLBACK.research_site_url);
   if (config.supported_locales?.length) {
-    return { ...config, cap_tiers: capTiers, price_alert_evaluation: priceAlertEvaluation };
+    return {
+      ...config,
+      cap_tiers: capTiers,
+      price_alert_evaluation: priceAlertEvaluation,
+      research_site_url: researchSiteUrl,
+    };
   }
   return {
     ...config,
     supported_locales: config.market === "DSE" ? ["bn", "en"] : [config.default_locale],
     cap_tiers: capTiers,
     price_alert_evaluation: priceAlertEvaluation,
+    research_site_url: researchSiteUrl,
   };
 }
 
